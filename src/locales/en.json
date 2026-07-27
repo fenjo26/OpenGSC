@@ -2302,5 +2302,7 @@
   "rwRepairedHint": "The first draft dropped or invented values, so a scoped second pass corrected exactly those and measurably reduced the defect count.",
   "rwEdit": "Edit",
   "rwEditDone": "Done",
-  "rwSnippetInFile": "Edits here are saved into the downloaded file: front matter in .md, head tags in .html, a header in .txt."
+  "rwSnippetInFile": "Edits here are saved into the downloaded file: front matter in .md, head tags in .html, a header in .txt.",
+  "rwStructureOff": "headings differ",
+  "rwStructureHint": "The rewrite has a different number of headings than the source. A missing section changes what the page covers — check before publishing."
 }

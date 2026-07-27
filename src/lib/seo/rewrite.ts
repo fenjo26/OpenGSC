@@ -30,6 +30,8 @@ export interface RewriteBody {
 // exists on the server — the client never sees what was scraped, so it could not check it.
 export interface RewriteVariant {
   content: string; uniqueness: number; words: number; drift: FactDrift;
+  /** heading counts per level, source vs output — the outline equivalent of the value check */
+  structure?: StructureCheck;
   /** a scoped repair pass ran and measurably reduced the defect count */
   repaired?: boolean;
 }
@@ -109,6 +111,47 @@ async function pool<T, R>(items: T[], n: number, fn: (t: T, i: number) => Promis
   const worker = async () => { while (idx < items.length) { const i = idx++; out[i] = await fn(items[i], i); } };
   await Promise.all(Array.from({ length: Math.min(n, items.length) }, worker));
   return out;
+}
+
+// ─── Currency notation ──────────────────────────────────────────────────────────
+// Asking the model to keep the source's notation does not work — a real run converted every "€30"
+// into "30 EUR" despite an explicit instruction. That is fine by the value checker (both normalize
+// to the same price) but it leaves a Greek page written in a notation its audience does not use.
+// Mechanical transformations belong in code, not in a prompt: this one is deterministic, so it is
+// applied deterministically instead of being requested and hoped for.
+const CURRENCY_PAIRS: [string, string][] = [["€", "EUR"], ["$", "USD"], ["£", "GBP"], ["₽", "RUB"], ["₴", "UAH"]];
+
+function normalizeCurrency(source: string, out: string): string {
+  let result = out;
+  for (const [sym, code] of CURRENCY_PAIRS) {
+    const symBefore = new RegExp(`\\${sym}\\s?\\d`).test(source);
+    const symAfter = new RegExp(`\\d\\s?\\${sym}`).test(source);
+    if (!symBefore && !symAfter) continue;              // source doesn't use the symbol — leave it
+    if (new RegExp(`\\b${code}\\b`).test(source)) continue; // source mixes both — not ours to decide
+    const num = "(\\d[\\d.,\\s\\u00A0]*\\d|\\d)";
+    result = result
+      .replace(new RegExp(`${num}\\s*\\b${code}\\b`, "g"), (_m, n) => (symBefore ? `${sym}${n}` : `${n}${sym}`))
+      .replace(new RegExp(`\\b${code}\\b\\s*${num}`, "g"), (_m, n) => (symBefore ? `${sym}${n}` : `${n}${sym}`));
+  }
+  return result;
+}
+
+// ─── Heading structure ──────────────────────────────────────────────────────────
+// The value checker guards facts; nothing guarded the outline until now. A run quietly came back
+// with seven H3s where the source had eight — invisible in the output, but it changes what the page
+// covers, and on a page being refreshed to recover rankings that is the wrong kind of surprise.
+export function headingCounts(md: string): number[] {
+  const c = [0, 0, 0, 0, 0, 0];
+  for (const m of md.matchAll(/^(#{1,6})\s+\S/gm)) c[m[1].length - 1]++;
+  return c;
+}
+
+export interface StructureCheck { expected: number[]; got: number[]; ok: boolean }
+
+function checkStructure(source: string, out: string): StructureCheck {
+  const expected = headingCounts(source);
+  const got = headingCounts(out);
+  return { expected, got, ok: expected.every((n, i) => n === got[i]) };
 }
 
 // Pasted text and scraped pages get different budgets. A full landing page runs well past 14k
@@ -204,12 +247,17 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
   // Targeted second pass, run only when the audit finds something wrong. It names the specific
   // values to restore or remove instead of asking for a whole re-rewrite, so the text that was
   // already correct is left alone.
-  const repairPrompt = (draft: string, lost: string[], added: string[]) =>
-    `The text below is a rewrite of a source document. It has these defects:\n` +
-    (lost.length ? `- MISSING values that were in the source and must be restored, in their proper context: ${lost.join(", ")}\n` : "") +
-    (added.length ? `- INVENTED values that are NOT in the source and must be removed or corrected: ${added.join(", ")}\n` : "") +
-    `Fix ONLY these defects. Do not rewrite anything else, do not change the heading structure, do not alter wording that is already correct. ` +
-    `Output ONLY the corrected text, with no preamble or notes.\n\nTEXT:\n${draft}`;
+  const repairPrompt = (draft: string, lost: string[], added: string[], st: StructureCheck) => {
+    const levels = st.ok ? "" : st.expected
+      .map((n, i) => (n === st.got[i] ? "" : `H${i + 1}: ${st.got[i]} present, ${n} required`))
+      .filter(Boolean).join("; ");
+    return `The text below is a rewrite of a source document. It has these defects:\n` +
+      (lost.length ? `- MISSING values that were in the source and must be restored, in their proper context: ${lost.join(", ")}\n` : "") +
+      (added.length ? `- INVENTED values that are NOT in the source and must be removed or corrected: ${added.join(", ")}\n` : "") +
+      (levels ? `- WRONG heading count — restore the missing sections with real content, do not add empty headings (${levels})\n` : "") +
+      `Fix ONLY these defects. Do not rewrite anything else, do not alter wording that is already correct. ` +
+      `Output ONLY the corrected text, with no preamble or notes.\n\nTEXT:\n${draft}`;
+  };
 
   const clean = (s: string) => s.trim().replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/i, "").trim();
 
@@ -217,28 +265,37 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
     const raw = await fetchLLM(basePrompt(i), provider, apiKey, 8000, b.model || undefined, b.aiBaseUrl || undefined, b.temperature);
     let content = clean(raw ?? "");
     if (!content) return null;
+    content = normalizeCurrency(source, content);
 
     // Audit, then repair once if needed. A single scoped pass is deliberate: repeated correction
     // rounds drift away from the source in other ways, and the repair is only kept when it actually
-    // improves the count — a "fix" that loses more than it restores is discarded.
+    // improves the total defect count — a "fix" that loses more than it restores is discarded.
     let drift = factDrift(source, content);
+    let structure = checkStructure(source, content);
     let repaired = false;
-    if (b.autoRepair !== false && !drift.clean) {
+    // Heading loss counts as a defect too, so a structurally-damaged draft triggers the same pass.
+    const defects = (d: FactDrift, s: StructureCheck) =>
+      d.numbers.lost.length + d.identifiers.lost.length + d.numbers.added.length + d.identifiers.added.length +
+      s.expected.reduce((acc, n, i) => acc + Math.abs(n - s.got[i]), 0);
+
+    if (b.autoRepair !== false && (!drift.clean || !structure.ok)) {
       const lost = [...drift.numbers.lost, ...drift.identifiers.lost].slice(0, 40);
       const added = [...drift.numbers.added, ...drift.identifiers.added].slice(0, 40);
       try {
-        const fixRaw = await fetchLLM(repairPrompt(content, lost, added), provider, apiKey, 8000, b.model || undefined, b.aiBaseUrl || undefined, b.temperature);
-        const fixed = clean(fixRaw ?? "");
+        const fixRaw = await fetchLLM(repairPrompt(content, lost, added, structure), provider, apiKey, 8000, b.model || undefined, b.aiBaseUrl || undefined, b.temperature);
+        const fixed = normalizeCurrency(source, clean(fixRaw ?? ""));
         if (fixed) {
           const d2 = factDrift(source, fixed);
-          const defects = (d: FactDrift) => d.numbers.lost.length + d.identifiers.lost.length + d.numbers.added.length + d.identifiers.added.length;
-          if (defects(d2) < defects(drift)) { content = fixed; drift = d2; repaired = true; }
+          const s2 = checkStructure(source, fixed);
+          if (defects(d2, s2) < defects(drift, structure)) {
+            content = fixed; drift = d2; structure = s2; repaired = true;
+          }
         }
       } catch { /* keep the audited original */ }
     }
 
     if (b.maskAI !== false) content = maskAIPatterns(content);
-    return { content, uniqueness: uniquenessPct(source, content), words: wordCount(content), drift, repaired };
+    return { content, uniqueness: uniquenessPct(source, content), words: wordCount(content), drift, structure, repaired };
   });
 
   const variantsOut = results.filter((r): r is RewriteVariant => !!r);

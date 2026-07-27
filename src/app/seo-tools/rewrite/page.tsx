@@ -14,7 +14,8 @@ import FactDriftPanel from "@/components/FactDriftPanel";
 import { slugFromSource, renderAs, downloadFile, type ExportFormat } from "@/lib/seo/exportFormats";
 import { uniquenessPct, wordCount } from "@/lib/seo/textMetrics";
 
-type Variant = { content: string; uniqueness: number; words: number; aiScore?: number; drift?: FactDrift; repaired?: boolean };
+type StructureCheck = { expected: number[]; got: number[]; ok: boolean };
+type Variant = { content: string; uniqueness: number; words: number; aiScore?: number; drift?: FactDrift; structure?: StructureCheck; repaired?: boolean };
 type Snippet = { sourceTitle: string; sourceDescription: string; title: string; description: string };
 
 // Google truncates around these lengths; the counter turns red past them.
@@ -275,6 +276,12 @@ export default function RewritePage() {
               </span>
             )}
             <span style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>{v.words} {t("rwWords")}</span>
+            {v.structure && !v.structure.ok && (
+              <span title={t("rwStructureHint" as never)} style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "11px", fontWeight: 700, padding: "2px 9px", borderRadius: "20px", color: "#ff9f0a", background: "rgba(255,159,10,0.14)" }}>
+                <AlertTriangle size={11} /> {t("rwStructureOff" as never)}{" "}
+                {v.structure.expected.map((n, li) => (n === v.structure!.got[li] ? null : `H${li + 1} ${v.structure!.got[li]}/${n}`)).filter(Boolean).join(", ")}
+              </span>
+            )}
             {v.repaired && (
               <span title={t("rwRepairedHint" as never)} style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "11px", fontWeight: 700, padding: "2px 9px", borderRadius: "20px", color: "#2997ff", background: "rgba(41,151,255,0.12)" }}>
                 <Wrench size={11} /> {t("rwRepaired" as never)}
