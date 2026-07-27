@@ -49,6 +49,9 @@ function normNum(raw: string): string {
   else s = s.replace(",", ".");
   // Drop a trailing decimal zero so 96.0 and 96 are the same fact.
   if (s.includes(".")) s = s.replace(/\.?0+$/, "") || "0";
+  // Drop leading zeros: a source writing "0:00" and a rewrite writing "00:00" state the same
+  // midnight, and reporting that as a lost value is noise of the same kind as currency notation.
+  s = s.replace(/^0+(?=\d)/, "");
   return s;
 }
 
@@ -75,13 +78,22 @@ const UNIT_CANON: Record<string, string> = {
 };
 const canonUnit = (u: string) => (u ? UNIT_CANON[u.toLowerCase()] ?? u.toLowerCase() : "");
 
+// Number literal. Space-grouped thousands are matched ONLY as strict groups of three ("5 000",
+// "2 400"), never as "any digits with whitespace between them".
+//
+// The permissive version glued neighbouring values together: stripMarkup removes table pipes, so a
+// row like `| €45 | 20-25 λεπτά |` collapsed to "45  20" and came out as the number 4520 — a value
+// present in neither document, reported in red as an invented fact. False alarms in the danger tier
+// are the fastest way to make the whole check ignorable.
+const NUM = "\\d{1,3}(?:[\\s\\u00A0]\\d{3})+(?:[.,]\\d+)?|\\d+(?:[.,]\\d+)*";
+
 // A numeric fact = the value plus whatever unit is welded to it. "96" and "96%" are different
 // claims, and a rewrite that turns one into the other is exactly what we want to catch.
 function extractNumbers(text: string): string[] {
   const s = stripMarkup(text);
   const out: string[] = [];
   const re = new RegExp(
-    `(?:(${SYM_UNIT})\\s*)?(\\d[\\d\\s\\u00A0.,]*\\d|\\d)\\s*(?:(${SYM_UNIT})|(${WORD_UNIT})(?![\\p{L}\\p{N}]))?`,
+    `(?:(${SYM_UNIT})\\s*)?(${NUM})[ \\u00A0]?(?:(${SYM_UNIT})|(${WORD_UNIT})(?![\\p{L}\\p{N}]))?`,
     "giu",
   );
   let m: RegExpExecArray | null;
@@ -115,8 +127,13 @@ function extractIdentifiers(text: string): string[] {
   return out;
 }
 
-// Multiset diff: a value repeated three times in the source and once in the rewrite has lost two
-// occurrences, which matters for things like a price stated in several sections.
+// A value counts as lost only when it is ABSENT from the rewrite, not when it appears fewer times.
+//
+// The first version compared multisets and flagged any drop in occurrence count. On a real page it
+// reported the brand name, PayPal and "24" as lost while all three were still in the text — the
+// source simply repeated its booking notice seven times and the rewrite consolidated the phrasing.
+// Seven noisy items buried the two that mattered. A checker that cries wolf gets switched off, and
+// then it protects nothing: precision here is worth more than sensitivity.
 function diff(src: string[], dst: string[]): DriftReport {
   const count = (arr: string[]) => {
     const m = new Map<string, number>();
@@ -130,10 +147,24 @@ function diff(src: string[], dst: string[]): DriftReport {
   for (const [k, n] of a) {
     const have = b.get(k) ?? 0;
     kept += Math.min(n, have);
-    if (have < n) lost.push(k);
+    if (have === 0) lost.push(k);
   }
   for (const [k, n] of b) if (!a.has(k) && n > 0) added.push(k);
   return { lost, added, kept, clean: !lost.length && !added.length };
+}
+
+/**
+ * Every checkable value in a text, deduplicated — the list a rewrite must carry over intact.
+ *
+ * Exported so the rewriter can put these IN THE PROMPT rather than only auditing the result
+ * afterwards. Detecting a lost price and reporting it is strictly worse than not losing it: the
+ * operator is refreshing a page that already lost rankings, and a rewrite that quietly drops
+ * "book 48 hours ahead" makes the page worse, which is the opposite of the job.
+ */
+export function criticalValues(text: string, limit = 120): string[] {
+  const nums = extractNumbers(text);
+  const ids = extractIdentifiers(text);
+  return Array.from(new Set([...nums, ...ids])).slice(0, limit);
 }
 
 export function factDrift(source: string, rewritten: string): FactDrift {

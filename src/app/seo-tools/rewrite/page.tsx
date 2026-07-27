@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { RefreshCw, Loader2, AlertTriangle, Copy, Check, Download, Sparkles, Link2, FileText, Fingerprint } from "lucide-react";
+import { RefreshCw, Loader2, AlertTriangle, Copy, Check, Download, Sparkles, Link2, FileText, Fingerprint, Search, Wrench, Pencil } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { getTaskCreds, getFirecrawlKey } from "@/lib/seo/keys";
 import { LANGUAGES } from "@/lib/seo/regions";
@@ -11,11 +11,20 @@ import { scoreText } from "@/lib/seo/aidetect";
 import { getActiveModel, effectiveBannedWords, type StoredModel } from "@/lib/seo/aidetectStore";
 import { factDrift, type FactDrift } from "@/lib/seo/factDrift";
 import FactDriftPanel from "@/components/FactDriftPanel";
+import { slugFromSource, renderAs, downloadFile, type ExportFormat } from "@/lib/seo/exportFormats";
+import { uniquenessPct, wordCount } from "@/lib/seo/textMetrics";
 
-type Variant = { content: string; uniqueness: number; words: number; aiScore?: number; drift?: FactDrift };
+type Variant = { content: string; uniqueness: number; words: number; aiScore?: number; drift?: FactDrift; repaired?: boolean };
+type Snippet = { sourceTitle: string; sourceDescription: string; title: string; description: string };
+
+// Google truncates around these lengths; the counter turns red past them.
+const TITLE_MAX = 60;
+const DESC_MAX = 160;
 
 const card = "panel";
 const inputStyle: React.CSSProperties = { width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-bg)", color: "var(--color-text-primary)", fontSize: "13px", outline: "none", boxSizing: "border-box" };
+
+const ghostSmall: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: "5px", padding: "4px 9px", borderRadius: "7px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-secondary)", fontSize: "12px", fontWeight: 600, cursor: "pointer", flexShrink: 0 };
 
 function uColor(u: number) { return u >= 80 ? "#34c759" : u >= 60 ? "#ff9f0a" : "#ff375f"; }
 function aColor(s: number) { return s < 15 ? "#34c759" : s < 40 ? "#ff9f0a" : "#ff375f"; }
@@ -47,12 +56,36 @@ export default function RewritePage() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [results, setResults] = useState<Variant[] | null>(null);
+  const [snippet, setSnippet] = useState<Snippet | null>(null);
+  const [wantSnippet, setWantSnippet] = useState(true);
   const [copied, setCopied] = useState<number | null>(null);
+  const [editing, setEditing] = useState<number | null>(null);
+  const [source, setSource] = useState("");
+
+  // Rescore an edited variant against the source the server used. Every metric on screen keeps
+  // describing the text that is actually on screen — the point of letting people edit here is to
+  // fix what the audit flagged, and that is only useful if the audit follows the edit.
+  const editVariant = (i: number, content: string) => {
+    setResults(prev => {
+      if (!prev) return prev;
+      const next = [...prev];
+      next[i] = {
+        ...next[i],
+        content,
+        words: wordCount(content),
+        uniqueness: source ? uniquenessPct(source, content) : next[i].uniqueness,
+        drift: source ? factDrift(source, content) : next[i].drift,
+        aiScore: fp ? scoreText(content, fp.model).avgScore : undefined,
+        repaired: next[i].repaired,
+      };
+      return next;
+    });
+  };
 
   const ai = mounted ? getTaskCreds("text") : { provider: "", apiKey: "", model: "", baseUrl: "" };
 
   async function run() {
-    setErr(""); setResults(null);
+    setErr(""); setResults(null); setSnippet(null);
     const creds = getTaskCreds("text");
     if (!creds.apiKey) { setErr(t("seoErrNoAiKey")); return; }
     if (mode === "text" && !text.trim()) { setErr(t("rwNeedText")); return; }
@@ -74,6 +107,7 @@ export default function RewritePage() {
           // unlike a vague "write more naturally" directive.
           bannedWords: useBanned && fp ? effectiveBannedWords(fp) : undefined,
           temperature: temp.trim() === "" ? undefined : Number(temp),
+          snippet: wantSnippet && mode === "url",
           aiProvider: creds.provider, aiApiKey: creds.apiKey, model: creds.model || undefined, aiBaseUrl: creds.baseUrl || undefined,
           firecrawlKey: getFirecrawlKey() || undefined,
         }),
@@ -91,15 +125,21 @@ export default function RewritePage() {
         // fingerprint score is computed here, since the model never leaves the browser.
         const vs: Variant[] = d.variants || [];
         setResults(vs.map(v => ({ ...v, aiScore: fp ? scoreText(v.content, fp.model).avgScore : undefined })));
+        setSnippet(d.snippet || null);
+        setSource(d.source || "");
+        setEditing(null);
       }
     } catch (e: any) { setErr(String(e?.message ?? e)); }
     setLoading(false);
   }
 
   const copy = (i: number, s: string) => { navigator.clipboard.writeText(s).then(() => { setCopied(i); setTimeout(() => setCopied(null), 1500); }).catch(() => {}); };
-  const download = (i: number, s: string) => {
-    const blob = new Blob([s], { type: "text/plain;charset=utf-8" });
-    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `rewrite-${i + 1}.txt`; a.click(); URL.revokeObjectURL(a.href);
+  // Name the file after the page's own slug — "rewrite-1.txt" is unidentifiable once several
+  // downloads sit in the same folder. Variants past the first get a numeric suffix.
+  const download = (i: number, s: string, format: ExportFormat) => {
+    const stem = slugFromSource({ url: mode === "url" ? url.trim() : undefined, content: s });
+    const { content, mime } = renderAs(format, s, results?.[i] ? stem : "");
+    downloadFile(content, `${stem}${(results?.length ?? 0) > 1 ? `-${i + 1}` : ""}.${format}`, mime);
   };
 
   return (
@@ -167,6 +207,14 @@ export default function RewritePage() {
             <input value={temp} onChange={e => setTemp(e.target.value)} placeholder={t("rwTempAuto" as any)}
               style={{ ...inputStyle, width: "92px", padding: "6px 9px" }} />
           </label>
+
+          {/* Only offered for URL mode — pasted text carries no title or meta description to refresh. */}
+          <label title={t("rwSnippetHint" as never)}
+            style={{ display: "inline-flex", alignItems: "center", gap: "8px", fontSize: "13px", cursor: mode === "url" ? "pointer" : "default", opacity: mode === "url" ? 1 : 0.5, color: wantSnippet && mode === "url" ? "#2997ff" : "var(--color-text-secondary)" }}>
+            <input type="checkbox" disabled={mode !== "url"} checked={wantSnippet && mode === "url"}
+              onChange={e => setWantSnippet(e.target.checked)} style={{ accentColor: "#2997ff" }} />
+            <Search size={14} /> {t("rwSnippet" as never)}
+          </label>
         </div>
 
         {err && <div style={{ fontSize: "12px", color: "#f87171", display: "flex", alignItems: "center", gap: "6px" }}><AlertTriangle size={14} /> {err}</div>}
@@ -175,6 +223,35 @@ export default function RewritePage() {
           {loading ? <><Loader2 size={15} className="spin" /> {t("rwWorking")}</> : <><RefreshCw size={15} /> {t("rwRun")}</>}
         </button>
       </div>
+
+      {/* Snippet refresh — shown above the body, since it is what changes in the SERP. */}
+      {snippet && (
+        <div className={card} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+          <div style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)", display: "flex", alignItems: "center", gap: "8px" }}>
+            <Search size={16} color="#2997ff" /> {t("rwSnippetTitle" as never)}
+          </div>
+          {([
+            ["title", t("rwSnippetTitleLabel" as never), snippet.sourceTitle, snippet.title, TITLE_MAX],
+            ["desc", t("rwSnippetDescLabel" as never), snippet.sourceDescription, snippet.description, DESC_MAX],
+          ] as const).map(([k, label, before, after, max]) => (
+            <div key={k} style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--color-text-secondary)" }}>{label}</div>
+              {before && (
+                <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", lineHeight: 1.5, textDecoration: "line-through", opacity: 0.75 }}>{before}</div>
+              )}
+              <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
+                <div style={{ flex: 1, fontSize: "13px", color: "var(--color-text-primary)", lineHeight: 1.55 }}>{after || "—"}</div>
+                <span style={{ fontSize: "11px", fontWeight: 700, flexShrink: 0, color: after.length > max ? "#ff375f" : "#34c759" }}>
+                  {after.length}/{max}
+                </span>
+                <button onClick={() => navigator.clipboard.writeText(after).catch(() => {})} style={{ ...ghostSmall }}>
+                  <Copy size={12} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Results */}
       {results && results.map((v, i) => (
@@ -188,16 +265,46 @@ export default function RewritePage() {
               </span>
             )}
             <span style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>{v.words} {t("rwWords")}</span>
+            {v.repaired && (
+              <span title={t("rwRepairedHint" as never)} style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "11px", fontWeight: 700, padding: "2px 9px", borderRadius: "20px", color: "#2997ff", background: "rgba(41,151,255,0.12)" }}>
+                <Wrench size={11} /> {t("rwRepaired" as never)}
+              </span>
+            )}
             <span style={{ flex: 1 }} />
+            <button onClick={() => setEditing(editing === i ? null : i)}
+              style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "5px 11px", borderRadius: "8px", border: `1px solid ${editing === i ? "var(--color-accent-blue)" : "var(--color-border)"}`, background: "var(--color-card)", color: editing === i ? "var(--color-accent-blue)" : "var(--color-text-secondary)", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>
+              {editing === i ? <><Check size={13} /> {t("rwEditDone" as never)}</> : <><Pencil size={13} /> {t("rwEdit" as never)}</>}
+            </button>
             <button onClick={() => copy(i, v.content)} style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "5px 11px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-secondary)", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>
               {copied === i ? <><Check size={13} color="#34c759" /> {t("rwCopied")}</> : <><Copy size={13} /> {t("rwCopy")}</>}
             </button>
-            <button onClick={() => download(i, v.content)} title={t("exportCsv")} style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "5px 11px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-secondary)", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>
-              <Download size={13} /> .txt
-            </button>
+            {/* One download control per format. The rewrite keeps its heading tree, so .md and
+                .html carry structure a .txt would flatten. */}
+            <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "3px 6px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-card)" }}>
+              <Download size={13} color="var(--color-text-secondary)" />
+              {(["md", "html", "txt"] as const).map(f => (
+                <button key={f} onClick={() => download(i, v.content, f)} title={t("rwDownloadAs" as never)}
+                  style={{ padding: "3px 8px", borderRadius: "6px", border: "none", background: "transparent", color: "var(--color-text-secondary)", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
+                  onMouseEnter={e => (e.currentTarget.style.background = "var(--color-bg)")}
+                  onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
+                  .{f}
+                </button>
+              ))}
+            </span>
           </div>
           {v.drift && <FactDriftPanel drift={v.drift} />}
-          <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "inherit", fontSize: "13px", lineHeight: 1.7, color: "var(--color-text-primary)", background: "var(--color-bg)", border: "1px solid var(--color-border)", borderRadius: "10px", padding: "14px 16px", maxHeight: "460px", overflow: "auto" }}>{v.content}</pre>
+          {editing === i ? (
+            // Same box, same typography as the read view — the text must not reflow when the mode
+            // changes, or the user loses their place mid-edit.
+            <textarea
+              value={v.content}
+              onChange={e => editVariant(i, e.target.value)}
+              spellCheck
+              style={{ margin: 0, width: "100%", boxSizing: "border-box", resize: "vertical", whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: "13px", lineHeight: 1.7, color: "var(--color-text-primary)", background: "var(--color-bg)", border: "1px solid var(--color-accent-blue)", borderRadius: "10px", padding: "14px 16px", minHeight: "460px", outline: "none" }}
+            />
+          ) : (
+            <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "inherit", fontSize: "13px", lineHeight: 1.7, color: "var(--color-text-primary)", background: "var(--color-bg)", border: "1px solid var(--color-border)", borderRadius: "10px", padding: "14px 16px", maxHeight: "460px", overflow: "auto" }}>{v.content}</pre>
+          )}
         </div>
       ))}
     </div>

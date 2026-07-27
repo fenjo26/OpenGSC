@@ -5,7 +5,8 @@
 
 import { fetchLLM } from "@/lib/llm";
 import { scrapeMany } from "@/lib/seo/scrape";
-import { factDrift, type FactDrift } from "@/lib/seo/factDrift";
+import { factDrift, criticalValues, type FactDrift } from "@/lib/seo/factDrift";
+import { uniquenessPct, wordCount } from "@/lib/seo/textMetrics";
 
 export interface RewriteBody {
   text?: string;
@@ -16,6 +17,8 @@ export interface RewriteBody {
   maskAI?: boolean;         // strip common AI patterns (default true)
   bannedWords?: string[];   // domain vocabulary to avoid AT GENERATION TIME (see note below)
   temperature?: number;     // sampling temperature; undefined = provider default
+  autoRepair?: boolean;     // run a scoped fix pass when the value audit fails (default true)
+  snippet?: boolean;        // also propose a refreshed title + meta description
   aiProvider?: string;
   aiApiKey?: string;
   model?: string;
@@ -25,11 +28,36 @@ export interface RewriteBody {
 
 // `drift` is computed here rather than in the browser because in URL mode the source text only
 // exists on the server — the client never sees what was scraped, so it could not check it.
-export interface RewriteVariant { content: string; uniqueness: number; words: number; drift: FactDrift }
+export interface RewriteVariant {
+  content: string; uniqueness: number; words: number; drift: FactDrift;
+  /** a scoped repair pass ran and measurably reduced the defect count */
+  repaired?: boolean;
+}
+
+/** Refreshed search snippet alongside the current one, so the change is judged by comparison. */
+export interface SnippetSuggestion {
+  sourceTitle: string;
+  sourceDescription: string;
+  title: string;
+  description: string;
+}
+
 export interface RewriteResult {
   ok: boolean;
   error?: string;
-  data?: { sourceChars: number; sourceWords: number; title?: string; variants: RewriteVariant[] };
+  data?: {
+    sourceChars: number; sourceWords: number; title?: string;
+    variants: RewriteVariant[];
+    snippet?: SnippetSuggestion;
+    /**
+     * The exact source the variants were built from.
+     *
+     * Returned so the result editor can recompute uniqueness and value drift live while the user
+     * edits. Without it a hand-edited draft would keep displaying the scores of the draft it
+     * replaced — numbers that describe text no longer on screen are worse than no numbers.
+     */
+    source: string;
+  };
 }
 
 // ─── AI-pattern masking ─────────────────────────────────────────────────────────
@@ -75,24 +103,6 @@ export function maskAIPatterns(input: string): string {
   return out;
 }
 
-// ─── Uniqueness = 1 − word-trigram Jaccard similarity vs the source ─────────────
-function shingles(s: string, n = 3): Set<string> {
-  const w = s.toLowerCase().replace(/<[^>]+>/g, " ").replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter(Boolean);
-  const set = new Set<string>();
-  for (let i = 0; i + n <= w.length; i++) set.add(w.slice(i, i + n).join(" "));
-  return set;
-}
-function uniquenessPct(source: string, rewritten: string): number {
-  const A = shingles(source), B = shingles(rewritten);
-  if (!A.size || !B.size) return 100;
-  let inter = 0;
-  for (const x of A) if (B.has(x)) inter++;
-  const union = A.size + B.size - inter;
-  const sim = union ? inter / union : 0;
-  return Math.max(0, Math.min(100, Math.round((1 - sim) * 100)));
-}
-const wordCount = (s: string) => (s.replace(/<[^>]+>/g, " ").match(/[\p{L}\p{N}]+/gu) || []).length;
-
 async function pool<T, R>(items: T[], n: number, fn: (t: T, i: number) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length);
   let idx = 0;
@@ -115,6 +125,7 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
   // Resolve source content: pasted text, or scrape the URL.
   let text = (b.text ?? "").trim();
   let title = "";
+  let description = "";
   let fromUrl = false;
   if (!text && b.url) {
     fromUrl = true;
@@ -129,6 +140,7 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
         // Markdown, not the flat sample: headings and tables are structure the rewrite must keep.
         text = String(p.contentMarkdown || p.textSample || "").trim();
         title = p.title || "";
+        description = p.metaDescription || "";
       }
     } catch { /* fall through to no_content */ }
   }
@@ -160,27 +172,96 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
     ? `Preserve the heading structure EXACTLY: same number of headings, same levels (# / ## / ###), same order. Rewrite heading text, never drop, merge, split or reorder a heading. Keep every markdown table with all its rows. `
     : "";
 
+  // Named, explicit list of every checkable value in the source. Telling a model to "preserve all
+  // facts" is the kind of vague directive it acknowledges and then quietly violates on paragraph
+  // forty; an enumerated list of the actual prices, durations and brand names is something it can
+  // check itself against. This is prevention — the drift panel afterwards is only the audit.
+  const mustKeep = criticalValues(source);
+  const keepLine = mustKeep.length
+    ? `These exact values MUST all appear in your output — every price, duration, percentage, phone number and brand name: ${mustKeep.join(", ")}. Do not drop, round, convert or re-unit any of them, and do not introduce values that are not in the source. `
+    : "";
+
   const basePrompt = (i: number) =>
     `You are an expert SEO copywriter. Rewrite the content below so it is UNIQUE and original, ` +
     `while preserving the exact meaning, all facts, numbers, named entities, and links. ` +
     `Keep the same format as the input (HTML stays HTML, Markdown stays Markdown, plain stays plain). ` +
-    `${structureLine}${langLine} ${toneLine} ${bannedLine}` +
+    `${structureLine}${keepLine}${langLine} ${toneLine} ${bannedLine}` +
     (variants > 1 ? `This is variant #${i + 1} — make it clearly different from the other variants. ` : "") +
     `Output ONLY the rewritten content, with no preamble, notes, or explanations.\n\n` +
     `CONTENT:\n${source}`;
 
-  const results = await pool(Array.from({ length: variants }), 2, async (_x, i) => {
+  // Targeted second pass, run only when the audit finds something wrong. It names the specific
+  // values to restore or remove instead of asking for a whole re-rewrite, so the text that was
+  // already correct is left alone.
+  const repairPrompt = (draft: string, lost: string[], added: string[]) =>
+    `The text below is a rewrite of a source document. It has these defects:\n` +
+    (lost.length ? `- MISSING values that were in the source and must be restored, in their proper context: ${lost.join(", ")}\n` : "") +
+    (added.length ? `- INVENTED values that are NOT in the source and must be removed or corrected: ${added.join(", ")}\n` : "") +
+    `Fix ONLY these defects. Do not rewrite anything else, do not change the heading structure, do not alter wording that is already correct. ` +
+    `Output ONLY the corrected text, with no preamble or notes.\n\nTEXT:\n${draft}`;
+
+  const clean = (s: string) => s.trim().replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/i, "").trim();
+
+  const results = await pool(Array.from({ length: variants }), 2, async (_x, i): Promise<RewriteVariant | null> => {
     const raw = await fetchLLM(basePrompt(i), provider, apiKey, 8000, b.model || undefined, b.aiBaseUrl || undefined, b.temperature);
-    let content = (raw ?? "").trim();
-    // Strip a leading code fence the model sometimes wraps around HTML/MD.
-    content = content.replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/i, "").trim();
+    let content = clean(raw ?? "");
     if (!content) return null;
+
+    // Audit, then repair once if needed. A single scoped pass is deliberate: repeated correction
+    // rounds drift away from the source in other ways, and the repair is only kept when it actually
+    // improves the count — a "fix" that loses more than it restores is discarded.
+    let drift = factDrift(source, content);
+    let repaired = false;
+    if (b.autoRepair !== false && !drift.clean) {
+      const lost = [...drift.numbers.lost, ...drift.identifiers.lost].slice(0, 40);
+      const added = [...drift.numbers.added, ...drift.identifiers.added].slice(0, 40);
+      try {
+        const fixRaw = await fetchLLM(repairPrompt(content, lost, added), provider, apiKey, 8000, b.model || undefined, b.aiBaseUrl || undefined, b.temperature);
+        const fixed = clean(fixRaw ?? "");
+        if (fixed) {
+          const d2 = factDrift(source, fixed);
+          const defects = (d: FactDrift) => d.numbers.lost.length + d.identifiers.lost.length + d.numbers.added.length + d.identifiers.added.length;
+          if (defects(d2) < defects(drift)) { content = fixed; drift = d2; repaired = true; }
+        }
+      } catch { /* keep the audited original */ }
+    }
+
     if (b.maskAI !== false) content = maskAIPatterns(content);
-    return { content, uniqueness: uniquenessPct(source, content), words: wordCount(content), drift: factDrift(source, content) };
+    return { content, uniqueness: uniquenessPct(source, content), words: wordCount(content), drift, repaired };
   });
 
   const variantsOut = results.filter((r): r is RewriteVariant => !!r);
   if (!variantsOut.length) return { ok: false, error: "generation_failed" };
 
-  return { ok: true, data: { sourceChars: source.length, sourceWords: wordCount(source), title: title || undefined, variants: variantsOut } };
+  // Snippet refresh. Requested explicitly (`snippet: true`) so an existing caller's cost and
+  // latency don't change, and only meaningful when the source page actually has meta tags.
+  let snippet: SnippetSuggestion | undefined;
+  if (b.snippet && (title || description)) {
+    try {
+      const sPrompt =
+        `You are an SEO specialist. Rewrite this page's search snippet so it reads freshly and earns clicks, ` +
+        `keeping the same search intent, the same primary keyword and every factual claim (prices, guarantees, coverage). ` +
+        `${langLine} Title: 50-60 characters. Meta description: 150-160 characters. ` +
+        `Do not invent facts that are absent from the current snippet or the page. ` +
+        `Return STRICT JSON and nothing else: {"title":"...","description":"..."}\n\n` +
+        `CURRENT TITLE: ${title || "(none)"}\nCURRENT DESCRIPTION: ${description || "(none)"}\n\n` +
+        `PAGE CONTENT (for context, first 3000 chars):\n${source.slice(0, 3000)}`;
+      const sRaw = await fetchLLM(sPrompt, provider, apiKey, 700, b.model || undefined, b.aiBaseUrl || undefined, b.temperature);
+      const j = JSON.parse(clean(sRaw ?? "").replace(/^[^{]*/, "").replace(/[^}]*$/, ""));
+      if (j?.title || j?.description) {
+        snippet = {
+          sourceTitle: title, sourceDescription: description,
+          title: String(j.title || ""), description: String(j.description || ""),
+        };
+      }
+    } catch { /* snippet is a bonus — never fail the rewrite over it */ }
+  }
+
+  return {
+    ok: true,
+    data: {
+      sourceChars: source.length, sourceWords: wordCount(source),
+      title: title || undefined, variants: variantsOut, snippet, source,
+    },
+  };
 }

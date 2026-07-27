@@ -2291,5 +2291,15 @@
   "fpRetrainForFilter": "This model predates the niche-vocabulary filter. Retrain it to enable the filter.",
   "fpTempWarn": "Above 1.2 the text starts losing coherence. Verify on the bench before using this on real articles.",
   "fpTempDanger": "At 1.5 and above the output degrades into nonsense. This value is almost certainly too high.",
-  "rwErrBoilerplate": "Only navigation was found at this URL, no article. The page may render its content with JavaScript — add a Firecrawl key in settings, or paste the text manually."
+  "rwErrBoilerplate": "Only navigation was found at this URL, no article. The page may render its content with JavaScript — add a Firecrawl key in settings, or paste the text manually.",
+  "rwDownloadAs": "Download — the file is named after the page slug",
+  "rwSnippet": "Refresh snippet",
+  "rwSnippetHint": "Also rewrite the page's title and meta description, keeping the same intent, primary keyword and factual claims.",
+  "rwSnippetTitle": "Search snippet",
+  "rwSnippetTitleLabel": "Title",
+  "rwSnippetDescLabel": "Meta description",
+  "rwRepaired": "values restored",
+  "rwRepairedHint": "The first draft dropped or invented values, so a scoped second pass corrected exactly those and measurably reduced the defect count.",
+  "rwEdit": "Edit",
+  "rwEditDone": "Done"
 }
