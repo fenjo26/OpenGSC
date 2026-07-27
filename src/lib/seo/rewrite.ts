@@ -173,7 +173,14 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
   // skeleton — dropping or merging headings silently changes what the page ranks for. Spelled out
   // explicitly because a model handed a long document will otherwise "tidy" the structure.
   const structureLine = /^#{1,6}\s/m.test(source)
-    ? `Preserve the heading structure EXACTLY: same number of headings, same levels (# / ## / ###), same order. Rewrite heading text, never drop, merge, split or reorder a heading. Keep every markdown table with all its rows. `
+    ? `Preserve the heading structure EXACTLY: same number of headings, same levels (# / ## / ###), same order. Rewrite heading text, never drop, merge, split or reorder a heading. If the source starts with an H1, your output must start with an H1 too. Keep every markdown table with all its rows. `
+    : "";
+
+  // Currency notation is a house style, not a fact. The value checker treats "€30" and "30 EUR" as
+  // the same price, so a swap passes the audit — but a Greek page that suddenly mixes both reads as
+  // sloppy, and nothing else in the pipeline would catch it.
+  const currencyLine = /[€$£₽₴]/.test(source)
+    ? `Keep currency notation exactly as the source writes it (symbol stays a symbol, code stays a code) — do not convert € into EUR or back. `
     : "";
 
   // Named, explicit list of every checkable value in the source. Telling a model to "preserve all
@@ -189,7 +196,7 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
     `You are an expert SEO copywriter. Rewrite the content below so it is UNIQUE and original, ` +
     `while preserving the exact meaning, all facts, numbers, named entities, and links. ` +
     `Keep the same format as the input (HTML stays HTML, Markdown stays Markdown, plain stays plain). ` +
-    `${structureLine}${keepLine}${langLine} ${toneLine} ${bannedLine}` +
+    `${structureLine}${currencyLine}${keepLine}${langLine} ${toneLine} ${bannedLine}` +
     (variants > 1 ? `This is variant #${i + 1} — make it clearly different from the other variants. ` : "") +
     `Output ONLY the rewritten content, with no preamble, notes, or explanations.\n\n` +
     `CONTENT:\n${source}`;

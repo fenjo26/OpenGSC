@@ -214,11 +214,25 @@ export function extractMainContent(html: string): MainContent {
   const body = /<body\b[^>]*>([\s\S]*)<\/body>/i.exec(html)?.[1] ?? html;
 
   let cleaned = removeTags(body, BOILERPLATE_TAGS);
+
+  // Rescue the H1 before attribute-based removal runs.
+  //
+  // On a real page the H1 shares its hero container with the booking widget and a rating badge, so
+  // a container whose class matches /banner|widget/ takes the H1 down with it — and the rewrite
+  // comes back starting at H2. Losing the H1 is the single most damaging thing this extractor could
+  // do to a page it is supposed to help. It is captured AFTER nav/header/footer are gone, so a site
+  // name sitting in <header><h1> is not what gets picked up.
+  const heroH1 = /<h1\b[^>]*>([\s\S]*?)<\/h1>/i.exec(cleaned)?.[1];
+  const h1Text = heroH1 ? textOf(heroH1) : "";
+
   cleaned = removeBoilerplateContainers(cleaned);
   cleaned = pickContainer(cleaned);
 
   const density = linkDensity(cleaned);
-  const markdown = dropRepeats(toMarkdown(cleaned));
+  let markdown = dropRepeats(toMarkdown(cleaned));
+
+  // Re-attach only when the body genuinely lost it — never duplicate an H1 that survived.
+  if (h1Text && !/^#\s+\S/m.test(markdown)) markdown = `# ${decode(h1Text)}\n\n${markdown}`;
   const text = markdown.replace(/[#*|>-]/g, " ").replace(/\s+/g, " ").trim();
   const words = text ? text.split(/\s+/).filter(Boolean).length : 0;
 
