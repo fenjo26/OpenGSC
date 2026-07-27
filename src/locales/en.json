@@ -2301,5 +2301,6 @@
   "rwRepaired": "values restored",
   "rwRepairedHint": "The first draft dropped or invented values, so a scoped second pass corrected exactly those and measurably reduced the defect count.",
   "rwEdit": "Edit",
-  "rwEditDone": "Done"
+  "rwEditDone": "Done",
+  "rwSnippetInFile": "Edits here are saved into the downloaded file: front matter in .md, head tags in .html, a header in .txt."
 }

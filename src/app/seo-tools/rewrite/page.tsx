@@ -138,7 +138,9 @@ export default function RewritePage() {
   // downloads sit in the same folder. Variants past the first get a numeric suffix.
   const download = (i: number, s: string, format: ExportFormat) => {
     const stem = slugFromSource({ url: mode === "url" ? url.trim() : undefined, content: s });
-    const { content, mime } = renderAs(format, s, results?.[i] ? stem : "");
+    // The snippet travels with the file: front matter in .md, head tags in .html, a labelled
+    // header in .txt — so what gets handed to a developer is the whole change, not just the body.
+    const { content, mime } = renderAs(format, s, stem, snippet ? { title: snippet.title, description: snippet.description } : undefined);
     downloadFile(content, `${stem}${(results?.length ?? 0) > 1 ? `-${i + 1}` : ""}.${format}`, mime);
   };
 
@@ -230,26 +232,34 @@ export default function RewritePage() {
           <div style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)", display: "flex", alignItems: "center", gap: "8px" }}>
             <Search size={16} color="#2997ff" /> {t("rwSnippetTitle" as never)}
           </div>
+          {/* Editable, because a snippet is almost never right on the first pass and the counter
+              only helps if you can act on it without leaving the page. */}
           {([
-            ["title", t("rwSnippetTitleLabel" as never), snippet.sourceTitle, snippet.title, TITLE_MAX],
-            ["desc", t("rwSnippetDescLabel" as never), snippet.sourceDescription, snippet.description, DESC_MAX],
-          ] as const).map(([k, label, before, after, max]) => (
-            <div key={k} style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            ["title", t("rwSnippetTitleLabel" as never), snippet.sourceTitle, snippet.title, TITLE_MAX, 1],
+            ["description", t("rwSnippetDescLabel" as never), snippet.sourceDescription, snippet.description, DESC_MAX, 3],
+          ] as const).map(([key, label, before, after, max, rows]) => (
+            <div key={key} style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
               <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--color-text-secondary)" }}>{label}</div>
               {before && (
                 <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", lineHeight: 1.5, textDecoration: "line-through", opacity: 0.75 }}>{before}</div>
               )}
               <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
-                <div style={{ flex: 1, fontSize: "13px", color: "var(--color-text-primary)", lineHeight: 1.55 }}>{after || "—"}</div>
-                <span style={{ fontSize: "11px", fontWeight: 700, flexShrink: 0, color: after.length > max ? "#ff375f" : "#34c759" }}>
+                <textarea
+                  value={after}
+                  rows={rows}
+                  onChange={e => setSnippet(s => (s ? { ...s, [key]: e.target.value } : s))}
+                  style={{ ...inputStyle, flex: 1, resize: "vertical", fontFamily: "inherit", lineHeight: 1.55, padding: "8px 10px" }}
+                />
+                <span style={{ fontSize: "11px", fontWeight: 700, flexShrink: 0, paddingTop: "9px", color: after.length > max ? "#ff375f" : "#34c759" }}>
                   {after.length}/{max}
                 </span>
-                <button onClick={() => navigator.clipboard.writeText(after).catch(() => {})} style={{ ...ghostSmall }}>
+                <button onClick={() => navigator.clipboard.writeText(after).catch(() => {})} style={{ ...ghostSmall, marginTop: "4px" }}>
                   <Copy size={12} />
                 </button>
               </div>
             </div>
           ))}
+          <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>{t("rwSnippetInFile" as never)}</div>
         </div>
       )}
 

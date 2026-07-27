@@ -107,6 +107,12 @@ function extractNumbers(text: string): string[] {
   return out;
 }
 
+// Currency codes are handled by the number extractor as units, so they must not ALSO be counted as
+// identifiers. A source writing "€30" and a rewrite writing "30 EUR" state the same price — the
+// numeric comparison already canonicalizes both to "30 EUR", but without this exclusion the word
+// EUR showed up as a brand-new identifier and the panel reported an invented value in red.
+const UNIT_TOKENS = new Set(["EUR", "USD", "GBP", "RUB", "UAH", "PLN", "KR", "KM", "SEK", "NOK", "DKK", "CZK", "TRY", "CHF"]);
+
 // Identifier-shaped tokens only: ALL-CAPS runs (RTP, MSRP, SSL) and internal-caps words (iPhone,
 // PlayStation, McDonald). Deliberately NOT every capitalized word — sentence-initial capitals would
 // flood the report with false positives, and in a multilingual tool there is no reliable, cheap way
@@ -120,6 +126,7 @@ function extractIdentifiers(text: string): string[] {
     const w = m[0];
     if (w.length < 2) continue;
     const upper = (w.match(/\p{Lu}/gu) || []).length;
+    if (UNIT_TOKENS.has(w.toUpperCase())) continue;
     const isAllCaps = upper === w.replace(/\p{N}/gu, "").length && upper >= 2;
     const hasInternalCaps = /\p{Ll}\p{Lu}/u.test(w);
     if (isAllCaps || hasInternalCaps) out.push(w);

@@ -130,10 +130,46 @@ ${out.join("\n")}
 
 export type ExportFormat = "md" | "html" | "txt";
 
-export function renderAs(format: ExportFormat, md: string, title = ""): { content: string; mime: string } {
-  if (format === "html") return { content: mdToHtml(md, title), mime: "text/html;charset=utf-8" };
-  if (format === "txt") return { content: mdToPlain(md), mime: "text/plain;charset=utf-8" };
-  return { content: md, mime: "text/markdown;charset=utf-8" };
+export interface ExportSnippet { title: string; description: string }
+
+// YAML front matter needs quoting for anything containing a colon or a quote — snippet copy is full
+// of both ("Transfer Thessaloniki | Premium…", 'από 30€').
+const yamlValue = (s: string) => `"${String(s || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+
+/**
+ * Attach the refreshed snippet to the exported file in whatever form that format expects: YAML front
+ * matter for Markdown, real head tags for HTML, a labelled header for plain text.
+ *
+ * The alternative — pasting the snippet on top of the body as loose text — would push it through
+ * the value-drift check on the next edit and show up as content the source never had.
+ */
+export function renderAs(
+  format: ExportFormat,
+  md: string,
+  title = "",
+  snippet?: ExportSnippet,
+): { content: string; mime: string } {
+  const sn = snippet && (snippet.title || snippet.description) ? snippet : undefined;
+
+  if (format === "html") {
+    let html = mdToHtml(md, sn?.title || title);
+    if (sn?.description) {
+      html = html.replace("</head>", `<meta name="description" content="${esc(sn.description)}">\n</head>`);
+    }
+    return { content: html, mime: "text/html;charset=utf-8" };
+  }
+
+  if (format === "txt") {
+    const head = sn
+      ? `Title: ${sn.title}\nMeta Description: ${sn.description}\n\n${"-".repeat(40)}\n\n`
+      : "";
+    return { content: head + mdToPlain(md), mime: "text/plain;charset=utf-8" };
+  }
+
+  const front = sn
+    ? `---\ntitle: ${yamlValue(sn.title)}\ndescription: ${yamlValue(sn.description)}\n---\n\n`
+    : "";
+  return { content: front + md, mime: "text/markdown;charset=utf-8" };
 }
 
 export function downloadFile(content: string, filename: string, mime: string): void {
