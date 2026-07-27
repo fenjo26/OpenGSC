@@ -80,7 +80,12 @@ export default function RewritePage() {
       });
       const d = await res.json();
       if (!res.ok) {
-        setErr(d.error === "no_content" ? t("rwErrNoContent") : d.error === "no_ai_key" ? t("seoErrNoAiKey") : d.error === "generation_failed" ? t("rwErrGen") : String(d.error || t("rwErrGen")));
+        setErr(
+          d.error === "no_content" ? t("rwErrNoContent")
+            : d.error === "boilerplate_only" ? t("rwErrBoilerplate" as never)
+            : d.error === "no_ai_key" ? t("seoErrNoAiKey")
+            : d.error === "generation_failed" ? t("rwErrGen")
+            : String(d.error || t("rwErrGen")));
       } else {
         // Fact drift is computed server-side (it has the source in both paste and URL mode); the
         // fingerprint score is computed here, since the model never leaves the browser.

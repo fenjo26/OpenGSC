@@ -3,6 +3,8 @@
 // fall back to Firecrawl when direct fetch fails or returns too little (anti-bot pages).
 // No third-party HTML-parsing deps — pure regex extraction.
 
+import { extractMainContent } from "./readability";
+
 export interface ScrapedPage {
   url: string;
   ok: boolean;
@@ -13,7 +15,20 @@ export interface ScrapedPage {
   wordCount: number;
   hasPriceTable: boolean;
   hasFaq: boolean;
-  textSample: string; // first ~6000 chars of body text (for the LLM grounding)
+  /**
+   * First ~6000 chars of the ARTICLE BODY (not the raw document) — the LLM grounding sample.
+   * It used to be the first 6000 chars of the flattened page, which on any real site is the
+   * mega-menu, so every consumer of this field was being fed navigation. See ./readability.ts.
+   */
+  textSample: string;
+  /** Article body as Markdown with headings intact — for callers that rewrite or reproduce a page. */
+  contentMarkdown: string;
+  /** Body word count after boilerplate removal (differs from wordCount, which counts the raw page). */
+  contentWords: number;
+  /** Share of body text sitting inside links; high means navigation survived. */
+  linkDensity: number;
+  /** No article found — the page yielded chrome only. Callers must refuse rather than process it. */
+  boilerplateOnly: boolean;
   error?: string;
 }
 
@@ -65,6 +80,10 @@ export function parseHtml(url: string, html: string): ScrapedPage {
     /itemtype=["'][^"']*FAQPage/i.test(html) ||
     /frequently asked/i.test(bodyText);
 
+  // Boilerplate removal happens here, once, so every downstream consumer (Rewriter, outline MAP
+  // stage, Content Gap, fact-checking) gets article text instead of navigation.
+  const main = extractMainContent(html);
+
   return {
     url,
     ok: true,
@@ -75,7 +94,14 @@ export function parseHtml(url: string, html: string): ScrapedPage {
     wordCount,
     hasPriceTable,
     hasFaq,
-    textSample: bodyText.slice(0, 6000),
+    // Prefer extracted body whenever there is ANY of it. Falling back to the flattened document
+    // just because the article is short would put the navigation straight back into the sample —
+    // a short article is still an article, and menu text is never the better option.
+    textSample: (main.text || bodyText).slice(0, 6000),
+    contentMarkdown: main.markdown,
+    contentWords: main.words,
+    linkDensity: main.linkDensity,
+    boilerplateOnly: main.boilerplateOnly,
   };
 }
 
@@ -169,6 +195,28 @@ export async function scrapeStructure(url: string, firecrawlKey?: string): Promi
   }
 }
 
+// Decode a response using the charset the page actually declares.
+//
+// `res.text()` trusts the Content-Type header and silently falls back to UTF-8 when it is missing
+// or wrong. That mangles pages declaring their encoding only in a <meta charset> tag — still common
+// on older regional sites (windows-1251 in RU/UA, ISO-8859-7 in GR). Mojibake here is invisible
+// downstream: the rewrite still "succeeds", it just produces garbled text.
+async function decodeResponse(res: Response): Promise<string> {
+  const buf = await res.arrayBuffer();
+  const header = /charset=["']?([\w-]+)/i.exec(res.headers.get("content-type") || "")?.[1];
+  // Sniff the first 2KB as Latin-1 to read the meta tag without knowing the final encoding yet.
+  const head = new TextDecoder("latin1").decode(buf.slice(0, 2048));
+  const meta =
+    /<meta[^>]+charset=["']?([\w-]+)/i.exec(head)?.[1] ||
+    /<meta[^>]+content=["'][^"']*charset=([\w-]+)/i.exec(head)?.[1];
+  const charset = (header || meta || "utf-8").toLowerCase();
+  try {
+    return new TextDecoder(charset).decode(buf);
+  } catch {
+    return new TextDecoder("utf-8").decode(buf); // unknown label — UTF-8 is the safe default
+  }
+}
+
 async function directFetch(url: string): Promise<ScrapedPage> {
   const res = await fetch(url, {
     headers: {
@@ -180,7 +228,7 @@ async function directFetch(url: string): Promise<ScrapedPage> {
     redirect: "follow",
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const html = await res.text();
+  const html = await decodeResponse(res);
   const parsed = parseHtml(url, html);
   // Heuristic: anti-bot / empty pages → force fallback
   if (parsed.wordCount < 80 && parsed.headings.length === 0) {
@@ -212,7 +260,12 @@ async function firecrawlFetch(url: string, apiKey: string): Promise<ScrapedPage>
     wordCount: md ? md.split(/\s+/).length : 0,
     hasPriceTable: /\|.*(price|cost|€|\$|£|руб)/i.test(md),
     hasFaq: /faq|frequently asked/i.test(md),
+    // Firecrawl was asked for onlyMainContent, so its markdown is already the article body.
     textSample: md.slice(0, 6000),
+    contentMarkdown: md,
+    contentWords: md ? md.split(/\s+/).filter(Boolean).length : 0,
+    linkDensity: 0,
+    boilerplateOnly: md.split(/\s+/).filter(Boolean).length < 120,
   };
   parsed.via = "firecrawl";
   parsed.title = parsed.title || meta.title || "";
@@ -239,7 +292,8 @@ function failed(url: string, error: string): ScrapedPage {
   return {
     url, ok: false, via: "failed", title: "", metaDescription: "",
     headings: [], wordCount: 0, hasPriceTable: false, hasFaq: false,
-    textSample: "", error,
+    textSample: "", contentMarkdown: "", contentWords: 0, linkDensity: 1,
+    boilerplateOnly: true, error,
   };
 }
 

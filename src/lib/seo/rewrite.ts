@@ -101,7 +101,11 @@ async function pool<T, R>(items: T[], n: number, fn: (t: T, i: number) => Promis
   return out;
 }
 
+// Pasted text and scraped pages get different budgets. A full landing page runs well past 14k
+// characters, and truncating it there silently dropped everything below the fold — the rewrite came
+// back "complete" while covering only the top third of the page.
 const MAX_CHARS = 14_000;
+const MAX_CHARS_URL = 40_000;
 
 export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
   const provider = String(b.aiProvider ?? "anthropic");
@@ -111,16 +115,27 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
   // Resolve source content: pasted text, or scrape the URL.
   let text = (b.text ?? "").trim();
   let title = "";
+  let fromUrl = false;
   if (!text && b.url) {
+    fromUrl = true;
     try {
       const pages = await scrapeMany([b.url], b.firecrawlKey || undefined, 1);
       const p = pages[0];
-      if (p) { text = String(p.textSample || "").trim(); title = p.title || ""; }
+      if (p) {
+        // Refuse a page that yielded navigation instead of an article. Rewriting a menu produces
+        // fluent, confident, worthless output — a failure that reads as success, which is exactly
+        // the kind a tool must not hand back to the user.
+        if (p.ok && p.boilerplateOnly) return { ok: false, error: "boilerplate_only" };
+        // Markdown, not the flat sample: headings and tables are structure the rewrite must keep.
+        text = String(p.contentMarkdown || p.textSample || "").trim();
+        title = p.title || "";
+      }
     } catch { /* fall through to no_content */ }
   }
   if (!text) return { ok: false, error: "no_content" };
-  const truncated = text.length > MAX_CHARS;
-  const source = truncated ? text.slice(0, MAX_CHARS) : text;
+  const cap = fromUrl ? MAX_CHARS_URL : MAX_CHARS;
+  const truncated = text.length > cap;
+  const source = truncated ? text.slice(0, cap) : text;
 
   const variants = Math.min(5, Math.max(1, Number(b.variants) || 1));
   const langName = (b.language || "").trim();
@@ -138,11 +153,18 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
     ? `Do not use these words or their inflected forms anywhere in the output: ${banned.join(", ")}. Express the same ideas with different wording. `
     : "";
 
+  // Scraped pages arrive as Markdown with the heading tree intact, and that tree is the page's SEO
+  // skeleton — dropping or merging headings silently changes what the page ranks for. Spelled out
+  // explicitly because a model handed a long document will otherwise "tidy" the structure.
+  const structureLine = /^#{1,6}\s/m.test(source)
+    ? `Preserve the heading structure EXACTLY: same number of headings, same levels (# / ## / ###), same order. Rewrite heading text, never drop, merge, split or reorder a heading. Keep every markdown table with all its rows. `
+    : "";
+
   const basePrompt = (i: number) =>
     `You are an expert SEO copywriter. Rewrite the content below so it is UNIQUE and original, ` +
     `while preserving the exact meaning, all facts, numbers, named entities, and links. ` +
     `Keep the same format as the input (HTML stays HTML, Markdown stays Markdown, plain stays plain). ` +
-    `${langLine} ${toneLine} ${bannedLine}` +
+    `${structureLine}${langLine} ${toneLine} ${bannedLine}` +
     (variants > 1 ? `This is variant #${i + 1} — make it clearly different from the other variants. ` : "") +
     `Output ONLY the rewritten content, with no preamble, notes, or explanations.\n\n` +
     `CONTENT:\n${source}`;
