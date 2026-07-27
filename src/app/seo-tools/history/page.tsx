@@ -2,10 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Eye, Trash2, FileText, ScrollText, BarChart3, LayoutTemplate, Loader2, AlertTriangle, X, Boxes, Bot } from "lucide-react";
+import { Search, Eye, Trash2, FileText, ScrollText, BarChart3, LayoutTemplate, Loader2, AlertTriangle, X, Boxes, Bot, Fingerprint } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { loadHistory, removeHistory, clearHistory, HistoryItem, HistoryType } from "@/lib/seo/history";
 import { listJobs, importJob, deleteJob, clearFailedJobs, SeoJobRec } from "@/lib/seo/jobs";
+import { scoreText } from "@/lib/seo/aidetect";
+import { getActiveModel, type StoredModel } from "@/lib/seo/aidetectStore";
 
 const TYPE_META: Record<HistoryType, { labelKey: string; color: string; icon: any }> = {
   outline: { labelKey: "seoBadgeOutline", color: "#2997ff", icon: FileText },
@@ -25,6 +27,23 @@ export default function HistoryPage() {
   const [jobs, setJobs] = useState<SeoJobRec[]>([]);
   const [filter, setFilter] = useState<Filter>("all");
   const [q, setQ] = useState("");
+  const [fp, setFp] = useState<StoredModel | null>(null);
+  useEffect(() => { setFp(getActiveModel()); }, []);
+
+  // Score every stored article against the active fingerprint model. Scoring is local arithmetic
+  // over a token map, so doing it for the whole list is cheap — but it's memoised on the model and
+  // the item list anyway, since History can hold 40 full articles.
+  const scores = useMemo(() => {
+    if (!fp) return {} as Record<string, number>;
+    const out: Record<string, number> = {};
+    for (const it of items) {
+      if (it.type === "text" && typeof it.data === "string" && it.data.length > 200) {
+        try { out[it.id] = scoreText(it.data, fp.model).avgScore; } catch { /* skip unscoreable */ }
+      }
+    }
+    return out;
+  }, [fp, items]);
+  const sColor = (s: number) => (s < 15 ? "#34c759" : s < 40 ? "#ff9f0a" : "#ff375f");
 
   // Pull server-side background jobs: import finished ones into local History, keep showing
   // the ones still processing/errored, and poll while anything is in progress.
@@ -153,6 +172,11 @@ export default function HistoryPage() {
                   <Icon size={12} /> {t(m.labelKey as any)}
                 </span>
                 <span style={{ flex: 1, minWidth: 0, fontSize: "14px", color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.keyword}</span>
+                {scores[item.id] !== undefined && (
+                  <span title={t("hmProxyWarning" as any)} style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "11px", fontWeight: 700, padding: "2px 8px", borderRadius: "20px", flexShrink: 0, color: sColor(scores[item.id]), background: `${sColor(scores[item.id])}1f` }}>
+                    <Fingerprint size={11} /> {scores[item.id]}%
+                  </span>
+                )}
                 <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>{new Date(item.createdAt).toLocaleDateString()}</span>
                 <button onClick={() => view(item)} title={t("seoEdit")} style={iconBtn}><Eye size={15} /></button>
                 <button onClick={() => remove(item.id)} title={t("seoDelete")} style={{ ...iconBtn, color: "var(--color-accent-red)" }}><Trash2 size={14} /></button>

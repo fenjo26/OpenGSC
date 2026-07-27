@@ -11,12 +11,14 @@ import { LANGUAGES } from "@/lib/seo/regions";
 import { loadHistory, HistoryItem } from "@/lib/seo/history";
 import { startJob, importJob } from "@/lib/seo/jobs";
 import SeoJobProgress from "@/components/SeoJobProgress";
+import { FingerprintControls, useFingerprintControls } from "@/components/FingerprintControls";
 
 const card = "panel";
 
 export default function TextGenPage() {
   const { t } = useLanguage();
   const router = useRouter();
+  const fpc = useFingerprintControls();
 
   const [policyName, setPolicyName] = useState("");
   const [tone, setTone] = useState("");
@@ -92,6 +94,7 @@ export default function TextGenPage() {
       sourceMode, serpProvider: getSerpCreds().provider, serpKey: getSerpCreds().apiKey || undefined,
       firecrawlKey: getFirecrawlKey() || undefined, scrapeCount: getFactSourceCount(), hardRedact: getHardRedact(),
       aiProvider: provider, aiApiKey: apiKey, model: model || undefined, aiBaseUrl: baseUrl || undefined,
+      ...fpc.payload(),
     }, { tone: tone || (policy as any)?.voice?.toneOfVoice || "", promptType: promptType === "custom" ? t("seoPromptCustom") : t("seoPromptService"), outlineId: outline.id });
     setLoading(false);
     if (error || !jid) { setErr(error || t("seoErrText")); return; }
@@ -235,9 +238,12 @@ export default function TextGenPage() {
       {err && <div className={card} style={{ borderColor: "rgba(255,69,58,0.35)", background: "rgba(255,69,58,0.06)", color: "var(--color-accent-red)", fontSize: "13px", display: "flex", gap: "8px", alignItems: "center" }}><AlertTriangle size={16} /> {err}</div>}
 
       {!jobId && (
-        <button onClick={generate} disabled={loading || !structureId} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", padding: "13px", borderRadius: "10px", border: "none", background: "var(--color-accent-purple)", color: "#fff", fontSize: "14px", fontWeight: 600, cursor: structureId ? "pointer" : "not-allowed", opacity: structureId ? 1 : 0.5 }}>
-          {loading ? <Loader2 size={16} className="spin" /> : <Wand2 size={16} />} {t("seoGenerate")}
-        </button>
+        <div className={card} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <FingerprintControls {...fpc} />
+          <button onClick={generate} disabled={loading || !structureId} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", padding: "13px", borderRadius: "10px", border: "none", background: "var(--color-accent-purple)", color: "#fff", fontSize: "14px", fontWeight: 600, cursor: structureId ? "pointer" : "not-allowed", opacity: structureId ? 1 : 0.5 }}>
+            {loading ? <Loader2 size={16} className="spin" /> : <Wand2 size={16} />} {t("seoGenerate")}
+          </button>
+        </div>
       )}
 
 

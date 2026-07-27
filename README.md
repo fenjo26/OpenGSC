@@ -69,6 +69,7 @@ On top of that dashboard, OpenGSC ships two things most GSC tools don't: a full 
   - [Site Health Checks](#site-health-checks)
   - [Indexing Status Tools](#indexing-status-tools)
 - [🧠 AI SEO Content Suite (`/seo-tools`)](#-ai-seo-content-suite-seo-tools)
+  - Keyword Clustering · Outline Generator · Text Generator · Content Rewriter · **AI-Fingerprint Lab** · Googlebot View · Content Gap · Landing Builder · GEO Audit · Citations · Link Monitor · Editorial Policy · History
 - [🕸️ Private Indexer Network](#-private-indexer-network)
 - [Requirements](#requirements)
 - [Installation](#-installation)
@@ -222,13 +223,36 @@ Optional: a **Casino RAG** toggle grounds igaming-niche outlines (slots, casino 
 Takes any outline from History and writes the complete article as a background job (close the tab, come back later). Long outlines are written in small chunks (3–5 sections per model call, run in parallel) rather than one giant prompt — this keeps prose quality consistent instead of degrading into bullet-point sludge halfway through a 3,000-word article. Supports tone/persona, an editorial Policy, a table of contents, and three source-grounding modes: off, facts-only (real numbers, no competitor names/links), or cited (real numbers with inline source links, rate-limited to one link per 1-2 paragraphs).
 
 A **volume guard** keeps the final word count within your target (±15%): expand thin drafts, iteratively trim bloated ones — and it runs as the *very last* step, after fact-checking, so a fact-correction pass can never silently re-inflate an article that was already trimmed to length. Failures surface a real reason (e.g. a provider's content-policy rejection) instead of a bare "generation failed."
+
+Optional **sampling controls** (both off by default, so existing runs are unchanged): a **temperature** field — warned above 1.2 and flagged red at 1.5, where output degrades into nonsense — and a **ban-markers** toggle that injects the vocabulary from your AI-Fingerprint model as forbidden words. Because chunks are separate model calls, the temperature is nudged per chunk by a small deterministic offset, so the finished article isn't the product of one uniform sampling pass. On the Outline step temperature is capped at 0.8 and the parse-retry drops to 0 — outlines must return valid JSON, and sampling randomness is exactly what breaks that.
 </details>
 
 <details open>
 <summary><b>Content Rewriter</b> — refresh & de-duplicate pages into unique variants</summary>
 <br/>
 
-Paste text or a **page URL** (auto-scraped) and get **N unique variants** (1–5) that keep the exact meaning, facts, numbers, entities, and links while rewording everything — same format in, same format out (HTML→HTML, Markdown→Markdown). Each variant shows a **uniqueness score** (word-trigram similarity vs. the source) and a word count, with copy / download. Optional target **language** and **tone**, and a **"mask AI patterns"** toggle that strips common machine tells (em-dashes, "furthermore", "it is important to note", unicode bullets…) for a more natural, human read. Runs on **your own** multi-provider AI (Anthropic / OpenAI / Kimi / …). Wired into **Content Decay**: every decaying page has a one-click **Rewrite** action that opens the tool with its URL prefilled — spot a page losing traffic, refresh it in seconds. Built for large affiliate networks where duplicate content across sites is a real risk.
+Paste text or a **page URL** (auto-scraped) and get **N unique variants** (1–5) that keep the exact meaning, facts, numbers, entities, and links while rewording everything — same format in, same format out (HTML→HTML, Markdown→Markdown). Each variant shows a **uniqueness score** (word-trigram similarity vs. the source), a word count, and — when a fingerprint model is trained — an **AI score**, with copy / download. Optional target **language**, **tone**, **temperature**, and a **ban-markers** toggle that forbids the AI-leaning vocabulary from your fingerprint model. A **"mask AI patterns"** toggle strips common machine tells (em-dashes, "furthermore", "it is important to note", unicode bullets…) — scoped honestly at readability for a human editor, not as anti-detection: substituting phrases in a finished text does not move a statistical detector.
+
+Every variant is checked for **fact drift** — a deterministic diff of numbers, amounts, percentages and identifier-shaped names (RTP, MegaWays, iPhone) between source and rewrite. Values that **appeared** but weren't in the source are flagged red (an invented number is what ships and gets published); values that were **dropped** are flagged amber. Currencies are normalized, so `$50`, `50 USD` and `50 долларов` count as the same amount and locale digit separators never register as a false alarm. No model call, no cost. It verifies values, not claims — and says so.
+
+Runs on **your own** multi-provider AI (Anthropic / OpenAI / Kimi / …). Wired into **Content Decay**: every decaying page has a one-click **Rewrite** action that opens the tool with its URL prefilled — spot a page losing traffic, refresh it in seconds. Built for large affiliate networks where duplicate content across sites is a real risk.
+</details>
+
+<details open>
+<summary><b>AI-Fingerprint Lab</b> — measure how machine-written your text reads, and fix it at the source</summary>
+<br/>
+
+Modern statistical AI detectors don't read style — they score the **token frequency distribution over ~300-word windows**. That makes the signal reproducible locally, so this tool trains a bag-of-words discriminator **on your own two corpora**: competitor pages pulled from the SERP as the human reference, your own generation History as the machine reference. No third-party detector API, no subscription, no text leaving your server. Pure TypeScript, zero dependencies, works in any alphabet.
+
+Three tabs:
+
+- **Analyze** — score any text or a saved article: an averaged score, a **per-window heatmap** (an average hides a piece that's half clean and half obvious), the **marker vocabulary** that actually moved the score, and the human-leaning words your text never uses. A **Humanize** action rewrites the text with those markers banned, scores three variants, and shows the before → after delta.
+- **Corpus** — harvest the human reference by keyword or URL list, train, and keep several named models. A model is bound to its niche and language, so train one per niche; the UI reports a held-out **separation** score so a weak model is visibly weak rather than quietly wrong.
+- **Bench** — run the same prompt across your configured models and temperatures and rank the results. This is the point of the tool: model choice dominates every prompt-side trick, and published model comparisons go stale within months, so the useful move is measuring the models *you* hold keys for.
+
+The score is the least interesting output. The **marker list is the payload**: exporting it bans that vocabulary at generation time, which is where a word list actually changes anything — reworking a finished text barely moves a statistical detector, and the tool says so, in context, when a rewrite underdelivers.
+
+Two safeguards, because this vocabulary goes straight into a generation prompt. Words used by **40%+ of competitor pages** are treated as niche terminology and never suggested — banning terms the whole niche uses doesn't make text human, it makes the model talk around words the article needs. And the full list is **reviewable before it applies**: click any word to keep it allowed, and the exclusion sticks to that model across retraining.
 </details>
 
 <details open>
@@ -277,14 +301,16 @@ Watch any set of competitor brand domains and pull their **fresh quality backlin
 <summary><b>Editorial Policy</b> — one style guide, applied everywhere</summary>
 <br/>
 
-Define — or have AI draft, grounded in your own brand pages — a reusable editorial policy: brand description and values, audience profile, voice/tone/formality, structural rules (headings, paragraph length, lists vs. tables), quality bar (citation style, E-E-A-T notes, fact-checking behavior), and hard restrictions (banned words/topics, compliance rules like "never fabricate a license — leave a placeholder instead"). Save up to 10, mark one active, and it's applied automatically across Outline, Text, and Landing generation.
+Define — or have AI draft, grounded in your own brand pages — a reusable editorial policy: brand description and values, audience profile, voice/tone/formality, structural rules (headings, paragraph length, lists vs. tables), quality bar (citation style, E-E-A-T notes, fact-checking behavior), and hard restrictions (banned words/topics, compliance rules like "never fabricate a license — leave a placeholder instead"). Save up to 10, mark one active, and it's applied automatically across Outline, Text, and Landing generation. The AI-Fingerprint Lab can push its marker vocabulary straight into a policy's banned-words list.
+
+One thing these prompts deliberately **do not** contain: instructions on *how* to write ("sound natural", "vary your sentence length", "avoid AI clichés"). A/B testing shows such directives backfire — the model applies them as formal rules, which narrows its output distribution and makes the text read *more* machine-typical, not less. Naming concrete words to avoid carries none of that failure mode, which is why the banned-word list is the mechanism here.
 </details>
 
 <details open>
 <summary><b>History</b> — every generation, resumable</summary>
 <br/>
 
-A unified log across Cluster, Outline, Text, Analysis, and Landing runs. Generation jobs run server-side and fire-and-forget, so you can close the tab; History polls for completed jobs, auto-imports them, and auto-fails anything stuck "processing" for more than 20 minutes so nothing spins forever. History — along with your API keys, provider/model choices, and Editorial Policies — is **automatically backed up server-side**, so clearing browser data or switching browsers no longer loses your generations or settings: everything is restored on the next page load.
+A unified log across Cluster, Outline, Text, Analysis, and Landing runs. Generation jobs run server-side and fire-and-forget, so you can close the tab; History polls for completed jobs, auto-imports them, and auto-fails anything stuck "processing" for more than 20 minutes so nothing spins forever. When an AI-Fingerprint model is active, every stored article carries its **AI score** right in the list, so you can see which generations read machine-written without opening them. History — along with your API keys, provider/model choices, and Editorial Policies — is **automatically backed up server-side**, so clearing browser data or switching browsers no longer loses your generations or settings: everything is restored on the next page load.
 </details>
 
 <br/>
@@ -579,7 +605,8 @@ src/
       indexing/                  # Sitemap sync/inspection + 2index.ninja / NeuralIndexer / XML River
       indexer/                   # Doorway domains, queue, dictionary, stats, logs, webhook
       seo/                       # Outline, text, analysis, landing, geo, citations, policy,
-                                  # background jobs, images, keyword data, model lists
+                                  # background jobs, images, keyword data, model lists,
+                                  # aidetect/ (fingerprint corpus harvest + model bench probe)
   lib/
     auth.ts                      # NextAuth configuration
     prisma.ts                    # Prisma client
@@ -589,6 +616,9 @@ src/
       prompts.ts                 # All LLM prompt builders
       rag.ts                     # Casino RAG knowledge base lookups
       serp.ts / scrape.ts        # SERP + competitor scraping providers
+      aidetect.ts                # Local AI-fingerprint classifier (bag-of-words, no LLM, no deps)
+      aidetectStore.ts           # Trained models + per-model ban-list edits (localStorage)
+      factDrift.ts               # Deterministic number/identifier diff for rewrites
       history.ts / jobs.ts       # Client-side History + server-side background jobs
     PrivacyContext.tsx / ThemeContext.tsx / LayoutContext.tsx
   components/

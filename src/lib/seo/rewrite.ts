@@ -5,6 +5,7 @@
 
 import { fetchLLM } from "@/lib/llm";
 import { scrapeMany } from "@/lib/seo/scrape";
+import { factDrift, type FactDrift } from "@/lib/seo/factDrift";
 
 export interface RewriteBody {
   text?: string;
@@ -13,6 +14,8 @@ export interface RewriteBody {
   language?: string;        // target language NAME (e.g. "Greek"); empty = keep source language
   tone?: string;            // optional tone hint
   maskAI?: boolean;         // strip common AI patterns (default true)
+  bannedWords?: string[];   // domain vocabulary to avoid AT GENERATION TIME (see note below)
+  temperature?: number;     // sampling temperature; undefined = provider default
   aiProvider?: string;
   aiApiKey?: string;
   model?: string;
@@ -20,14 +23,21 @@ export interface RewriteBody {
   firecrawlKey?: string;
 }
 
-export interface RewriteVariant { content: string; uniqueness: number; words: number }
+// `drift` is computed here rather than in the browser because in URL mode the source text only
+// exists on the server — the client never sees what was scraped, so it could not check it.
+export interface RewriteVariant { content: string; uniqueness: number; words: number; drift: FactDrift }
 export interface RewriteResult {
   ok: boolean;
   error?: string;
   data?: { sourceChars: number; sourceWords: number; title?: string; variants: RewriteVariant[] };
 }
 
-// ─── AI-pattern masking (makes rewritten text read less "machine-made") ─────────
+// ─── AI-pattern masking ─────────────────────────────────────────────────────────
+// Scope note, so nobody mistakes this for an anti-detection measure: substituting phrases in a
+// FINISHED text does not move a statistical detector — those score the whole token distribution of
+// a ~300-word window, and swapping a dozen connectives barely dents it. What this pass genuinely
+// buys is readability: it strips the tics that make a draft feel machine-written to a human editor.
+// The same vocabulary is far more effective supplied as `bannedWords` at generation time.
 const PHRASE_MAP: [RegExp, string][] = [
   [/\bmoreover\b/gi, "also"],
   [/\bfurthermore\b/gi, "plus"],
@@ -117,24 +127,34 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
   const langLine = langName ? `Write the rewrite in ${langName}.` : `Write in the SAME language as the source.`;
   const toneLine = b.tone ? `Tone: ${b.tone}.` : "";
 
+  // Vocabulary constraint, when the caller supplies one from the local fingerprint model.
+  // A CONCRETE list is the point: it removes specific high-signal tokens without telling the model
+  // anything about how to write. Vague style directives ("write naturally", "vary your sentence
+  // length", "sound human") do the opposite of what they promise — the model applies them as
+  // explicit rules, which narrows its output distribution and makes the text MORE machine-typical,
+  // not less. That is why no such instruction appears in this prompt.
+  const banned = (b.bannedWords || []).map(w => String(w).trim()).filter(Boolean).slice(0, 80);
+  const bannedLine = banned.length
+    ? `Do not use these words or their inflected forms anywhere in the output: ${banned.join(", ")}. Express the same ideas with different wording. `
+    : "";
+
   const basePrompt = (i: number) =>
     `You are an expert SEO copywriter. Rewrite the content below so it is UNIQUE and original, ` +
     `while preserving the exact meaning, all facts, numbers, named entities, and links. ` +
     `Keep the same format as the input (HTML stays HTML, Markdown stays Markdown, plain stays plain). ` +
-    `${langLine} ${toneLine} ` +
-    `Vary sentence structure and word choice, write in a natural human style, and avoid AI clichés and filler. ` +
+    `${langLine} ${toneLine} ${bannedLine}` +
     (variants > 1 ? `This is variant #${i + 1} — make it clearly different from the other variants. ` : "") +
     `Output ONLY the rewritten content, with no preamble, notes, or explanations.\n\n` +
     `CONTENT:\n${source}`;
 
   const results = await pool(Array.from({ length: variants }), 2, async (_x, i) => {
-    const raw = await fetchLLM(basePrompt(i), provider, apiKey, 8000, b.model || undefined, b.aiBaseUrl || undefined);
+    const raw = await fetchLLM(basePrompt(i), provider, apiKey, 8000, b.model || undefined, b.aiBaseUrl || undefined, b.temperature);
     let content = (raw ?? "").trim();
     // Strip a leading code fence the model sometimes wraps around HTML/MD.
     content = content.replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/i, "").trim();
     if (!content) return null;
     if (b.maskAI !== false) content = maskAIPatterns(content);
-    return { content, uniqueness: uniquenessPct(source, content), words: wordCount(content) };
+    return { content, uniqueness: uniquenessPct(source, content), words: wordCount(content), drift: factDrift(source, content) };
   });
 
   const variantsOut = results.filter((r): r is RewriteVariant => !!r);

@@ -2,24 +2,31 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { RefreshCw, Loader2, AlertTriangle, Copy, Check, Download, Sparkles, Link2, FileText } from "lucide-react";
+import { RefreshCw, Loader2, AlertTriangle, Copy, Check, Download, Sparkles, Link2, FileText, Fingerprint } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { getTaskCreds, getFirecrawlKey } from "@/lib/seo/keys";
 import { LANGUAGES } from "@/lib/seo/regions";
 import { TONES } from "@/lib/seo/tones";
+import { scoreText } from "@/lib/seo/aidetect";
+import { getActiveModel, effectiveBannedWords, type StoredModel } from "@/lib/seo/aidetectStore";
+import { factDrift, type FactDrift } from "@/lib/seo/factDrift";
+import FactDriftPanel from "@/components/FactDriftPanel";
 
-type Variant = { content: string; uniqueness: number; words: number };
+type Variant = { content: string; uniqueness: number; words: number; aiScore?: number; drift?: FactDrift };
 
 const card = "panel";
 const inputStyle: React.CSSProperties = { width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-bg)", color: "var(--color-text-primary)", fontSize: "13px", outline: "none", boxSizing: "border-box" };
 
 function uColor(u: number) { return u >= 80 ? "#34c759" : u >= 60 ? "#ff9f0a" : "#ff375f"; }
+function aColor(s: number) { return s < 15 ? "#34c759" : s < 40 ? "#ff9f0a" : "#ff375f"; }
 
 export default function RewritePage() {
   const { t } = useLanguage();
   const [mounted, setMounted] = useState(false);
+  const [fp, setFp] = useState<StoredModel | null>(null);
   useEffect(() => {
     setMounted(true);
+    setFp(getActiveModel());
     // Prefill from ?url= (e.g. "Rewrite" launched from Content Decay).
     try {
       const u = new URLSearchParams(window.location.search).get("url");
@@ -34,6 +41,9 @@ export default function RewritePage() {
   const [language, setLanguage] = useState("");   // "" = keep source
   const [tone, setTone] = useState("");
   const [maskAI, setMaskAI] = useState(true);
+  // Off by default: both options change the request in ways an existing user did not ask for.
+  const [useBanned, setUseBanned] = useState(false);
+  const [temp, setTemp] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [results, setResults] = useState<Variant[] | null>(null);
@@ -60,6 +70,10 @@ export default function RewritePage() {
           variants, maskAI,
           language: langObj?.label || "",
           tone: toneObj?.prompt || "",
+          // Concrete vocabulary from the fingerprint model — a constraint the model can act on,
+          // unlike a vague "write more naturally" directive.
+          bannedWords: useBanned && fp ? effectiveBannedWords(fp) : undefined,
+          temperature: temp.trim() === "" ? undefined : Number(temp),
           aiProvider: creds.provider, aiApiKey: creds.apiKey, model: creds.model || undefined, aiBaseUrl: creds.baseUrl || undefined,
           firecrawlKey: getFirecrawlKey() || undefined,
         }),
@@ -68,7 +82,10 @@ export default function RewritePage() {
       if (!res.ok) {
         setErr(d.error === "no_content" ? t("rwErrNoContent") : d.error === "no_ai_key" ? t("seoErrNoAiKey") : d.error === "generation_failed" ? t("rwErrGen") : String(d.error || t("rwErrGen")));
       } else {
-        setResults(d.variants || []);
+        // Fact drift is computed server-side (it has the source in both paste and URL mode); the
+        // fingerprint score is computed here, since the model never leaves the browser.
+        const vs: Variant[] = d.variants || [];
+        setResults(vs.map(v => ({ ...v, aiScore: fp ? scoreText(v.content, fp.model).avgScore : undefined })));
       }
     } catch (e: any) { setErr(String(e?.message ?? e)); }
     setLoading(false);
@@ -128,10 +145,24 @@ export default function RewritePage() {
           </label>
         </div>
 
-        <label title={t("rwMaskHint")} style={{ display: "inline-flex", alignItems: "center", gap: "8px", fontSize: "13px", color: maskAI ? "#8B5CF6" : "var(--color-text-secondary)", cursor: "pointer", width: "fit-content" }}>
-          <input type="checkbox" checked={maskAI} onChange={e => setMaskAI(e.target.checked)} style={{ accentColor: "#8B5CF6" }} />
-          <Sparkles size={14} /> {t("rwMask")}
-        </label>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", alignItems: "center" }}>
+          <label title={t("rwMaskHint")} style={{ display: "inline-flex", alignItems: "center", gap: "8px", fontSize: "13px", color: maskAI ? "#8B5CF6" : "var(--color-text-secondary)", cursor: "pointer" }}>
+            <input type="checkbox" checked={maskAI} onChange={e => setMaskAI(e.target.checked)} style={{ accentColor: "#8B5CF6" }} />
+            <Sparkles size={14} /> {t("rwMask")}
+          </label>
+
+          <label title={fp ? t("rwBannedHint" as any) : t("hmNoModelHint" as any)}
+            style={{ display: "inline-flex", alignItems: "center", gap: "8px", fontSize: "13px", cursor: fp ? "pointer" : "default", opacity: fp ? 1 : 0.5, color: useBanned && fp ? "#ff6482" : "var(--color-text-secondary)" }}>
+            <input type="checkbox" disabled={!fp} checked={useBanned && !!fp} onChange={e => setUseBanned(e.target.checked)} style={{ accentColor: "#ff6482" }} />
+            <Fingerprint size={14} /> {t("rwBanned" as any)}{fp ? ` · ${fp.name}` : ""}
+          </label>
+
+          <label title={t("rwTempHint" as any)} style={{ display: "inline-flex", alignItems: "center", gap: "7px", fontSize: "13px", color: "var(--color-text-secondary)" }}>
+            {t("rwTemp" as any)}
+            <input value={temp} onChange={e => setTemp(e.target.value)} placeholder={t("rwTempAuto" as any)}
+              style={{ ...inputStyle, width: "92px", padding: "6px 9px" }} />
+          </label>
+        </div>
 
         {err && <div style={{ fontSize: "12px", color: "#f87171", display: "flex", alignItems: "center", gap: "6px" }}><AlertTriangle size={14} /> {err}</div>}
 
@@ -146,6 +177,11 @@ export default function RewritePage() {
           <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
             <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--color-text-primary)" }}>{t("rwVariant")} {i + 1}</div>
             <span title={t("rwUniqueHint")} style={{ fontSize: "11px", fontWeight: 700, padding: "2px 9px", borderRadius: "20px", color: uColor(v.uniqueness), background: `${uColor(v.uniqueness)}1f` }}>{v.uniqueness}% {t("rwUnique")}</span>
+            {v.aiScore !== undefined && (
+              <span title={t("hmProxyWarning" as any)} style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "11px", fontWeight: 700, padding: "2px 9px", borderRadius: "20px", color: aColor(v.aiScore), background: `${aColor(v.aiScore)}1f` }}>
+                <Fingerprint size={11} /> {v.aiScore}% {t("hmBenchScoreCol" as any)}
+              </span>
+            )}
             <span style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>{v.words} {t("rwWords")}</span>
             <span style={{ flex: 1 }} />
             <button onClick={() => copy(i, v.content)} style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "5px 11px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-secondary)", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>
@@ -155,6 +191,7 @@ export default function RewritePage() {
               <Download size={13} /> .txt
             </button>
           </div>
+          {v.drift && <FactDriftPanel drift={v.drift} />}
           <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "inherit", fontSize: "13px", lineHeight: 1.7, color: "var(--color-text-primary)", background: "var(--color-bg)", border: "1px solid var(--color-border)", borderRadius: "10px", padding: "14px 16px", maxHeight: "460px", overflow: "auto" }}>{v.content}</pre>
         </div>
       ))}

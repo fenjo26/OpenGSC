@@ -18,6 +18,7 @@ import { TONES, toneToPrompt } from "@/lib/seo/tones";
 import { OUTLINE_TEMPLATES, TEMPLATE_GROUPS } from "@/lib/seo/templates";
 import { addHistory, takeView } from "@/lib/seo/history";
 import { startJob, importJob } from "@/lib/seo/jobs";
+import { FingerprintControls, useFingerprintControls } from "@/components/FingerprintControls";
 
 const card = "panel";
 const inputStyle = "tool-input";
@@ -58,6 +59,7 @@ type Scraped = { url: string; ok: boolean; via: string; title: string; metaDescr
 export default function OutlinePage() {
   const { t } = useLanguage();
   const router = useRouter();
+  const fpc = useFingerprintControls();
   const [keyword, setKeyword] = useState("");
   const [country, setCountry] = useState("us");
   const [language, setLanguage] = useState("en");
@@ -274,6 +276,7 @@ export default function OutlinePage() {
         customTemplate: customTemplate.trim() || undefined,
         structureRules: structureRules.trim() || undefined,
         useRag: ragOn && ragAvailable,
+        ...fpc.payload(),
       });
       if (error || !jid) { setErr(error === "parse_failed" ? t("seoErrParseJson") : (error || t("seoErrGen"))); setLoading(""); return; }
       setJobId(jid); // background job started — render live progress; user can leave
@@ -716,7 +719,9 @@ export default function OutlinePage() {
               <textarea className={inputStyle} style={{ minHeight: "70px", resize: "vertical", fontSize: "13px" }} value={structureRules} onChange={e => setStructureRules(e.target.value)} placeholder={t("seoCfgStructureRulesPh")} />
             </div>
 
-            <button onClick={generate} disabled={loading === "outline"} style={{ ...btnDark, width: "100%", justifyContent: "center", marginTop: "16px", padding: "12px" }}>
+            <div style={{ marginTop: "16px" }}><FingerprintControls {...fpc} /></div>
+
+            <button onClick={generate} disabled={loading === "outline"} style={{ ...btnDark, width: "100%", justifyContent: "center", marginTop: "12px", padding: "12px" }}>
               {loading === "outline" ? <Loader2 size={15} className="spin" /> : <Wand2 size={15} />}
               {t("seoGenStructure")}
             </button>

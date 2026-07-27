@@ -162,7 +162,14 @@ has been a real source of bugs:
 ### 3.3 Multi-provider LLM client (`src/lib/llm.ts`)
 
 `fetchLLM()` (and `fetchLLMDetailed()`, which also returns the provider's raw error) is the single
-call surface used everywhere in `generate.ts`. It normalizes seven providers (Anthropic, Z.AI,
+call surface used everywhere in `generate.ts`. `temperature` is an optional trailing parameter and
+is **omitted from the request body when undefined**, keeping the wire format byte-identical to the
+pre-temperature version for every existing caller — this runs in production. `supportsTemperature()`
+reports which targets reject an explicit temperature (OpenAI gpt-5.x / o-series and kie's Codex pin
+sampling internally and answer 400), so callers can grey the control out and the bench can label a
+row "ignored" instead of silently claiming to have tested a value it never sent. `clampTemp()`
+absorbs the range difference between providers (Anthropic and Gemini cap at 1.0, the
+OpenAI-compatible family at 2.0) so one UI slider stays honest across all of them. It normalizes seven providers (Anthropic, Z.AI,
 OpenAI, Gemini, OpenRouter, kie.ai's Responses-API-shaped "Codex" endpoint, and any custom
 OpenAI-compatible endpoint) behind one signature, retries `429`/`408`/`5xx` up to 3 times with
 backoff + jitter (a `429` is routine when a pipeline stage fires several parallel calls at once —
@@ -194,6 +201,57 @@ stack (no OpenAI-only dependency): **`maskAIPatterns()`** strips common machine 
 **`uniquenessPct()`** scores each variant as `1 − word-trigram Jaccard similarity` against the source.
 It writes nothing to the database — results are returned inline and copied/downloaded client-side. The
 Content Decay map deep-links each decaying page here with `?url=` prefilled.
+
+### 3.6 AI-Fingerprint Lab (`src/lib/seo/aidetect.ts`)
+
+The only part of the suite that runs **no LLM at all**. Statistical AI detectors score the token
+frequency distribution over ~300-word windows and average them — shuffling an AI text into
+word-salad barely moves its score, because order carries almost no signal and presence carries all
+of it. That makes the discriminator reproducible locally, and both corpora already exist in the
+product: competitor pages via `scrapeMany` (human reference) and `SeoHistory` articles (machine
+reference). Training is Naive Bayes over log-odds with Laplace smoothing; every 5th document is held
+out to calibrate the 0-100 scale, so the score isn't fitted on the windows it grades. Training and
+scoring both run **in the browser** — it is arithmetic over a token map — and only the corpus
+harvest needs a server round-trip (`/api/seo/aidetect/harvest`), because it needs the SERP key and
+cross-origin fetch. Models live in `localStorage` (`aidetectStore.ts`), capped at 6000 tokens.
+
+Three correctness constraints that are easy to get wrong and were each caught by a test:
+
+- **Format leak.** The two corpora arrive in different shapes — scraped competitors are plain text,
+  our own articles are Markdown with a fenced meta block. Without `normalizeForCorpus()` the model
+  learns "`##` means AI", reports near-perfect separation on a leak, and emits a marker list made of
+  punctuation. The regression test feeds identical vocabulary in both formats and asserts the model
+  *fails* to separate them.
+- **Homoglyphs.** NFKC does not merge Cyrillic "а" into Latin "a" — they stay distinct code points.
+  Real detectors fold confusables, so `foldConfusables()` does too, but only for **mixed-script
+  tokens** and always toward the token's dominant script; a blanket map would mangle genuine Russian
+  or Greek prose into Latin nonsense.
+- **Domain vocabulary.** A word can be necessary to the niche *and* overused by the model, earning a
+  high log-odds weight and landing in the ban list. Banning it makes the model circumlocute around
+  required terminology. `humanDf` (share of competitor documents containing the token) gates this:
+  at ≥40% the word is niche terminology and is never suggested, whatever its ratio.
+
+The score is not the deliverable — `suggestBannedCandidates()` is. Its output reaches generation
+through `bannedWordsBlock()` in `prompts.ts`, wired into `buildOutlinePrompt`, both branches of
+`buildTextPrompt`, and `buildSectionTextPrompt`. That block deliberately contains **no instruction
+about how to write**: A/B evidence shows directives like "sound natural" or "vary sentence length"
+backfire, because the model follows them as formal rules and narrows its own output distribution.
+Naming concrete words carries no such failure mode. The candidate list is reviewable in the UI
+before it can affect an article, with exclusions stored per model in `aidetectStore`.
+
+### 3.7 Fact drift (`src/lib/seo/factDrift.ts`)
+
+Any rewrite can silently change a number or drop a brand, and that is the failure that costs money:
+an article that reads beautifully and states the wrong price. Asking users to "verify the facts" is
+not protection, since the point of a rewrite tool is that nobody rereads 2000 words. So the two
+classes of fact that are checkable without a model are diffed deterministically — numeric values
+(with currencies canonicalized, so `$50` = `50 USD` = `50 долларов`, and locale digit separators
+never fire a false alarm) and identifier-shaped tokens (ALL-CAPS or internal-caps only; ordinary
+capitalized words are excluded because sentence-initial capitals cannot be told from proper nouns
+cheaply across languages). Values that **appeared** outrank values that were **dropped** — an
+invented number ships. Computed server-side in `rewrite.ts` because in URL mode the client never
+sees the scraped source. The humanize action also uses it as a tiebreaker: a variant that invented a
+fact loses to one that didn't, even with a better score.
 
 ## 4. Search engines (Google · Bing · Yandex)
 

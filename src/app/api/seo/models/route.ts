@@ -129,7 +129,9 @@ const KIMI_FALLBACK: M[] = [
   { id: "kimi-k2.6", label: "Kimi K2.6" },
 ];
 
+// Only used when Z.ai's models endpoint is unreachable — keep the current flagship first.
 const ZAI_FALLBACK: M[] = [
+  { id: "glm-5.2", label: "GLM-5.2 (flagship)" },
   { id: "glm-4.6", label: "GLM-4.6" },
   { id: "glm-4.5", label: "GLM-4.5" },
   { id: "glm-4.5-air", label: "GLM-4.5-Air" },

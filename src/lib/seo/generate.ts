@@ -358,15 +358,24 @@ export async function genOutline(b: any): Promise<GenResult> {
     customTemplate: b.customTemplate ? String(b.customTemplate) : undefined,
     structureRules: b.structureRules ? String(b.structureRules) : undefined,
     ragFacts: rag?.rendered,
+    bannedWords: Array.isArray(b.bannedWords) ? b.bannedWords : undefined,
     // Enrichment (default on) deepens every section afterwards — keep the skeleton lean so
     // one call fits the token budget and finishes well within the LLM timeout.
     lightSections: b.enrich !== false,
   });
 
-  let raw = await fetchLLM(prompt, provider, apiKey, 16000, model, baseUrl);
+  // The outline call must return parseable JSON, and sampling randomness is exactly what breaks
+  // that — so the temperature the user picked for prose is capped here rather than passed through
+  // raw. The retry below already covers the occasional malformed response; this keeps it rare.
+  const outlineTemp = b.temperature === undefined || b.temperature === null
+    ? undefined : Math.min(0.8, Math.max(0, Number(b.temperature)));
+
+  let raw = await fetchLLM(prompt, provider, apiKey, 16000, model, baseUrl, outlineTemp);
   let outline = extractJson(raw);
   if (!outline) {
-    raw = await fetchLLM(prompt + (raw ? "\n\nПредыдущий ответ не распарсился. Верни ТОЛЬКО валидный JSON, без текста и без markdown-обёрток." : ""), provider, apiKey, 16000, model, baseUrl);
+    // Retry deterministically: if sampling is what mangled the JSON, repeating at the same
+    // temperature just rolls the same dice again.
+    raw = await fetchLLM(prompt + (raw ? "\n\nПредыдущий ответ не распарсился. Верни ТОЛЬКО валидный JSON, без текста и без markdown-обёрток." : ""), provider, apiKey, 16000, model, baseUrl, outlineTemp === undefined ? undefined : 0);
     outline = extractJson(raw);
   }
   // Distinguish provider failure/timeout (raw null) from an actual JSON parse problem.
@@ -561,11 +570,28 @@ export function ensureTocLabel(text: string, language: string): string {
 // ─── Chunked article writer: H2-units → chunks of ~4 sections → parallel small calls ──
 // Returns the assembled article body (H1 + sections + FAQ) or null → caller falls back to
 // the single-shot path. Each chunk sees the full article map so nothing gets duplicated.
+// Spread the sampling temperature slightly across chunks when a base temperature is set.
+//
+// Chunked writing gives us a lever a single-shot article doesn't have: each chunk is its own
+// completion, so nudging the temperature per chunk widens the token distribution of the finished
+// article rather than of one call. Statistical detectors score ~300-word windows and average them,
+// so a text assembled from calls that sampled slightly differently is not the same object as a text
+// sampled uniformly. The offsets are deliberately small — this is meant to add variance, not to
+// swing individual chunks into the incoherent range where quality collapses.
+//
+// Indexed rather than random so a rerun of the same outline stays reproducible.
+const CHUNK_TEMP_OFFSETS = [0, 0.1, -0.08, 0.05, -0.05, 0.12];
+function chunkTemp(base: number | undefined, i: number): number | undefined {
+  if (base === undefined) return undefined;
+  return Math.max(0, Math.round((base + CHUNK_TEMP_OFFSETS[i % CHUNK_TEMP_OFFSETS.length]) * 100) / 100);
+}
+
 async function writeTextInChunks(outline: any, ctx: {
   keyword: string; language: string; tone: string; provider: string; apiKey: string;
   model?: string; baseUrl?: string; ragFacts?: string;
   sources?: { title: string; snippet: string; url: string; domain: string }[];
-  sourceMode?: "off" | "facts" | "cited"; includeToc?: boolean;
+  sourceMode?: "off" | "facts" | "cited"; includeToc?: boolean; temperature?: number;
+  bannedWords?: string[];
 }): Promise<string | null> {
   // FAQ-like sections[] entries are dropped up front (defensive — outlines saved before the
   // sanitizer existed still carry the template's "H2: FAQ" duplicate): the FAQ is rendered
@@ -669,8 +695,9 @@ async function writeTextInChunks(outline: any, ctx: {
       ragFacts: ctx.ragFacts, sources: ctx.sources, sourceMode: ctx.sourceMode,
       isVerdictChunk: c.some((s: any) => verdictRe.test(String(s.heading || ""))),
       chunkBudget: hi > 0 ? [lo, hi] : undefined,
+      bannedWords: ctx.bannedWords,
     });
-    const raw = await fetchLLM(prompt, ctx.provider, ctx.apiKey, 6000, ctx.model, ctx.baseUrl);
+    const raw = await fetchLLM(prompt, ctx.provider, ctx.apiKey, 6000, ctx.model, ctx.baseUrl, chunkTemp(ctx.temperature, i));
     if (!raw) return;
     let md = raw.trim().replace(/^```(?:markdown|md)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
     // Models sometimes prefix a stray H1 / meta block despite instructions — strip anything
@@ -932,6 +959,8 @@ export async function genText(b: any): Promise<GenResult> {
         language: String(b.language ?? "ru"), tone: String(b.tone ?? "neutral, expert"),
         provider, apiKey, model, baseUrl,
         ragFacts, sources, sourceMode: effMode, includeToc: b.includeToc === true,
+        temperature: b.temperature === undefined || b.temperature === null ? undefined : Number(b.temperature),
+        bannedWords: Array.isArray(b.bannedWords) ? b.bannedWords : undefined,
       });
     } catch { text = null; }
   }
@@ -948,12 +977,14 @@ export async function genText(b: any): Promise<GenResult> {
       sourceMode: effMode,
       includeToc: b.includeToc === true,
       ragFacts,
+      bannedWords: Array.isArray(b.bannedWords) ? b.bannedWords : undefined,
     });
     // Detailed variant here (not the plain fetchLLM used elsewhere): this is the last-resort
     // single-shot attempt — if it also fails, its error detail (e.g. a provider content-policy
     // rejection like z.ai's "potentially unsafe or sensitive content") is what we surface below,
     // instead of a bare "generation_failed" that sends users digging through server logs.
-    const r = await fetchLLMDetailed(prompt, provider, apiKey, 12000, model, baseUrl);
+    const r = await fetchLLMDetailed(prompt, provider, apiKey, 12000, model, baseUrl,
+      b.temperature === undefined || b.temperature === null ? undefined : Number(b.temperature));
     text = r.text;
     if (!text) return { ok: false, error: r.error ? `generation_failed: ${r.error}` : "generation_failed" };
   }

@@ -30,6 +30,19 @@ export interface CompetitorInput {
 }
 
 // ─── Map stage: extract compact facts from ONE source (run per competitor, in parallel) ──────────
+// Vocabulary ban list, injected into the generation prompts from the AI-fingerprint model.
+//
+// Note what this block deliberately does NOT contain: any instruction about HOW to write. Telling a
+// model to "write more naturally", "vary sentence length" or "avoid sounding like AI" backfires —
+// the model applies such directives as explicit rules, which narrows its output distribution and
+// makes the result more machine-typical, not less. Naming concrete words to avoid carries none of
+// that failure mode: it removes specific high-signal tokens without prescribing a style.
+export function bannedWordsBlock(words?: string[]): string {
+  const list = Array.from(new Set((words || []).map(w => String(w).trim().toLowerCase()).filter(Boolean))).slice(0, 80);
+  if (!list.length) return "";
+  return `\nЗАПРЕЩЁННАЯ ЛЕКСИКА: не используй эти слова и любые их словоформы: ${list.join(", ")}. Ту же мысль передавай другими словами — НЕ подставляй синоним-заменитель механически, перестраивай фразу.\n`;
+}
+
 export function buildSourceExtractPrompt(args: { url: string; title: string; text: string; keyword: string; country?: string }): string {
   return `Ты — экстрактор фактов. Из текста ОДНОГО источника по теме "${args.keyword}"${args.country ? `, регион ${args.country}` : ""} вытащи ТОЛЬКО реально присутствующие в тексте факты — НИЧЕГО не выдумывай и не достраивай. Верни СТРОГИЙ компактный JSON без обёрток:
 { "specs": { "Атрибут": "значение" }, "prices": ["цена + что это"], "key_facts": ["краткий факт"], "entities": ["сущность"], "headings_covered": ["тема/подзаголовок страницы"] }
@@ -62,6 +75,7 @@ export function buildOutlinePrompt(args: {
   structureRules?: string;
   ragFacts?: string;
   lightSections?: boolean; // enrichment pass will deepen sections — keep the skeleton lean & fast
+  bannedWords?: string[];
 }): string {
   // Tone is rendered once: folded into the policy block (override) when a policy exists,
   // otherwise as a standalone line. Never both → no conflicting tone signals.
@@ -125,7 +139,7 @@ export function buildOutlinePrompt(args: {
 - title_options / description_options — справочные и исчерпывающие («Guide», «How to», «Distance, Time & Cost»), без продаж и без CTA.
 - Голос — нейтральный эксперт; равномерно и полно покрой все под-вопросы.`
     : `\n\nЦЕЛЬ СТРАНИЦЫ: СМЕШАННАЯ. Информационный каркас (полнота под-интентов) + коммерческие вставки (позиционирование услуги, типы авто, как забронировать) + мягкий CTA в конце. meta.dominant_intent = "commercial_investigation". title_options — гибрид: информативные, но с конверсионным хуком.`;
-  return `${policyBlock}Ты — SEO-стратег и entity-аналитик. На основе анализа топ-конкурентов из выдачи построй ИСЧЕРПЫВАЮЩУЮ структуру статьи (outline) в EAV-модели (Entity-Attribute-Value), которая полнее и авторитетнее конкурентов и максимально цитируема в ИИ-поиске. Верни СТРОГИЙ JSON без преамбулы и без markdown-обёрток.
+  return `${policyBlock}${bannedWordsBlock(args.bannedWords)}Ты — SEO-стратег и entity-аналитик. На основе анализа топ-конкурентов из выдачи построй ИСЧЕРПЫВАЮЩУЮ структуру статьи (outline) в EAV-модели (Entity-Attribute-Value), которая полнее и авторитетнее конкурентов и максимально цитируема в ИИ-поиске. Верни СТРОГИЙ JSON без преамбулы и без markdown-обёрток.
 
 АКТУАЛЬНОСТЬ: сегодня ${today}. Если в заголовках/тексте уместен год — используй ТЕКУЩИЙ (${year}); НИКОГДА не подставляй устаревшие годы (2023/2024) и не выдумывай год — лучше без года, чем неверный.${goalBlock}
 
@@ -518,6 +532,7 @@ export function buildTextPrompt(args: {
   sourceMode?: "off" | "facts" | "cited";
   includeToc?: boolean;
   ragFacts?: string;
+  bannedWords?: string[];
 }): string {
   // Tone folded into the policy block (single source) when a policy exists; otherwise a header line.
   const policyBlock = args.policy ? renderPolicy(args.policy, args.tone) + "\n\n" : "";
@@ -574,7 +589,7 @@ export function buildTextPrompt(args: {
 ${dateLine}${twcLine}${NO_FABRICATION}
 ${metaBlock}ГЛАВНАЯ ИНСТРУКЦИЯ АВТОРА:
 ${args.custom}
-${sourcesBlock}${ragTextBlock}
+${sourcesBlock}${ragTextBlock}${bannedWordsBlock(args.bannedWords)}
 Напиши статью по структуре ниже, следуя инструкции автора выше. Соблюдай word_count секций.
 ЖЁСТКИЕ ПРАВИЛА: ровно один H1 (из Title), и СРАЗУ после него — первый H2, БЕЗ вводного абзаца между H1 и первым H2; весь текст только под заголовками H2/H3. Где нет реальных данных — не выдумывай лицензии/регалии/отзывы, ставь плейсхолдер [ЗАПОЛНИТЬ ВРУЧНУЮ: ...]; секции needs_real_experience=true — оставь [ВСТАВЬ РЕАЛЬНЫЙ ОПЫТ]; соблюдай ограничения политики.
 Верни готовый текст в Markdown.
@@ -605,7 +620,7 @@ ${dateLine}${twcLine}${customLine}${metaBlock}${sourcesBlock}${ragTextBlock}
 - Где НЕТ реальных данных из источников — НЕ выдумывай лицензии, сертификаты, регалии, отзывы, цифры. Ставь плейсхолдер вида [ЗАПОЛНИТЬ ВРУЧНУЮ: ...].
 - Секции с needs_real_experience=true: НЕ сочиняй личный опыт. Оставь [ВСТАВЬ РЕАЛЬНЫЙ ОПЫТ].
 - Соблюдай ограничения из политики (banned_words, banned_topics, compliance).
-
+${bannedWordsBlock(args.bannedWords)}
 Верни готовый текст в Markdown.
 
 СТРУКТУРА (JSON):
@@ -630,6 +645,7 @@ export function buildSectionTextPrompt(args: {
   sourceMode?: "off" | "facts" | "cited";
   isVerdictChunk?: boolean; // allow one expert blockquote here
   chunkBudget?: [number, number]; // summed word range of this chunk's sections
+  bannedWords?: string[];
 }): string {
   const today = new Date().toISOString().slice(0, 10);
   const year = today.slice(0, 4);
@@ -663,7 +679,7 @@ ${args.allHeadings.map(h => `${h.h_level}: ${h.heading}`).join("\n")}
 - ПОДТЕМЫ: если у секции есть "subtopics" — раскрой КАЖДУЮ подтему 1-2 абзацами ВНУТРИ секции, БЕЗ отдельного заголовка (это редакторское решение: подтема покрывается прозой, её ключи вплетаются в эти абзацы).
 - ${NO_FABRICATION}
 - Язык — строго ${args.language}, без вкраплений других письменностей.
-${rag}${srcBlock}${faqBlock}
+${bannedWordsBlock(args.bannedWords)}${rag}${srcBlock}${faqBlock}
 СЕКЦИИ ДЛЯ НАПИСАНИЯ (JSON-спеки):
 ${JSON.stringify(args.sections)}
 
