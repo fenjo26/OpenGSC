@@ -21,6 +21,15 @@ type Snippet = { sourceTitle: string; sourceDescription: string; title: string; 
 // Google truncates around these lengths; the counter turns red past them.
 const TITLE_MAX = 60;
 const DESC_MAX = 160;
+// Under-length is not an error, but it is wasted space — a 98-character description leaves a third
+// of the snippet unused. A green counter there reads as "fine" when it is actually a missed
+// opportunity, so short values get their own amber state rather than sharing the good one.
+const TITLE_MIN = 35;
+const DESC_MIN = 120;
+
+function lenColor(n: number, min: number, max: number) {
+  return n > max ? "#ff375f" : n < min ? "#ff9f0a" : "#34c759";
+}
 
 const card = "panel";
 const inputStyle: React.CSSProperties = { width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-bg)", color: "var(--color-text-primary)", fontSize: "13px", outline: "none", boxSizing: "border-box" };
@@ -236,9 +245,9 @@ export default function RewritePage() {
           {/* Editable, because a snippet is almost never right on the first pass and the counter
               only helps if you can act on it without leaving the page. */}
           {([
-            ["title", t("rwSnippetTitleLabel" as never), snippet.sourceTitle, snippet.title, TITLE_MAX, 1],
-            ["description", t("rwSnippetDescLabel" as never), snippet.sourceDescription, snippet.description, DESC_MAX, 3],
-          ] as const).map(([key, label, before, after, max, rows]) => (
+            ["title", t("rwSnippetTitleLabel" as never), snippet.sourceTitle, snippet.title, TITLE_MIN, TITLE_MAX, 1],
+            ["description", t("rwSnippetDescLabel" as never), snippet.sourceDescription, snippet.description, DESC_MIN, DESC_MAX, 3],
+          ] as const).map(([key, label, before, after, min, max, rows]) => (
             <div key={key} style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
               <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--color-text-secondary)" }}>{label}</div>
               {before && (
@@ -251,7 +260,8 @@ export default function RewritePage() {
                   onChange={e => setSnippet(s => (s ? { ...s, [key]: e.target.value } : s))}
                   style={{ ...inputStyle, flex: 1, resize: "vertical", fontFamily: "inherit", lineHeight: 1.55, padding: "8px 10px" }}
                 />
-                <span style={{ fontSize: "11px", fontWeight: 700, flexShrink: 0, paddingTop: "9px", color: after.length > max ? "#ff375f" : "#34c759" }}>
+                <span title={after.length < min ? t("rwSnippetShort" as never) : undefined}
+                  style={{ fontSize: "11px", fontWeight: 700, flexShrink: 0, paddingTop: "9px", color: lenColor(after.length, min, max) }}>
                   {after.length}/{max}
                 </span>
                 <button onClick={() => navigator.clipboard.writeText(after).catch(() => {})} style={{ ...ghostSmall, marginTop: "4px" }}>
