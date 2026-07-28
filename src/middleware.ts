@@ -12,9 +12,17 @@ export default withAuth(
       //   • API calls that carry a shareToken  (each such route re-validates the token
       //     against site.shareToken + shareEnabled, so this is not a bypass — endpoints
       //     without shareToken support still enforce their own getServerSession check)
+      //   • the MCP endpoint, which authenticates with a Bearer token instead of a
+      //     session cookie. Without this, withAuth answers an agent's POST with a 307
+      //     to /api/auth/signin and the client gets the HTML login page instead of
+      //     JSON-RPC — the route's own Bearer check never gets to run. The check is
+      //     not skipped, only moved: /api/mcp validates User.mcpToken itself and
+      //     answers a JSON-RPC 401 when it is missing or wrong. It cannot live here,
+      //     since middleware runs on the Edge runtime and Prisma does not.
       authorized: ({ token, req }) => {
         const { pathname, searchParams } = req.nextUrl;
         if (pathname === "/api/indexer/webhook") return true;
+        if (pathname === "/api/mcp" || pathname.startsWith("/api/mcp/")) return true;
         if (pathname.startsWith("/share/")) return true;
         if (pathname.startsWith("/api/") && searchParams.has("shareToken")) return true;
         return !!token;

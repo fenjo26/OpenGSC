@@ -324,24 +324,74 @@ body (the spec allows this in place of an SSE stream), so the endpoint needs no 
 state and survives process restarts trivially. Authentication is a per-user bearer token
 (`User.mcpToken`, managed in **Settings → API & MCP** via `/api/settings/mcp-token`).
 
-The tool registry lives in `src/lib/mcp/tools.ts`. Two rules keep it safe and cheap:
+**The endpoint must be excluded from the NextAuth middleware, and this is not optional.**
+`src/middleware.ts` matches everything outside `/login` and `/api/auth`, so without an
+explicit exclusion `withAuth` answers an agent's POST with a 307 to `/api/auth/signin` and
+the client receives the HTML login page instead of JSON-RPC — the route's own Bearer check
+never runs. The check is not skipped, only relocated: `/api/mcp` validates `User.mcpToken`
+itself and returns a JSON-RPC 401 when it is absent or wrong. It cannot live in the
+middleware, because that runs on the Edge runtime and Prisma does not.
 
-1. **Read-only** — no tool mutates user-visible state (the one exception: `inspect_url`
-   refreshes the `PageInspection` cache with what it just fetched, which only makes the
-   Indexing tab fresher).
-2. **Local-first, never paid** — the default tools read what the app has already synced
-   (`DailyMetric`, `TrackedKeyword`, `LinkMention`, `SiteAuditPage`, …). Exactly two tools,
-   explicitly labeled LIVE in their descriptions (`query_gsc_live`, `inspect_url`), call
-   Google's own APIs through the user's stored OAuth token — free but quota-limited, and the
-   `initialize` instructions tell agents to prefer the local tools. Nothing ever calls a paid
-   provider (SERP/AI/Ahrefs), so an agent hammering the endpoint can't burn credits.
+The tool registry is split across three files for readability and flattened into one
+`MCP_TOOLS` array at the bottom of `src/lib/mcp/tools.ts`: the GSC core (`tools.ts`), the
+remaining read surfaces (`toolsData.ts` — decay, CTR benchmark, content groups, rank history,
+GEO audits, generations, engine portfolios, GA4, Clarity, indexer, digests, alerts), and the
+page-optimization contour (`toolsOptimize.ts`). Shared helpers live in `shared.ts` so no file
+imports another's registry. A duplicate tool name throws at module load, since `findTool`
+would otherwise silently shadow one and the symptom ("that tool ignores half its arguments")
+points nowhere near the cause.
+
+Two rules keep it safe and predictable:
+
+1. **Read-only by default** — no tool mutates user-visible state. Three exceptions, each
+   deliberate: `inspect_url` refreshes the `PageInspection` cache with what it just fetched
+   (which only makes the Indexing tab fresher), and the two paid tools below create their own
+   job rows.
+2. **Every tool declares what it costs** — `McpTool.cost` is one of `local` (reads the local
+   database), `quota` (calls Google on the user's OAuth: free, quota-limited), `net` (fetches
+   a third-party page), or `paid` (spends the user's own AI credits). `tools/list` maps this
+   onto the protocol's own `annotations` (`readOnlyHint`, `openWorldHint`, `idempotentHint`)
+   plus a `_meta.cost` field, `get_capabilities` returns the tools grouped by tier, and the
+   `initialize` instructions explain the tiers so an agent chooses before it calls.
+
+The `paid` tier is a deliberate relaxation of what this section previously promised
+("nothing ever calls a paid provider"). Two tools hold it: `rewrite_content` and
+`start_generation_job`. They exist because the web UI can do things an agent cannot
+reproduce — the outline pipeline's MAP/REDUCE fact grounding, Casino RAG, fact-scrub, the
+user's editorial policy and banned-word list — and withholding them made the MCP a strictly
+worse OpenGSC than the browser tab next to it. Three things keep the relaxation honest:
+
+- **`assertConfirmed()`** (`shared.ts`) refuses to run either tool without an explicit
+  `confirm: true`, and the refusal text tells the agent to ask the human rather than retry
+  with the flag set. Some MCP clients auto-approve tool calls; an agent exploring the
+  registry must not be able to bill the owner for a call it made to see what came back.
+- **The free path is named in their own descriptions.** An MCP client is itself a language
+  model: paying a second one to write text the first could have written is money for nothing.
+  The intended flow is `get_optimization_brief` (everything known about one URL in a single
+  call) → the agent writes → `analyze_text` (uniqueness, fact drift and heading-structure
+  check, deterministic, no model). `rewrite_content` is for when the user wants the app's
+  pipeline specifically.
+- **Keys come from the server-side mirror** (`User.seoSettings`, resolved by
+  `resolveAiCreds()`) — the same snapshot digest-cron and rank-cron already use, since an
+  MCP request has no browser and therefore no localStorage.
+
+`start_generation_job` returns a job id immediately and runs `genByType` fire-and-forget,
+reusing the `SeoJob` pattern from §1 — the pipeline takes minutes, far longer than a tool
+call can wait, so a synchronous version would only ever time out. `get_generation_job` polls
+it and applies the same 20-minute staleness sweep as the UI, so an agent never polls a row
+whose process died.
 
 Tool-level failures (bad site name, empty data) are returned as MCP tool results with
 `isError: true` rather than JSON-RPC protocol errors — agents can read the message and
-self-correct (e.g. call `list_sites` after a "site not found"). Adding a tool = adding one
-object to `MCP_TOOLS` (name, description, JSON schema, handler); `tools/list` and
-`tools/call` pick it up automatically. Ready-made agent skills that orchestrate these tools
-ship in `.agents/skills/`.
+self-correct (e.g. call `list_sites` after a "site not found"). Tools reading tables that may
+predate a migration degrade to an empty result plus a note rather than throwing. Adding a
+tool = adding one object to the relevant array (name, description, `cost`, JSON schema,
+handler); `tools/list` and `tools/call` pick it up automatically. Two convenience GETs sit
+outside the protocol purely for debugging a connection — `GET /api/mcp` reports whether the
+token was accepted, `GET /api/mcp/tools` returns the registry as plain JSON — because the
+first thing anyone does with a failing endpoint is open it in a browser, and a bare 405 there
+cannot distinguish a wrong token from a wrong URL. Ready-made agent skills that orchestrate
+these tools ship in `.agents/skills/`.
 
 ## 7. Site Audit crawler (`src/lib/audit/crawler.ts`)
 

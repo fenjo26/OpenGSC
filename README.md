@@ -163,14 +163,18 @@ Share a site's dashboard with a client without giving them an account: **site �
 
 ### MCP Server — Connect AI Agents
 
-OpenGSC ships a built-in **MCP (Model Context Protocol) server** at `/api/mcp`, so Claude Code, Claude Desktop, Cursor, Codex, or any MCP client can query your SEO data directly: sites, search performance, striking-distance keywords, cannibalization, rank tracking, AEO visibility, backlinks, Link Monitor mentions, site health, indexing status, audit results, and running arbitrary read-only SQL queries. Generate a token under **Settings → API & MCP**, then:
+OpenGSC ships a built-in **MCP (Model Context Protocol) server** at `/api/mcp` with **34 tools**, so Claude Code, Claude Desktop, Cursor, Codex, or any MCP client can work with your SEO data directly: sites, search performance, striking-distance keywords, cannibalization, content decay, CTR benchmarks, content groups, rank tracking and history, AEO visibility, GEO audits, backlinks, Link Monitor mentions, site health, indexing status, audit results, GA4, Clarity, Bing/Yandex portfolios, the indexer network, fired alerts, digests, generation history, and arbitrary read-only SQL. Generate a token under **Settings → API & MCP**, then:
 
 ```bash
 claude mcp add --transport http opengsc https://your-domain.com/api/mcp \
   --header "Authorization: Bearer <token>"
 ```
 
-All tools read from your instance's local store — agent traffic never spends your SERP/AI credits or Google quota. The repo also ships ready-made **agent skills** in [`.agents/skills/`](.agents/skills/) (performance review, link prospecting, AEO review, site triage) — copy them into your agent's skills folder for guided SEO workflows. Details: [`docs/MCP-SETUP.md`](docs/MCP-SETUP.md).
+Agents can also **optimize pages**, not just read about them. `get_optimization_brief` returns everything known about one URL in a single call — its queries, striking-distance keywords, CTR gaps, decay trend, cannibalization conflicts, audit issues and current content — the agent writes the new version itself, and `analyze_text` verifies it deterministically: uniqueness, heading-structure drift, and any number or brand that appears in the draft but not the source. No model is called for that check, so it costs nothing and always returns the same answer.
+
+Every tool declares what calling it costs, and `get_capabilities` reports the grouping: **local** (reads your database — free and instant, 27 of the 34), **quota** (calls Google on your own OAuth), **net** (fetches a page), and **paid** (spends your own AI credits). The two paid tools — the app's own Content Rewriter and the full article pipeline — refuse to run without an explicit `confirm: true`, so an agent exploring the registry can never bill you by accident.
+
+The repo also ships ready-made **agent skills** in [`.agents/skills/`](.agents/skills/) (performance review, page optimization, link prospecting, AEO review, site triage) — copy them into your agent's skills folder for guided SEO workflows. Details: [`docs/MCP-SETUP.md`](docs/MCP-SETUP.md).
 
 ### Indexing Status Tools
 
@@ -625,7 +629,10 @@ src/
     StrikingDistanceKeywords.tsx / KeywordCannibalization.tsx / ContentDecayMap.tsx / CtrBenchmark.tsx
     RankTracker.tsx / AeoTracker.tsx / ClarityPanel.tsx / SiteSettingsTab.tsx
   lib/
-    mcp/tools.ts                 # MCP tool registry (read-only, Prisma-backed)
+    mcp/shared.ts                # MCP helpers: site resolution, key lookup, paid-tool gate
+    mcp/tools.ts                 # MCP tool registry — GSC core + the flattened MCP_TOOLS array
+    mcp/toolsData.ts             # MCP tools: decay, CTR, GEO, indexer, digests, alerts, GA4…
+    mcp/toolsOptimize.ts         # MCP tools: optimization brief, text analysis, rewrite
     audit/crawler.ts             # Site Audit crawler (BFS, regex extraction, issue detection)
 prisma/
   schema.prisma                  # Full data model

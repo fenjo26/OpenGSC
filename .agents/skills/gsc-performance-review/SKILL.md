@@ -21,15 +21,21 @@ Turn a site's synced GSC data into a short, prioritized list of actions: which q
 - `get_striking_distance`: queries at positions 4–20 with real impressions — the fastest wins. The default band is right for most reviews; tighten to 4–10 for "almost there" pages only.
 - `get_cannibalization`: queries where 2+ of the site's own URLs compete; high-impression conflicts with close positions are consolidation candidates.
 - `get_rank_tracker`: tracked-keyword positions with direction (latest vs previous) — cross-reference against GSC average position when both exist.
+- `get_ctr_benchmark`: top-10 queries whose real CTR trails the benchmark for that position. Separates "we don't rank" from "we rank and nobody clicks" — two different fixes.
+- `get_content_decay`: pages trending down. A decaying page in the striking-distance list is a refresh, not a new piece.
+- `get_content_groups`: if the user has defined Content Groups or Topic Clusters, report by section rather than by URL — it is how they think about the site.
+- `compare_periods`: winners, losers, new and lost queries versus the previous window.
 
 ## Workflow
 
 1. Resolve the site with `list_sites` if needed.
 2. Pull the overview: `get_search_performance` with `dimension=query` (28 days), then `dimension=page`.
 3. Pull `get_striking_distance` (90 days). Rank opportunities by impressions × closeness to page 1.
-4. Pull `get_cannibalization` (90 days). Flag conflicts where the "loser" URL takes a meaningful share of impressions.
-5. If tracked keywords exist, pull `get_rank_tracker` and note keywords moving down.
-6. Synthesize a plan. Every recommendation must name a concrete query AND page from the data.
+4. Pull `get_ctr_benchmark` (90 days). Anything ranking top-10 with a large negative `diff` is a title/meta fix — cheaper and faster than any content work, so it goes near the top of the plan.
+5. Pull `get_cannibalization` (90 days). Flag conflicts where the "loser" URL takes a meaningful share of impressions.
+6. Pull `get_content_decay`. Pages already sliding need a refresh before they need optimization.
+7. If tracked keywords exist, pull `get_rank_tracker` and note keywords moving down.
+8. Synthesize a plan. Every recommendation must name a concrete query AND page from the data. For anything that turns into "rewrite this page", hand off to the `page-optimization` skill rather than writing it here.
 
 ## Output format
 

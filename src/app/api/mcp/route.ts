@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { MCP_TOOLS, findTool } from "@/lib/mcp/tools";
+import { MCP_TOOLS, findTool, type McpTool } from "@/lib/mcp/tools";
 
 // MCP (Model Context Protocol) endpoint — Streamable HTTP transport, stateless mode.
 // Lets AI agents (Claude Code, Cursor, Codex, any MCP client) query this instance's
@@ -19,9 +19,14 @@ const PROTOCOL_VERSION = "2025-06-18";
 const SERVER_INFO = { name: "opengsc", version: "1.0.0" };
 
 const INSTRUCTIONS =
-  "OpenGSC — self-hosted Google Search Console dashboard with rank tracking, AI-answer-engine (AEO) visibility, backlinks, a competitor Link Monitor, and a built-in site-audit crawler. " +
-  "Call get_capabilities first to see which modules have data, then list_sites for site identifiers. " +
-  "Most tools read the instance's local store (already synced) — fast and free. The two LIVE tools (query_gsc_live, inspect_url) call Google APIs via the user's own OAuth: free but quota-limited; prefer local tools when they cover the question.";
+  "OpenGSC — self-hosted Google Search Console dashboard with rank tracking, AI-answer-engine (AEO) visibility, content decay and CTR analysis, backlinks, a competitor Link Monitor, a built-in site-audit crawler, GEO audits, a private indexer network, and an AI SEO content suite. " +
+  "Call get_capabilities first: it reports which modules actually hold data and groups every tool by what calling it costs. Then list_sites for exact site identifiers.\n\n" +
+  "Cost tiers, and they matter:\n" +
+  "• local — reads the instance's own database. Free, instant, the large majority of tools.\n" +
+  "• quota — query_gsc_live, inspect_url, get_analytics call Google on the owner's OAuth: free, but they spend a daily quota. Prefer the local equivalent when it answers the question.\n" +
+  "• net — fetches a third-party page over HTTP.\n" +
+  "• paid — spends the OWNER'S OWN AI credits. These refuse to run without confirm: true. Ask the human before setting it.\n\n" +
+  "To optimize a page, the intended path is free: get_optimization_brief returns that URL's queries, striking-distance keywords, CTR gaps, decay trend, cannibalization conflicts, audit issues and current content in one call — write the new version yourself, then verify it with analyze_text (deterministic uniqueness, invented-number detection and heading-structure check, no model involved). rewrite_content and start_generation_job exist for when the user specifically wants the app's own pipeline, and they bill the user.";
 
 async function authUserId(req: Request): Promise<string | null> {
   const header = req.headers.get("authorization") ?? "";
@@ -34,6 +39,26 @@ async function authUserId(req: Request): Promise<string | null> {
   } catch {
     return null; // mcpToken column missing (prisma db push not run yet)
   }
+}
+
+// Translate the registry's `cost` into the protocol's own hints, so a client that shows
+// tool badges or asks for confirmation on non-read-only calls gets the right signal
+// without parsing our prose. openWorldHint is true for anything that leaves the box.
+function describeTool(t: McpTool) {
+  const cost = t.cost ?? "local";
+  return {
+    name: t.name,
+    description: t.description,
+    inputSchema: t.inputSchema,
+    annotations: {
+      title: t.name,
+      readOnlyHint: cost !== "paid",
+      destructiveHint: false,
+      idempotentHint: cost === "local",
+      openWorldHint: cost !== "local",
+    },
+    _meta: { cost },
+  };
 }
 
 type RpcMsg = { jsonrpc?: string; id?: number | string | null; method?: string; params?: any };
@@ -60,9 +85,7 @@ async function handleMessage(msg: RpcMsg, userId: string): Promise<object | null
       return rpcResult(id, {});
 
     case "tools/list":
-      return rpcResult(id, {
-        tools: MCP_TOOLS.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
-      });
+      return rpcResult(id, { tools: MCP_TOOLS.map(describeTool) });
 
     case "tools/call": {
       const name = String(params?.name ?? "");
@@ -111,8 +134,27 @@ export async function POST(req: Request) {
 }
 
 // Stateless server: no SSE stream to resume, no session to delete.
-export async function GET() {
-  return new Response("Method Not Allowed", { status: 405, headers: { Allow: "POST, DELETE" } });
+//
+// The spec requires 405 when a client opens a GET expecting an SSE stream, so that
+// branch stays. Everything else reaching GET is a human with curl or a browser
+// checking whether the endpoint is alive — answering those with a bare
+// "Method Not Allowed" string is what makes a misconfigured token look like a dead
+// endpoint. They get JSON describing how to talk to it instead.
+export async function GET(req: Request) {
+  if ((req.headers.get("accept") ?? "").includes("text/event-stream")) {
+    return new Response("Method Not Allowed", { status: 405, headers: { Allow: "POST, DELETE" } });
+  }
+  const userId = await authUserId(req);
+  return NextResponse.json({
+    server: SERVER_INFO,
+    protocolVersion: PROTOCOL_VERSION,
+    transport: "streamable-http (stateless JSON-RPC 2.0 over POST)",
+    authenticated: !!userId,
+    toolCount: MCP_TOOLS.length,
+    hint: userId
+      ? "Authenticated. POST JSON-RPC here, e.g. {\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}. GET /api/mcp/tools lists the tools as plain JSON."
+      : "No valid MCP token. Send 'Authorization: Bearer ogsc_…' (generate one in OpenGSC → Settings → API & MCP).",
+  }, { status: userId ? 200 : 401 });
 }
 export async function DELETE() {
   return new Response(null, { status: 200 });

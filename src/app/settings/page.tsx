@@ -518,6 +518,9 @@ function ApiSection() {
   const [visible, setVisible] = useState(false);
   const [copied, setCopied] = useState<string>("");
   const [client, setClient] = useState<"claude-code" | "claude-desktop" | "cursor" | "codex">("claude-code");
+  // Read from the server rather than hand-maintained here: a second copy of the registry
+  // in the UI is a copy that silently goes stale, which is exactly what happened before.
+  const [tools, setTools] = useState<{ name: string; cost: string }[]>([]);
 
   const appUrl = typeof window !== "undefined" ? window.location.origin : "https://your-domain.com";
   const endpoint = `${appUrl}/api/mcp`;
@@ -525,6 +528,8 @@ function ApiSection() {
 
   useEffect(() => {
     fetch("/api/settings/mcp-token").then(r => r.json()).then(d => { setToken(d.token ?? null); setLoading(false); }).catch(() => setLoading(false));
+    // Same-origin, so the session cookie authenticates it — no MCP token needed to look.
+    fetch("/api/mcp/tools").then(r => r.json()).then(d => setTools(Array.isArray(d.tools) ? d.tools : [])).catch(() => setTools([]));
   }, []);
 
   const generate = async () => {
@@ -577,11 +582,15 @@ http_headers = { "Authorization" = "Bearer ${shownToken}" }`,
     },
   };
 
-  const TOOL_LIST = [
-    "get_capabilities", "list_sites", "get_search_performance", "compare_periods",
-    "get_striking_distance", "get_cannibalization", "get_rank_tracker", "get_aeo_visibility",
-    "get_backlinks", "get_link_mentions", "get_site_health", "get_indexing_status",
-    "get_site_audit", "query_gsc_live", "inspect_url",
+  // Cost tiers, in the order they are shown. Colour carries the meaning that matters at a
+  // glance: blue is free, amber costs a Google quota or a fetch, red spends real money.
+  // `border` is spelled out rather than derived from `color` with an alpha suffix, because
+  // one of these colours is a CSS variable and `var(--x)33` is not a colour.
+  const TIERS: { key: "local" | "quota" | "net" | "paid"; label: string; color: string; bg: string; border: string }[] = [
+    { key: "local", label: t("mcpTierLocal"), color: "var(--color-accent-blue)", bg: "rgba(59,130,246,0.08)", border: "rgba(59,130,246,0.2)" },
+    { key: "quota", label: t("mcpTierQuota"), color: "#FCD34D", bg: "rgba(252,211,77,0.08)", border: "rgba(252,211,77,0.25)" },
+    { key: "net", label: t("mcpTierNet"), color: "#FCD34D", bg: "rgba(252,211,77,0.08)", border: "rgba(252,211,77,0.25)" },
+    { key: "paid", label: t("mcpTierPaid"), color: "#f87171", bg: "rgba(239,68,68,0.08)", border: "rgba(239,68,68,0.25)" },
   ];
 
   const codeBox: React.CSSProperties = { display: "flex", alignItems: "stretch", background: "rgba(255,255,255,0.04)", border: "1px solid var(--color-border)", borderRadius: "8px", overflow: "hidden" };
@@ -651,12 +660,24 @@ http_headers = { "Authorization" = "Bearer ${shownToken}" }`,
 
         {/* Available tools */}
         <div style={{ marginTop: "20px" }}>
-          <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--color-text-primary)", marginBottom: "8px" }}>{t("mcpToolsTitle")}</div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-            {TOOL_LIST.map(name => (
-              <code key={name} style={{ fontSize: "11px", fontFamily: "monospace", padding: "4px 9px", borderRadius: "6px", background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.2)", color: "var(--color-accent-blue)" }}>{name}</code>
-            ))}
+          <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--color-text-primary)", marginBottom: "4px" }}>
+            {t("mcpToolsTitle")} {tools.length > 0 && <span style={{ fontWeight: 500, color: "var(--color-text-secondary)" }}>({tools.length})</span>}
           </div>
+          <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginBottom: "12px", lineHeight: 1.6 }}>{t("mcpToolsCostNote")}</div>
+          {TIERS.map(tier => {
+            const inTier = tools.filter(x => x.cost === tier.key);
+            if (!inTier.length) return null;
+            return (
+              <div key={tier.key} style={{ marginBottom: "12px" }}>
+                <div style={{ fontSize: "11.5px", fontWeight: 600, color: tier.color, marginBottom: "6px" }}>{tier.label}</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                  {inTier.map(x => (
+                    <code key={x.name} style={{ fontSize: "11px", fontFamily: "monospace", padding: "4px 9px", borderRadius: "6px", background: tier.bg, border: `1px solid ${tier.border}`, color: tier.color }}>{x.name}</code>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
           <div style={{ fontSize: "12.5px", color: "var(--color-text-secondary)", marginTop: "14px", lineHeight: 1.6, padding: "12px 14px", borderRadius: "8px", background: "rgba(59,130,246,0.05)", border: "1px solid rgba(59,130,246,0.12)", display: "flex", flexDirection: "column", gap: "6px" }}>
             <span>
               💡 <b>{t("mcpSkillsTitle") || "AI Agent Skills:"}</b> {t("mcpSkillsNote")}

@@ -1,64 +1,47 @@
 // MCP tool registry — the data surface exposed to AI agents via /api/mcp.
-// Most tools are plain Prisma reads over data the app has already synced (DailyMetric,
-// TrackedKeyword, Backlink, …), scoped to the token's user — they can never burn the
-// user's SERP/AI credits or Google quota. The two explicitly-labeled "live" tools
-// (query_gsc_live, inspect_url) call Google's own APIs through the user's stored OAuth
-// token: free, but subject to Google's per-day quotas — their descriptions say so, and
-// nothing here ever calls a PAID provider (SERP/AI/Ahrefs).
+//
+// Three groups make up the registry, split by file for readability but flattened into a
+// single MCP_TOOLS array at the bottom of this file:
+//
+//   • this file      — the GSC core (performance, striking distance, cannibalization, …)
+//   • toolsData.ts   — every other read surface (decay, CTR, GEO, indexer, digests, …)
+//   • toolsOptimize  — the page-optimization contour
+//
+// Cost model, and it is the thing to keep straight when adding a tool. Almost everything
+// is a plain Prisma read over data the app has already synced, scoped to the token's
+// user: free and instant. A few tools reach further and each says so in its description
+// and carries a `cost` field:
+//
+//   quota — query_gsc_live, inspect_url, get_analytics call Google on the user's own
+//           OAuth. Free, but they consume Google's per-day quota.
+//   net   — fetch_page_content, get_optimization_brief fetch a third-party page.
+//   paid  — rewrite_content, start_generation_job spend the user's own AI credits.
+//
+// The paid group is new, and it is the one exception to what this file used to promise.
+// It exists because the web UI can do things an agent cannot reproduce (the outline
+// pipeline's fact grounding, Casino RAG, the user's editorial policy), and refusing to
+// expose them made the MCP a strictly worse OpenGSC. The exposure is deliberately
+// awkward: paid tools refuse to run without `confirm: true`, and their descriptions
+// point at the free path first. See toolsOptimize.ts for the reasoning in full.
 
 import { prisma } from "@/lib/prisma";
 import { google } from "googleapis";
 import { getUserGoogleAccounts, makeOAuth2, queryGsc, isoDaysAgo } from "@/lib/gscQuery";
+import {
+  type McpTool, type ToolCost,
+  sinceDate, lim, pct, r1, resolveSite, siteArg,
+} from "./shared";
+import { DATA_TOOLS, dataModuleCounts } from "./toolsData";
+import { OPTIMIZE_TOOLS } from "./toolsOptimize";
 
-type Json = Record<string, unknown>;
-
-export interface McpTool {
-  name: string;
-  description: string;
-  inputSchema: Json;
-  handler: (userId: string, args: Json) => Promise<unknown>;
-}
-
-// ─── shared helpers ─────────────────────────────────────────────────────────────
-
-const sinceDate = (days: unknown, def = 90, max = 480): Date => {
-  const n = Math.min(max, Math.max(1, parseInt(String(days ?? def), 10) || def));
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d;
-};
-
-const lim = (v: unknown, def: number, max: number): number =>
-  Math.min(max, Math.max(1, parseInt(String(v ?? def), 10) || def));
-
-// Resolve a site by id, exact URL, or domain substring — agents usually pass a domain.
-async function resolveSite(userId: string, site: unknown) {
-  const q = String(site ?? "").trim();
-  if (!q) throw new Error("Missing required argument: site (domain, GSC property, or site id from list_sites)");
-  const sites = await prisma.site.findMany({ where: { userId } });
-  const norm = (s: string) => s.toLowerCase().replace(/^https?:\/\//, "").replace(/^sc-domain:/, "").replace(/^www\./, "").replace(/\/+$/, "");
-  const nq = norm(q);
-  const found =
-    sites.find(s => s.id === q) ??
-    sites.find(s => norm(s.siteId) === nq || norm(s.url) === nq) ??
-    sites.find(s => norm(s.siteId).includes(nq) || norm(s.url).includes(nq));
-  if (!found) throw new Error(`Site not found: "${q}". Call list_sites to see available sites.`);
-  return found;
-}
-
-const siteArg = {
-  type: "string",
-  description: "The site — a domain (example.com), GSC property (sc-domain:example.com), or a site id from list_sites",
-};
-
-const pct = (n: number) => Math.round(n * 1000) / 10;
-const r1 = (n: number) => Math.round(n * 10) / 10;
+export type { McpTool, ToolCost };
 
 // ─── tools ──────────────────────────────────────────────────────────────────────
 
-export const MCP_TOOLS: McpTool[] = [
+const CORE_TOOLS: McpTool[] = [
   {
     name: "list_sites",
+    cost: "local",
     description:
       "List every site connected to this OpenGSC instance (all Google accounts), with tags and last-sync info. Call this first to discover what data is available and to get exact site identifiers for the other tools.",
     inputSchema: { type: "object", properties: {} },
@@ -77,6 +60,7 @@ export const MCP_TOOLS: McpTool[] = [
 
   {
     name: "get_search_performance",
+    cost: "local",
     description:
       "Google Search Console performance for one site from the local metrics store: totals (clicks, impressions, CTR, avg position) plus the top rows grouped by query or page over a date window. Use dimension=query for keyword analysis, dimension=page to find top/weak pages. Pass `page` to see which queries drive traffic to ONE specific page.",
     inputSchema: {
@@ -131,6 +115,7 @@ export const MCP_TOOLS: McpTool[] = [
 
   {
     name: "get_striking_distance",
+    cost: "local",
     description:
       "Striking-distance keywords for a site: queries ranking just off page 1 (default positions 4–20) with real impression volume — the fastest ranking wins. Each row includes the ranking page, so recommendations can target a concrete URL.",
     inputSchema: {
@@ -178,6 +163,7 @@ export const MCP_TOOLS: McpTool[] = [
 
   {
     name: "get_cannibalization",
+    cost: "local",
     description:
       "Keyword cannibalization for a site: queries where two or more of the site's own URLs compete in search results, with per-URL clicks/impressions/position so the winner and loser pages are obvious. High-impression queries with a close position split are consolidation candidates.",
     inputSchema: {
@@ -219,6 +205,7 @@ export const MCP_TOOLS: McpTool[] = [
 
   {
     name: "get_rank_tracker",
+    cost: "local",
     description:
       "Tracked keyword rankings (Rank Tracker): every tracked keyword for a site with its latest SERP position check and the previous one for direction, plus country/device. Position 0/null means not found in the checked depth.",
     inputSchema: { type: "object", properties: { site: siteArg }, required: ["site"] },
@@ -244,6 +231,7 @@ export const MCP_TOOLS: McpTool[] = [
 
   {
     name: "get_aeo_visibility",
+    cost: "local",
     description:
       "AI answer-engine visibility (AEO Tracker): tracked real-user questions and whether this site gets cited/mentioned when they are asked to ChatGPT, Perplexity, Claude, and Grok — latest result per engine per question. Use to assess AI-search presence and find questions where the site is invisible.",
     inputSchema: { type: "object", properties: { site: siteArg }, required: ["site"] },
@@ -263,6 +251,7 @@ export const MCP_TOOLS: McpTool[] = [
 
   {
     name: "get_backlinks",
+    cost: "local",
     description:
       "The site's curated backlink inventory (Backlinks Checker): each tracked backlink with liveness (is the link still present) and indexed status, plus summary counts. This is the user's own link list — for competitor backlinks use get_link_mentions.",
     inputSchema: {
@@ -288,6 +277,7 @@ export const MCP_TOOLS: McpTool[] = [
 
   {
     name: "get_link_mentions",
+    cost: "local",
     description:
       "Link Monitor data: fresh quality backlinks recently earned by the WATCHED COMPETITOR BRANDS (pulled from Ahrefs; in-content, DR-filtered), plus multi-linker domains — sites that link to 2+ watched brands and are therefore prime outreach targets. Use for link prospecting and digital-PR ideas.",
     inputSchema: {
@@ -322,6 +312,7 @@ export const MCP_TOOLS: McpTool[] = [
 
   {
     name: "get_site_health",
+    cost: "local",
     description:
       "Site health snapshot: SSL certificate status/expiry, Google Safe Browsing verdict, VirusTotal reputation, and Core Web Vitals (PageSpeed, mobile) — as last checked by the app.",
     inputSchema: { type: "object", properties: { site: siteArg }, required: ["site"] },
@@ -343,6 +334,7 @@ export const MCP_TOOLS: McpTool[] = [
 
   {
     name: "get_indexing_status",
+    cost: "local",
     description:
       "Indexing overview for a site: sitemap URL counts grouped by known Google index status, and the most recent URL Inspection results. Large 'unknown/not inspected' counts mean inspection coverage is thin, not that pages are deindexed.",
     inputSchema: {
@@ -369,6 +361,7 @@ export const MCP_TOOLS: McpTool[] = [
   },
   {
     name: "get_site_audit",
+    cost: "local",
     description:
       "Latest technical site audit from OpenGSC's built-in crawler: health score, issue counts (broken links, missing/duplicate titles, missing meta descriptions, H1 problems, noindex, canonical mismatches, thin content, slow pages), and the affected URLs for a chosen issue. If no audit exists, tell the user to run one in the site's Audit tab.",
     inputSchema: {
@@ -406,6 +399,7 @@ export const MCP_TOOLS: McpTool[] = [
   },
   {
     name: "compare_periods",
+    cost: "local",
     description:
       "Period-over-period comparison from the local metrics store: current window vs the equally-sized previous window, grouped by query or page. Returns overall deltas plus the biggest winners, losers, new entries, and lost entries — answers \"which queries improved/declined vs last month?\" without any external API call.",
     inputSchema: {
@@ -470,6 +464,7 @@ export const MCP_TOOLS: McpTool[] = [
 
   {
     name: "query_gsc_live",
+    cost: "quota",
     description:
       "LIVE Google Search Console query (calls Google's Search Analytics API through the user's own OAuth token — free, but uses Google's daily quota; prefer get_search_performance for query/page data that's already synced). Use this when you need dimensions the local store doesn't have: country, device, date, or their combinations.",
     inputSchema: {
@@ -511,6 +506,7 @@ export const MCP_TOOLS: McpTool[] = [
 
   {
     name: "inspect_url",
+    cost: "quota",
     description:
       "LIVE Google URL Inspection for up to 10 URLs (calls Google's URL Inspection API through the user's own OAuth token — free, but Google caps inspections per day; results are also cached into the app's Indexing tab). Returns index verdict, coverage state, last crawl, Google-selected canonical, and robots state per URL.",
     inputSchema: {
@@ -567,8 +563,9 @@ export const MCP_TOOLS: McpTool[] = [
 
   {
     name: "get_capabilities",
+    cost: "local",
     description:
-      "Instance overview — call this first if unsure what's available: server version, connected sites count, how fresh the synced GSC data is, and which optional modules (rank tracker, AEO, Link Monitor, audits) actually contain data, so you don't call tools that will come back empty.",
+      "Instance overview — call this first if unsure what's available: server version, connected sites count, how fresh the synced GSC data is, which optional modules (rank tracker, AEO, Link Monitor, audits, GEO, indexer, GA4, Clarity, Bing/Yandex) actually contain data, and every tool grouped by what it costs to call. Saves you from calling tools that will come back empty, and from calling a paid one by accident.",
     inputSchema: { type: "object", properties: {} },
     handler: async (userId) => {
       const [sites, metricCount, latestMetric, keywords, questions, audits] = await Promise.all([
@@ -584,10 +581,18 @@ export const MCP_TOOLS: McpTool[] = [
         const rows: any[] = await prisma.$queryRawUnsafe(`SELECT COUNT(*) as c FROM "LinkMention" WHERE userId = ?`, userId);
         linkMentions = Number(rows?.[0]?.c ?? 0);
       } catch { /* not migrated */ }
+      const extra = await dataModuleCounts(userId);
+      const named = (c: ToolCost) => MCP_TOOLS.filter(t => (t.cost ?? "local") === c).map(t => t.name);
       return {
         server: "opengsc",
         version: "1.0.0",
-        tools: MCP_TOOLS.map(t => t.name),
+        toolCount: MCP_TOOLS.length,
+        tools: {
+          local: named("local"),
+          quota: named("quota"),
+          net: named("net"),
+          paid: named("paid"),
+        },
         data: {
           sites,
           gscMetricRows: metricCount,
@@ -596,13 +601,19 @@ export const MCP_TOOLS: McpTool[] = [
           aeoQuestions: questions,
           completedAudits: audits,
           linkMonitorMentions: linkMentions,
+          ...(extra as object),
         },
-        notes: "Local-store tools are free and instant. query_gsc_live and inspect_url call Google APIs via the user's OAuth (free, quota-limited).",
+        notes:
+          "local = reads this instance's database; free and instant. " +
+          "quota = calls a Google API on the owner's OAuth; free but quota-limited. " +
+          "net = fetches a third-party page. " +
+          "paid = spends the OWNER'S OWN AI credits and refuses to run without confirm: true — ask the user first, and prefer get_optimization_brief, which gives you the same material for free.",
       };
     },
   },
   {
     name: "execute_sql_query",
+    cost: "local",
     description:
       "Run a custom read-only SELECT (or WITH…SELECT) query over the local SQLite database — for cohorts, cross-table joins, and aggregations the standard tools don't cover. Available tables: Site, DailyMetric, TrackedKeyword, RankCheck, TrackedQuestion, AeoCheck, Backlink, SitemapUrl, PageInspection, PageInspectionHistory, SiteHealth, SiteAudit, SiteAuditPage, LinkWatchBrand, LinkMention, DrCache, AlertEvent, Digest, ContentGroup, TopicCluster; sqlite_master for schema discovery. Credential tables (User, Account, Session) are blocked, the connection is opened read-only at the engine level, and results are capped at 500 rows.",
     inputSchema: {
@@ -659,5 +670,15 @@ export const MCP_TOOLS: McpTool[] = [
     },
   },
 ];
+
+// The single registry the route handler sees. Order matters only for readability in
+// tools/list — agents pick by name, and get_capabilities groups them by cost.
+export const MCP_TOOLS: McpTool[] = [...CORE_TOOLS, ...DATA_TOOLS, ...OPTIMIZE_TOOLS];
+
+// A duplicate name would silently shadow a tool in findTool, and the failure would look
+// like "that tool ignores half its arguments" rather than "there are two of them".
+// Cheap to assert once at module load, on a list this file no longer owns end to end.
+const duplicates = MCP_TOOLS.map(t => t.name).filter((n, i, all) => all.indexOf(n) !== i);
+if (duplicates.length) throw new Error(`Duplicate MCP tool name(s): ${[...new Set(duplicates)].join(", ")}`);
 
 export const findTool = (name: string): McpTool | undefined => MCP_TOOLS.find(t => t.name === name);

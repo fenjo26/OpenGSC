@@ -1844,9 +1844,9 @@
   "aiModelRefresh": "Load models",
   "aiModelLoadFail": "Couldn't load the model list — check the API key.",
   "mcpTitle": "MCP Server — connect AI agents",
-  "mcpSub": "Let Claude Code, Claude Desktop, Cursor, or any MCP client query your OpenGSC data: search performance, striking-distance keywords, cannibalization, rank tracking, AEO visibility, backlinks, and the Link Monitor.",
+  "mcpSub": "Let Claude Code, Claude Desktop, Cursor, or any MCP client work with your OpenGSC data: search performance, striking-distance keywords, cannibalization, content decay, CTR benchmarks, rank tracking, AEO and GEO visibility, backlinks, site health, audits, GA4, Clarity, the indexer network — and optimize pages, with a deterministic check that the rewrite invented nothing.",
   "mcpTokenTitle": "Access token",
-  "mcpTokenNote": "The token grants read access to all your OpenGSC data via the MCP endpoint. Keep it secret; rotate it if it leaks. Stored server-side, one per account.",
+  "mcpTokenNote": "The token grants access to everything your account sees through the MCP endpoint. Keep it secret; rotate it if it leaks. Stored server-side, one per account. Tools that would spend your AI credits refuse to run without an explicit confirmation, so an agent cannot bill you by accident.",
   "mcpGenerate": "Generate token",
   "mcpRotate": "Rotate",
   "mcpRevoke": "Revoke",
@@ -1859,7 +1859,7 @@
   "mcpTryPrompt": "Then try asking:",
   "mcpTryPromptExample": "\"Look at mysite.com in OpenGSC — which keywords are in striking distance and what should I do first?\"",
   "mcpToolsTitle": "Available tools",
-  "mcpSkillsNote": "Tip: the repo ships agent skills in .agents/skills/ (performance review, link prospecting, AEO review, site triage) — copy them into your agent's skills folder for guided SEO workflows on top of these tools.",
+  "mcpSkillsNote": "Tip: the repo ships agent skills in .agents/skills/ (performance review, page optimization, link prospecting, AEO review, site triage) — copy them into your agent's skills folder for guided SEO workflows on top of these tools.",
   "mcpSkillsTitle": "AI Agent Skills:",
   "tabAudit": "Audit",
   "auditTitle": "Site Audit — built-in crawler",
@@ -2310,5 +2310,10 @@
   "idxLogsLoading": "Streaming crawler logs…",
   "idxDomainsLoading": "Loading active domains…",
   "idxQueueLoading": "Loading crawl queue…",
-  "idxDomainAdding": "Adding domain…"
+  "idxDomainAdding": "Adding domain…",
+  "mcpToolsCostNote": "Each tool declares what calling it costs. Free tools read your own database; the rest say so before an agent uses them.",
+  "mcpTierLocal": "Free — reads your database",
+  "mcpTierQuota": "Google quota — free, but limited per day",
+  "mcpTierNet": "Fetches an external page",
+  "mcpTierPaid": "Spends your AI credits — needs explicit confirmation"
 }

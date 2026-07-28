@@ -42,3 +42,7 @@ next-env.d.ts
 
 /src/generated/prisma
 dev.db-journal
+
+# local AI-assistant config — personal to whoever is working on the repo.
+# The agent skills that DO ship with the project live in .agents/skills/.
+.claude/
