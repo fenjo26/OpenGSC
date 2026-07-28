@@ -355,7 +355,7 @@ Two rules keep it safe and predictable:
    `initialize` instructions explain the tiers so an agent chooses before it calls.
 
 The `paid` tier is a deliberate relaxation of what this section previously promised
-("nothing ever calls a paid provider"). Two tools hold it: `rewrite_content` and
+("nothing ever calls a paid provider"). Two tools hold it: `start_rewrite_job` and
 `start_generation_job`. They exist because the web UI can do things an agent cannot
 reproduce — the outline pipeline's MAP/REDUCE fact grounding, Casino RAG, fact-scrub, the
 user's editorial policy and banned-word list — and withholding them made the MCP a strictly
@@ -369,17 +369,47 @@ worse OpenGSC than the browser tab next to it. Three things keep the relaxation 
   model: paying a second one to write text the first could have written is money for nothing.
   The intended flow is `get_optimization_brief` (everything known about one URL in a single
   call) → the agent writes → `analyze_text` (uniqueness, fact drift and heading-structure
-  check, deterministic, no model). `rewrite_content` is for when the user wants the app's
+  check, deterministic, no model). `start_rewrite_job` is for when the user wants the app's
   pipeline specifically.
 - **Keys come from the server-side mirror** (`User.seoSettings`, resolved by
   `resolveAiCreds()`) — the same snapshot digest-cron and rank-cron already use, since an
   MCP request has no browser and therefore no localStorage.
 
-`start_generation_job` returns a job id immediately and runs `genByType` fire-and-forget,
-reusing the `SeoJob` pattern from §1 — the pipeline takes minutes, far longer than a tool
-call can wait, so a synchronous version would only ever time out. `get_generation_job` polls
-it and applies the same 20-minute staleness sweep as the UI, so an agent never polls a row
-whose process died.
+**Both paid tools are asynchronous, and this is load-bearing rather than a nicety.** They
+return a job id and run `genByType` / `runRewriteBatch` fire-and-forget, reusing the `SeoJob`
+pattern from §1. A synchronous version does not merely time out — it loses paid work. One
+page rewrite is a fetch, then a model call producing up to 8000 tokens, then a scoped repair
+pass when the value audit fails; the per-call ceiling in `lib/llm.ts` is 280 seconds and MCP
+clients abandon a tool call after 30–60. When the client gives up the server does not: the
+call completes, the credits are spent, and the result returns to a caller that is no longer
+listening, so it is written nowhere. An early version of `rewrite_content` was synchronous
+and did exactly this — roughly thirty minutes of wall time produced four usable pages and
+paid for every abandoned attempt in between.
+
+`runRewriteBatch` (`src/lib/seo/rewriteBatch.ts`) therefore persists **per page**, not at the
+end: each result is written into the job row the moment that page finishes, so a timeout, a
+closed client or a PM2 restart costs at most the page in flight. It also never throws — a
+failure on one URL is recorded against that URL and the batch continues, since aborting would
+discard the remaining pages over a problem that may be specific to one page. A batch with any
+success is `completed` with a `failed` count; only a batch where nothing succeeded is `error`.
+
+Two ordering hazards around the staleness sweep, both fixed here:
+
+- **A long job is not a dead job.** The 20-minute sweep assumes silence means the process
+  restarted, but nothing wrote to the row while a pipeline worked, so a large article could
+  pass the mark while perfectly healthy and be reported as failed. `withJobHeartbeat()` in
+  `toolsOptimize.ts` touches the row every 60 seconds, making silence mean what it was always
+  supposed to mean. The rewrite batch needs no heartbeat — its per-page writes are one.
+- **A rewrite job is not the browser's to collect.** The History page imports every completed
+  `SeoJob` into `localStorage` and then *deletes the server row* (`importJob`,
+  `src/lib/seo/jobs.ts`). A rewrite batch is owned by the agent that started it and polled
+  from the server, so an open OpenGSC tab would have filed it under a type History cannot
+  render and destroyed the agent's results — pages the user had already paid for. `importJob`
+  now imports only the types History owns (`IMPORTABLE_TYPES`) and leaves the rest alone.
+
+`get_generation_job` polls either kind, applies the same staleness sweep as the UI, and for a
+rewrite batch reports progress plus the pages finished so far — omitting the rewritten text
+unless asked, since twenty articles inlined into a tool result is not a readable answer.
 
 Tool-level failures (bad site name, empty data) are returned as MCP tool results with
 `isError: true` rather than JSON-RPC protocol errors — agents can read the message and

@@ -22,7 +22,7 @@ Take one page from "it used to do better" to a rewritten draft the user can publ
 - `analyze_text`: deterministic verification of your draft. No model is called; the answer is the same every time.
 - `get_generations`: what has already been written for this keyword, so a "refresh" does not become a second competing page.
 - `fetch_page_content`: a competitor's page as clean Markdown, when the brief shows you are being outranked and you need to see by what.
-- `rewrite_content` / `start_generation_job`: **PAID.** Only on explicit user request — see Guardrails.
+- `start_rewrite_job` / `start_generation_job`: **PAID and asynchronous.** They return a job id, not text; poll `get_generation_job`. Only on explicit user request — see Guardrails.
 
 ## Workflow
 
@@ -54,7 +54,9 @@ Take one page from "it used to do better" to a rewritten draft the user can publ
 
 ## Guardrails
 
-- **Do not call the paid tools without being asked.** `rewrite_content` and `start_generation_job` spend the instance owner's own AI credits. They refuse to run without `confirm: true`; do not set that flag to work around the refusal. You are a language model with the brief in context — writing the draft yourself costs the owner nothing extra. Use the paid path only when the user explicitly wants the app's own pipeline: its editorial policy, its banned-word list from the AI-Fingerprint Lab, or Casino RAG grounding.
+- **Do not call the paid tools without being asked.** `start_rewrite_job` and `start_generation_job` spend the instance owner's own AI credits. They refuse to run without `confirm: true`; do not set that flag to work around the refusal. You are a language model with the brief in context — writing the draft yourself costs the owner nothing extra. Use the paid path only when the user explicitly wants the app's own pipeline: its editorial policy, its banned-word list from the AI-Fingerprint Lab, or Casino RAG grounding.
+- **Never start a second paid job because the first seems slow.** Both paid tools return a job id, not text, and a page takes 1–4 minutes. Poll `get_generation_job`; it returns finished pages as they complete, so an early poll shows partial work rather than nothing. `start_rewrite_job` refuses to start while another batch runs, and working around that refusal means paying twice for the same page.
+- **Batch instead of looping.** To refresh many pages, send the URLs to one `start_rewrite_job` call (up to 20) rather than one call per page.
 - **Never publish past a `danger` fact drift.** An invented number in a rewrite nobody rereads is precisely how a wrong price reaches production.
 - Do not rewrite a page whose problem is technical. Report the `noindex` or the broken canonical instead.
 - `get_optimization_brief` returning `boilerplateOnly: true` means the fetch got navigation, not an article. Say so; do not treat menu text as the page's content.

@@ -15,7 +15,8 @@
 //   quota — query_gsc_live, inspect_url, get_analytics call Google on the user's own
 //           OAuth. Free, but they consume Google's per-day quota.
 //   net   — fetch_page_content, get_optimization_brief fetch a third-party page.
-//   paid  — rewrite_content, start_generation_job spend the user's own AI credits.
+//   paid  — start_rewrite_job, start_generation_job spend the user's own AI credits.
+//           Both are asynchronous: they return a job id, never the finished text.
 //
 // The paid group is new, and it is the one exception to what this file used to promise.
 // It exists because the web UI can do things an agent cannot reproduce (the outline

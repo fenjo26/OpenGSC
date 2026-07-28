@@ -14,7 +14,7 @@ grouping so an agent can see it before choosing:
 | **net** | Fetches a third-party page over HTTP | Free |
 | **paid** | Spends **your own** AI credits | Refuses to run without `confirm: true` |
 
-The paid tier is two tools (`rewrite_content`, `start_generation_job`). Both refuse to run
+The paid tier is two tools (`start_rewrite_job`, `start_generation_job`). Both refuse to run
 unless the agent passes `confirm: true`, and both point at the free path in their own
 descriptions — because an agent connected to OpenGSC is itself a language model, and paying a
 second one to write text the first could have written is money for nothing. See
@@ -113,7 +113,7 @@ should I do first?”*
 | `analyze_text` | local | Deterministic check of a draft: uniqueness, invented/dropped numbers and identifiers, heading-structure match, machine tells. No model called |
 | `get_generations` | local | The SEO Tools history — what has already been written, so you extend instead of duplicating |
 | `get_generation_job` | local | Poll a background generation job |
-| `rewrite_content` | **paid** | The app's own Content Rewriter: N scored variants, optional refreshed snippet |
+| `start_rewrite_job` | **paid** | The app's own Content Rewriter over up to 20 pages, in the background; each page saved as it finishes |
 | `start_generation_job` | **paid** | The full outline/article pipeline as a background job |
 
 ### Live Google calls (quota)
@@ -170,10 +170,44 @@ The intended flow costs you nothing beyond what you already pay your agent:
    appears in the draft but not the source. That last one is the check that matters: a
    rewrite nobody rereads is exactly how a wrong price gets published.
 
-Reach for `rewrite_content` (paid) when you want the app's own pipeline rather than your
+Reach for `start_rewrite_job` (paid) when you want the app's own pipeline rather than your
 agent's prose — its editorial policy, its banned-word list from the AI-Fingerprint Lab, or
-Casino RAG grounding. `start_generation_job` (paid) runs the full outline/article pipeline in
-the background, since it takes minutes; poll it with `get_generation_job`.
+Casino RAG grounding. It takes up to 20 URLs and works through them in the background;
+`start_generation_job` (paid) runs the full outline/article pipeline the same way. Both
+return a job id immediately and are polled with `get_generation_job`.
+
+### Why the paid tools never return text directly
+
+Rewriting one page means fetching it, then a model call producing up to 8000 tokens, then a
+repair pass when the value audit finds drift. That is minutes of work, and the per-call
+ceiling inside OpenGSC is 280 seconds. MCP clients abandon a tool call after 30–60.
+
+The failure that follows is worse than a slow response, and it is why raising a timeout is
+not the fix. **When the client gives up, the server does not.** The model call completes, the
+credits are spent, and the result is handed back to a caller that stopped listening — so it
+is written nowhere. Every abandoned attempt is a rewrite you paid for and cannot read, and
+retrying pays again.
+
+So the paid tools persist before anyone asks. `start_rewrite_job` writes each page into the
+job row the moment that page finishes, which means a client timeout, a closed laptop, a PM2
+restart or a crash costs at most the single page in flight — everything already paid for
+stays retrievable:
+
+```text
+start_rewrite_job  { urls: [...20 urls], confirm: true }  → jobId, immediately
+get_generation_job { jobId }                              → 6 of 20 done, 1 failed, names the current page
+get_generation_job { jobId, page: "/pricing" }            → that page's full rewritten text
+get_generation_job { jobId, includeContent: true }        → everything finished so far
+```
+
+Polling early is expected and returns partial work rather than nothing. Do not start a second
+job while one is running — `start_rewrite_job` refuses, precisely because an agent that polls,
+sees an unfinished batch and starts again is an easy way to pay twice for the same page.
+
+Long generations are protected from the other direction too. A job silent for 20 minutes is
+treated as a dead process and failed, so a genuinely long article risked being reported as
+broken while it was still working; jobs now send a heartbeat every 60 seconds, and the sweep
+means what it was meant to mean — silence is a crash, not slowness.
 
 ## Troubleshooting
 

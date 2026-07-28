@@ -63,6 +63,16 @@ export async function clearFailedJobs(): Promise<number> {
 
 function safeParse(s?: string | null): any { if (!s) return undefined; try { return JSON.parse(s); } catch { return undefined; } }
 
+// Job types this browser History owns, and may therefore consume and delete server-side.
+//
+// The History page imports every completed job it finds, so anything NOT listed here is
+// left alone deliberately. `rewrite` batches are started over MCP by an agent that polls
+// the server row for its results — if an open OpenGSC tab imported one, it would file it
+// under a type History cannot render AND delete the server copy, so the agent's next poll
+// would report the job missing and pages the user had already paid for would be gone.
+// A job whose owner is not this browser is not this browser's to collect.
+const IMPORTABLE_TYPES = new Set(["outline", "outline_auto", "text", "analysis", "landing", "cluster"]);
+
 // Map a completed job's result into a local History item, then drop the server copy.
 // Always removes the server job afterwards (even if unparseable) to avoid re-import loops.
 // Dedupe: a job is imported at most once — guarded against concurrent callers in this tab
@@ -71,6 +81,7 @@ function safeParse(s?: string | null): any { if (!s) return undefined; try { ret
 const importing = new Set<string>();
 export async function importJob(job: SeoJobRec): Promise<HistoryItem | null> {
   if (job.status !== "completed") return null;
+  if (!IMPORTABLE_TYPES.has(String(job.type))) return null;
   if (importing.has(job.id)) return null;
   importing.add(job.id);
   try {
