@@ -2305,5 +2305,10 @@
   "rwSnippetInFile": "Edits here are saved into the downloaded file: front matter in .md, head tags in .html, a header in .txt.",
   "rwStructureOff": "headings differ",
   "rwStructureHint": "The rewrite has a different number of headings than the source. A missing section changes what the page covers — check before publishing.",
-  "rwSnippetShort": "Shorter than the space the search engine gives you — there is room for more."
+  "rwSnippetShort": "Shorter than the space the search engine gives you — there is room for more.",
+  "idxStatsLoading": "Loading indexer statistics…",
+  "idxLogsLoading": "Streaming crawler logs…",
+  "idxDomainsLoading": "Loading active domains…",
+  "idxQueueLoading": "Loading crawl queue…",
+  "idxDomainAdding": "Adding domain…"
 }

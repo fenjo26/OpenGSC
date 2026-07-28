@@ -211,7 +211,7 @@ export default function IndexerDictionaryPage() {
           >
             {generating ? (
               <>
-                <RefreshCw size={14} className="animate-spin" />
+                <RefreshCw size={14} className="spin" />
                 {t("dictAiGenerating")}
               </>
             ) : (
@@ -344,9 +344,9 @@ export default function IndexerDictionaryPage() {
         )}
 
         {loading ? (
-          <div style={{ padding: "40px 0", textAlign: "center", color: "var(--color-text-secondary)" }}>
-            <RefreshCw size={18} className="animate-spin" style={{ margin: "0 auto 12px" }} />
-            {t("dictLoading")}
+          <div style={{ padding: "40px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: "12px", color: "var(--color-text-secondary)" }}>
+            <RefreshCw size={18} className="spin" />
+            <span>{t("dictLoading")}</span>
           </div>
         ) : words.length === 0 ? (
           <div style={{

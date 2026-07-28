@@ -314,8 +314,8 @@ export default function IndexerDomainsPage() {
           >
             {submitting ? (
               <>
-                <RefreshCw size={14} className="animate-spin" />
-                Adding Domain...
+                <RefreshCw size={14} className="spin" />
+                {t("idxDomainAdding")}
               </>
             ) : (
               <>
@@ -342,9 +342,9 @@ export default function IndexerDomainsPage() {
         </h3>
 
         {loading ? (
-          <div style={{ padding: "40px 0", textAlign: "center", color: "var(--color-text-secondary)" }}>
-            <RefreshCw size={18} className="animate-spin" style={{ margin: "0 auto 12px" }} />
-            Loading active domains...
+          <div style={{ padding: "40px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: "12px", color: "var(--color-text-secondary)" }}>
+            <RefreshCw size={18} className="spin" />
+            <span>{t("idxDomainsLoading")}</span>
           </div>
         ) : domains.length === 0 ? (
           <div style={{

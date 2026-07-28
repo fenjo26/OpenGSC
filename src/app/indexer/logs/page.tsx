@@ -235,7 +235,7 @@ export default function IndexerLogsPage() {
         <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
           {fetchingMore && (
             <span style={{ fontSize: "12px", color: "var(--color-text-secondary)", display: "flex", alignItems: "center", gap: "6px" }}>
-              <RefreshCw size={12} className="animate-spin" />
+              <RefreshCw size={12} className="spin" />
               {t("logsUpdating")}
             </span>
           )}
@@ -271,9 +271,9 @@ export default function IndexerLogsPage() {
         overflow: "hidden"
       }}>
         {loading ? (
-          <div style={{ padding: "40px 0", textAlign: "center", color: "var(--color-text-secondary)" }}>
-            <RefreshCw size={20} className="animate-spin" style={{ margin: "0 auto 12px" }} />
-            Streaming Googlebot logs...
+          <div style={{ padding: "40px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: "12px", color: "var(--color-text-secondary)" }}>
+            <RefreshCw size={20} className="spin" />
+            <span>{t("idxLogsLoading")}</span>
           </div>
         ) : logs.length === 0 ? (
           <div style={{ padding: "40px 16px", textAlign: "center", color: "var(--color-text-secondary)", display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" }}>

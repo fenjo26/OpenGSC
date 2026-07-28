@@ -69,9 +69,11 @@ export default function IndexerStatsPage() {
     setVisibleSeries(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const fetchStats = async () => {
+  // The API caches its aggregate for a minute; `refresh=1` bypasses that when the operator asks
+  // for fresh numbers explicitly, so the cache never gets in the way of checking a live crawl.
+  const fetchStats = async (force = false) => {
     try {
-      const res = await fetch("/api/indexer/stats");
+      const res = await fetch(`/api/indexer/stats${force ? "?refresh=1" : ""}`, { cache: "no-store" });
       const d = await res.json();
       setData(d);
     } catch (e) {
@@ -94,9 +96,12 @@ export default function IndexerStatsPage() {
 
   if (loading) {
     return (
-      <div style={{ padding: "40px 0", textAlign: "center", color: "var(--color-text-secondary)" }}>
-        <RefreshCw size={24} className="animate-spin" style={{ margin: "0 auto 12px" }} />
-        Loading indexer statistics...
+      // An SVG is inline by default, so `margin: 0 auto 12px` centred nothing and the icon sat on
+      // the text baseline instead of above it. A flex column puts the spinner and the label on
+      // their own lines and centres both without relying on text-align.
+      <div style={{ padding: "40px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: "12px", color: "var(--color-text-secondary)" }}>
+        <RefreshCw size={24} className="spin" />
+        <span>{t("idxStatsLoading")}</span>
       </div>
     );
   }

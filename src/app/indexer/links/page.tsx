@@ -266,7 +266,7 @@ export default function IndexerLinksPage() {
 
         {loading ? (
           <div style={{ height: "300px", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-text-secondary)" }}>
-            <RefreshCw size={20} className="animate-spin" style={{ marginRight: "8px" }} />
+            <RefreshCw size={20} className="spin" style={{ marginRight: "8px" }} />
             {t("linksCalculating")}
           </div>
         ) : domains.length === 0 ? (

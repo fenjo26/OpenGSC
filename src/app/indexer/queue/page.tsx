@@ -337,7 +337,7 @@ export default function IndexerQueuePage() {
           >
             {submitting ? (
               <>
-                <RefreshCw size={14} className="animate-spin" />
+                <RefreshCw size={14} className="spin" />
                 {t("indexerQueueProcessing")}
               </>
             ) : (
@@ -425,9 +425,9 @@ export default function IndexerQueuePage() {
         </div>
 
         {loading ? (
-          <div style={{ flex: "1 1 auto", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 0", color: "var(--color-text-secondary)" }}>
-            <RefreshCw size={18} className="animate-spin" style={{ marginBottom: "12px" }} />
-            Loading crawl queue...
+          <div style={{ flex: "1 1 auto", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "12px", padding: "40px 0", color: "var(--color-text-secondary)" }}>
+            <RefreshCw size={18} className="spin" />
+            <span>{t("idxQueueLoading")}</span>
           </div>
         ) : queue.length === 0 ? (
           <div style={{
