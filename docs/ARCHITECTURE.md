@@ -324,6 +324,22 @@ body (the spec allows this in place of an SSE stream), so the endpoint needs no 
 state and survives process restarts trivially. Authentication is a per-user bearer token
 (`User.mcpToken`, managed in **Settings → API & MCP** via `/api/settings/mcp-token`).
 
+Authentication is the token in an `Authorization: Bearer` header, or — because one important
+client cannot send one — in a `?token=` query parameter. Claude Desktop's *Add custom
+connector* dialog offers a URL and, behind Advanced settings, OAuth Client ID and Client
+Secret; there is no header field, so a token pasted there is interpreted as an OAuth client
+id and the connector fails silently. The query parameter is the only way those users can
+connect at all. The header always wins when both are present, and the cost — a token in the
+access log, where a header would not be — is stated in the setup docs rather than hidden.
+
+Two paths must also stay clear of the login redirect for a client to get that far.
+`/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server` are
+probed before connecting, to discover whether the server wants OAuth. Nothing serves them
+here, so 404 is the correct answer and means "no OAuth". Behind `withAuth` they answered 307
+to the HTML login page instead, which a client can read as an OAuth server that exists,
+sending it into a flow this server cannot finish — and the connector then fails with nothing
+useful in the error.
+
 **The endpoint must be excluded from the NextAuth middleware, and this is not optional.**
 `src/middleware.ts` matches everything outside `/login` and `/api/auth`, so without an
 explicit exclusion `withAuth` answers an agent's POST with a 307 to `/api/auth/signin` and

@@ -36,8 +36,36 @@ claude mcp add --transport http opengsc https://your-domain.com/api/mcp \
   --header "Authorization: Bearer ogsc_YOUR_TOKEN"
 ```
 
-**Claude Desktop** — Settings → Connectors → *Add custom connector*: URL as above, and add the
-`Authorization: Bearer ogsc_YOUR_TOKEN` header.
+**Claude Desktop** — Settings → Connectors → *Add custom connector*, and paste the token into
+the **URL**:
+
+```text
+https://your-domain.com/api/mcp?token=ogsc_YOUR_TOKEN
+```
+
+Leave **Advanced settings** empty. Those two fields are *OAuth Client ID* and *OAuth Client
+Secret* — Claude Desktop's connector dialog has no field for an `Authorization` header, so a
+token pasted there is read as an OAuth client id, does nothing, and the connector fails
+without explaining why. That is the single most common reason this does not connect. Claude
+Code, Cursor and Codex all send headers properly; only the Desktop dialog is limited.
+
+The trade-off of a token in a URL is that it appears in your nginx access log and in whatever
+stores the connector config, where a header would not. Over HTTPS it is encrypted in transit
+like any other part of the request, and you can rotate it from Settings at any time. If you
+would rather keep it out of the URL, use the `mcp-remote` bridge instead — Settings →
+Developer → *Edit Config*, then restart Claude Desktop (needs Node.js installed):
+
+```json
+{
+  "mcpServers": {
+    "opengsc": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://your-domain.com/api/mcp",
+               "--header", "Authorization: Bearer ogsc_YOUR_TOKEN"]
+    }
+  }
+}
+```
 
 **Cursor** — add to `.cursor/mcp.json`:
 
@@ -219,6 +247,11 @@ read your `Authorization` header. Update and rebuild:
 cd /root/opengsc && git pull && npm install && npx prisma db push && npm run build && pm2 restart opengsc
 ```
 
+**Claude Desktop says the connector failed, with no detail.** Almost always the token was
+put into *Advanced settings* rather than the URL — see the Claude Desktop step above. Those
+fields are OAuth client credentials, not a place for this token. Clear them, and put
+`?token=ogsc_…` on the end of the URL instead.
+
 **Checking a connection by hand.** `GET https://your-domain.com/api/mcp` returns JSON
 describing the server and whether your token was accepted, and `GET /api/mcp/tools` returns
 the registry as plain JSON. Neither is part of the MCP protocol — clients POST JSON-RPC to
@@ -226,9 +259,12 @@ the registry as plain JSON. Neither is part of the MCP protocol — clients POST
 
 ```bash
 curl -s https://your-domain.com/api/mcp/tools -H "Authorization: Bearer ogsc_YOUR_TOKEN"
+curl -s "https://your-domain.com/api/mcp/tools?token=ogsc_YOUR_TOKEN"   # the Desktop form
 ```
 
 A 401 means the token is wrong or was rotated; anything else means the URL or the proxy is.
+If the header form works and the query form does not, your reverse proxy is stripping the
+query string.
 
 **A tool reports the table is not available.** That instance has not run `npx prisma db push`
 since the model was added. Tools degrade to an empty result with a note rather than failing

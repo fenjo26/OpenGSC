@@ -1855,7 +1855,7 @@
   "mcpEndpointTitle": "Endpoint URL",
   "mcpConnectTitle": "Connect your agent",
   "mcpNoTokenYet": "Generate a token above first — the command below will fill in automatically.",
-  "mcpDesktopHint": "Claude Desktop → Settings → Connectors → Add custom connector, then fill in:",
+  "mcpDesktopHint": "Claude Desktop → Settings → Connectors → Add custom connector. Paste this as the URL — the token travels in it, because this dialog has no field for an Authorization header:",
   "mcpTryPrompt": "Then try asking:",
   "mcpTryPromptExample": "\"Look at mysite.com in OpenGSC — which keywords are in striking distance and what should I do first?\"",
   "mcpToolsTitle": "Available tools",
@@ -2315,5 +2315,7 @@
   "mcpTierLocal": "Free — reads your database",
   "mcpTierQuota": "Google quota — free, but limited per day",
   "mcpTierNet": "Fetches an external page",
-  "mcpTierPaid": "Spends your AI credits — needs explicit confirmation"
+  "mcpTierPaid": "Spends your AI credits — needs explicit confirmation",
+  "mcpDesktopNoHeader": "Do NOT put the token in Advanced settings. Those two fields are OAuth Client ID and Client Secret; a token pasted there is read as an OAuth client id, does nothing, and the connector fails without saying why. Leave them empty.",
+  "mcpDesktopBridge": "Prefer to keep the token out of the URL? Use the mcp-remote bridge instead (needs Node.js) — Settings → Developer → Edit Config, then restart Claude Desktop:"
 }

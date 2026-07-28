@@ -24,7 +24,15 @@ import { MCP_TOOLS } from "@/lib/mcp/tools";
 async function authUserId(req: Request): Promise<string | null> {
   const header = req.headers.get("authorization") ?? "";
   const bearer = header.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
-  const token = bearer || req.headers.get("x-api-key")?.trim() || "";
+  let token = bearer || req.headers.get("x-api-key")?.trim() || "";
+  // Same query-parameter fallback as /api/mcp, so a connection can be checked with the
+  // exact URL the client was given — see the note there on why it exists.
+  if (!token) {
+    try {
+      const qs = new URL(req.url).searchParams;
+      token = (qs.get("token") || qs.get("key") || qs.get("api_key") || "").trim();
+    } catch { /* unparseable URL */ }
+  }
   if (token.startsWith("ogsc_")) {
     try {
       const rows: any[] = await prisma.$queryRawUnsafe(`SELECT id FROM "User" WHERE mcpToken = ?`, token);

@@ -28,10 +28,32 @@ const INSTRUCTIONS =
   "• paid — spends the OWNER'S OWN AI credits. These refuse to run without confirm: true. Ask the human before setting it.\n\n" +
   "To optimize a page, the intended path is free: get_optimization_brief returns that URL's queries, striking-distance keywords, CTR gaps, decay trend, cannibalization conflicts, audit issues and current content in one call — write the new version yourself, then verify it with analyze_text (deterministic uniqueness, invented-number detection and heading-structure check, no model involved). start_rewrite_job and start_generation_job exist for when the user specifically wants the app's own pipeline. Both bill the user, and both are ASYNCHRONOUS — they return a job id, and you poll get_generation_job. Never expect a paid tool to hand back finished text in its own response: a page takes minutes to rewrite, far longer than any client will hold a tool call open.";
 
+/**
+ * Extract the MCP token from wherever the client was able to put it.
+ *
+ * The header is the right place and every CLI client uses it. Claude Desktop cannot:
+ * its "Add custom connector" dialog takes a URL, and the only auth fields behind
+ * Advanced settings are OAuth Client ID and Client Secret. There is no header field, so
+ * a token pasted there is read as an OAuth client id and silently does nothing — the
+ * connector then fails with no useful error. Until that UI grows a header field, the
+ * query parameter is the only way those users can connect at all.
+ *
+ * The trade-off is real and is documented rather than hidden: a token in a URL ends up
+ * in nginx access logs and in whatever stored the connector config, where a header would
+ * not. That is acceptable for a single-operator self-hosted instance over HTTPS — the
+ * query string is encrypted in transit like the rest of the request — and the token can
+ * be rotated from Settings at any time.
+ */
 async function authUserId(req: Request): Promise<string | null> {
   const header = req.headers.get("authorization") ?? "";
   const bearer = header.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
-  const token = bearer || req.headers.get("x-api-key")?.trim() || "";
+  let token = bearer || req.headers.get("x-api-key")?.trim() || "";
+  if (!token) {
+    try {
+      const qs = new URL(req.url).searchParams;
+      token = (qs.get("token") || qs.get("key") || qs.get("api_key") || "").trim();
+    } catch { /* unparseable URL — treat as no token */ }
+  }
   if (!token || !token.startsWith("ogsc_")) return null;
   try {
     const rows: any[] = await prisma.$queryRawUnsafe(`SELECT id FROM "User" WHERE mcpToken = ?`, token);

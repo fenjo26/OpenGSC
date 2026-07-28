@@ -556,12 +556,31 @@ function ApiSection() {
       label: "Claude Code",
       cmd: `claude mcp add --transport http opengsc ${endpoint} --header "Authorization: Bearer ${shownToken}"`,
     },
+    // Claude Desktop's "Add custom connector" dialog has a URL field and, behind Advanced
+    // settings, OAuth Client ID / Client Secret — and nothing else. There is no header
+    // field, so the Bearer line this panel used to print had nowhere to go; pasting the
+    // token into OAuth Client ID (the obvious guess) silently does nothing. Hence the URL
+    // carries the token instead, with the header-based alternative underneath for anyone
+    // who would rather keep it out of a URL.
     "claude-desktop": {
       label: "Claude Desktop",
       cmd: `${t("mcpDesktopHint")}
 
-URL: ${endpoint}
-Authorization: Bearer ${shownToken}`,
+URL: ${endpoint}?token=${shownToken}
+
+${t("mcpDesktopNoHeader")}
+
+${t("mcpDesktopBridge")}
+
+{
+  "mcpServers": {
+    "opengsc": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "${endpoint}",
+               "--header", "Authorization: Bearer ${shownToken}"]
+    }
+  }
+}`,
     },
     "cursor": {
       label: "Cursor",

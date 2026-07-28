@@ -1855,7 +1855,7 @@
   "mcpEndpointTitle": "URL endpoint'а",
   "mcpConnectTitle": "Підключіть агента",
   "mcpNoTokenYet": "Спершу створіть токен вище — команда нижче підставиться автоматично.",
-  "mcpDesktopHint": "Claude Desktop → Налаштування → Конектори → Додати власний конектор, потім заповніть:",
+  "mcpDesktopHint": "Claude Desktop → Налаштування → Конектори → Додати власний конектор. Вставте це в поле URL — токен іде прямо в ньому, бо поля для заголовка Authorization у цьому вікні немає:",
   "mcpTryPrompt": "Потім спитайте:",
   "mcpTryPromptExample": "«Подивись mysite.com в OpenGSC — які запити у striking distance і що зробити першим?»",
   "mcpToolsTitle": "Доступні інструменти",
@@ -2315,5 +2315,7 @@
   "mcpTierLocal": "Безкоштовно — читає вашу базу",
   "mcpTierQuota": "Квота Google — безкоштовно, але ліміт на добу",
   "mcpTierNet": "Завантажує зовнішню сторінку",
-  "mcpTierPaid": "Витрачає ваші AI-кредити — потрібне явне підтвердження"
+  "mcpTierPaid": "Витрачає ваші AI-кредити — потрібне явне підтвердження",
+  "mcpDesktopNoHeader": "НЕ вставляйте токен в Advanced settings. Ці два поля — OAuth Client ID і Client Secret; вставлений туди токен сприймається як OAuth client id, не працює, і конектор падає без пояснення причини. Залиште їх порожніми.",
+  "mcpDesktopBridge": "Не хочете тримати токен у URL? Використайте міст mcp-remote (потрібен Node.js) — Налаштування → Розробник → Змінити конфіг, потім перезапустіть Claude Desktop:"
 }

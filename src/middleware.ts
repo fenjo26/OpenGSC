@@ -23,6 +23,14 @@ export default withAuth(
         const { pathname, searchParams } = req.nextUrl;
         if (pathname === "/api/indexer/webhook") return true;
         if (pathname === "/api/mcp" || pathname.startsWith("/api/mcp/")) return true;
+        //   • /.well-known/* — MCP clients probe /.well-known/oauth-protected-resource and
+        //     /.well-known/oauth-authorization-server before connecting, to discover whether
+        //     the server wants OAuth. Nothing serves those paths here, so the correct answer
+        //     is 404 = "no OAuth, use the token you were given". Behind withAuth they instead
+        //     answered 307 to the HTML login page, which a client can read as an OAuth server
+        //     that exists, sending it into an authorization flow this server cannot complete.
+        //     The connector then fails with nothing useful in the error.
+        if (pathname.startsWith("/.well-known/")) return true;
         if (pathname.startsWith("/share/")) return true;
         if (pathname.startsWith("/api/") && searchParams.has("shareToken")) return true;
         return !!token;
