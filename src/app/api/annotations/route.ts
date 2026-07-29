@@ -77,6 +77,35 @@ function densify(rows: DayRow[], from: Date, days: number): number[] {
   return Array.from({ length: days }, (_, i) => byDay.get(iso(addDays(from, i))) ?? 0);
 }
 
+export interface SeriesPoint {
+  date: string; clicks: number; impressions: number; ctr: number; position: number | null;
+  phase: "before" | "after";
+}
+
+/**
+ * Day-by-day values for all four metrics across the whole window.
+ *
+ * The chart used to receive clicks alone, which is why toggling impressions or position changed the
+ * numbers on the right but never the curve. Position is null on days with no impressions rather
+ * than 0 — rank zero does not exist, and plotting it as zero draws a cliff that never happened.
+ */
+function toSeries(rows: DayRow[], from: Date, days: number, phase: "before" | "after"): SeriesPoint[] {
+  const byDay = new Map(rows.map(r => [r.day, r]));
+  return Array.from({ length: days }, (_, i) => {
+    const date = iso(addDays(from, i));
+    const r = byDay.get(date);
+    const impressions = r?.impressions ?? 0;
+    return {
+      date,
+      clicks: r?.clicks ?? 0,
+      impressions,
+      ctr: impressions > 0 ? +(((r?.clicks ?? 0) / impressions) * 100).toFixed(2) : 0,
+      position: impressions > 0 ? +((r!.posw / impressions).toFixed(1)) : null,
+      phase,
+    };
+  });
+}
+
 async function ownedSite(userId: string, siteId: string) {
   return prisma.site.findFirst({ where: { id: siteId, userId }, select: { id: true } });
 }
@@ -141,6 +170,8 @@ export async function GET(req: Request) {
         position: { before: +b.position.toFixed(1), after: +a.position.toFixed(1), delta: +(b.position - a.position).toFixed(1) },
         sparkBefore: densify(before, beforeFrom, days),
         sparkAfter: densify(after, d, days),
+        // Full per-day values for the chart, with the change date marking the boundary.
+        series: [...toSeries(before, beforeFrom, days, "before"), ...toSeries(after, d, days, "after")],
       };
     }));
 

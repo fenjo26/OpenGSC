@@ -3224,22 +3224,69 @@ function AddNoteModal({ onClose, onSave }: { onClose: () => void; onSave: (note:
 }
 
 // ─── Annotation sparkline ─────────────────────────────────────────────────────
-function AnnotationSparkline({ before, after }: { before: number[]; after: number[] }) {
-  const data = [...before, ...after].map((v, i) => ({ v, i, isPre: i < before.length }));
-  const allData = data.map(d => ({ date: d.i, value: d.v }));
+type SeriesPoint = {
+  date: string; clicks: number; impressions: number; ctr: number; position: number | null;
+  phase: "before" | "after";
+};
+
+/**
+ * Before/after chart for one annotation.
+ *
+ * Replaces a single unlabelled clicks-only curve. Two things made that unreadable: it ignored the
+ * metric toggles entirely, and it had no axes, so the shape carried no magnitude — a rise from 2 to
+ * 4 looked exactly like 2000 to 4000.
+ *
+ * The four metrics differ by orders of magnitude (171 clicks against 17 100 impressions against
+ * 1% CTR), so they cannot share one scale. Counts go on the left axis, rates and rank on the right.
+ * The rank axis is reversed because a lower position is a better one — drawn normally, an
+ * improvement would point downwards and read as a decline.
+ */
+function AnnotationChart({ series, activeMetrics, changeDate }: {
+  series: SeriesPoint[]; activeMetrics: Set<Metric>; changeDate: string;
+}) {
+  const { t } = useLanguage();
+  if (!series?.length) return null;
+
+  const show = (m: Metric) => activeMetrics.has(m);
+  const fmtDay = (d: string) => d.slice(5).replace("-", ".");
+  const usesRight = show("ctr") || show("position");
+
   return (
-    <ResponsiveContainer width="100%" height={60}>
-      <AreaChart data={allData} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
-        <defs>
-          <linearGradient id="ann-g" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#3B82F6" stopOpacity={0.2} />
-            <stop offset="100%" stopColor="#3B82F6" stopOpacity={0} />
-          </linearGradient>
-        </defs>
-        <Area type="monotone" dataKey="value" stroke="#3B82F6" strokeWidth={1.5} fill="url(#ann-g)" dot={false} isAnimationActive={false} />
-        {/* Annotation marker line at midpoint */}
-        <line x1="50%" y1="0" x2="50%" y2="100%" stroke="#6b7280" strokeWidth={1} strokeDasharray="3 2" />
-      </AreaChart>
+    <ResponsiveContainer width="100%" height={170}>
+      <ComposedChart data={series} margin={{ top: 8, right: usesRight ? 4 : 8, left: -8, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
+        <XAxis dataKey="date" tickFormatter={fmtDay} tick={{ fontSize: 10, fill: "var(--color-text-secondary)" }}
+          interval="preserveStartEnd" minTickGap={28} axisLine={false} tickLine={false} />
+        <YAxis yAxisId="count" tick={{ fontSize: 10, fill: "var(--color-text-secondary)" }} axisLine={false} tickLine={false} width={44}
+          tickFormatter={(v: number) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v))} />
+        {usesRight && (
+          <YAxis yAxisId="rate" orientation="right" tick={{ fontSize: 10, fill: "var(--color-text-secondary)" }}
+            axisLine={false} tickLine={false} width={38}
+            reversed={show("position")} domain={show("position") ? [1, "dataMax"] : [0, "dataMax"]} />
+        )}
+        <Tooltip
+          contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: "8px", fontSize: "12px" }}
+          labelFormatter={(d) => String(d ?? "")}
+          formatter={(v, name) => [v == null ? "—" : (v as number), String(name ?? "")]}
+        />
+        {/* Where the change happened — everything left of it is the baseline. */}
+        <ReferenceLine yAxisId="count" x={changeDate} stroke="var(--color-text-secondary)" strokeDasharray="4 3"
+          label={{ value: t("annChangeMarker"), position: "top", fontSize: 10, fill: "var(--color-text-secondary)" }} />
+        {show("clicks") && (
+          <Line yAxisId="count" type="monotone" dataKey="clicks" name={t("clicks")} stroke={C.clicks} strokeWidth={2} dot={false} isAnimationActive={false} />
+        )}
+        {show("impressions") && (
+          <Line yAxisId="count" type="monotone" dataKey="impressions" name={t("impressions")} stroke={C.impressions} strokeWidth={2} dot={false} isAnimationActive={false} />
+        )}
+        {show("ctr") && (
+          <Line yAxisId="rate" type="monotone" dataKey="ctr" name="CTR %" stroke={C.ctr} strokeWidth={2} dot={false} isAnimationActive={false} />
+        )}
+        {show("position") && (
+          // connectNulls keeps the rank line continuous across days with no impressions, where
+          // position is genuinely undefined rather than zero.
+          <Line yAxisId="rate" type="monotone" dataKey="position" name={t("avgPosition")} stroke={C.position} strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />
+        )}
+      </ComposedChart>
     </ResponsiveContainer>
   );
 }
@@ -3257,6 +3304,8 @@ interface AnnotationNote {
   pBefore: number; pAfter: number; pDelta: number;
   dateRange: string;
   sparkBefore: number[]; sparkAfter: number[];
+  /** per-day values for every metric — what the chart draws */
+  series?: SeriesPoint[];
 }
 
 // Shape returned by /api/annotations, flattened into the row shape this table renders.
@@ -3267,6 +3316,7 @@ type ApiNote = {
   ctr: { before: number; after: number; pct: number | null };
   position: { before: number; after: number; delta: number };
   sparkBefore: number[]; sparkAfter: number[];
+  series?: SeriesPoint[];
 };
 
 function mapApiNote(n: ApiNote): AnnotationNote {
@@ -3282,6 +3332,7 @@ function mapApiNote(n: ApiNote): AnnotationNote {
     pBefore: n.position.before, pAfter: n.position.after, pDelta: n.position.delta,
     dateRange: n.dateRange,
     sparkBefore: n.sparkBefore, sparkAfter: n.sparkAfter,
+    series: n.series,
   };
 }
 
@@ -3412,9 +3463,9 @@ function AnnotationsTab({ period, setPeriod, periodOptions, onSetupBranded, site
               </div>
             </div>
 
-            {/* Center: sparkline + date range */}
+            {/* Center: before/after chart + date range */}
             <div style={{ padding: "12px 24px" }}>
-              <AnnotationSparkline before={note.sparkBefore} after={note.sparkAfter} />
+              <AnnotationChart series={note.series ?? []} activeMetrics={activeMetrics} changeDate={note.date} />
               <div style={{ fontSize: "10px", color: "var(--color-text-secondary)", textAlign: "center", marginTop: "2px" }}>{note.dateRange}</div>
             </div>
 
