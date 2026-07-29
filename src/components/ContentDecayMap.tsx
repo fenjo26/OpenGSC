@@ -403,15 +403,17 @@ function PositionDecayScatter({ siteDbId }: { siteDbId: string }) {
   const [points, setPoints] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [reason, setReason] = useState("");
+  const [periods, setPeriods] = useState<{ previous: string; current: string } | null>(null);
 
   useEffect(() => {
     if (!siteDbId) return;
-    setLoading(true); setError("");
+    setLoading(true); setError(""); setReason("");
     fetch(withShare(`/api/gsc/decay/position?siteId=${encodeURIComponent(siteDbId)}`))
       .then(r => r.json())
       .then(d => {
         if (d.error) setError(d.error);
-        else setPoints(d.points ?? []);
+        else { setPoints(d.points ?? []); setReason(d.reason ?? ""); setPeriods(d.periods ?? null); }
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
@@ -443,9 +445,20 @@ function PositionDecayScatter({ siteDbId }: { siteDbId: string }) {
         {t("cdmScatterDesc") || "X-axis is the query position 30-60 days ago. Y-axis is today's position. The diagonal represents no change. Points above the diagonal represent search queries that declined; points below improved."}
       </p>
 
+      {periods && (
+        <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "-12px", marginBottom: "16px" }}>
+          {periods.previous} → {periods.current}
+        </div>
+      )}
+
       {points.length === 0 ? (
-        <div style={{ padding: "40px", textAlign: "center", color: "var(--color-text-secondary)" }}>
-          No sufficient search queries found in both periods to plot.
+        // One generic sentence used to cover every cause. Naming the cause matters: "connect a
+        // Google account" and "this site has no query with 10+ impressions in both windows" call
+        // for completely different actions.
+        <div style={{ padding: "40px", textAlign: "center", color: "var(--color-text-secondary)", fontSize: "13px", lineHeight: 1.6 }}>
+          {reason === "no_google_account"
+            ? t("cdmScatterNoAccount")
+            : t("cdmScatterNoOverlap")}
         </div>
       ) : (
         <div style={{ height: "420px", background: "var(--color-bg)", borderRadius: "8px", padding: "16px", border: "1px solid var(--color-border)" }}>
@@ -519,6 +532,8 @@ export default function ContentDecayMap({ domain, siteDbId }: { domain: string; 
   const [data,      setData]      = useState<DecayData | null>(null);
   const [loading,   setLoading]   = useState(false);
   const [view,      setView]      = useState<"heatmap" | "scatter">("heatmap");
+  // The portfolio page passes "all"; the scatter is a single-property view (see the toggle below).
+  const isPortfolio = siteDbId === "all";
 
   const fetchData = useCallback(async (m: HeatMetric, p: HeatPeriod) => {
     if (!siteDbId) return;
@@ -543,9 +558,14 @@ export default function ContentDecayMap({ domain, siteDbId }: { domain: string; 
       <HowItWorks />
       <DecayingPagesTable rows={data?.decay ?? []} />
       
-      {/* Toggle View buttons */}
-      <div style={{ display: "flex", gap: "10px", padding: "16px 28px", borderBottom: "1px solid var(--color-border)", background: "rgba(255,255,255,0.01)" }}>
-        {(["heatmap", "scatter"] as const).map(v => (
+      {/* Toggle View buttons.
+          The scatter plots one site's queries by rank, which only means something within a single
+          property: position 3 on one site and position 30 on another describe different SERPs and
+          share no axis. On the portfolio page it would also fan out into two live Search Console
+          calls per site. Offering it there would be both misleading and slow, so it is offered
+          only where it applies. */}
+      <div style={{ display: "flex", gap: "10px", padding: "16px 28px", borderBottom: "1px solid var(--color-border)", background: "rgba(255,255,255,0.01)", alignItems: "center" }}>
+        {(isPortfolio ? (["heatmap"] as const) : (["heatmap", "scatter"] as const)).map(v => (
           <button key={v} onClick={() => setView(v)} style={{
             padding: "6px 16px", borderRadius: "8px", fontSize: "13px", fontWeight: 600,
             cursor: "pointer", border: `1px solid ${view === v ? "#3B82F6" : "var(--color-border)"}`,
@@ -555,9 +575,12 @@ export default function ContentDecayMap({ domain, siteDbId }: { domain: string; 
             {v === "heatmap" ? (t("cdmViewHeatmap") || "Heatmap View") : (t("cdmViewScatter") || "Decay Scatter Plot")}
           </button>
         ))}
+        {isPortfolio && (
+          <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>{t("cdmScatterPerSiteOnly")}</span>
+        )}
       </div>
 
-      {view === "heatmap" ? (
+      {view === "heatmap" || isPortfolio ? (
         <Heatmap domain={domain} siteDbId={siteDbId} />
       ) : (
         <PositionDecayScatter siteDbId={siteDbId} />
