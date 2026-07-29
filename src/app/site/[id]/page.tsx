@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import ContentDecayMap from "@/components/ContentDecayMap";
 import KeywordCannibalization from "@/components/KeywordCannibalization";
 import StrikingDistanceKeywords from "@/components/StrikingDistanceKeywords";
@@ -3246,13 +3246,43 @@ function AnnotationSparkline({ before, after }: { before: number[]; after: numbe
 
 // ─── Annotations Tab ──────────────────────────────────────────────────────────
 interface AnnotationNote {
+  id?: string;
   date: string; title: string; scope: string;
-  cBefore: number; cAfter: number; cPct: number;
-  iBefore: number; iAfter: number; iPct: number;
-  tBefore: number; tAfter: number; tPct: number;
+  /** false when the window after the note has no Search Console data yet (it lags 2-3 days) */
+  hasAfter?: boolean;
+  // `null` percentages mean there was no baseline to divide by — rendered as "—", never as 0%.
+  cBefore: number; cAfter: number; cPct: number | null;
+  iBefore: number; iAfter: number; iPct: number | null;
+  tBefore: number; tAfter: number; tPct: number | null;
   pBefore: number; pAfter: number; pDelta: number;
   dateRange: string;
   sparkBefore: number[]; sparkAfter: number[];
+}
+
+// Shape returned by /api/annotations, flattened into the row shape this table renders.
+type ApiNote = {
+  id: string; date: string; title: string; scope: string; dateRange: string; hasAfter: boolean;
+  clicks: { before: number; after: number; pct: number | null };
+  impressions: { before: number; after: number; pct: number | null };
+  ctr: { before: number; after: number; pct: number | null };
+  position: { before: number; after: number; delta: number };
+  sparkBefore: number[]; sparkAfter: number[];
+};
+
+function mapApiNote(n: ApiNote): AnnotationNote {
+  return {
+    id: n.id,
+    date: n.date,
+    title: n.title,
+    scope: n.scope === "pages" ? "Specific pages" : "All Pages",
+    hasAfter: n.hasAfter,
+    cBefore: n.clicks.before, cAfter: n.clicks.after, cPct: n.clicks.pct,
+    iBefore: n.impressions.before, iAfter: n.impressions.after, iPct: n.impressions.pct,
+    tBefore: n.ctr.before, tAfter: n.ctr.after, tPct: n.ctr.pct,
+    pBefore: n.position.before, pAfter: n.position.after, pDelta: n.position.delta,
+    dateRange: n.dateRange,
+    sparkBefore: n.sparkBefore, sparkAfter: n.sparkAfter,
+  };
 }
 
 const getMockAnnotations = (t: any): AnnotationNote[] => [
@@ -3262,15 +3292,45 @@ const getMockAnnotations = (t: any): AnnotationNote[] => [
   { date: "Aug 5, 2024",  title: t("annUpdatedBrandedKw"),      scope: t("annSpecificPages"), cBefore: 4,    cAfter: 32,    cPct: 700, iBefore: 2000,  iAfter: 11200,  iPct: 456, tBefore: 0.2, tAfter: 0.3, tPct: 0.1,  pBefore: 51.3, pAfter: 48.8, pDelta: 2.5,  dateRange: "Jun 6 to Aug 4 → Aug 5 to Oct 3",    sparkBefore: [2,3,2,3,2,3,2,3],        sparkAfter: [4,8,12,18,22,26,30,32]   },
 ];
 
-function AnnotationsTab({ period, setPeriod, periodOptions, onSetupBranded }: {
+// Comparison window in days for each period key — how far back and forward from a note's date the
+// before/after figures reach. Keys without a natural day count fall back to 28.
+const ANNOTATION_WINDOW: Record<string, number> = {
+  yesterday: 7, "7d": 7, "14d": 14, "28d": 28, last_week: 7, this_month: 28,
+  last_month: 28, this_quarter: 90, last_quarter: 90, ytd: 90,
+};
+
+function AnnotationsTab({ period, setPeriod, periodOptions, onSetupBranded, siteDbId }: {
   period: string; setPeriod: (p: string) => void; periodOptions: string[]; onSetupBranded?: () => void;
+  siteDbId?: string;
 }) {
   const { t } = useLanguage();
   const [viewMode, setViewMode] = useState<"notes" | "updates">("notes");
   const [onboarding, setOnboarding] = useState(true);
   const [showAddNote, setShowAddNote] = useState(false);
   const [notes, setNotes] = useState<AnnotationNote[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [unavailable, setUnavailable] = useState(false);
   const [activeMetrics, setActiveMetrics] = useState<Set<Metric>>(new Set(["clicks", "impressions", "ctr", "position"]));
+
+  const days = ANNOTATION_WINDOW[period] ?? 28;
+
+  // Notes and their figures both come from the server: the note rows persist in the Annotation
+  // table, the before/after numbers are derived from DailyMetric on every read. Re-fetching when
+  // the period changes is what makes the window selector actually mean something here.
+  const loadNotes = useCallback(async () => {
+    if (!siteDbId) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/annotations?siteId=${encodeURIComponent(siteDbId)}&days=${days}`, { cache: "no-store" });
+      const d = await res.json();
+      setUnavailable(!!d.unavailable);
+      setNotes(Array.isArray(d.notes) ? d.notes.map(mapApiNote) : []);
+    } catch { setNotes([]); }
+    setLoading(false);
+  }, [siteDbId, days]);
+
+  useEffect(() => { loadNotes(); }, [loadNotes]);
+  useEffect(() => { if (notes.length > 0) setOnboarding(false); }, [notes.length]);
 
   const toggleMetric = (m: Metric) => setActiveMetrics(p => { const n = new Set(p); n.has(m) ? n.delete(m) : n.add(m); return n; });
 
@@ -3332,6 +3392,14 @@ function AnnotationsTab({ period, setPeriod, periodOptions, onSetupBranded }: {
         </SimpleDropdown>
       </div>
 
+      {/* The table exists only after `prisma db push`; say so plainly rather than showing an
+          empty tab that looks like "no notes yet". */}
+      {unavailable && (
+        <div style={{ margin: "16px 32px", padding: "12px 14px", borderRadius: "10px", border: "1px solid rgba(245,158,11,0.35)", background: "rgba(245,158,11,0.08)", fontSize: "13px", color: "var(--color-text-secondary)" }}>
+          {t("annUnavailable")}
+        </div>
+      )}
+
       {/* ── Background content ── */}
       <div style={{ filter: onboarding ? "blur(2px)" : "none", pointerEvents: onboarding ? "none" : "auto", userSelect: onboarding ? "none" : "auto", transition: "filter 0.2s" }}>
         {displayNotes.map((note, idx) => (
@@ -3352,42 +3420,35 @@ function AnnotationsTab({ period, setPeriod, periodOptions, onSetupBranded }: {
 
             {/* Right: metrics before → after */}
             <div style={{ padding: "18px 0 18px 0", display: "flex", flexDirection: "column", gap: "4px", minWidth: "260px" }}>
-              {activeMetrics.has("clicks") && (
-                <div style={{ fontSize: "12px", display: "flex", alignItems: "center", gap: "5px" }}>
-                  <Sparkles size={11} color={C.clicks} />
-                  <span style={{ color: "var(--color-text-secondary)" }}>{fK(note.cBefore)}</span>
-                  <span style={{ color: "var(--color-text-secondary)" }}>→</span>
-                  <span style={{ color: "var(--color-text-primary)", fontWeight: 600 }}>{fK(note.cAfter)} {t("clicks").toLowerCase()}</span>
-                  <span style={{ color: "#10B981", fontSize: "11px", fontWeight: 600 }}>+{note.cPct}%</span>
-                </div>
-              )}
-              {activeMetrics.has("impressions") && (
-                <div style={{ fontSize: "12px", display: "flex", alignItems: "center", gap: "5px" }}>
-                  <Eye size={11} color={C.impressions} />
-                  <span style={{ color: "var(--color-text-secondary)" }}>{fK(note.iBefore)}</span>
-                  <span style={{ color: "var(--color-text-secondary)" }}>→</span>
-                  <span style={{ color: "var(--color-text-primary)", fontWeight: 600 }}>{fK(note.iAfter)} {t("impressions").toLowerCase()}</span>
-                  <span style={{ color: "#10B981", fontSize: "11px", fontWeight: 600 }}>+{note.iPct}%</span>
-                </div>
-              )}
-              {activeMetrics.has("ctr") && (
-                <div style={{ fontSize: "12px", display: "flex", alignItems: "center", gap: "5px" }}>
-                  <Percent size={11} color={C.ctr} />
-                  <span style={{ color: "var(--color-text-secondary)" }}>{note.tBefore}</span>
-                  <span style={{ color: "var(--color-text-secondary)" }}>→</span>
-                  <span style={{ color: "var(--color-text-primary)", fontWeight: 600 }}>{note.tAfter}</span>
-                  <span style={{ color: "#10B981", fontSize: "11px", fontWeight: 600 }}>+{note.tPct}%</span>
-                </div>
-              )}
-              {activeMetrics.has("position") && (
-                <div style={{ fontSize: "12px", display: "flex", alignItems: "center", gap: "5px" }}>
-                  <MoveUp size={11} color={C.position} />
-                  <span style={{ color: "var(--color-text-secondary)" }}>{note.pBefore}</span>
-                  <span style={{ color: "var(--color-text-secondary)" }}>→</span>
-                  <span style={{ color: "var(--color-text-primary)", fontWeight: 600 }}>{note.pAfter} {t("avgPosition")}</span>
-                  <span style={{ color: "#6b7280", fontSize: "11px", fontWeight: 600 }}>+{note.pDelta}</span>
-                </div>
-              )}
+              {/* Every delta used to render as a green "+" regardless of sign, so a drop appeared
+                  as a green "+-20%". Sign and colour now follow the actual number, and a note with
+                  no post-change data yet says so instead of claiming a confident zero. */}
+              {([
+                ["clicks", <Sparkles key="c" size={11} color={C.clicks} />, fK(note.cBefore), `${fK(note.cAfter)} ${t("clicks").toLowerCase()}`, note.cPct, true],
+                ["impressions", <Eye key="i" size={11} color={C.impressions} />, fK(note.iBefore), `${fK(note.iAfter)} ${t("impressions").toLowerCase()}`, note.iPct, true],
+                ["ctr", <Percent key="t" size={11} color={C.ctr} />, `${note.tBefore}%`, `${note.tAfter}%`, note.tPct, true],
+                ["position", <MoveUp key="p" size={11} color={C.position} />, note.pBefore, `${note.pAfter} ${t("avgPosition")}`, note.pDelta, false],
+              ] as const).map(([m, icon, before, after, change, isPct]) => {
+                if (!activeMetrics.has(m as Metric)) return null;
+                const noData = note.hasAfter === false;
+                // Position is the one metric where a smaller number is better; the API already
+                // reports its delta as before − after, so positive means improved everywhere.
+                const good = change !== null && change > 0;
+                const colour = noData || change === null || change === 0
+                  ? "var(--color-text-secondary)" : good ? "#10B981" : "#EF4444";
+                const label = noData ? t("annAwaitingData")
+                  : change === null ? "—"
+                  : `${change > 0 ? "+" : ""}${change}${isPct ? "%" : ""}`;
+                return (
+                  <div key={m} style={{ fontSize: "12px", display: "flex", alignItems: "center", gap: "5px" }}>
+                    {icon}
+                    <span style={{ color: "var(--color-text-secondary)" }}>{before}</span>
+                    <span style={{ color: "var(--color-text-secondary)" }}>→</span>
+                    <span style={{ color: "var(--color-text-primary)", fontWeight: 600 }}>{after}</span>
+                    <span style={{ color: colour, fontSize: "11px", fontWeight: 600 }}>{label}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         ))}
@@ -3428,7 +3489,17 @@ function AnnotationsTab({ period, setPeriod, periodOptions, onSetupBranded }: {
       {showAddNote && (
         <AddNoteModal
           onClose={() => setShowAddNote(false)}
-          onSave={note => setNotes(prev => [{ ...note, cBefore: 0, cAfter: 0, cPct: 0, iBefore: 0, iAfter: 0, iPct: 0, tBefore: 0, tAfter: 0, tPct: 0, pBefore: 0, pAfter: 0, pDelta: 0, dateRange: "", sparkBefore: [], sparkAfter: [] }, ...prev])}
+          // Persist, then re-read: the figures are computed server-side from DailyMetric, so the
+          // row can only be filled in by the API. Writing a locally-invented placeholder is what
+          // produced the permanent 0 → 0 +0% this tab used to show.
+          onSave={async note => {
+            if (!siteDbId) return;
+            await fetch("/api/annotations", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ siteId: siteDbId, date: note.date, title: note.title, description: note.desc }),
+            }).catch(() => {});
+            await loadNotes();
+          }}
         />
       )}
 
@@ -4197,7 +4268,7 @@ export default function SitePage({
 
       {/* ── Annotations tab ── */}
       {activeTab === "annotations" && (
-        <AnnotationsTab period={period} setPeriod={setPeriod} periodOptions={periodOptions} onSetupBranded={() => setShowSetupModal(true)} />
+        <AnnotationsTab period={period} setPeriod={setPeriod} periodOptions={periodOptions} onSetupBranded={() => setShowSetupModal(true)} siteDbId={siteDbId} />
       )}
 
       {/* ── Optimize tab ── */}

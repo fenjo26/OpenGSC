@@ -130,6 +130,7 @@ model Site {
   claritySnapshots      ClaritySnapshot[]
   trackedKeywords       TrackedKeyword[]
   trackedQuestions      TrackedQuestion[]
+  annotations           Annotation[]
 
   // Microsoft Clarity integration
   clarityToken          String?   // Data Export API token (per-project in Clarity)
@@ -649,4 +650,25 @@ model GeoAudit {
 
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@index([userId, createdAt])
+}
+
+// A dated note about something you changed on the site — a content refresh, a redirect, a template
+// swap. Its value is entirely in the comparison it enables: metrics for the N days before the date
+// against the N days after, so "did rewriting these pages actually move anything" has an answer
+// instead of a feeling. The metrics themselves are never stored — they are derived from
+// DailyMetric on read, so a note written today becomes meaningful as GSC data arrives (which it
+// does with a 2-3 day lag), and re-syncing history corrects old notes automatically.
+model Annotation {
+  id          String   @id @default(cuid())
+  siteId      String
+  date        DateTime // the day the change went live
+  title       String
+  description String?
+  scope       String   @default("all") // "all" | "pages"
+  urls        String?  // newline-separated URL filters, used when scope = "pages"
+  createdAt   DateTime @default(now())
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([siteId, date])
 }
