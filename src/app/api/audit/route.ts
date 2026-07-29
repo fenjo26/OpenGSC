@@ -24,10 +24,18 @@ export async function POST(req: Request) {
   const running = await prisma.siteAudit.findFirst({ where: { siteId, status: "running" } });
   if (running) return NextResponse.json({ error: "already_running", id: running.id }, { status: 409 });
 
+  // Ignore rules are passed straight into the run rather than stored on the row: they are a
+  // per-run choice, and keeping them out of the schema means this needs no migration.
+  const ignorePatterns = Array.isArray(b.ignorePatterns)
+    ? b.ignorePatterns.map(String)
+    : String(b.ignorePatterns ?? "").split(/[\n,]/);
+  const skipDefaultIgnores = b.skipDefaultIgnores === true;
+
   const audit = await prisma.siteAudit.create({ data: { siteId, maxPages } });
   // Fire-and-forget: the promise keeps running in-process after the response is sent
   // (same pattern as /api/seo/jobs — see docs/ARCHITECTURE.md §1).
-  runAudit(audit.id).catch(err => console.error("[audit] run failed:", err));
+  runAudit(audit.id, { ignorePatterns, skipDefaultIgnores })
+    .catch(err => console.error("[audit] run failed:", err));
   return NextResponse.json({ id: audit.id });
 }
 

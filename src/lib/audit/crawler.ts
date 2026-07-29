@@ -107,13 +107,56 @@ export const ISSUE_CODES = [
 
 // ─── main runner ────────────────────────────────────────────────────────────────
 
-export async function runAudit(auditId: string): Promise<void> {
+/**
+ * Link targets that are never real pages and must not be reported as broken.
+ *
+ * Cloudflare's email obfuscation is the one that matters in practice: it rewrites every `mailto:`
+ * into `/cdn-cgi/l/email-protection#<hex>` and answers those with a 403 to anything that isn't a
+ * browser running its script. The crawler dutifully recorded a 403 and flagged a broken link on
+ * every page carrying a contact address — an entire column of false positives caused by a working
+ * anti-spam feature.
+ *
+ * The rest are the same shape: infrastructure endpoints that exist to be blocked.
+ */
+const DEFAULT_IGNORE = [
+  "/cdn-cgi/",          // Cloudflare internals: email-protection, rocket-loader, challenge paths
+  "/wp-admin/",
+  "/wp-login.php",
+  "/xmlrpc.php",
+  "?add-to-cart=",
+  "/cart/add",
+];
+
+export interface AuditOptions {
+  /** extra substrings to skip, one per line or comma separated */
+  ignorePatterns?: string[];
+  /** turn off the built-in list above (defaults stay on) */
+  skipDefaultIgnores?: boolean;
+}
+
+function buildIgnoreList(opts?: AuditOptions): string[] {
+  const custom = (opts?.ignorePatterns ?? [])
+    .flatMap(p => String(p).split(/[\n,]/))
+    .map(s => s.trim().toLowerCase())
+    .filter(Boolean);
+  return opts?.skipDefaultIgnores ? custom : [...DEFAULT_IGNORE, ...custom];
+}
+
+export async function runAudit(auditId: string, opts?: AuditOptions): Promise<void> {
   const audit = await prisma.siteAudit.findUnique({ where: { id: auditId }, include: { site: true } });
   if (!audit) return;
   try {
     const rootUrl = audit.site.url.startsWith("http") ? audit.site.url : `https://${audit.site.url.replace(/^sc-domain:/, "")}`;
     const root = new URL(rootUrl);
     const maxPages = Math.min(500, Math.max(10, audit.maxPages));
+
+    // Applied at link-collection time, so an ignored URL is neither crawled nor counted as a
+    // broken target. Filtering only at the reporting end would still spend crawl budget on it.
+    const ignore = buildIgnoreList(opts);
+    const isIgnored = (href: string) => {
+      const h = href.toLowerCase();
+      return ignore.some(p => h.includes(p));
+    };
 
     type QItem = { url: string; depth: number };
     const queue: QItem[] = [{ url: root.href, depth: 0 }];
@@ -135,6 +178,7 @@ export async function runAudit(auditId: string): Promise<void> {
           for (const href of ex.hrefs) {
             const u = normalizeUrl(href, new URL(item.url));
             if (!u) continue;
+            if (isIgnored(u.href)) continue;
             if (sameHost(u, root)) {
               entry.internalTargets.push(u.href);
               if (!seen.has(u.href) && seen.size < maxPages * 3) {

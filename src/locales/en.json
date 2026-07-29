@@ -2321,5 +2321,14 @@
   "rwDownloadHtmlTxt": "HTML markup saved as .txt — opens in a text editor so you can copy the tags into a CMS.",
   "annAwaitingData": "waiting for data",
   "annUnavailable": "The annotations table is missing. Run `npx prisma db push` on the server to enable this tab.",
-  "annChangeMarker": "change"
+  "annChangeMarker": "change",
+  "cdmScatterNoOverlap": "No query has 10+ impressions in both periods yet. This needs about two months of Search Console history — a young site or one with few queries will fill in over time.",
+  "cdmScatterNoAccount": "No Google account connected — this chart reads the two periods from Search Console directly.",
+  "cdmScatterPerSiteOnly": "The decay scatter is available on an individual site — ranks from different properties do not share a scale.",
+  "auditIgnoreDefaults": "Skip bot-protection and admin endpoints",
+  "auditIgnoreDefaultsHint": "Cloudflare rewrites every email address into /cdn-cgi/l/email-protection and answers it with a 403 for anything that is not a browser. Counting that as a broken link marks every page with a contact address. Also skips /wp-admin, /wp-login.php, /xmlrpc.php and add-to-cart URLs.",
+  "auditIgnoreExtraPh": "/basket/, ?utm_, /print/",
+  "auditIgnoreExtraHint": "Extra fragments to skip, comma separated. A URL containing any of them is neither crawled nor reported as broken.",
+  "auditExportMd": "Export .md",
+  "auditExportMdHint": "All findings as Markdown, grouped by issue with the affected URLs — ready to hand to a developer or an AI agent."
 }

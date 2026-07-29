@@ -5,9 +5,11 @@
 // page table. Same fire-and-forget/poll UX as the SEO Tools background jobs.
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Play, Trash2, AlertTriangle, CheckCircle, ExternalLink } from "lucide-react";
+import { Loader2, Play, Trash2, AlertTriangle, CheckCircle, ExternalLink, Filter, Download } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { withShare, isGuestView } from "@/lib/shareParam";
+import { buildAuditMarkdown } from "@/lib/audit/exportMd";
+import { downloadFile } from "@/lib/seo/exportFormats";
 
 const ISSUE_LABEL_KEYS: Record<string, string> = {
   http_error: "auditIssueHttpError",
@@ -36,8 +38,13 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
   const [audits, setAudits] = useState<any[]>([]);
   const [current, setCurrent] = useState<any>(null); // { audit, pages }
   const [maxPages, setMaxPages] = useState(200);
+  // On by default: the built-in list is bot-protection and admin endpoints that are supposed to
+  // refuse a crawler, so counting them as broken links is always wrong.
+  const [useDefaults, setUseDefaults] = useState(true);
+  const [ignoreExtra, setIgnoreExtra] = useState("");
   const [issueFilter, setIssueFilter] = useState("");
   const [starting, setStarting] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
 
@@ -87,7 +94,11 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
     try {
       const res = await fetch("/api/audit", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ siteId: siteDbId, maxPages }),
+        body: JSON.stringify({
+          siteId: siteDbId, maxPages,
+          ignorePatterns: ignoreExtra,
+          skipDefaultIgnores: !useDefaults,
+        }),
       });
       const d = await res.json();
       if (!res.ok) setErr(d.error === "already_running" ? t("auditAlreadyRunning") : String(d.error ?? "error"));
@@ -102,6 +113,22 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
     loadList();
   };
 
+  // Always re-fetches unfiltered: the on-screen table may be narrowed to one issue, and an export
+  // that silently inherited that filter would look complete while omitting most of the findings.
+  const exportMd = async () => {
+    const id = current?.audit?.id;
+    if (!id) return;
+    setExporting(true);
+    try {
+      const d = await fetch(withShare(`/api/audit/${id}`)).then(r => r.json());
+      const md = buildAuditMarkdown(d.audit ?? {}, d.pages ?? [], code => t((ISSUE_LABEL_KEYS[code] ?? code) as never) || code);
+      const host = (() => { try { return new URL(d.audit?.siteUrl || "").host; } catch { return "site"; } })();
+      const day = new Date(d.audit?.finishedAt ?? Date.now()).toISOString().slice(0, 10);
+      downloadFile(md, `audit-${host}-${day}.md`, "text/markdown;charset=utf-8");
+    } catch (e: any) { setErr(String(e?.message ?? e)); }
+    setExporting(false);
+  };
+
   const filterIssue = (code: string) => {
     if (!current?.audit) return;
     const next = issueFilter === code ? "" : code;
@@ -112,21 +139,48 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
   const summary = current?.audit?.summary;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+    // Padding and a max width to match the sibling tabs (Health, Clarity). Without them the audit
+    // table ran edge to edge on a wide monitor, which is what made this tab look unfinished.
+    <div style={{ padding: "28px 32px", maxWidth: "1400px", margin: "0 auto", width: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: "16px" }}>
       {/* Launcher */}
-      <div className="panel" style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-        <div style={{ flex: 1, minWidth: "220px" }}>
-          <div style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)" }}>{t("auditTitle")}</div>
-          <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginTop: "2px" }}>{t("auditSub")}</div>
+      <div className="panel" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: "220px" }}>
+            <div style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)" }}>{t("auditTitle")}</div>
+            <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginTop: "2px" }}>{t("auditSub")}</div>
+          </div>
+          {!guest && <select value={maxPages} onChange={e => setMaxPages(parseInt(e.target.value))}
+            style={{ padding: "8px 10px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-primary)", fontSize: "12px" }}>
+            {[50, 100, 200, 350, 500].map(n => <option key={n} value={n}>{n} {t("auditPagesUnit")}</option>)}
+          </select>}
+          {summary && (
+            <button onClick={exportMd} disabled={exporting} title={t("auditExportMdHint")}
+              style={{ display: "inline-flex", alignItems: "center", gap: "7px", padding: "10px 14px", borderRadius: "9px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-secondary)", fontSize: "13px", fontWeight: 600, cursor: exporting ? "default" : "pointer" }}>
+              {exporting ? <Loader2 size={14} className="spin" /> : <Download size={14} />} {t("auditExportMd")}
+            </button>
+          )}
+          {!guest && <button onClick={start} disabled={starting || !!running}
+            style={{ display: "inline-flex", alignItems: "center", gap: "7px", padding: "10px 16px", borderRadius: "9px", border: "none", background: running ? "rgba(255,255,255,0.08)" : "var(--color-accent-blue)", color: running ? "var(--color-text-secondary)" : "#fff", fontSize: "13px", fontWeight: 600, cursor: running ? "default" : "pointer" }}>
+            {running ? <><Loader2 size={14} className="spin" /> {t("auditRunning")} ({running.pagesCrawled}/{running.maxPages})</> : <><Play size={14} /> {t("auditStart")}</>}
+          </button>}
         </div>
-        {!guest && <select value={maxPages} onChange={e => setMaxPages(parseInt(e.target.value))}
-          style={{ padding: "8px 10px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-primary)", fontSize: "12px" }}>
-          {[50, 100, 200, 350, 500].map(n => <option key={n} value={n}>{n} {t("auditPagesUnit")}</option>)}
-        </select>}
-        {!guest && <button onClick={start} disabled={starting || !!running}
-          style={{ display: "inline-flex", alignItems: "center", gap: "7px", padding: "10px 16px", borderRadius: "9px", border: "none", background: running ? "rgba(255,255,255,0.08)" : "var(--color-accent-blue)", color: running ? "var(--color-text-secondary)" : "#fff", fontSize: "13px", fontWeight: 600, cursor: running ? "default" : "pointer" }}>
-          {running ? <><Loader2 size={14} className="spin" /> {t("auditRunning")} ({running.pagesCrawled}/{running.maxPages})</> : <><Play size={14} /> {t("auditStart")}</>}
-        </button>}
+
+        {/* Crawl exclusions, chosen before the run starts. */}
+        {!guest && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px", borderTop: "1px solid var(--color-border)", paddingTop: "12px" }}>
+            <label title={t("auditIgnoreDefaultsHint")} style={{ display: "inline-flex", alignItems: "center", gap: "8px", fontSize: "13px", color: useDefaults ? "var(--color-accent-blue)" : "var(--color-text-secondary)", cursor: "pointer", width: "fit-content" }}>
+              <input type="checkbox" checked={useDefaults} onChange={e => setUseDefaults(e.target.checked)} style={{ accentColor: "var(--color-accent-blue)" }} />
+              <Filter size={14} /> {t("auditIgnoreDefaults")}
+            </label>
+            <input
+              value={ignoreExtra}
+              onChange={e => setIgnoreExtra(e.target.value)}
+              placeholder={t("auditIgnoreExtraPh")}
+              style={{ padding: "8px 10px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-bg)", color: "var(--color-text-primary)", fontSize: "12px", width: "100%", boxSizing: "border-box" }}
+            />
+            <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>{t("auditIgnoreExtraHint")}</div>
+          </div>
+        )}
       </div>
       {err && <div style={{ fontSize: "12px", color: "#f87171", display: "flex", alignItems: "center", gap: "6px" }}><AlertTriangle size={13} /> {err}</div>}
 
