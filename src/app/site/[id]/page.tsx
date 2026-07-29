@@ -3230,16 +3230,18 @@ type SeriesPoint = {
 };
 
 /**
- * Before/after chart for one annotation.
+ * Before/after chart for one annotation — one small chart per selected metric.
  *
- * Replaces a single unlabelled clicks-only curve. Two things made that unreadable: it ignored the
- * metric toggles entirely, and it had no axes, so the shape carried no magnitude — a rise from 2 to
- * 4 looked exactly like 2000 to 4000.
+ * Two earlier attempts failed for the same underlying reason. A single clicks-only sparkline
+ * ignored the metric toggles and had no axes, so its shape carried no magnitude. Putting all four
+ * on one chart with a left and a right axis then broke differently: CTR and position had to share
+ * the right-hand scale, and reversing it for position (lower rank is better) silently flipped CTR
+ * upside down too.
  *
- * The four metrics differ by orders of magnitude (171 clicks against 17 100 impressions against
- * 1% CTR), so they cannot share one scale. Counts go on the left axis, rates and rank on the right.
- * The rank axis is reversed because a lower position is a better one — drawn normally, an
- * improvement would point downwards and read as a decline.
+ * There is no arrangement of two axes that fits four metrics spanning 1% to 17 000. Small multiples
+ * remove the conflict instead of managing it: every metric gets its own scale, its own direction,
+ * and a label saying what it is. The x-axis and the change marker are the same in each, which is
+ * what makes them comparable at a glance.
  */
 function AnnotationChart({ series, activeMetrics, changeDate }: {
   series: SeriesPoint[]; activeMetrics: Set<Metric>; changeDate: string;
@@ -3247,47 +3249,49 @@ function AnnotationChart({ series, activeMetrics, changeDate }: {
   const { t } = useLanguage();
   if (!series?.length) return null;
 
-  const show = (m: Metric) => activeMetrics.has(m);
+  const panels = ([
+    { m: "clicks" as Metric, key: "clicks", label: t("clicks"), colour: C.clicks, reversed: false, fmt: (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)) },
+    { m: "impressions" as Metric, key: "impressions", label: t("impressions"), colour: C.impressions, reversed: false, fmt: (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)) },
+    { m: "ctr" as Metric, key: "ctr", label: "CTR", colour: C.ctr, reversed: false, fmt: (v: number) => `${v}%` },
+    // Rank counts downwards: 1 is the top of the page, so the axis is reversed and starts at 1.
+    { m: "position" as Metric, key: "position", label: t("avgPosition"), colour: C.position, reversed: true, fmt: (v: number) => String(Math.round(v)) },
+  ]).filter(p => activeMetrics.has(p.m));
+
+  if (!panels.length) return null;
+
   const fmtDay = (d: string) => d.slice(5).replace("-", ".");
-  const usesRight = show("ctr") || show("position");
+  const cols = panels.length === 1 ? 1 : 2;
 
   return (
-    <ResponsiveContainer width="100%" height={170}>
-      <ComposedChart data={series} margin={{ top: 8, right: usesRight ? 4 : 8, left: -8, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
-        <XAxis dataKey="date" tickFormatter={fmtDay} tick={{ fontSize: 10, fill: "var(--color-text-secondary)" }}
-          interval="preserveStartEnd" minTickGap={28} axisLine={false} tickLine={false} />
-        <YAxis yAxisId="count" tick={{ fontSize: 10, fill: "var(--color-text-secondary)" }} axisLine={false} tickLine={false} width={44}
-          tickFormatter={(v: number) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v))} />
-        {usesRight && (
-          <YAxis yAxisId="rate" orientation="right" tick={{ fontSize: 10, fill: "var(--color-text-secondary)" }}
-            axisLine={false} tickLine={false} width={38}
-            reversed={show("position")} domain={show("position") ? [1, "dataMax"] : [0, "dataMax"]} />
-        )}
-        <Tooltip
-          contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: "8px", fontSize: "12px" }}
-          labelFormatter={(d) => String(d ?? "")}
-          formatter={(v, name) => [v == null ? "—" : (v as number), String(name ?? "")]}
-        />
-        {/* Where the change happened — everything left of it is the baseline. */}
-        <ReferenceLine yAxisId="count" x={changeDate} stroke="var(--color-text-secondary)" strokeDasharray="4 3"
-          label={{ value: t("annChangeMarker"), position: "top", fontSize: 10, fill: "var(--color-text-secondary)" }} />
-        {show("clicks") && (
-          <Line yAxisId="count" type="monotone" dataKey="clicks" name={t("clicks")} stroke={C.clicks} strokeWidth={2} dot={false} isAnimationActive={false} />
-        )}
-        {show("impressions") && (
-          <Line yAxisId="count" type="monotone" dataKey="impressions" name={t("impressions")} stroke={C.impressions} strokeWidth={2} dot={false} isAnimationActive={false} />
-        )}
-        {show("ctr") && (
-          <Line yAxisId="rate" type="monotone" dataKey="ctr" name="CTR %" stroke={C.ctr} strokeWidth={2} dot={false} isAnimationActive={false} />
-        )}
-        {show("position") && (
-          // connectNulls keeps the rank line continuous across days with no impressions, where
-          // position is genuinely undefined rather than zero.
-          <Line yAxisId="rate" type="monotone" dataKey="position" name={t("avgPosition")} stroke={C.position} strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />
-        )}
-      </ComposedChart>
-    </ResponsiveContainer>
+    <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: "10px 16px" }}>
+      {panels.map(p => (
+        <div key={p.key}>
+          <div style={{ fontSize: "10px", fontWeight: 600, color: p.colour, marginBottom: "2px" }}>{p.label}</div>
+          {/* top margin leaves room for the marker label, which used to be clipped in half */}
+          <ResponsiveContainer width="100%" height={panels.length > 2 ? 96 : 118}>
+            <ComposedChart data={series} margin={{ top: 16, right: 6, left: -14, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
+              <XAxis dataKey="date" tickFormatter={fmtDay} tick={{ fontSize: 9, fill: "var(--color-text-secondary)" }}
+                interval="preserveStartEnd" minTickGap={24} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 9, fill: "var(--color-text-secondary)" }} axisLine={false} tickLine={false}
+                width={40} reversed={p.reversed} domain={p.reversed ? [1, "dataMax"] : [0, "dataMax"]}
+                tickFormatter={p.fmt} allowDecimals={false} />
+              <Tooltip
+                contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: "8px", fontSize: "12px" }}
+                labelFormatter={(d) => String(d ?? "")}
+                formatter={(v) => [v == null ? "—" : (v as number), p.label]}
+              />
+              <ReferenceLine x={changeDate} stroke="var(--color-text-secondary)" strokeDasharray="4 3"
+                label={{ value: t("annChangeMarker"), position: "top", fontSize: 9, fill: "var(--color-text-secondary)" }} />
+              {/* connectNulls matters only for position: on days with no impressions rank is
+                  undefined, and breaking the line there would imply a collapse to zero. */}
+              <Line type="monotone" dataKey={p.key} name={p.label} stroke={p.colour} strokeWidth={2}
+                dot={false} connectNulls isAnimationActive={false} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      ))}
+    </div>
   );
 }
 
