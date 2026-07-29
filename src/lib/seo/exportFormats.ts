@@ -67,11 +67,13 @@ function inline(s: string): string {
 }
 
 /**
- * Markdown → a standalone HTML document. Charset is declared explicitly because this content is
- * routinely non-Latin (Greek, Cyrillic) and a file opened straight from disk has no server header
- * to fall back on.
+ * Markdown → HTML body markup, with no document wrapper.
+ *
+ * This is the form that actually gets pasted: a CMS source view, a WYSIWYG "code" tab or a page
+ * template wants the tags for the content and nothing else. A full document with DOCTYPE and head
+ * has to be stripped by hand before it is usable there.
  */
-export function mdToHtml(md: string, title = ""): string {
+export function mdToHtmlBody(md: string): string {
   const lines = String(md || "").split("\n");
   const out: string[] = [];
   let list: "ul" | null = null;
@@ -113,7 +115,15 @@ export function mdToHtml(md: string, title = ""): string {
     out.push(`<p>${inline(line)}</p>`);
   }
   closeList(); closeTable();
+  return out.join("\n");
+}
 
+/**
+ * Markdown → a standalone HTML document. Charset is declared explicitly because this content is
+ * routinely non-Latin (Greek, Cyrillic) and a file opened straight from disk has no server header
+ * to fall back on.
+ */
+export function mdToHtml(md: string, title = ""): string {
   const docTitle = esc(title || /^#{1,6}\s+(.+)$/m.exec(md)?.[1] || "");
   return `<!DOCTYPE html>
 <html lang="">
@@ -123,12 +133,25 @@ export function mdToHtml(md: string, title = ""): string {
 <title>${docTitle}</title>
 </head>
 <body>
-${out.join("\n")}
+${mdToHtmlBody(md)}
 </body>
 </html>`;
 }
 
-export type ExportFormat = "md" | "html" | "txt";
+export type ExportFormat = "md" | "html" | "htmltxt" | "txt";
+
+/**
+ * The format id is not the file extension: `htmltxt` is HTML markup saved as `.txt` on purpose, so
+ * a double-click opens a text editor showing the tags instead of a browser rendering them.
+ */
+export const EXPORT_FORMATS: { id: ExportFormat; ext: string; label: string }[] = [
+  { id: "md", ext: "md", label: ".md" },
+  { id: "html", ext: "html", label: ".html" },
+  { id: "htmltxt", ext: "txt", label: "<html>.txt" },
+  { id: "txt", ext: "txt", label: ".txt" },
+];
+
+export const extensionFor = (f: ExportFormat) => EXPORT_FORMATS.find(x => x.id === f)?.ext ?? "txt";
 
 export interface ExportSnippet { title: string; description: string }
 
@@ -157,6 +180,16 @@ export function renderAs(
       html = html.replace("</head>", `<meta name="description" content="${esc(sn.description)}">\n</head>`);
     }
     return { content: html, mime: "text/html;charset=utf-8" };
+  }
+
+  if (format === "htmltxt") {
+    // A fragment has no <head> to carry the snippet, so it rides along as comments — visible to
+    // whoever pastes the markup, invisible once the page renders.
+    const head = sn
+      ? `<!-- Title: ${sn.title} -->\n<!-- Meta Description: ${sn.description} -->\n\n`
+      : "";
+    // text/plain, not text/html: the point of this format is that the file opens as text.
+    return { content: head + mdToHtmlBody(md), mime: "text/plain;charset=utf-8" };
   }
 
   if (format === "txt") {

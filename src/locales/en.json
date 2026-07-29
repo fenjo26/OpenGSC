@@ -2317,5 +2317,6 @@
   "mcpTierNet": "Fetches an external page",
   "mcpTierPaid": "Spends your AI credits — needs explicit confirmation",
   "mcpDesktopNoHeader": "Do NOT put the token in Advanced settings. Those two fields are OAuth Client ID and Client Secret; a token pasted there is read as an OAuth client id, does nothing, and the connector fails without saying why. Leave them empty.",
-  "mcpDesktopBridge": "Prefer to keep the token out of the URL? Use the mcp-remote bridge instead (needs Node.js) — Settings → Developer → Edit Config, then restart Claude Desktop:"
+  "mcpDesktopBridge": "Prefer to keep the token out of the URL? Use the mcp-remote bridge instead (needs Node.js) — Settings → Developer → Edit Config, then restart Claude Desktop:",
+  "rwDownloadHtmlTxt": "HTML markup saved as .txt — opens in a text editor so you can copy the tags into a CMS."
 }

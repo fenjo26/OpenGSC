@@ -11,7 +11,7 @@ import { scoreText } from "@/lib/seo/aidetect";
 import { getActiveModel, effectiveBannedWords, type StoredModel } from "@/lib/seo/aidetectStore";
 import { factDrift, type FactDrift } from "@/lib/seo/factDrift";
 import FactDriftPanel from "@/components/FactDriftPanel";
-import { slugFromSource, renderAs, downloadFile, type ExportFormat } from "@/lib/seo/exportFormats";
+import { slugFromSource, renderAs, downloadFile, extensionFor, EXPORT_FORMATS, type ExportFormat } from "@/lib/seo/exportFormats";
 import { uniquenessPct, wordCount } from "@/lib/seo/textMetrics";
 
 type StructureCheck = { expected: number[]; got: number[]; ok: boolean };
@@ -151,7 +151,7 @@ export default function RewritePage() {
     // The snippet travels with the file: front matter in .md, head tags in .html, a labelled
     // header in .txt — so what gets handed to a developer is the whole change, not just the body.
     const { content, mime } = renderAs(format, s, stem, snippet ? { title: snippet.title, description: snippet.description } : undefined);
-    downloadFile(content, `${stem}${(results?.length ?? 0) > 1 ? `-${i + 1}` : ""}.${format}`, mime);
+    downloadFile(content, `${stem}${(results?.length ?? 0) > 1 ? `-${i + 1}` : ""}.${extensionFor(format)}`, mime);
   };
 
   return (
@@ -309,12 +309,13 @@ export default function RewritePage() {
                 .html carry structure a .txt would flatten. */}
             <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "3px 6px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-card)" }}>
               <Download size={13} color="var(--color-text-secondary)" />
-              {(["md", "html", "txt"] as const).map(f => (
-                <button key={f} onClick={() => download(i, v.content, f)} title={t("rwDownloadAs" as never)}
-                  style={{ padding: "3px 8px", borderRadius: "6px", border: "none", background: "transparent", color: "var(--color-text-secondary)", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
+              {EXPORT_FORMATS.map(f => (
+                <button key={f.id} onClick={() => download(i, v.content, f.id)}
+                  title={f.id === "htmltxt" ? t("rwDownloadHtmlTxt" as never) : t("rwDownloadAs" as never)}
+                  style={{ padding: "3px 8px", borderRadius: "6px", border: "none", background: "transparent", color: "var(--color-text-secondary)", fontSize: "12px", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
                   onMouseEnter={e => (e.currentTarget.style.background = "var(--color-bg)")}
                   onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
-                  .{f}
+                  {f.label}
                 </button>
               ))}
             </span>
