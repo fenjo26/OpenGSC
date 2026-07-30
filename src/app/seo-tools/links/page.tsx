@@ -22,7 +22,11 @@ export default function LinkWatchPage() {
   const lang = language || "en";
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
-  const ahrefsKey = mounted ? (localStorage.getItem("seoKey_ahrefs") || "") : "";
+  // Through the shared resolver rather than reading the storage key by name: the key and the
+  // host it should be sent to are one setting, configured together under Settings → SEO Metrics.
+  // Reading only half of it here is how this page ended up talking to the official API with a
+  // gateway key in the first place.
+  const ahrefsKey = mounted ? getMetricsCreds("ahrefs").apiKey : "";
 
   const [brands, setBrands] = useState<any[]>([]);
   const [mentions, setMentions] = useState<any[]>([]);
@@ -122,7 +126,7 @@ export default function LinkWatchPage() {
 
       {mounted && !ahrefsKey && (
         <div className={card} style={{ borderColor: "rgba(255,159,10,0.35)", background: "rgba(255,159,10,0.06)", display: "flex", gap: "10px", alignItems: "center", fontSize: "13px", color: "var(--color-text-secondary)" }}>
-          <AlertTriangle size={18} color="var(--color-accent-orange)" /> {t("lwNoKey")} <Link href="/seo-tools/settings" style={{ color: "var(--color-accent-blue)" }}>{t("seoSettingsShort")}</Link>
+          <AlertTriangle size={18} color="var(--color-accent-orange)" /> {t("lwNoKey")} <Link href="/settings?tab=metrics" style={{ color: "var(--color-accent-blue)" }}>{t("navMetrics")}</Link>
         </div>
       )}
       {err && <div className={card} style={{ borderColor: "rgba(255,69,58,0.35)", background: "rgba(255,69,58,0.06)", color: "var(--color-accent-red)", fontSize: "12px" }}>{err}</div>}

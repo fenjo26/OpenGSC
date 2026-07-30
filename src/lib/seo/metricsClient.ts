@@ -14,6 +14,23 @@ export const UNIT_PRICE_USD: Record<MetricsProvider, number> = {
   semrush: 0.00006,
 };
 
+/**
+ * Where the key came from. This exists because "custom base URL" was a field that told the user
+ * nothing: whether you hold an official Ahrefs subscription or credits bought from a reseller is
+ * the first thing you know about your own setup, and the settings screen should ask it in those
+ * words instead of asking for a hostname.
+ *
+ * It is presentation only. The mode picks a base URL and writes it to the same storage key the
+ * code has always read, so nothing downstream — client, server, or MCP — knows modes exist.
+ */
+export type MetricsMode = "official" | "reseller" | "custom";
+
+/** Reseller gateways that speak the official API protocol; only the host differs. */
+export const RESELLER_BASE_URL: Record<MetricsProvider, string> = {
+  ahrefs: "https://ahrefs-api.groupbuyseo.org",
+  semrush: "https://api-semrush.groupbuyseo.org",
+};
+
 export interface MetricsClientCreds {
   provider: MetricsProvider;
   apiKey: string;
@@ -27,14 +44,34 @@ export function getMetricsProvider(): MetricsProvider {
   return p === "semrush" ? "semrush" : "ahrefs";
 }
 
+export function getMetricsMode(provider?: MetricsProvider): MetricsMode {
+  if (typeof window === "undefined") return "official";
+  const p = provider ?? getMetricsProvider();
+  const m = localStorage.getItem(`seoMetricsMode_${p}`);
+  if (m === "reseller" || m === "custom") return m;
+  // Anyone who set a base URL before modes existed is on a gateway by definition — inferring it
+  // keeps their setup working instead of silently resetting them to the official host.
+  return (localStorage.getItem(`seoMetricsBaseUrl_${p}`) || "").trim() ? "custom" : "official";
+}
+
+/** Writes the mode and the base URL together, so the two can never disagree. */
+export function setMetricsMode(provider: MetricsProvider, mode: MetricsMode, customUrl = "") {
+  localStorage.setItem(`seoMetricsMode_${provider}`, mode);
+  const key = `seoMetricsBaseUrl_${provider}`;
+  if (mode === "official") localStorage.removeItem(key);
+  else if (mode === "reseller") localStorage.setItem(key, RESELLER_BASE_URL[provider]);
+  else if (customUrl.trim()) localStorage.setItem(key, customUrl.trim());
+  else localStorage.removeItem(key);
+}
+
 export function getMetricsCreds(provider?: MetricsProvider): MetricsClientCreds {
   const p = provider ?? getMetricsProvider();
   if (typeof window === "undefined") return { provider: p, apiKey: "", baseUrl: "", cap: 0 };
   return {
     provider: p,
     apiKey: (localStorage.getItem(`seoKey_${p}`) || "").trim(),
-    // Empty means the official host. A group-buy or self-hosted gateway goes here; the API
-    // paths are identical either way, so nothing else in the app needs to know the difference.
+    // Empty means the official host. Written by setMetricsMode, never typed directly except in
+    // custom mode — this stays the single source of truth for where requests go.
     baseUrl: (localStorage.getItem(`seoMetricsBaseUrl_${p}`) || "").trim(),
     cap: Number(localStorage.getItem(`seoMetricsCap_${p}`) || 0) || 0,
   };

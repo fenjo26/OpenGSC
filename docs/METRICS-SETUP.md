@@ -48,16 +48,24 @@ Two details worth knowing:
 
 ### Configuring an API key
 
-**Settings → SEO Tools → Metrics provider.**
+**Settings → SEO Metrics.** Everything for these two providers is on that one screen — key,
+host, cap and usage. Nothing about Ahrefs or Semrush is configured anywhere else.
 
-1. Paste an Ahrefs or Semrush API key into its card.
-2. Pick the active provider.
-3. Optionally set a **custom base URL** — the host only; request paths are identical to the
-   official API. Leave it empty to use `api.ahrefs.com` / `api.semrush.com`.
-4. Set a **monthly unit cap**. Requests are priced before they are sent and refused above this
-   number. This is the safety net against one click on a very long list.
+1. **Data provider** — Ahrefs or Semrush. Ahrefs is cheaper for every task in this module, and
+   backlink data is Ahrefs-only.
+2. **Where your key comes from** — this is the question that decides the host, so you answer it
+   in those words rather than typing a URL:
+   - **Official API** — you have your own Ahrefs/Semrush subscription with API access. Requests
+     go to `api.ahrefs.com` / `api.semrush.com`.
+   - **Reseller** — credits bought from a group-buy provider. Same protocol, different host;
+     it is filled in for you.
+   - **Custom gateway** — anything else that speaks the official API. You enter the host.
+3. **API key** — paste it into the card.
+4. **Spending** — set a **monthly unit cap**. Requests are priced before they are sent and
+   refused above this number: the safety net against one click on a very long list. Units spent
+   this month are shown beside it.
 
-Spent units for the current month are shown on the same screen.
+Link Monitor uses the same key and host, so a gateway user does not need a second official key.
 
 ## 2. What it adds
 

@@ -54,6 +54,10 @@ shows an em dash.
 
 - **Link Monitor** now honours the custom base URL from the metrics settings, so a single Ahrefs
   key works across the whole app instead of needing a second, official one.
+- **Settings** — Ahrefs/Semrush keys moved out of *API Keys* and the *Indexing API* screen into
+  their own **SEO Metrics** section, together with the access mode (official / reseller /
+  custom gateway), host and spending cap. One integration was previously configured in three
+  places; it is now configured in one.
 - **Site Audit** fixes.
 - **Content Rewriter** and the **AI-Fingerprint Lab / humanizer** in SEO Tools are now formally
   part of the release. They have been available for a while; 1.1 is where they are documented

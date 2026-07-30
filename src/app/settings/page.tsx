@@ -5,13 +5,14 @@ import { signIn, useSession } from "next-auth/react";
 import {
   ArrowLeft, Plus, X, CheckCircle, AlertCircle,
   Users, Settings, Globe, Key, KeyRound, Edit2, Copy,
-  ChevronDown, Crown, Zap, Star, Eye, Sparkles,
+  ChevronDown, Crown, Zap, Star, Eye, Sparkles, BarChart3,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import SeoToolsSettings, { SeoProviderKeysSection, AeoProviderKeysSection } from "@/components/SeoToolsSettings";
+import MetricsSettingsSection from "@/components/MetricsSettingsSection";
 
-type NavItem = "accounts" | "bing" | "yandex" | "teams" | "api" | "api-keys" | "indexing-api" | "seo-tools" | "notifications" | "members" | "preferences" | "supersites";
+type NavItem = "accounts" | "bing" | "yandex" | "teams" | "api" | "api-keys" | "indexing-api" | "metrics" | "seo-tools" | "notifications" | "members" | "preferences" | "supersites";
 
 interface ConnectedAccount {
   id: string; email: string; picture: string | null; connected: boolean; gscAccess: boolean; ga4Access?: boolean;
@@ -25,26 +26,6 @@ function UserAvatar({ email, picture, size = 36 }: { email: string; picture?: st
   return (
     <div style={{ width: size, height: size, borderRadius: "50%", background: color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.38, fontWeight: 700, color: "#fff", flexShrink: 0 }}>
       {email[0].toUpperCase()}
-    </div>
-  );
-}
-
-// Ahrefs API key (stored browser-side like other SEO keys; auto-backed-up by SeoKeysSync).
-function AhrefsKeyField() {
-  const [val, setVal] = useState("");
-  const [saved, setSaved] = useState(false);
-  useEffect(() => { setVal(localStorage.getItem("seoKey_ahrefs") || ""); }, []);
-  return (
-    <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-      <input
-        type="password" value={val} onChange={e => { setVal(e.target.value); setSaved(false); }}
-        placeholder="Ahrefs API key"
-        style={{ width: "260px", padding: "8px 11px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-bg)", color: "var(--color-text-primary)", fontSize: "13px", outline: "none" }}
-      />
-      <button onClick={() => { val.trim() ? localStorage.setItem("seoKey_ahrefs", val.trim()) : localStorage.removeItem("seoKey_ahrefs"); setSaved(true); }}
-        style={{ padding: "8px 14px", borderRadius: "8px", border: "1px solid var(--color-border)", background: saved ? "rgba(52,199,89,0.12)" : "var(--color-bg)", color: saved ? "var(--color-accent-green)" : "var(--color-text-primary)", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>
-        {saved ? "✓" : "Save"}
-      </button>
     </div>
   );
 }
@@ -1668,21 +1649,23 @@ function IndexApiSection() {
         </div>
       </SectionCard>
 
-      {/* ── Ahrefs API (Link Monitor + paid endpoints) ── */}
+      {/* Ahrefs used to be typed here as well, for Link Monitor. It moved to Settings → SEO
+          Metrics, where the key sits next to the access mode, host and spending cap it belongs
+          with — one integration, one screen. A pointer, not a second input. */}
       <SectionCard>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <div style={{ width: 28, height: 28, borderRadius: "6px", background: "rgba(139,92,246,0.12)", border: "1px solid rgba(139,92,246,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: 800, color: "#8B5CF6" }}>AH</div>
             <div>
-              <span style={{ fontSize: "15px", fontWeight: 700, color: "var(--color-text-primary)" }}>Ahrefs API</span>
-              <p style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginTop: "2px" }}>{t("ahrefsDesc")}</p>
+              <span style={{ fontSize: "15px", fontWeight: 700, color: "var(--color-text-primary)" }}>Ahrefs / Semrush</span>
+              <p style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginTop: "2px" }}>{t("ahrefsMovedDesc")}</p>
             </div>
           </div>
-          <AhrefsKeyField />
+          <a className="pill" href="/settings?tab=metrics" style={{ textDecoration: "none" }}>
+            {t("navMetrics")} →
+          </a>
         </div>
       </SectionCard>
-
-
 
       {/* ── IndexNow key ── */}
       <SectionCard>
@@ -2076,7 +2059,7 @@ export default function SettingsPage() {
   // render with no SSR/hydration mismatch and no Suspense-boundary requirement.
   useEffect(() => {
     const tab = new URLSearchParams(window.location.search).get("tab");
-    const valid: NavItem[] = ["accounts", "bing", "yandex", "teams", "api", "api-keys", "indexing-api", "seo-tools", "notifications", "members", "preferences", "supersites"];
+    const valid: NavItem[] = ["accounts", "bing", "yandex", "teams", "api", "api-keys", "indexing-api", "metrics", "seo-tools", "notifications", "members", "preferences", "supersites"];
     if (tab && (valid as string[]).includes(tab)) setNav(tab as NavItem);
   }, []);
 
@@ -2141,6 +2124,7 @@ export default function SettingsPage() {
             <NavBtn id="api-keys" icon={<KeyRound size={14} />} label={t("navApiKeys")} />
             <NavBtn id="api" icon={<Key size={14} />} label={t("navApiMcpKeys")} />
             <NavBtn id="indexing-api" icon={<Globe size={14} />} label={t("navIndexingApi")} />
+            <NavBtn id="metrics" icon={<BarChart3 size={14} />} label={t("navMetrics")} />
             <NavBtn id="seo-tools" icon={<Sparkles size={14} />} label={t("navSeoTools")} />
             <NavBtn id="notifications" icon={<Zap size={14} />} label={t("navNotifications")} />
           </div>
@@ -2209,6 +2193,7 @@ export default function SettingsPage() {
           {nav === "api-keys"     && <ApiKeysSection />}
           {nav === "api"          && <ApiSection />}
           {nav === "indexing-api" && <IndexApiSection />}
+          {nav === "metrics"      && <MetricsSettingsSection />}
           {nav === "seo-tools"    && <SeoToolsSettings />}
           {nav === "notifications" && <NotificationsSection />}
           {nav === "members"      && <MembersSection user={user} />}
