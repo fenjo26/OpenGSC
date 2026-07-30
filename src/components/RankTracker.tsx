@@ -15,6 +15,8 @@ import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { withShare, isGuestView } from "@/lib/shareParam";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { COUNTRIES, LANGUAGES } from "@/lib/seo/regions";
+import KeywordWeightsBar from "@/components/KeywordWeightsBar";
+import { useKeywordWeights } from "@/lib/seo/useKeywordWeights";
 
 type KwRow = {
   id: string; keyword: string; country: string; lang: string; device: string;
@@ -57,7 +59,16 @@ function PosSparkline({ history }: { history: { date: string; position: number |
   );
 }
 
-type SortKey = "keyword" | "position" | "best" | "gsc" | "trend" | "checked";
+type SortKey = "keyword" | "position" | "best" | "gsc" | "trend" | "checked" | "volume";
+
+/** Same scale Ahrefs uses, so a number a user recognises keeps the colour they expect. */
+function kdColor(kd: number) {
+  if (kd <= 14) return "var(--color-success)";
+  if (kd <= 29) return "var(--color-accent-green)";
+  if (kd <= 49) return "var(--color-warning)";
+  if (kd <= 69) return "var(--color-accent-orange)";
+  return "var(--color-danger)";
+}
 
 // Clickable column header — click toggles asc/desc, switching columns resets to asc.
 function SortableTh({ label, active, dir, align = "center", onClick }: {
@@ -148,6 +159,19 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
     if (sortKey === key) setSortDir(d => (d === "asc" ? "desc" : "asc"));
     else { setSortKey(key); setSortDir("asc"); }
   };
+
+  // Unlike Striking Distance, every tracked keyword carries its own country, so weights are
+  // requested per market. Getting this wrong would attach US volumes to keywords tracked in
+  // another country — a mistake that looks like data rather than like a bug.
+  const weightTargets = useMemo(
+    () => rows.map(r => ({ keyword: r.keyword, country: r.country || "us" })),
+    [rows],
+  );
+  const weights = useKeywordWeights(weightTargets, {
+    enabled: !guest,
+    onError: code => (code === "cap_exceeded" ? t("kwCapExceeded") : t("kwLoadFailed")),
+  });
+  const kwWeight = (r: KwRow) => weights.get(r.keyword, r.country || "us");
 
   const load = useCallback(async () => {
     if (!siteDbId) return;
@@ -259,11 +283,19 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
             b.lastCheckedAt ? new Date(b.lastCheckedAt).getTime() : null,
             dir,
           );
+        case "volume":
+          // Descending by default reads better for volume, so the direction is inverted
+          // against the shared asc/desc flag rather than making the user click twice.
+          return cmpNullable(
+            weights.get(a.keyword, a.country)?.volume ?? null,
+            weights.get(b.keyword, b.country)?.volume ?? null,
+            (dir * -1) as 1 | -1,
+          );
         default:
           return 0;
       }
     });
-  }, [rows, search, sortKey, sortDir]);
+  }, [rows, search, sortKey, sortDir, weights]);
 
   // Summary stats (dashboard-style)
   const stats = useMemo(() => {
@@ -403,6 +435,11 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
         </div>
       )}
 
+      {/* Weights sit above the table, not inside it: the button spends money and belongs
+          where it can be read before it is pressed. Hidden for guests, whose share-link
+          session cannot reach the owner-scoped metrics endpoints. */}
+      {!guest && rows.length > 0 && <KeywordWeightsBar w={weights} compact />}
+
       {/* ── Table / empty state ── */}
       {loading ? (
         <div style={{ padding: "40px", textAlign: "center", color: "var(--color-text-secondary)", fontSize: "13px" }}>Loading…</div>
@@ -423,6 +460,8 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
                 <SortableTh label={t("rankColPos")} active={sortKey === "position"} dir={sortDir} onClick={() => toggleSort("position")} />
                 <SortableTh label={t("rankColBest")} active={sortKey === "best"} dir={sortDir} onClick={() => toggleSort("best")} />
                 <SortableTh label={t("rankColGsc")} active={sortKey === "gsc"} dir={sortDir} onClick={() => toggleSort("gsc")} />
+                <SortableTh label={t("kwColVolume")} active={sortKey === "volume"} dir={sortDir} onClick={() => toggleSort("volume")} />
+                <th style={{ textAlign: "center", padding: "10px 12px", color: "var(--color-text-secondary)", fontWeight: 600, fontSize: "11px", letterSpacing: "0.05em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{t("kwColKd")}</th>
                 <th style={{ textAlign: "left", padding: "10px 12px", color: "var(--color-text-secondary)", fontWeight: 600, fontSize: "11px", letterSpacing: "0.05em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{t("rankColUrl")}</th>
                 <SortableTh label={t("rankColTrend")} align="left" active={sortKey === "trend"} dir={sortDir} onClick={() => toggleSort("trend")} />
                 <SortableTh label={t("rankColChecked")} align="left" active={sortKey === "checked"} dir={sortDir} onClick={() => toggleSort("checked")} />
@@ -468,6 +507,15 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
                         <span title={`${r.gsc.clicks} clicks / ${r.gsc.impressions} impressions (7d)`} style={{ color: "#F59E0B", fontWeight: 600 }}>{r.gsc.pos}</span>
                       ) : <span style={{ color: "var(--color-text-secondary)" }}>—</span>}
                     </td>
+                    {/* Weights. Em dash, never zero: "not loaded" and "no demand" are
+                        different answers and must not look alike. */}
+                    <td style={{ padding: "10px 12px", textAlign: "center", fontWeight: 600, color: kwWeight(r)?.volume != null ? "var(--color-text-primary)" : "var(--color-text-secondary)" }}
+                      title={kwWeight(r)?.cpc != null ? `CPC ${kwWeight(r)!.cpc}` : undefined}>
+                      {kwWeight(r)?.volume != null ? kwWeight(r)!.volume!.toLocaleString() : "—"}
+                    </td>
+                    <td style={{ padding: "10px 12px", textAlign: "center", fontWeight: 700, color: kwWeight(r)?.difficulty != null ? kdColor(kwWeight(r)!.difficulty!) : "var(--color-text-secondary)" }}>
+                      {kwWeight(r)?.difficulty ?? "—"}
+                    </td>
                     <td style={{ padding: "10px 12px", maxWidth: "180px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {r.url ? (
                         <a href={r.url} target="_blank" rel="noreferrer" title={r.url} onClick={e => e.stopPropagation()}
@@ -493,7 +541,7 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
                   </tr>
                   {expanded === r.id && (
                     <tr>
-                      <td colSpan={8} style={{ padding: 0, borderBottom: "1px solid var(--color-border)", background: "rgba(59,130,246,0.02)" }}>
+                      <td colSpan={10} style={{ padding: 0, borderBottom: "1px solid var(--color-border)", background: "rgba(59,130,246,0.02)" }}>
                         <HistoryChart keywordId={r.id} />
                       </td>
                     </tr>

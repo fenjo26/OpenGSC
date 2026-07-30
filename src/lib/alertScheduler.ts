@@ -8,10 +8,12 @@
 //   traffic_drop  — a site's clicks over the last 7 days fell X%+ vs the previous 7 days
 //   ssl_expiry    — a site's SSL certificate expires within N days (from Site Health data)
 //   audit_score   — a completed site audit came back with health score below N
+//   lost_link     — referring domains above a DR threshold disappeared from the stored profile
 
 import { prisma } from "@/lib/prisma";
 import { notifyUser } from "@/lib/notify";
 import { NOTIFY_L, normalizeLang, type NotifyLang } from "@/lib/notifyI18n";
+import { lostSince } from "@/lib/seo/backlinkStore";
 
 const TICK_MS = 60 * 60 * 1000; // hourly
 
@@ -20,6 +22,7 @@ export interface AlertSettings {
   trafficDrop: { on: boolean; percent: number };
   ssl: { on: boolean; days: number };
   audit: { on: boolean; minScore: number };
+  lostLink: { on: boolean; minDr: number };
   lang: NotifyLang; // language of delivered alerts (saved from the UI language)
 }
 
@@ -28,6 +31,9 @@ export const DEFAULT_ALERT_SETTINGS: AlertSettings = {
   trafficDrop: { on: true, percent: 30 },
   ssl: { on: true, days: 14 },
   audit: { on: true, minScore: 50 },
+  // Off by default: it can only fire once a backlink profile has been loaded, and turning it
+  // on for users who never will would be a setting that does nothing.
+  lostLink: { on: false, minDr: 50 },
   lang: "en",
 };
 
@@ -42,6 +48,7 @@ export async function getAlertSettings(userId: string): Promise<AlertSettings> {
       trafficDrop: { ...DEFAULT_ALERT_SETTINGS.trafficDrop, ...(s.trafficDrop ?? {}) },
       ssl: { ...DEFAULT_ALERT_SETTINGS.ssl, ...(s.ssl ?? {}) },
       audit: { ...DEFAULT_ALERT_SETTINGS.audit, ...(s.audit ?? {}) },
+      lostLink: { ...DEFAULT_ALERT_SETTINGS.lostLink, ...(s.lostLink ?? {}) },
       lang: normalizeLang(s.lang),
     };
   } catch {
@@ -146,6 +153,29 @@ async function checkUser(userId: string, s: AlertSettings): Promise<Pending[]> {
           });
         }
       } catch { /* malformed summary */ }
+    }
+  }
+
+  // ── lost_link: referring domains above the DR threshold that went away in the last day.
+  // Reads only what a profile refresh already stored — this rule never calls a provider and
+  // therefore never spends anything on its own.
+  if (s.lostLink.on) {
+    const since = new Date(Date.now() - 26 * 3600_000).toISOString().slice(0, 10);
+    for (const site of sites) {
+      const target = site.url.replace(/^https?:\/\//, "").replace(/^sc-domain:/, "").replace(/^www\./, "").split("/")[0];
+      const lost = await lostSince(target, since, s.lostLink.minDr);
+      if (!lost.length) continue;
+      out.push({
+        type: "lost_link", siteId: site.id,
+        title: L.lostLinkTitle(String(siteName.get(site.id))),
+        message: L.lostLinkMsg(
+          String(siteName.get(site.id)), lost.length,
+          lost.slice(0, 5).map(l => `${l.refDomain} (DR ${Math.round(l.dr)})`).join(", "),
+          s.lostLink.minDr,
+        ),
+        // Per day, not per domain: five links lost at once is one piece of news, not five.
+        dedupeKey: `lost_link:${site.id}:${isoDay()}`,
+      });
     }
   }
 

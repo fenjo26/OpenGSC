@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Plus, Globe, Settings, Trash2, Copy, Check, Eye, EyeOff, AlertCircle, RefreshCw, Code } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import DomainHealthChip from "@/components/DomainHealthChip";
 
 interface IndexerDomain {
   id: string;
@@ -402,8 +403,11 @@ export default function IndexerDomainsPage() {
                         <h4 style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)", margin: 0 }}>
                           {dom.domain}
                         </h4>
-                        <span style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>
+                        <span style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "11px", color: "var(--color-text-secondary)", flexWrap: "wrap" }}>
                           Template: {dom.template.toUpperCase()}
+                          {/* A dropped domain with no live link profile is worth nothing, and
+                              that is cheaper to learn here than after a network points at it. */}
+                          <DomainHealthChip domain={dom.domain} compact />
                         </span>
                       </div>
                     </div>

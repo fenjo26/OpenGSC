@@ -18,6 +18,8 @@ type Tpl = {
   sslMsg: (site: string, days: number) => string;
   auditTitle: (site: string) => string;
   auditMsg: (site: string, score: number, bad: number, total: number) => string;
+  lostLinkTitle: (site: string) => string;
+  lostLinkMsg: (site: string, count: number, domains: string, minDr: number) => string;
   // digest
   digestTitleAll: string;
   digestTitleTag: (tag: string) => string;
@@ -57,6 +59,8 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     trafficDropMsg: (site, pct, from, to) => `*${site}* — clicks down ${pct}% week-over-week: ${from} → ${to}.`,
     sslTitle: site => `🔒 SSL expiring: ${site}`,
     sslMsg: (site, days) => `*${site}* — SSL certificate expires in ${days} day(s). Renew it (certbot renew / check auto-renewal).`,
+    lostLinkTitle: site => `🔗 Lost backlinks: ${site}`,
+    lostLinkMsg: (site, count, domains, minDr) => `*${site}* — ${count} referring domain(s) with DR ≥ ${minDr} disappeared: ${domains}.`,
     auditTitle: site => `🩺 Low audit score: ${site}`,
     auditMsg: (site, score, bad, total) => `*${site}* — site audit health score is ${score}/100 (${bad}/${total} pages with issues). Check the Audit tab.`,
     digestTitleAll: "📊 OpenGSC digest — all sites",
@@ -95,6 +99,8 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     trafficDropMsg: (site, pct, from, to) => `*${site}* — клики упали на ${pct}% неделя к неделе: ${from} → ${to}.`,
     sslTitle: site => `🔒 Истекает SSL: ${site}`,
     sslMsg: (site, days) => `*${site}* — SSL-сертификат истекает через ${days} дн. Продлите его (certbot renew / проверьте автопродление).`,
+    lostLinkTitle: site => `🔗 Потеряны ссылки: ${site}`,
+    lostLinkMsg: (site, count, domains, minDr) => `*${site}* — пропало ссылающихся доменов с DR ≥ ${minDr}: ${count} (${domains}).`,
     auditTitle: site => `🩺 Низкий балл аудита: ${site}`,
     auditMsg: (site, score, bad, total) => `*${site}* — health score аудита ${score}/100 (${bad}/${total} страниц с проблемами). Загляните во вкладку Аудит.`,
     digestTitleAll: "📊 Дайджест OpenGSC — все сайты",
@@ -133,6 +139,8 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     trafficDropMsg: (site, pct, from, to) => `*${site}* — кліки впали на ${pct}% тиждень до тижня: ${from} → ${to}.`,
     sslTitle: site => `🔒 Спливає SSL: ${site}`,
     sslMsg: (site, days) => `*${site}* — SSL-сертифікат спливає через ${days} дн. Подовжте його (certbot renew / перевірте автоподовження).`,
+    lostLinkTitle: site => `🔗 Втрачено посилання: ${site}`,
+    lostLinkMsg: (site, count, domains, minDr) => `*${site}* — зникло доменів з DR ≥ ${minDr}: ${count} (${domains}).`,
     auditTitle: site => `🩺 Низький бал аудиту: ${site}`,
     auditMsg: (site, score, bad, total) => `*${site}* — health score аудиту ${score}/100 (${bad}/${total} сторінок із проблемами). Перегляньте вкладку Аудит.`,
     digestTitleAll: "📊 Дайджест OpenGSC — всі сайти",

@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { useState, useEffect, Suspense } from "react";
-import { Settings, LogOut, Sparkles, Globe, Newspaper, LayoutDashboard, TrendingUp, Anchor, BarChart2 } from "lucide-react";
+import { Settings, LogOut, Sparkles, Globe, Newspaper, LayoutDashboard, TrendingUp, Anchor, BarChart2 , Users} from "lucide-react";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { useTheme } from "@/lib/ThemeContext";
 import { useLayout } from "@/lib/LayoutContext";
@@ -486,6 +486,7 @@ function NavLinks() {
     { href: "/striking", label: t("menuStriking"), key: "striking", icon: <TrendingUp size={14} /> },
     { href: "/cannibalization", label: t("menuCannibalization"), key: "cannibalization", icon: <Anchor size={14} /> },
     { href: "/decay", label: t("menuDecay"), key: "decay", icon: <BarChart2 size={14} /> },
+    { href: "/competitors", label: t("menuCompetitors"), key: "competitors", icon: <Users size={14} /> },
     { href: "/seo-tools", label: t("seoNavTitle"), key: "seo-tools", icon: <Sparkles size={14} /> },
     { href: "/indexer", label: t("indexerNavTitle"), key: "indexer", icon: <Globe size={14} /> },
     { href: "/digest", label: t("digestNavTitle"), key: "digest", icon: <Newspaper size={14} /> },

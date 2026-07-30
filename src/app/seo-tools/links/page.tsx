@@ -9,6 +9,7 @@ import Link from "next/link";
 import { Loader2, AlertTriangle, Plus, X, RefreshCw, Link2, Sparkles, ExternalLink, Star } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { getTaskCreds } from "@/lib/seo/keys";
+import { getMetricsCreds } from "@/lib/seo/metricsClient";
 import { markdownToHtml } from "@/lib/seo/outlineFormat";
 
 const card = "panel";
@@ -77,7 +78,9 @@ export default function LinkWatchPage() {
     try {
       const res = await fetch("/api/linkwatch/run", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ahrefsKey }),
+        // Same key and same host override as the rest of the metrics stack, so a gateway user
+        // does not have to keep a second, official key just for Link Monitor.
+        body: JSON.stringify({ ahrefsKey, baseUrl: getMetricsCreds("ahrefs").baseUrl }),
       });
       const d = await res.json();
       if (!res.ok) setErr(d.error || "error");

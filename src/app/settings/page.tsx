@@ -986,6 +986,9 @@ function NotificationsSection() {
           <AlertRow id="trafficDrop" label={t("alertTrafficDrop")} value={alerts.trafficDrop} unit="%" field="percent" />
           <AlertRow id="ssl" label={t("alertSsl")} value={alerts.ssl} unit={t("alertDaysUnit")} field="days" />
           <AlertRow id="audit" label={t("alertAudit")} value={alerts.audit} unit={t("alertScoreUnit")} field="minScore" />
+          {/* Off by default and dependent on a loaded backlink profile — it reads stored rows
+              and never calls a provider, so enabling it cannot cost anything by itself. */}
+          <AlertRow id="lostLink" label={t("alertLostLink")} value={alerts.lostLink} unit={t("alertLostLinkDr")} field="minDr" />
           <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "12px" }}>
             <button onClick={async () => {
               const d = await fetch("/api/settings/alerts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "run" }) }).then(r => r.json());

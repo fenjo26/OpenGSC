@@ -6,6 +6,7 @@ import { RefreshCw } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { ScatterChart, Scatter, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { withShare, isGuestView } from "@/lib/shareParam";
+import { getMetricsCreds } from "@/lib/seo/metricsClient";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 type HeatMetric = "clicks" | "impressions";
@@ -95,6 +96,33 @@ function DecayingPagesTable({ rows }: { rows: DecayRow[] }) {
   const statusColor = (s: DecayRow["status"]) =>
     s === "Critical" ? "#EF4444" : "#F59E0B";
 
+  // Demand verdicts, keyed by URL. Fetched one page at a time on click rather than for the
+  // whole table: most decaying pages never get investigated, and each check is a floored
+  // request whether you look at the answer or not.
+  const [demand, setDemand] = useState<Record<string, { keyword: string; trendPct: number | null; err?: string }>>({});
+  const [demandBusy, setDemandBusy] = useState<string | null>(null);
+
+  async function checkDemand(row: DecayRow) {
+    if (demandBusy || !row.siteId) return;
+    setDemandBusy(row.url);
+    try {
+      const creds = getMetricsCreds();
+      const res = await fetch("/api/metrics/demand", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          siteId: row.siteId, url: row.url,
+          country: localStorage.getItem("seoMetricsCountry") || "us",
+          fetch: true, provider: creds.provider, apiKey: creds.apiKey, baseUrl: creds.baseUrl, cap: creds.cap,
+        }),
+      });
+      const d = await res.json();
+      setDemand(prev => ({ ...prev, [row.url]: { keyword: d.keyword ?? "", trendPct: d.trendPct ?? null, err: d.error } }));
+    } catch {
+      setDemand(prev => ({ ...prev, [row.url]: { keyword: "", trendPct: null, err: "failed" } }));
+    }
+    setDemandBusy(null);
+  }
+
   if (rows.length === 0) {
     return (
       <div style={{ padding: "20px 28px", borderBottom: "1px solid var(--color-border)", color: "var(--color-text-secondary)", fontSize: "13px", textAlign: "center" }}>
@@ -110,7 +138,7 @@ function DecayingPagesTable({ rows }: { rows: DecayRow[] }) {
       </div>
 
       <div style={{
-        display: "grid", gridTemplateColumns: "1fr 140px 110px 80px 90px",
+        display: "grid", gridTemplateColumns: "1fr 140px 110px 80px 120px 90px",
         padding: "8px 12px",
         background: "var(--color-bg)", borderRadius: "8px 8px 0 0",
         border: "1px solid var(--color-border)", borderBottom: "none",
@@ -120,13 +148,14 @@ function DecayingPagesTable({ rows }: { rows: DecayRow[] }) {
         <div style={{ textAlign: "right" }}>{t("cdmClicksLast2m")}</div>
         <div style={{ textAlign: "right" }}>{t("cdmClicksYoY")}</div>
         <div style={{ textAlign: "right" }}>{t("clicks")}</div>
+        <div style={{ textAlign: "right" }} title={t("cdmDemandHint")}>{t("cdmDemand")}</div>
         <div style={{ textAlign: "right" }}>{t("cdmStatus")}</div>
       </div>
 
       <div style={{ border: "1px solid var(--color-border)", borderRadius: "0 0 8px 8px", overflow: "hidden" }}>
         {visible.map((row, i) => (
           <div key={row.url} style={{
-            display: "grid", gridTemplateColumns: "1fr 140px 110px 80px 90px",
+            display: "grid", gridTemplateColumns: "1fr 140px 110px 80px 120px 90px",
             padding: "12px 12px",
             borderBottom: i < visible.length - 1 ? "1px solid var(--color-border)" : "none",
             background: i % 2 === 0 ? "var(--color-card)" : "rgba(255,255,255,0.02)",
@@ -165,6 +194,32 @@ function DecayingPagesTable({ rows }: { rows: DecayRow[] }) {
             </div>
 
             <div style={{ textAlign: "right", color: "var(--color-text-secondary)" }}>{row.clicks}</div>
+
+            {/* Demand: the missing half of the diagnosis. Clicks falling with demand flat is a
+                ranking problem; clicks falling with demand is the market, and no rewrite fixes
+                that. Nothing is fetched until asked. */}
+            <div style={{ textAlign: "right", fontSize: "12px" }}>
+              {isGuestView() ? <span style={{ color: "var(--color-text-secondary)" }}>—</span>
+                : demand[row.url] ? (
+                  demand[row.url].err ? <span style={{ color: "var(--color-text-secondary)" }}>—</span>
+                  : demand[row.url].trendPct == null ? <span style={{ color: "var(--color-text-secondary)" }}>—</span>
+                  : (
+                    <span title={demand[row.url].keyword}
+                      style={{ fontWeight: 700, color: demand[row.url].trendPct! <= -15 ? "var(--color-warning)" : "var(--color-success)" }}>
+                      {demand[row.url].trendPct! > 0 ? "+" : ""}{demand[row.url].trendPct}%
+                      <span style={{ display: "block", fontSize: "10px", fontWeight: 400, color: "var(--color-text-secondary)" }}>
+                        {demand[row.url].trendPct! <= -15 ? t("cdmDemandFalling") : t("cdmDemandStable")}
+                      </span>
+                    </span>
+                  )
+                ) : (
+                  <button className="metric-chip" onClick={e => { e.stopPropagation(); checkDemand(row); }}
+                    disabled={demandBusy === row.url}
+                    style={{ border: "1px solid var(--color-border)", background: "transparent", fontWeight: 500, cursor: "pointer" }}>
+                    {demandBusy === row.url ? "…" : t("cdmDemandLoad")}
+                  </button>
+                )}
+            </div>
 
             <div style={{ textAlign: "right" }}>
               <span style={{

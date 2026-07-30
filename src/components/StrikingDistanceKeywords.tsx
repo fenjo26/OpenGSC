@@ -4,6 +4,8 @@ import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { ExternalLink } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { withShare, isGuestView } from "@/lib/shareParam";
+import KeywordWeightsBar from "@/components/KeywordWeightsBar";
+import { useKeywordWeights, type KeywordWeight, type UseKeywordWeights } from "@/lib/seo/useKeywordWeights";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface StrikingKeyword {
@@ -12,10 +14,45 @@ interface StrikingKeyword {
   siteId?: string; siteName?: string;
 }
 
-type SortKey = "impressions" | "clicks" | "position" | "ctr";
+type SortKey = "impressions" | "clicks" | "position" | "ctr" | "potential";
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 function fmtK(n: number) { return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n); }
+
+/**
+ * Rough organic CTR at the top of page one. Used to turn search volume into "clicks this
+ * keyword could produce", which is the number that makes a striking-distance list sortable by
+ * something other than impressions.
+ *
+ * Impressions are demand filtered through your current visibility — a keyword sitting at
+ * position 18 shows a small number no matter how big its market is. Volume is the market
+ * itself, and the gap between the two is exactly what this view is for.
+ *
+ * The constant is approximate and deliberately conservative. It is used only for ordering and
+ * relative comparison, never presented as a forecast.
+ */
+const CTR_AT_TOP = 0.1;
+
+/**
+ * Cache lookups must normalize exactly the way the server does (`normalizeKeyword`), or a GSC
+ * query with stray whitespace silently misses a weight that was fetched and paid for — showing
+ * an em dash next to a keyword whose volume is sitting in the database.
+ */
+const wKey = (q: string) => q.trim().toLowerCase();
+
+/** Clicks left on the table: what the keyword could bring near the top, minus what it brings now. */
+function potentialOf(k: StrikingKeyword, w?: KeywordWeight): number | null {
+  if (!w || w.volume == null) return null;
+  return Math.max(0, Math.round(w.volume * CTR_AT_TOP) - k.clicks);
+}
+
+function kdColor(kd: number) {
+  if (kd <= 14) return "var(--color-success)";
+  if (kd <= 29) return "var(--color-accent-green)";
+  if (kd <= 49) return "var(--color-warning)";
+  if (kd <= 69) return "var(--color-accent-orange)";
+  return "var(--color-danger)";
+}
 
 function posColor(p: number) {
   if (p <= 5)  return "#10B981";
@@ -108,8 +145,16 @@ function InfoBlock({
   );
 }
 
+// Two more numeric columns than before (volume, KD, potential). They are always present, even
+// with no data behind them: a column that appears only once you have paid for it is a feature
+// nobody discovers.
+const GRID = "1.3fr 0.9fr 92px 78px 68px 62px 74px 82px 54px 80px";
+
 // ─── Table ─────────────────────────────────────────────────────────────────────
-function KeywordsTable({ data, loading, siteDbId }: { data: StrikingKeyword[]; loading: boolean; siteDbId: string }) {
+function KeywordsTable({ data, loading, siteDbId, weights, country }: {
+  data: StrikingKeyword[]; loading: boolean; siteDbId: string;
+  weights: UseKeywordWeights; country: string;
+}) {
   const { t } = useLanguage();
   const [search,  setSearch]  = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("impressions");
@@ -142,12 +187,26 @@ function KeywordsTable({ data, loading, siteDbId }: { data: StrikingKeyword[]; l
       .catch(() => {});
   };
 
-  const filtered = useMemo(() =>
-    data
-      .filter(k => !search || k.query.toLowerCase().includes(search.toLowerCase()) || k.page.toLowerCase().includes(search.toLowerCase()))
-      .sort((a, b) => sortKey === "position" ? a[sortKey] - b[sortKey] : b[sortKey] - a[sortKey]),
-    [data, search, sortKey]
-  );
+  const filtered = useMemo(() => {
+    const rows = data.filter(k =>
+      !search ||
+      k.query.toLowerCase().includes(search.toLowerCase()) ||
+      k.page.toLowerCase().includes(search.toLowerCase()));
+
+    if (sortKey === "potential") {
+      // Rows without a weight sort last rather than as zero — "unknown" and "nothing to gain"
+      // are different answers, and mixing them hides the keywords worth loading next.
+      return [...rows].sort((a, b) => {
+        const pa = potentialOf(a, weights.get(a.query, country));
+        const pb = potentialOf(b, weights.get(b.query, country));
+        if (pa == null && pb == null) return b.impressions - a.impressions;
+        if (pa == null) return 1;
+        if (pb == null) return -1;
+        return pb - pa;
+      });
+    }
+    return [...rows].sort((a, b) => sortKey === "position" ? a[sortKey] - b[sortKey] : b[sortKey] - a[sortKey]);
+  }, [data, search, sortKey, weights, country]);
 
   const SortBtn = ({ k, label }: { k: SortKey; label: string }) => (
     <button onClick={() => setSortKey(k)} style={{
@@ -177,6 +236,7 @@ function KeywordsTable({ data, loading, siteDbId }: { data: StrikingKeyword[]; l
           <SortBtn k="clicks"      label={t("clicks")} />
           <SortBtn k="position"    label={t("position")} />
           <SortBtn k="ctr"         label="CTR" />
+          <SortBtn k="potential"   label={t("kwColPotential")} />
         </div>
         {loading && (
           <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--color-text-secondary)" }}>
@@ -195,7 +255,7 @@ function KeywordsTable({ data, loading, siteDbId }: { data: StrikingKeyword[]; l
 
       {/* Table header */}
       <div style={{
-        display: "grid", gridTemplateColumns: "1.5fr 1fr 100px 90px 90px 80px 90px",
+        display: "grid", gridTemplateColumns: GRID,
         padding: "8px 14px", background: "var(--color-bg)",
         borderRadius: "8px 8px 0 0", border: "1px solid var(--color-border)", borderBottom: "none",
         fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)",
@@ -208,6 +268,9 @@ function KeywordsTable({ data, loading, siteDbId }: { data: StrikingKeyword[]; l
         <div style={{ textAlign: "right" }}>{t("clicks")}</div>
         <div style={{ textAlign: "right" }}>CTR</div>
         <div style={{ textAlign: "right" }}>{t("position")}</div>
+        <div style={{ textAlign: "right" }}>{t("kwColVolume")}</div>
+        <div style={{ textAlign: "right" }}>{t("kwColKd")}</div>
+        <div style={{ textAlign: "right" }} title={t("kwPotentialHint")}>{t("kwColPotential")}</div>
       </div>
 
       {/* Rows */}
@@ -225,9 +288,11 @@ function KeywordsTable({ data, loading, siteDbId }: { data: StrikingKeyword[]; l
         <div style={{ border: "1px solid var(--color-border)", borderRadius: "0 0 8px 8px", overflow: "hidden" }}>
           {filtered.map((item, i) => {
             const prox = proximityLabel(item.position);
+            const w = weights.get(item.query, country);
+            const potential = potentialOf(item, w);
             return (
               <div key={`${item.query}-${item.page}-${i}`} style={{
-                display: "grid", gridTemplateColumns: "1.5fr 1fr 100px 90px 90px 80px 90px",
+                display: "grid", gridTemplateColumns: GRID,
                 padding: "11px 14px", gap: "10px",
                 borderBottom: i < filtered.length - 1 ? "1px solid var(--color-border)" : "none",
                 background: i % 2 === 0 ? "var(--color-card)" : "rgba(255,255,255,0.02)",
@@ -275,6 +340,19 @@ function KeywordsTable({ data, loading, siteDbId }: { data: StrikingKeyword[]; l
                 <div style={{ textAlign: "right", fontWeight: 700, color: posColor(item.position) }}>
                   {item.position.toFixed(1)}
                 </div>
+
+                {/* Weights. An em dash rather than a zero: no data and no demand must not look
+                    the same, or the whole point of loading them is lost. */}
+                <div style={{ textAlign: "right", fontWeight: 600, color: w?.volume != null ? "var(--color-text-primary)" : "var(--color-text-tertiary)" }}
+                  title={w ? `${w.cpc != null ? `CPC ${w.cpc}` : ""}${w.cpc != null ? " · " : ""}${w.source === "csv" ? t("kwSourceCsv") : t("kwSourceApi")}` : undefined}>
+                  {w?.volume != null ? fmtK(w.volume) : "—"}
+                </div>
+                <div style={{ textAlign: "right", fontWeight: 700, color: w?.difficulty != null ? kdColor(w.difficulty) : "var(--color-text-tertiary)" }}>
+                  {w?.difficulty != null ? w.difficulty : "—"}
+                </div>
+                <div style={{ textAlign: "right", fontWeight: 600, color: potential != null && potential > 0 ? "var(--color-success)" : "var(--color-text-tertiary)" }}>
+                  {potential != null ? `+${fmtK(potential)}` : "—"}
+                </div>
               </div>
             );
           })}
@@ -286,6 +364,7 @@ function KeywordsTable({ data, loading, siteDbId }: { data: StrikingKeyword[]; l
 
 // ─── Main export ───────────────────────────────────────────────────────────────
 export default function StrikingDistanceKeywords({ siteDbId }: { siteDbId: string }) {
+  const { t } = useLanguage();
   const [posFrom, setPosFrom] = useState(4);
   const [posTo,   setPosTo]   = useState(20);
   const [days,    setDays]    = useState(90);
@@ -294,7 +373,35 @@ export default function StrikingDistanceKeywords({ siteDbId }: { siteDbId: strin
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState("");
 
+  // Weights live beside the GSC rows rather than inside them: they arrive later, from a
+  // different source, and may never arrive at all. All the paid-fetch logic is in the shared
+  // hook so this view and Rank Tracker cannot drift apart on pricing or cache keys.
+  const [country, setCountryS] = useState("us");
+
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
+  // localStorage only after mount — reading it during render would make the first client pass
+  // disagree with the server-rendered HTML.
+  useEffect(() => { setCountryS(localStorage.getItem("seoMetricsCountry") || "us"); }, []);
+  const setCountry = (v: string) => { setCountryS(v); localStorage.setItem("seoMetricsCountry", v); };
+
+  const queries = useMemo(
+    () => [...new Set(keywords.map(k => wKey(k.query)).filter(Boolean))],
+    [keywords],
+  );
+
+  // One market for the whole list here, chosen in the toolbar — unlike Rank Tracker, GSC rows
+  // carry no country of their own.
+  const targets = useMemo(
+    () => queries.map(keyword => ({ keyword, country })),
+    [queries, country],
+  );
+
+  const weights = useKeywordWeights(targets, {
+    // Guests on a share link have no session and the metrics endpoints are owner-scoped.
+    enabled: !isGuestView(),
+    onError: code => (code === "cap_exceeded" ? t("kwCapExceeded") : t("kwLoadFailed")),
+  });
 
   const fetchData = useCallback(async (from: number, to: number, d: number) => {
     if (!siteDbId) return;
@@ -325,7 +432,8 @@ export default function StrikingDistanceKeywords({ siteDbId }: { siteDbId: strin
         </div>
       )}
       <InfoBlock posFrom={posFrom} setPosFrom={setPosFrom} posTo={posTo} setPosTo={setPosTo} days={days} setDays={setDays} />
-      <KeywordsTable data={keywords} loading={loading} siteDbId={siteDbId} />
+      {!isGuestView() && <KeywordWeightsBar w={weights} country={country} setCountry={setCountry} />}
+      <KeywordsTable data={keywords} loading={loading} siteDbId={siteDbId} weights={weights} country={country} />
     </div>
   );
 }

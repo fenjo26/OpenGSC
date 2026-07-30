@@ -43,12 +43,19 @@ export async function POST(req: Request) {
     trafficDrop: { ...cur.trafficDrop, ...(b.settings?.trafficDrop ?? {}) },
     ssl: { ...cur.ssl, ...(b.settings?.ssl ?? {}) },
     audit: { ...cur.audit, ...(b.settings?.audit ?? {}) },
+    lostLink: { ...cur.lostLink, ...(b.settings?.lostLink ?? {}) },
     lang: (b.settings?.lang === "ru" || b.settings?.lang === "uk" ? b.settings.lang : cur.lang ?? "en"),
   };
   s.rankDrop.threshold = Math.min(50, Math.max(1, Number(s.rankDrop.threshold) || DEFAULT_ALERT_SETTINGS.rankDrop.threshold));
   s.trafficDrop.percent = Math.min(95, Math.max(5, Number(s.trafficDrop.percent) || DEFAULT_ALERT_SETTINGS.trafficDrop.percent));
   s.ssl.days = Math.min(60, Math.max(1, Number(s.ssl.days) || DEFAULT_ALERT_SETTINGS.ssl.days));
   s.audit.minScore = Math.min(100, Math.max(0, Number(s.audit.minScore) || DEFAULT_ALERT_SETTINGS.audit.minScore));
+  // 0 is a legitimate value here ("alert on any lost domain"), so the `|| default` idiom used
+  // above would be wrong — it would silently rewrite a deliberate 0 into 50.
+  {
+    const raw = Number(s.lostLink.minDr);
+    s.lostLink.minDr = Number.isFinite(raw) ? Math.min(90, Math.max(0, raw)) : DEFAULT_ALERT_SETTINGS.lostLink.minDr;
+  }
   try {
     await prisma.$executeRawUnsafe(`UPDATE "User" SET alertSettings = ? WHERE id = ?`, JSON.stringify(s), userId);
     return NextResponse.json({ ok: true, settings: s });

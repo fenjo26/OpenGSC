@@ -18,6 +18,7 @@ import { ALGO_UPDATES, ALGO_UPDATE_COLORS, algoDateLabel } from "@/lib/algoUpdat
 import { useParams, useRouter } from "next/navigation";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import BacklinkProfile from "@/components/BacklinkProfile";
 import {
   ArrowLeft, Sparkles, Eye, Percent, MoveUp,
   SlidersHorizontal, ChevronDown, Smartphone, Monitor, Tablet,
@@ -2084,6 +2085,11 @@ function BacklinksTab({ siteDbId }: { siteDbId: string }) {
     <div style={{ padding: "24px 32px", display: "flex", flexDirection: "column", gap: "20px" }}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
 
+      {/* The provider's view of the link graph, above the manually tracked list. Kept separate
+          rather than merged: this one answers "what points at me", the list below answers "did
+          the link I built survive". Merging them would lose the second question. */}
+      <BacklinkProfile siteDbId={siteDbId} />
+
       {/* ── Header ── */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "12px" }}>
         <h2 style={{ fontSize: "17px", fontWeight: 700, color: "var(--color-text-primary)" }}>{t("backlinksTitle")}</h2>
@@ -3961,6 +3967,9 @@ export default function SitePage({
       { key: "dashboard" as const, label: t("tabDashboard") },
       { key: "positions" as const, label: t("tabPositions") },
       { key: "ga4" as const,       label: t("tabGA4") },
+      // Read-only by construction: the guest variant below renders only the profile panel,
+      // and the endpoint refuses to fetch for a share-token caller regardless of what is sent.
+      { key: "backlinks" as const, label: t("shareLinkProfile") },
       { key: "health" as const,    label: t("tabHealth") },
       { key: "audit" as const,     label: t("tabAudit") },
     ];
@@ -4319,7 +4328,11 @@ export default function SitePage({
       {activeTab === "indexing" && <IndexingTab siteDbId={siteDbId} domain={domain} />}
 
       {/* ── Backlinks tab ── */}
-      {activeTab === "backlinks" && <BacklinksTab siteDbId={siteDbId} />}
+      {/* Guests get the profile only — the manual list below it is a working surface with
+          add/delete/recheck actions that a client report has no business exposing. */}
+      {activeTab === "backlinks" && (readOnly
+        ? <div style={{ padding: "24px 32px" }}><BacklinkProfile siteDbId={siteDbId} /></div>
+        : <BacklinksTab siteDbId={siteDbId} />)}
 
       {/* ── Annotations tab ── */}
       {activeTab === "annotations" && (

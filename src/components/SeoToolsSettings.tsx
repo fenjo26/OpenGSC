@@ -13,13 +13,37 @@ import { getConfiguredProviders, AI_PROVIDER_NAMES } from "@/lib/seo/keys";
 interface KeyCardProvider {
   id: string; storageKey: string; name: string; roleKey: string; placeholder: string;
   hintKey: string; instrKey: string; docsUrl: string; color: string; logo: string;
+  /**
+   * Where the official API documentation lives, when `docsUrl` points somewhere else.
+   * Ahrefs and Semrush are the only providers with two sensible destinations: the vendor's own
+   * API (for people who already pay for it) and a reseller gateway (where credits are actually
+   * bought at a usable price). Showing one and hiding the other would mislead half the users,
+   * so both are links and each says what it is.
+   */
+  altUrl?: string;
+  altLabelKey?: string;
 }
+
+/**
+ * Where the "Get key" button on the Ahrefs/Semrush cards points.
+ *
+ * This is a referral link. It is disclosed in the README rather than hidden, it is the only one
+ * in the project, and it changes nothing about how the code works: the official API hosts stay
+ * the defaults, the base-URL field accepts any gateway, and the whole metrics module remains
+ * usable with no key at all through CSV import.
+ */
+export const METRICS_GATEWAY_URL =
+  "https://my.groupbuyseo.org/register?affiliate_key=8ino4XJTwJ7EJooF67JUOt2tmbcFk1";
 
 export const SEO_PROVIDERS: KeyCardProvider[] = [
   { id: "serper", storageKey: "seoKey_serper", name: "Serper.dev", roleKey: "seoRoleSerp", placeholder: "Serper API key", hintKey: "seoSetHintSerper", instrKey: "seoSetInstrSerper", docsUrl: "https://serper.dev", color: "#10A37F", logo: "S" },
   { id: "dataforseo", storageKey: "seoKey_dataforseo", name: "DataForSEO", roleKey: "seoRoleDfs", placeholder: "login:password или Base64-токен", hintKey: "seoSetHintDfs", instrKey: "seoSetInstrDfs", docsUrl: "https://app.dataforseo.com/api-access", color: "#2997ff", logo: "D" },
   { id: "scrapingrobot", storageKey: "seoKey_scrapingrobot", name: "ScrapingRobot", roleKey: "seoRoleSr", placeholder: "ScrapingRobot API token", hintKey: "seoSetHintSr", instrKey: "seoSetInstrSr", docsUrl: "https://scrapingrobot.com", color: "#8B5CF6", logo: "R" },
   { id: "firecrawl", storageKey: "seoKey_firecrawl", name: "Firecrawl", roleKey: "seoRoleFc", placeholder: "fc-...", hintKey: "seoSetHintFc", instrKey: "seoSetInstrFc", docsUrl: "https://www.firecrawl.dev/app/api-keys", color: "#ff9f0a", logo: "F" },
+  // `docsUrl` is where you can actually buy credits at a workable price; `altUrl` is the
+  // vendor's official API. Both are shown — see the KeyCardProvider comment.
+  { id: "ahrefs", storageKey: "seoKey_ahrefs", name: "Ahrefs", roleKey: "seoRoleAhrefs", placeholder: "Ahrefs API v3 key", hintKey: "seoSetHintAhrefs", instrKey: "seoSetInstrAhrefs", docsUrl: METRICS_GATEWAY_URL, altUrl: "https://docs.ahrefs.com/", altLabelKey: "seoSetOfficialApi", color: "#f76d01", logo: "A" },
+  { id: "semrush", storageKey: "seoKey_semrush", name: "Semrush", roleKey: "seoRoleSemrush", placeholder: "Semrush API key", hintKey: "seoSetHintSemrush", instrKey: "seoSetInstrSemrush", docsUrl: METRICS_GATEWAY_URL, altUrl: "https://developer.semrush.com/api/", altLabelKey: "seoSetOfficialApi", color: "#ff642d", logo: "S" },
 ];
 
 // AEO citation-check engines that aren't already covered by the main AI provider keys
@@ -77,7 +101,14 @@ export function SeoKeyCard({ provider }: { provider: KeyCardProvider }) {
       <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.5, marginBottom: "6px" }}>{t(provider.hintKey as any)}</div>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "10px" }}>
         <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.5, flex: 1 }}>📍 {t(provider.instrKey as any)}</span>
-        <a href={provider.docsUrl} target="_blank" rel="noreferrer" style={{ fontSize: "11px", color: "var(--color-accent-blue)", display: "flex", alignItems: "center", gap: "3px", textDecoration: "none", flexShrink: 0, whiteSpace: "nowrap" }}>Get key ↗</a>
+        <span style={{ display: "flex", alignItems: "center", gap: "10px", flexShrink: 0, whiteSpace: "nowrap" }}>
+          {provider.altUrl && provider.altLabelKey && (
+            <a href={provider.altUrl} target="_blank" rel="noreferrer" style={{ fontSize: "11px", color: "var(--color-text-secondary)", textDecoration: "none" }}>
+              {t(provider.altLabelKey as any)} ↗
+            </a>
+          )}
+          <a href={provider.docsUrl} target="_blank" rel="noreferrer" style={{ fontSize: "11px", color: "var(--color-accent-blue)", display: "flex", alignItems: "center", gap: "3px", textDecoration: "none" }}>Get key ↗</a>
+        </span>
       </div>
     </div>
   );
@@ -163,6 +194,94 @@ function ModelSelector() {
 
       <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "6px" }}>
         {loading ? t("seoModelLoading") : !hasProviders ? t("seoModelNoProviders") : fetchErr ? t("seoModelErrFetch") : t("seoModelLive")}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Metrics provider: which vendor supplies keyword weights and domain metrics, optionally
+ * through a gateway, with a monthly unit ceiling.
+ *
+ * The ceiling is not decoration. Ahrefs prices a request by row count times per-field cost, so
+ * one press of "load weights" on an unfiltered portfolio list can spend a month's package in a
+ * single call. The server prices every request before sending it and refuses above this number.
+ */
+export function MetricsSettings() {
+  const { t } = useLanguage();
+  const [provider, setProvider] = useState<"ahrefs" | "semrush">("ahrefs");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [cap, setCap] = useState("");
+  const [usage, setUsage] = useState<{ units: number; requests: number } | null>(null);
+  const [hasKey, setHasKey] = useState(false);
+
+  // localStorage is read after mount, never during render: the server pass has no window and a
+  // value read too early makes the first client render diverge (React hydration #418).
+  useEffect(() => {
+    const p = (localStorage.getItem("seoMetricsProvider") === "semrush" ? "semrush" : "ahrefs") as "ahrefs" | "semrush";
+    setProvider(p);
+  }, []);
+
+  useEffect(() => {
+    setBaseUrl(localStorage.getItem(`seoMetricsBaseUrl_${provider}`) || "");
+    setCap(localStorage.getItem(`seoMetricsCap_${provider}`) || "");
+    setHasKey((localStorage.getItem(`seoKey_${provider}`) || "").trim().length > 4);
+    fetch(`/api/metrics/usage?provider=${provider}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setUsage({ units: Number(d.units || 0), requests: Number(d.requests || 0) }); })
+      .catch(() => {});
+  }, [provider]);
+
+  const choose = (p: "ahrefs" | "semrush") => { setProvider(p); localStorage.setItem("seoMetricsProvider", p); };
+  const saveBaseUrl = (v: string) => {
+    const s = v.trim();
+    if (s) localStorage.setItem(`seoMetricsBaseUrl_${provider}`, s);
+    else localStorage.removeItem(`seoMetricsBaseUrl_${provider}`);
+  };
+  const saveCap = (v: string) => {
+    const n = Math.max(0, Number(v) || 0);
+    if (n > 0) localStorage.setItem(`seoMetricsCap_${provider}`, String(n));
+    else localStorage.removeItem(`seoMetricsCap_${provider}`);
+  };
+
+  const inputBase: React.CSSProperties = { width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-primary)", fontSize: "13px", outline: "none", boxSizing: "border-box" };
+
+  return (
+    <div style={{ marginBottom: "18px", paddingBottom: "16px", borderBottom: "1px solid var(--color-border)" }}>
+      <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--color-text-primary)" }}>{t("metricsTitle")}</div>
+      <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", margin: "2px 0 10px" }}>{t("metricsSub")}</div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px", flexWrap: "wrap" }}>
+        <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>{t("metricsActive")}</span>
+        {(["ahrefs", "semrush"] as const).map(p => (
+          <button key={p} onClick={() => choose(p)} style={providerPillStyle(provider === p)}>
+            {p === "ahrefs" ? "Ahrefs" : "Semrush"}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "10px" }}>
+        <div>
+          <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--color-text-primary)", marginBottom: "4px" }}>{t("metricsBaseUrl")}</div>
+          <input value={baseUrl} onChange={e => setBaseUrl(e.target.value)} onBlur={() => saveBaseUrl(baseUrl)}
+            placeholder={t("metricsBaseUrlPh")} style={{ ...inputBase, fontFamily: "monospace" }} />
+          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "4px", lineHeight: 1.5 }}>{t("metricsBaseUrlHint")}</div>
+        </div>
+        <div>
+          <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--color-text-primary)", marginBottom: "4px" }}>{t("metricsCap")}</div>
+          <input value={cap} onChange={e => setCap(e.target.value.replace(/[^0-9]/g, ""))} onBlur={() => saveCap(cap)}
+            placeholder={t("metricsCapPh")} inputMode="numeric" style={inputBase} />
+          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "4px", lineHeight: 1.5 }}>{t("metricsCapHint")}</div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "10px", flexWrap: "wrap" }}>
+        <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
+          {t("metricsUsage")}: <strong style={{ color: "var(--color-text-primary)" }}>{(usage?.units ?? 0).toLocaleString()}</strong> {t("metricsUnits")}
+        </span>
+        {!hasKey && (
+          <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>{t("metricsNoKeyTip")}</span>
+        )}
       </div>
     </div>
   );
@@ -389,6 +508,7 @@ export default function SeoToolsSettings() {
       <ModelSelector />
       <CustomProviderCard />
       <PerTaskProviders />
+      <MetricsSettings />
       <FactCheckSettings />
 
       <div style={{ marginBottom: "14px" }}>

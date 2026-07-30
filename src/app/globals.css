@@ -398,3 +398,65 @@ input:-webkit-autofill {
   box-shadow: 0 0 0 30px #ffffff inset !important;
   -webkit-text-fill-color: #1d1d1f !important;
 }
+
+/* ── Metrics primitives (Ahrefs/Semrush layer) ─────────────────────────────────
+ * Three shapes repeat across every metrics surface — the weights toolbar, the
+ * backlink profile, the competitor gap, the Indexer domain chip. They live here
+ * rather than as inline styles in each component so a theme or geometry change
+ * reaches all of them, which is the whole reason .panel and .tool-input exist. */
+
+/* .tool-input sizes to 100% by design (stacked forms). Toolbars need the natural
+   width of their content instead, so this is a width-only modifier — everything
+   else about the control stays identical to the form version. */
+.tool-input.inline {
+  width: auto;
+}
+
+/* Compact numeric badge: DR 72, RD 1.5k, units, source. Same hairline vocabulary
+   as .pill but tighter, for use inside table cells and next to headings. */
+.metric-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  background-color: var(--color-border-soft);
+  color: var(--color-text-secondary);
+}
+
+/* The one action in each metrics surface that spends money. Deliberately distinct
+   from .pill (a filter) and from the app's dark primary button (a safe action):
+   an amber outline reads as "this costs something" before it is pressed. */
+.metric-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-accent-orange);
+  background: transparent;
+  color: var(--color-accent-orange);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, opacity 0.15s ease;
+}
+.metric-action:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-accent-orange) 12%, transparent);
+}
+.metric-action:disabled {
+  border-color: var(--color-border);
+  color: var(--color-text-tertiary);
+  cursor: not-allowed;
+}
+
+/* Cost estimate shown next to .metric-action. Tertiary on purpose — it must be
+   readable before the click and must not compete with the button itself. */
+.metric-cost {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}

@@ -34,6 +34,7 @@ import {
 } from "./shared";
 import { DATA_TOOLS, dataModuleCounts } from "./toolsData";
 import { OPTIMIZE_TOOLS } from "./toolsOptimize";
+import { METRICS_TOOLS } from "./toolsMetrics";
 
 export type { McpTool, ToolCost };
 
@@ -583,10 +584,25 @@ const CORE_TOOLS: McpTool[] = [
         linkMentions = Number(rows?.[0]?.c ?? 0);
       } catch { /* not migrated */ }
       const extra = await dataModuleCounts(userId);
+      // How much third-party metric data is actually loaded. Reported because the metrics
+      // tools are read-only: an agent that sees 0 here knows the cache is empty and that no
+      // tool it can call will fill it, rather than reading an empty answer as a real one.
+      const metricCounts = async (table: string, where = "") => {
+        try {
+          const rows: any[] = await prisma.$queryRawUnsafe(`SELECT COUNT(*) as c FROM "${table}" ${where}`);
+          return Number(rows?.[0]?.c ?? 0);
+        } catch { return 0; }
+      };
+      const [cachedKeywords, cachedDomains, refDomainRows, competitorKeywords] = await Promise.all([
+        metricCounts("KeywordMetricCache"),
+        metricCounts("DomainMetricCache"),
+        metricCounts("RefDomainRow"),
+        metricCounts("CompetitorKeyword"),
+      ]);
       const named = (c: ToolCost) => MCP_TOOLS.filter(t => (t.cost ?? "local") === c).map(t => t.name);
       return {
         server: "opengsc",
-        version: "1.0.0",
+        version: "1.1.0",
         toolCount: MCP_TOOLS.length,
         tools: {
           local: named("local"),
@@ -602,13 +618,18 @@ const CORE_TOOLS: McpTool[] = [
           aeoQuestions: questions,
           completedAudits: audits,
           linkMonitorMentions: linkMentions,
+          cachedKeywordMetrics: cachedKeywords,
+          cachedDomainMetrics: cachedDomains,
+          backlinkProfileRows: refDomainRows,
+          competitorKeywords,
           ...(extra as object),
         },
         notes:
           "local = reads this instance's database; free and instant. " +
           "quota = calls a Google API on the owner's OAuth; free but quota-limited. " +
           "net = fetches a third-party page. " +
-          "paid = spends the OWNER'S OWN AI credits and refuses to run without confirm: true — ask the user first, and prefer get_optimization_brief, which gives you the same material for free.",
+          "paid = spends the OWNER'S OWN AI credits and refuses to run without confirm: true — ask the user first, and prefer get_optimization_brief, which gives you the same material for free. " +
+          "The Ahrefs/Semrush metric tools (get_keyword_metrics, get_domain_metrics, get_backlink_profile, get_competitor_gap) are local reads of a cache the human fills by hand — they cannot fetch, so an empty result means 'not loaded yet', never 'zero'.",
       };
     },
   },
@@ -674,7 +695,7 @@ const CORE_TOOLS: McpTool[] = [
 
 // The single registry the route handler sees. Order matters only for readability in
 // tools/list — agents pick by name, and get_capabilities groups them by cost.
-export const MCP_TOOLS: McpTool[] = [...CORE_TOOLS, ...DATA_TOOLS, ...OPTIMIZE_TOOLS];
+export const MCP_TOOLS: McpTool[] = [...CORE_TOOLS, ...DATA_TOOLS, ...METRICS_TOOLS, ...OPTIMIZE_TOOLS];
 
 // A duplicate name would silently shadow a tool in findTool, and the failure would look
 // like "that tool ignores half its arguments" rather than "there are two of them".

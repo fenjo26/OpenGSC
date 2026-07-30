@@ -66,6 +66,7 @@ On top of that dashboard, OpenGSC ships two things most GSC tools don't: a full 
   - [Rank Tracker](#rank-tracker)
   - [AEO Tracker — AI Answer Engine Visibility](#aeo-tracker--ai-answer-engine-visibility)
   - [Backlinks Checker](#backlinks-checker)
+  - [Keyword Weights, Backlinks & Competitors](#keyword-weights-backlinks--competitors)
   - [Site Health Checks](#site-health-checks)
   - [Indexing Status Tools](#indexing-status-tools)
 - [🧠 AI SEO Content Suite (`/seo-tools`)](#-ai-seo-content-suite-seo-tools)
@@ -140,6 +141,22 @@ Track keyword rankings (country/language/device-aware) via your configured SERP 
 ### Backlinks Checker
 
 A curated backlink inventory per site with liveness checks (is the link still there?) and indexed-status checks via XML River, rolled up into total / alive / dead / indexed counts.
+
+### Keyword Weights, Backlinks & Competitors
+
+Search Console tells you how you are performing. It cannot tell you how much demand exists, how hard a keyword is to win, or who is winning instead of you. This module brings Ahrefs/Semrush data in and crosses it with your GSC data — which is where the value is, because neither source has the other half.
+
+- **Keyword weights** in Striking Distance and Rank Tracker — search volume, KD, CPC, and a **Potential** column: what a keyword could bring near the top of page one minus what it brings now. Impressions are demand filtered through your current visibility; volume is the market itself.
+- **Competitors** — pull a competitor's keywords and the join with your GSC data splits every row into three verdicts: *within reach* (you rank in the top 30 — improve that page, the URL is right there), *wrong page* (impressions but nothing wins — intent mismatch), *no content* (write it).
+- **Backlink profile** — referring domains, live and lost, with stored history and a lost-link alert. Sits alongside the manual backlink list, which answers a different question: did the link *you* built survive.
+- **Demand check in Content Decay** — clicks falling with demand flat is a ranking problem; clicks falling *with* demand is the market, and no rewrite fixes that.
+- **Domain health in the Indexer** — DR and referring domains per network domain, before you build on a burnt drop.
+
+**None of it requires an API key.** A CSV export from Ahrefs or Semrush fills exactly the same cache the API does (`SEO Tools → Import metrics`) — the report type is detected from the column headers. If you have a browser subscription, your exports are already paid for; the API is for what should refresh without a human.
+
+When you do use an API key, every button prices itself before you press it, Keyword Difficulty is an opt-in checkbox (it roughly doubles the cost per keyword), and a monthly unit cap is enforced server-side. Nothing ever fetches on page load.
+
+Setup and cost details: **[docs/METRICS-SETUP.md](docs/METRICS-SETUP.md)**.
 
 ### Site Health Checks
 
@@ -653,6 +670,7 @@ docs/
 
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — how the app is built: the background job system, the multi-pass SEO generation pipeline, the multi-provider LLM abstraction, the MCP server, the audit crawler, the indexer's cloaking/verification mechanism, and the full data model.
 - **[docs/GA4-SETUP.md](docs/GA4-SETUP.md)** — connecting Google Analytics 4, step by step.
+- **[docs/METRICS-SETUP.md](docs/METRICS-SETUP.md)** — keyword weights, backlink profiles and the competitor gap: importing exports for free, configuring an Ahrefs/Semrush key, and what each action costs.
 - **[docs/MCP-SETUP.md](docs/MCP-SETUP.md)** — connecting AI agents (Claude Code, Claude Desktop, Cursor, Codex) to your instance.
 - **[docs/SEARCH-ENGINES-SETUP.md](docs/SEARCH-ENGINES-SETUP.md)** — Bing Webmaster, Yandex.Webmaster and IndexNow: getting the keys/tokens and what data each engine provides (site + portfolio dashboards, digests, and the site-search badge).
 - **[docs/GOOGLEBOT-VIEW-SPEC.md](docs/GOOGLEBOT-VIEW-SPEC.md)** — the Googlebot View cloaking/PBN inspector: how the multi-UA fetch, redirect-chain walk, and cloaking diff work.
@@ -662,6 +680,8 @@ docs/
 <br/>
 
 ## Disclaimer
+
+The **Get key** button on the Ahrefs and Semrush cards in Settings is a referral link to a reseller. Saying so here rather than leaving you to notice the `affiliate_key` in the URL: it is the only referral link in the project, it does not change how anything works, and nothing in OpenGSC depends on that reseller. The official API hosts are the defaults, the base-URL field accepts any gateway, and the whole metrics module works with no API key at all through CSV import. Note also that reselling Ahrefs/Semrush API access is against those vendors' terms of service and can be withdrawn without notice — that risk is yours to weigh.
 
 The **Private Indexer Network** implements doorway pages and user-agent/DNS-based cloaking — techniques that sit outside the webmaster guidelines of Google, Bing, and Yandex, and can result in penalties up to and including deindexing for domains that use them. This module is provided as infrastructure tooling for users who understand and accept that risk; it is **not** enabled or required for any other part of OpenGSC. You are solely responsible for how you use it and for compliance with the terms of service of any search engine, hosting provider, or jurisdiction that applies to you. See also [opengsc.org/disclaimer](https://opengsc.org/disclaimer/).
 

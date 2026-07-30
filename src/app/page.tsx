@@ -528,6 +528,10 @@ function PortfolioPageContent() {
   // Ahrefs Domain Rating per domain (free public API, server-cached). License requires
   // visible "Domain Rating by Ahrefs" attribution wherever DR is shown.
   const [drMap, setDrMap] = useState<Record<string, number>>({});
+  // Paid domain metrics, kept in a separate map from DR on purpose: DR is free and always
+  // present, these are optional and may never arrive. Merging them would make one nullable
+  // thing out of two with very different guarantees.
+  const [domMap, setDomMap] = useState<Record<string, { refDomains: number | null; orgTraffic: number | null }>>({});
   const [siteTags, setSiteTags] = useState<Record<string, string[]>>({});
   const tagsInitialized = useRef(false);
   const [exportSite, setExportSite] = useState<string | null>(null);
@@ -793,6 +797,35 @@ function PortfolioPageContent() {
           Object.entries(d.ratings || {}).forEach(([k, v]: [string, any]) => { add[k] = Number(v.dr); });
           setDrMap(prev => ({ ...prev, ...add }));
         } catch { /* best-effort */ }
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sites.length]);
+
+  // Referring domains and organic traffic, read from the metric cache only — this call never
+  // reaches a provider and never spends anything (see /api/metrics/domain). Whatever is there
+  // was put there by an import or by an explicit fetch elsewhere; if nothing is, the cards look
+  // exactly as they did before this existed.
+  useEffect(() => {
+    if (!sites.length) return;
+    const domains = [...new Set(sites.map(s => getDomain(s.url).toLowerCase().replace(/^www\./, "")).filter(d => d.includes(".")))];
+    (async () => {
+      for (let i = 0; i < domains.length; i += 200) {
+        try {
+          const res = await fetch("/api/metrics/domain", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ domains: domains.slice(i, i + 200), fetch: false }),
+          });
+          if (!res.ok) continue;
+          const d = await res.json();
+          const add: Record<string, { refDomains: number | null; orgTraffic: number | null }> = {};
+          Object.entries(d.metrics || {}).forEach(([k, v]: [string, any]) => {
+            if (v?.refDomains != null || v?.orgTraffic != null) {
+              add[k] = { refDomains: v.refDomains ?? null, orgTraffic: v.orgTraffic ?? null };
+            }
+          });
+          setDomMap(prev => ({ ...prev, ...add }));
+        } catch { /* the card is complete without these */ }
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1223,11 +1256,35 @@ function PortfolioPageContent() {
                 />
               )}
             </div>
-            {drMap[domain.toLowerCase().replace(/^www\./,"")] != null && (
-              <span title="Domain Rating by Ahrefs (ahrefs.com)" style={{fontSize:"10px",fontWeight:700,padding:"1px 6px",borderRadius:"6px",alignSelf:"flex-start",marginLeft:"22px",background:"rgba(58,87,252,0.12)",color:"#3A57FC",filter:blur?"blur(4px)":"none",transition:"filter 0.25s"}}>
-                DR {Math.round(drMap[domain.toLowerCase().replace(/^www\./,"")])}
-              </span>
-            )}
+            {(() => {
+              const key = domain.toLowerCase().replace(/^www\./,"");
+              const dr = drMap[key];
+              const dm = domMap[key];
+              if (dr == null && !dm) return null;
+              const chip: React.CSSProperties = {fontSize:"10px",fontWeight:700,padding:"1px 6px",borderRadius:"6px",filter:blur?"blur(4px)":"none",transition:"filter 0.25s"};
+              return (
+                <div style={{display:"flex",gap:"4px",alignSelf:"flex-start",marginLeft:"22px",flexWrap:"wrap"}}>
+                  {/* DR is the free, always-available number and keeps its own styling. The
+                      optional paid metrics sit beside it in a muted chip so their absence
+                      reads as "not loaded" rather than "broken". */}
+                  {dr != null && (
+                    <span title="Domain Rating by Ahrefs (ahrefs.com)" style={{...chip,background:"rgba(58,87,252,0.12)",color:"#3A57FC"}}>
+                      DR {Math.round(dr)}
+                    </span>
+                  )}
+                  {dm?.refDomains != null && (
+                    <span title={t("dashRefDomains")} style={{...chip,background:"rgba(255,255,255,0.06)",color:"var(--color-text-secondary)"}}>
+                      RD {fmtK(Math.round(dm.refDomains))}
+                    </span>
+                  )}
+                  {dm?.orgTraffic != null && (
+                    <span title={t("dashOrgTraffic")} style={{...chip,background:"rgba(255,255,255,0.06)",color:"var(--color-text-secondary)"}}>
+                      OT {fmtK(Math.round(dm.orgTraffic))}
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Metrics 2×2 */}

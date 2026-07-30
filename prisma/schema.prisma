@@ -672,3 +672,142 @@ model Annotation {
 
   @@index([siteId, date])
 }
+
+// ─── Third-party metric cache (Ahrefs / Semrush) ──────────────────────────────
+// Two delivery paths write into these tables: a CSV export the user downloaded from their own
+// browser subscription (source = "csv", costs nothing) and paid API calls (source = "api").
+// Both are read the same way, so every feature works with or without an API key — the key only
+// removes the manual step. `source` and `checkedAt` are what let the UI say where a number came
+// from and how old it is, and what stops an old CSV from overwriting fresher API data.
+
+model KeywordMetricCache {
+  keyword      String
+  country      String   @default("us")
+  provider     String   @default("ahrefs")
+
+  volume       Int?
+  difficulty   Int?     // KD 0-100; the single most expensive field (10 units/row on Ahrefs)
+  cpc          Float?
+  globalVolume Int?
+  parentTopic  String?
+  intents      String?  // JSON array as returned by the provider
+  payload      String?  // full raw row, so new fields need no migration to be readable
+
+  source       String   @default("api") // "api" | "csv"
+  checkedAt    DateTime @default(now())
+
+  @@id([keyword, country, provider])
+  @@index([checkedAt])
+}
+
+model DomainMetricCache {
+  domain      String
+  provider    String   @default("ahrefs")
+
+  dr          Float?
+  refDomains  Int?
+  backlinks   Int?
+  orgTraffic  Float?
+  orgKeywords Int?
+  orgCost     Float?
+  payload     String?
+
+  source      String   @default("api")
+  checkedAt   DateTime @default(now())
+
+  @@id([domain, provider])
+  @@index([checkedAt])
+}
+
+// ─── Backlink profile ─────────────────────────────────────────────────────────
+// One row per referring domain per target. `lost` is derived, not fetched: a refreshed pull
+// returns the live set, and anything previously stored but absent from it has gone away. That
+// makes "new" and "lost" fall out of a single call instead of costing a second one, and it is
+// the reason `fetchedAt` matters — it is what distinguishes "absent from the last pull" from
+// "never seen".
+model RefDomainRow {
+  target        String   // the site's own domain
+  refDomain     String
+  provider      String   @default("ahrefs")
+
+  dr            Float?
+  linksToTarget Int?
+  dofollow      Boolean  @default(true)
+  firstSeen     String   @default("")
+
+  lost          Boolean  @default(false)
+  lostAt        String   @default("")
+  source        String   @default("api") // "api" | "csv"
+  fetchedAt     DateTime @default(now())
+
+  @@id([target, refDomain, provider])
+  @@index([target, lost])
+  @@index([target, dr])
+}
+
+// Daily summary, kept as history rather than overwritten. The alert rules need a baseline to
+// compare against, and a single current value cannot answer "did this drop".
+model BacklinkSnapshot {
+  target      String
+  date        String   // YYYY-MM-DD
+  provider    String   @default("ahrefs")
+
+  refDomains  Int?
+  backlinks   Int?
+  dofollowPct Float?
+  source      String   @default("api")
+  createdAt   DateTime @default(now())
+
+  @@id([target, date, provider])
+  @@index([target, date])
+}
+
+// ─── Competitor gap ───────────────────────────────────────────────────────────
+// A competitor's organic keywords, stored per (site, competitor). The gap itself is never
+// stored: it is the join of these rows against the site's own GSC data, and GSC changes daily
+// while this list changes slowly. Persisting the join would mean recomputing — and paying for —
+// competitor keywords every time the user's own positions moved.
+model CompetitorKeyword {
+  siteId     String
+  competitor String
+  keyword    String
+  country    String  @default("us")
+
+  position   Int?
+  volume     Int?
+  difficulty Int?
+  url        String  @default("")
+
+  source     String   @default("api")
+  fetchedAt  DateTime @default(now())
+
+  @@id([siteId, competitor, keyword, country])
+  @@index([siteId, country])
+  @@index([siteId, competitor])
+}
+
+// Monthly demand for a keyword, cached separately from the keyword metrics themselves because
+// it answers a different question (is the market shrinking) and is fetched for far fewer terms.
+model KeywordVolumeHistory {
+  keyword   String
+  country   String   @default("us")
+  provider  String   @default("ahrefs")
+  points    String   // JSON: [{ date, volume }]
+  fetchedAt DateTime @default(now())
+
+  @@id([keyword, country, provider])
+}
+
+// Spent units per user/provider/month. Written before the request goes out (the cost of an
+// Ahrefs call is fully known from `select` and row count in advance), so a monthly cap can
+// refuse a call instead of discovering the overspend in the response.
+model ApiUsage {
+  userId    String
+  provider  String
+  month     String   // "YYYY-MM"
+  units     Int      @default(0)
+  requests  Int      @default(0)
+  updatedAt DateTime @default(now())
+
+  @@id([userId, provider, month])
+}
