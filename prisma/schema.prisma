@@ -455,7 +455,7 @@ model SiteHealth {
   checkedAt    DateTime @default(now())
   sslData      String?  // JSON: { valid, daysLeft, issuer, grade, error? }
   safeBrowsing String?  // JSON: { safe, threats?, error? }
-  vitals       String?  // JSON: { lcp, fid, cls, ttfb, score, error? }
+  vitals       String?  // JSON: { lcp, inp, cls, ttfb, score, error? }
   virusTotal   String?  // JSON: { clean, malicious, suspicious, error? }
 
   site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)

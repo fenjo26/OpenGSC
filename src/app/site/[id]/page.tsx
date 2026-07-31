@@ -43,24 +43,27 @@ const C = {
 };
 
 // ─── Period options (module-level so all sub-components can reference) ────────
+// `label` holds an i18n KEY, not display text — the constant is module-level (above any React
+// context), so it cannot call t() itself. Every render site wraps it: t(opt.label). This keeps
+// the shared list in one place while each dropdown translates for the active language.
 const PERIOD_OPTIONS: { key: string; label: string }[] = [
-  { key: "yesterday",    label: "1 day (latest)" },
-  { key: "7d",           label: "7 days"         },
-  { key: "14d",          label: "14 days"         },
-  { key: "28d",          label: "28 days"        },
-  { key: "last_week",    label: "Last Week"      },
-  { key: "this_month",   label: "This Month"     },
-  { key: "last_month",   label: "Last Month"     },
-  { key: "this_quarter", label: "This Quarter"   },
-  { key: "last_quarter", label: "Last Quarter"   },
-  { key: "ytd",          label: "Year to Date"   },
-  { key: "3m",           label: "3 months"       },
-  { key: "6m",           label: "6 months"       },
-  { key: "8m",           label: "8 months"       },
-  { key: "12m",          label: "12 months"      },
-  { key: "16m",          label: "16 months"      },
-  { key: "2y",           label: "2 years"        },
-  { key: "3y",           label: "3 years"        },
+  { key: "yesterday",    label: "periodOneDayLatest" },
+  { key: "7d",           label: "period7Days"         },
+  { key: "14d",          label: "period14Days"         },
+  { key: "28d",          label: "period28Days"        },
+  { key: "last_week",    label: "periodLastWeek"      },
+  { key: "this_month",   label: "periodThisMonth"     },
+  { key: "last_month",   label: "periodLastMonth"     },
+  { key: "this_quarter", label: "periodThisQuarter"   },
+  { key: "last_quarter", label: "periodLastQuarter"   },
+  { key: "ytd",          label: "periodYtd"           },
+  { key: "3m",           label: "period3Months"       },
+  { key: "6m",           label: "period6Months"       },
+  { key: "8m",           label: "period8Months"       },
+  { key: "12m",          label: "period12Months"      },
+  { key: "16m",          label: "period16Months"      },
+  { key: "2y",           label: "period2Years"        },
+  { key: "3y",           label: "period3Years"        },
 ];
 
 const PERIOD_GROUPS = [
@@ -143,8 +146,29 @@ function iso3ToFlag(code: string): string {
   return [...iso2.toUpperCase()].map(c => String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65)).join("");
 }
 
-function iso3ToName(code: string): string {
-  return ISO3_NAMES[code.toLowerCase()] ?? code.toUpperCase();
+// ISO3 → localized country name. Intl.DisplayNames translates an ISO2 (region) code into the
+// active UI language natively in the browser — no per-country keys in the locale files for ~80
+// countries. The static ISO3_NAMES table stays as the fallback for an unknown code or an older
+// engine without DisplayNames, so the function never returns empty.
+//
+// DisplayNames is typed here locally (not via lib.dom) because the TS lib version bundled with
+// this project does not ship it, so the cast avoids `any` without claiming a runtime that isn't
+// feature-checked at the call site.
+interface DisplayNamesCtor {
+  new (locale?: string, options?: { type: string }): { of: (code: string) => string };
+}
+function iso3ToName(code: string, locale?: string): string {
+  const iso3 = code.toLowerCase();
+  const iso2 = ISO3_TO_ISO2[iso3];
+  const DN = (Intl as { DisplayNames?: DisplayNamesCtor }).DisplayNames;
+  if (iso2 && typeof Intl !== "undefined" && typeof DN === "function") {
+    try {
+      const dn = new DN(locale || undefined, { type: "region" });
+      const name = dn.of(iso2.toUpperCase());
+      if (name && name !== iso2.toUpperCase()) return name;
+    } catch { /* fall through to the static table */ }
+  }
+  return ISO3_NAMES[iso3] ?? code.toUpperCase();
 }
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
@@ -365,7 +389,7 @@ function DataTable({ title, rows, blur = false, csvFilename, onTrack, tracked }:
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "12px" }}>
         <h3 style={{ fontSize: "15px", fontWeight: 700, color: "var(--color-text-primary)" }}>{title}</h3>
-        <button onClick={handleCSV} title="Export CSV"
+        <button onClick={handleCSV} title={t("exportCsv")}
           style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "4px", padding: "4px 10px", borderRadius: "6px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-secondary)", fontSize: "12px", cursor: "pointer" }}>
           <Download size={12} /> {t("exportCsv")}
         </button>
@@ -437,7 +461,7 @@ function DataTable({ title, rows, blur = false, csvFilename, onTrack, tracked }:
 
 type CountryRow = { name: string; flag?: string; clicks: number; impr: number; ctr: number; pos: number; cPct: number; iPct: number };
 function CountryTable({ rows }: { rows: CountryRow[] }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [page,     setPage]     = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [sortCol,  setSortCol]  = useState<DtSortCol>("clicks");
@@ -455,7 +479,7 @@ function CountryTable({ rows }: { rows: CountryRow[] }) {
   const handleCSV = () => {
     exportCSV("countries.csv",
       ["Country", "Clicks", "Impressions", "CTR%", "Position"],
-      sorted.map(r => [r.flag ? r.name : iso3ToName(r.name), r.clicks, r.impr, r.ctr, r.pos])
+      sorted.map(r => [r.flag ? r.name : iso3ToName(r.name, language), r.clicks, r.impr, r.ctr, r.pos])
     );
   };
 
@@ -492,7 +516,7 @@ function CountryTable({ rows }: { rows: CountryRow[] }) {
         <tbody>
           {paged.map((r, i) => {
             const flag = r.flag || iso3ToFlag(r.name);
-            const label = r.flag ? r.name : iso3ToName(r.name);
+            const label = r.flag ? r.name : iso3ToName(r.name, language);
             return (
               <tr key={i} style={{ borderBottom: "1px solid var(--color-border)", background: i % 2 === 0 ? "rgba(255,255,255,0.03)" : "transparent" }}>
                 <td style={{ padding: "8px 8px 8px 0", color: "var(--color-text-primary)" }}>{flag} {label}</td>
@@ -591,6 +615,7 @@ type ClusterRow = {
 };
 
 function ClusterTable({ title, data, blur = false }: { title: string; data: ClusterRow[]; blur?: boolean }) {
+  const { t } = useLanguage();
   const [tab, setTab]     = useState<'All' | 'Growing' | 'Decaying'>('All');
   const [sortBy, setSortBy] = useState<'clicks' | 'impressions' | 'ctr' | 'position'>('clicks');
   const blurStyle: React.CSSProperties = blur ? { filter: 'blur(6px)', userSelect: 'none' } : {};
@@ -627,25 +652,28 @@ function ClusterTable({ title, data, blur = false }: { title: string; data: Clus
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
         <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--color-text-primary)' }}>{title}</h3>
         <div style={{ display: 'flex', gap: '2px', background: 'var(--color-bg)', borderRadius: '8px', padding: '2px', border: '1px solid var(--color-border)' }}>
-          {(['All', 'Growing', 'Decaying'] as const).map(t => (
-            <button key={t} onClick={() => setTab(t)} style={{ padding: '3px 10px', borderRadius: '6px', border: 'none', fontSize: '11px', fontWeight: 500, cursor: 'pointer', background: tab === t ? 'var(--color-card)' : 'transparent', color: tab === t ? 'var(--color-text-primary)' : 'var(--color-text-secondary)' }}>
-              {t}
+          {/* loop var renamed `t` → `tabKey`: the old name shadowed the translation function `t`,
+              which is why these labels rendered as raw English ('All'/'Growing'/'Decaying') instead
+              of ever going through i18n. tabKey is the value identifier; the label is a separate t() lookup. */}
+          {(['All', 'Growing', 'Decaying'] as const).map(tabKey => (
+            <button key={tabKey} onClick={() => setTab(tabKey)} style={{ padding: '3px 10px', borderRadius: '6px', border: 'none', fontSize: '11px', fontWeight: 500, cursor: 'pointer', background: tab === tabKey ? 'var(--color-card)' : 'transparent', color: tab === tabKey ? 'var(--color-text-primary)' : 'var(--color-text-secondary)' }}>
+              {tabKey === 'All' ? t('tabAll') : tabKey === 'Growing' ? t('tabGrowing') : t('tabDecaying')}
             </button>
           ))}
         </div>
       </div>
       {visible.length === 0 ? (
-        <div style={{ padding: '24px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)', borderRadius: '10px' }}>No data</div>
+        <div style={{ padding: '24px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)', borderRadius: '10px' }}>{t('clusterNoData')}</div>
       ) : (
         <div style={{ border: '1px solid var(--color-border)', borderRadius: '10px', overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'var(--color-bg)' }}>
-                <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Name</th>
-                {th('Clicks', 'clicks')}
-                {th('Impressions', 'impressions')}
-                {th('CTR', 'ctr')}
-                {th('Position', 'position')}
+                <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>{t('colName')}</th>
+                {th(t('clicks'), 'clicks')}
+                {th(t('impressions'), 'impressions')}
+                {th(t('colCtr'), 'ctr')}
+                {th(t('position'), 'position')}
               </tr>
             </thead>
             <tbody>
@@ -676,6 +704,7 @@ function SetupCard({ item, index, onToggle, onRename, onDelete, onPatternChange,
   onDelete: () => void; onPatternChange: (val: string) => void;
   ruleType: 'cluster' | 'group';
 }) {
+  const { t } = useLanguage();
   const [editName, setEditName] = useState(false);
   const [nameVal, setNameVal]   = useState(item.name);
 
@@ -699,7 +728,7 @@ function SetupCard({ item, index, onToggle, onRename, onDelete, onPatternChange,
         ) : (
           <span
             onClick={() => { setEditName(true); setNameVal(item.name); }}
-            title="Click to edit name"
+            title={t("clickToEditName")}
             style={{ fontSize: '13px', fontWeight: 600, cursor: 'text', flex: 1, borderBottom: '1px dashed transparent' }}
             onMouseEnter={e => (e.currentTarget.style.borderBottomColor = 'var(--color-text-secondary)')}
             onMouseLeave={e => (e.currentTarget.style.borderBottomColor = 'transparent')}
@@ -971,7 +1000,7 @@ function SetupModal({ domain, siteDbId, onClose, onApplied }: {
         body: JSON.stringify({ siteId: siteDbId, aiProvider, aiApiKey: resolvedKey }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? 'Failed');
+      if (!res.ok) throw new Error(data.error ?? t("errFailed"));
       setClusters((data.clusters ?? []).map((c: any) => ({ ...c, selected: true })));
       setGroups((data.groups ?? []).map((g: any) => ({ ...g, selected: true })));
       setAiUsed(data.clusters?.[0]?.aiGenerated ?? false);
@@ -1241,11 +1270,14 @@ function SiteTooltip({ active, payload, label }: any) {
 // ─── GA4 metric types ─────────────────────────────────────────────────────────
 type GA4Metric = "sessions" | "engagement" | "events" | "revenue";
 
+// label holds an i18n KEY (ga4Metric*), kept for symmetry with metricLabel(). It is not rendered
+// directly today — every display site calls metricLabel(key) — but storing the key here means a
+// future caller that does read .label gets a translatable value, not dead English.
 const GA4_METRICS: { key: GA4Metric; icon: React.ReactNode; label: string; color: string; bg: string }[] = [
-  { key: "sessions",   icon: <Users size={13} />,      label: "Sessions",        color: "#3B82F6", bg: "rgba(59,130,246,0.12)" },
-  { key: "engagement", icon: <Activity size={13} />,   label: "Engagement Rate", color: "#8B5CF6", bg: "rgba(139,92,246,0.12)" },
-  { key: "events",     icon: <Zap size={13} />,        label: "Key Events",      color: "#10B981", bg: "rgba(16,185,129,0.12)" },
-  { key: "revenue",    icon: <DollarSign size={13} />, label: "Revenue",         color: "#F59E0B", bg: "rgba(245,158,11,0.12)" },
+  { key: "sessions",   icon: <Users size={13} />,      label: "ga4MetricSessions",    color: "#3B82F6", bg: "rgba(59,130,246,0.12)" },
+  { key: "engagement", icon: <Activity size={13} />,   label: "ga4MetricEngagement",  color: "#8B5CF6", bg: "rgba(139,92,246,0.12)" },
+  { key: "events",     icon: <Zap size={13} />,        label: "ga4MetricEvents",      color: "#10B981", bg: "rgba(16,185,129,0.12)" },
+  { key: "revenue",    icon: <DollarSign size={13} />, label: "ga4MetricRevenue",     color: "#F59E0B", bg: "rgba(245,158,11,0.12)" },
 ];
 
 // Simple dropdown for re-use
@@ -1272,6 +1304,7 @@ function SimpleDropdown({ trigger, children, align = "right" }: { trigger: React
 
 // ─── Period Dropdown ─────────────────────────────────────────────────────────
 function PeriodDropdown({ period, onChange }: { period: string; onChange: (p: string) => void }) {
+  const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -1279,7 +1312,7 @@ function PeriodDropdown({ period, onChange }: { period: string; onChange: (p: st
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, []);
-  const label = PERIOD_OPTIONS.find(o => o.key === period)?.label ?? period;
+  const label = t((PERIOD_OPTIONS.find(o => o.key === period)?.label ?? period) as never);
   return (
     <div ref={ref} style={{ position: "relative" }}>
       <button onClick={() => setOpen(o => !o)} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "6px 12px", borderRadius: "8px", border: "1px solid var(--color-border)", background: open ? "rgba(255,255,255,0.07)" : "var(--color-card)", color: "var(--color-text-primary)", fontSize: "13px", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
@@ -1300,7 +1333,7 @@ function PeriodDropdown({ period, onChange }: { period: string; onChange: (p: st
                     onMouseOver={e => { if (!active) e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
                     onMouseOut={e => { if (!active) e.currentTarget.style.background = "transparent"; }}
                   >
-                    {opt.label}
+                    {t(opt.label as never)}
                     {active && <Check size={12} />}
                   </button>
                 );
@@ -1359,6 +1392,7 @@ function FilterDd({ positionFilter, onPositionFilter, filterDimension, filterTex
   preset: string | null; onPreset: (v: string | null) => void;
   onApply?: () => void;
 }) {
+  const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -1375,13 +1409,15 @@ function FilterDd({ positionFilter, onPositionFilter, filterDimension, filterTex
     <div style={{ padding: "10px 14px 4px", fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</div>
   );
 
+  // label holds an i18n KEY (rendered via t(label) below) so the dimension list stays single-
+  // sourced while each language renders its own word for Query/Page/Country/Device.
   const dims = [
-    { icon: <Search size={14}/>,        v: "query",   label: "Query" },
-    { icon: <FileText size={14}/>,       v: "page",    label: "Page" },
-    { icon: <Globe size={14}/>,          v: "country", label: "Country" },
-    { icon: <Monitor size={14}/>,        v: "device",  label: "Device" },
-    { icon: <BookmarkCheck size={14}/>,  v: "",        label: "Content Group", disabled: true },
-    { icon: <ArrowLeftRight size={14}/>, v: "",        label: "Compare Filters", disabled: true },
+    { icon: <Search size={14}/>,        v: "query",   label: "dimQuery" },
+    { icon: <FileText size={14}/>,       v: "page",    label: "dimPage" },
+    { icon: <Globe size={14}/>,          v: "country", label: "dimCountry" },
+    { icon: <Monitor size={14}/>,        v: "device",  label: "dimDevice" },
+    { icon: <BookmarkCheck size={14}/>,  v: "",        label: "dimContentGroup", disabled: true },
+    { icon: <ArrowLeftRight size={14}/>, v: "",        label: "dimCompareFilters", disabled: true },
   ];
 
   return (
@@ -1401,7 +1437,7 @@ function FilterDd({ positionFilter, onPositionFilter, filterDimension, filterTex
               style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px", fontSize: "13px", cursor: disabled ? "default" : "pointer", width: "100%", background: filterDimension === v && !disabled ? "rgba(59,130,246,0.1)" : "transparent", color: disabled ? "var(--color-text-secondary)" : filterDimension === v ? "#3B82F6" : "var(--color-text-primary)", border: "none", opacity: disabled ? 0.4 : 1 }}
               onMouseOver={e => { if (!disabled && filterDimension !== v) e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}
               onMouseOut={e => { if (filterDimension !== v) e.currentTarget.style.background = "transparent"; }}>
-              {icon} {label}
+              {icon} {t(label as never)}
               {filterDimension === v && <Check size={12} style={{ marginLeft: "auto" }} />}
             </button>
           ))}
@@ -1430,7 +1466,7 @@ function FilterDd({ positionFilter, onPositionFilter, filterDimension, filterTex
           )}
 
           {divider}
-          {sec("Position Filter")}
+          {sec(t("sectionPositionFilter"))}
           <div style={{ padding: "4px 14px 10px", display: "flex", gap: "8px" }}>
             {([10, 20] as const).map(v => {
               const active = positionFilter === v;
@@ -1444,17 +1480,17 @@ function FilterDd({ positionFilter, onPositionFilter, filterDimension, filterTex
           </div>
 
           {divider}
-          {sec("Preset Filters")}
+          {sec(t("sectionPresetFilters"))}
           {[
-            { v: "paa",      label: "People Also Ask",  hint: "queries with ?" },
-            { v: "longtail", label: "Long Tail Keywords", hint: "3+ words" },
+            { v: "paa",      label: "presetPaa",      hint: "presetPaaHint" },
+            { v: "longtail", label: "presetLongTail", hint: "presetLongTailHint" },
           ].map(({ v, label, hint }) => (
             <button key={v} onClick={() => { onPreset(preset === v ? null : v); onDimension(null); onFilterText(""); }}
               style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", padding: "9px 14px", fontSize: "13px", fontWeight: preset === v ? 700 : 600, cursor: "pointer", background: preset === v ? "rgba(59,130,246,0.1)" : "transparent", color: preset === v ? "#3B82F6" : "var(--color-text-primary)", border: "none" }}
               onMouseOver={e => { if (preset !== v) e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}
               onMouseOut={e => { if (preset !== v) e.currentTarget.style.background = "transparent"; }}>
-              <span>{label}</span>
-              <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", fontWeight: 400 }}>{hint}</span>
+              <span>{t(label as never)}</span>
+              <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", fontWeight: 400 }}>{t(hint as never)}</span>
             </button>
           ))}
 
@@ -1731,7 +1767,7 @@ function GA4Tab({ domain, period, setPeriod, periodOptions }: {
           }
         >
           {periodOptions.map(p => {
-            const lbl = PERIOD_OPTIONS.find(o => o.key === p)?.label ?? p;
+            const lbl = t((PERIOD_OPTIONS.find(o => o.key === p)?.label ?? p) as never);
             return (
               <button key={p} onClick={() => setPeriod(p)} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "9px 14px", fontSize: "13px", cursor: "pointer", width: "100%", background: period === p ? "rgba(59,130,246,0.12)" : "transparent", color: period === p ? "#3B82F6" : "var(--color-text-primary)", border: "none" }}>
                 {lbl} {period === p && <Check size={12} style={{ marginLeft: "auto" }} />}
@@ -2318,7 +2354,7 @@ function BacklinksTab({ siteDbId }: { siteDbId: string }) {
                   {ops.map((op: any, i: number) => (
                     <tr key={op.id} style={{ borderTop: "1px solid var(--color-border)", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.01)" }}>
                       <td style={{ padding: "8px 14px", fontWeight: 600, color: "var(--color-text-primary)" }}>
-                        {op.type === 'backlink_check_alive' ? 'Check 404' : op.type === 'backlink_check_xr' ? 'XML River' : op.type}
+                        {op.type === 'backlink_check_alive' ? t('opCheck404') : op.type === 'backlink_check_xr' ? t('opXmlRiver') : op.type}
                       </td>
                       <td style={{ padding: "8px 14px" }}>
                         <span style={{ color: op.result === 'success' ? "#4ADE80" : "#F87171", fontWeight: 600 }}>{op.result}</span>
@@ -2440,7 +2476,7 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
         body: JSON.stringify({ siteDbId, sitemapUrl: customSitemapUrl || undefined }),
       });
       const d = await res.json();
-      if (!res.ok) throw new Error(d.error ?? "Sync failed");
+      if (!res.ok) throw new Error(d.error ?? t("errSyncFailed"));
       await loadUrls(1, statusFilter, search);
     } catch (e: any) { setSyncError(e.message); }
     setSyncing(false);
@@ -2495,7 +2531,7 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
   // ── Private Bot Farm submit ──
   const runFarmSubmit = async () => {
     if (!selectedFarmDomainId) {
-      setFarmSubmitResult("✗ Choose a domain first");
+      setFarmSubmitResult(`✗ ${t("farmChooseDomain")}`);
       return;
     }
     const urls = selected.size > 0
@@ -2517,11 +2553,11 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
       });
       const d = await res.json();
       if (res.ok && d.success) {
-        setFarmSubmitResult(`✓ Queued ${d.count} URLs`);
+        setFarmSubmitResult(`✓ ${t("farmQueuedN").replace("{n}", String(d.count))}`);
         setSelected(new Set());
         await loadUrls(page, statusFilter, search);
       } else {
-        setFarmSubmitResult(`✗ ${d.error || "Failed to submit"}`);
+        setFarmSubmitResult(`✗ ${d.error || t("farmFailedToSubmit")}`);
       }
     } catch (e: any) {
       setFarmSubmitResult(`✗ ${e.message}`);
@@ -2556,7 +2592,7 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
         body: JSON.stringify({ siteDbId, urls }),
       });
       const d = await res.json();
-      if (!res.ok) { setXrCheckMsg(`✗ ${d.error ?? "Error"}`); setXrChecking(false); return; }
+      if (!res.ok) { setXrCheckMsg(`✗ ${d.error ?? t("errGeneric")}`); setXrChecking(false); return; }
 
       // XMLRiver: synchronous result
       if (!d.pending) {
@@ -2571,7 +2607,7 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
       // Neural: poll /status every 10s until done (no new tasks created)
       const checkId: string = d.checkId;
       const est: number = d.estimatedMinutes ?? 3;
-      setXrCheckMsg(`⏳ NeuralIndexer обрабатывает ${d.urlCount} URL (~${est} мин)...`);
+      setXrCheckMsg(t("neuralProcessing").replace("{n}", String(d.urlCount)).replace("{min}", String(est)));
 
       const maxAttempts = Math.max(30, est * 8); // 10s × attempts ≥ estimated time
       for (let i = 0; i < maxAttempts; i++) {
@@ -2579,7 +2615,7 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
         try {
           const sRes = await fetch(`/api/indexing/neural/status?checkId=${encodeURIComponent(checkId)}&siteDbId=${siteDbId}`);
           const s = await sRes.json();
-          if (s.failed) { setXrCheckMsg(`✗ NeuralIndexer: check failed`); break; }
+          if (s.failed) { setXrCheckMsg(`✗ ${t("neuralCheckFailed")}`); break; }
           if (s.done) {
             setXrCheckMsg(`✓ ${t("idxChecked")} ${s.checked} URLs · ${s.indexed} ${t("idxInIndex")}${s.charged != null ? ` · $${Number(s.charged).toFixed(4)}` : ""}`);
             await loadUrls(page, statusFilter, search);
@@ -2587,7 +2623,8 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
           }
           // Still processing — update progress
           const pct = s.totalLinks > 0 ? Math.round((s.checkedLinks / s.totalLinks) * 100) : 0;
-          setXrCheckMsg(`⏳ NeuralIndexer: ${s.checkedLinks ?? 0}/${s.totalLinks ?? d.urlCount} URL проверено${pct > 0 ? ` (${pct}%)` : ""}...`);
+          const prog = t("neuralProgress").replace("{checked}", String(s.checkedLinks ?? 0)).replace("{total}", String(s.totalLinks ?? d.urlCount));
+          setXrCheckMsg(pct > 0 ? `${prog} (${pct}%)` : prog);
         } catch { /* network error, retry */ }
       }
     } catch (e: any) { setXrCheckMsg(`✗ ${(e as any).message}`); }
@@ -2649,8 +2686,9 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
   };
   const opTypeLabel = (type: string) => {
     const m: Record<string,string> = {
-      sitemap_sync: "Sync sitemap", google_check: "Google check",
-      xr_check: "XML River", "2index_submit": "2index submit", neural_submit: "NeuralIndexer",
+      sitemap_sync: t("opSyncSitemap"), google_check: t("opGoogleCheck"),
+      xr_check: t("opXmlRiver"), "2index_submit": t("op2indexSubmit"), neural_submit: "NeuralIndexer",
+      backlink_check_alive: "Check 404", backlink_check_xr: "XML River",
     };
     return m[type] ?? type;
   };
@@ -3086,8 +3124,9 @@ function YandexIconSite({ size = 14 }: { size?: number }) {
 
 // ─── Annotations Filter Dropdown ──────────────────────────────────────────────
 function AnnotationsFilterDd({ onSetupBranded }: { onSetupBranded?: () => void }) {
+  const { t } = useLanguage();
   const [open, setOpen] = useState(false);
-  const [activeDim, setActiveDim] = useState<string | null>("Query");
+  const [activeDim, setActiveDim] = useState<string | null>("dimQuery");
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
@@ -3095,13 +3134,14 @@ function AnnotationsFilterDd({ onSetupBranded }: { onSetupBranded?: () => void }
     return () => document.removeEventListener("mousedown", h);
   }, []);
 
+  // label holds an i18n KEY; activeDim tracks the same key so highlight comparison stays correct.
   const dims = [
-    { icon: <Search size={14}/>,          label: "Query",          disabled: false },
-    { icon: <FileText size={14}/>,         label: "Page",           disabled: false },
-    { icon: <Globe size={14}/>,            label: "Country",        disabled: false },
-    { icon: <Monitor size={14}/>,          label: "Device",         disabled: false },
-    { icon: <BookmarkCheck size={14}/>,    label: "Content Group",  disabled: true  },
-    { icon: <ArrowLeftRight size={14}/>,   label: "Compare Filters",disabled: false },
+    { icon: <Search size={14}/>,          label: "dimQuery",          disabled: false },
+    { icon: <FileText size={14}/>,         label: "dimPage",           disabled: false },
+    { icon: <Globe size={14}/>,            label: "dimCountry",        disabled: false },
+    { icon: <Monitor size={14}/>,          label: "dimDevice",         disabled: false },
+    { icon: <BookmarkCheck size={14}/>,    label: "dimContentGroup",  disabled: true  },
+    { icon: <ArrowLeftRight size={14}/>,   label: "dimCompareFilters",disabled: false },
   ];
 
   const divider = <div style={{ height: "1px", background: "var(--color-border)", margin: "4px 0" }} />;
@@ -3119,19 +3159,19 @@ function AnnotationsFilterDd({ onSetupBranded }: { onSetupBranded?: () => void }
           {/* Dimension filters */}
           {dims.map(({ icon, label, disabled }) => (
             <button key={label} disabled={disabled} onClick={() => { if (!disabled) setActiveDim(label); }} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px", fontSize: "13px", cursor: disabled ? "default" : "pointer", width: "100%", background: activeDim === label ? "rgba(59,130,246,0.12)" : "transparent", color: disabled ? "var(--color-text-secondary)" : activeDim === label ? "#3B82F6" : "var(--color-text-primary)", border: "none", opacity: disabled ? 0.45 : 1 }}>
-              {icon} {label}
+              {icon} {t(label as never)}
               {activeDim === label && <Check size={12} style={{ marginLeft: "auto" }} />}
             </button>
           ))}
 
           {divider}
-          {sec("Branded Queries")}
+          {sec(t("sectionBrandedQueries"))}
           <div style={{ padding: "4px 14px 10px", fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
             <span style={{ color: "#3B82F6", cursor: "pointer" }} onClick={onSetupBranded}>Define</span> branded keywords<br />to enable branded filters.
           </div>
 
           {divider}
-          {sec("Position Filter")}
+          {sec(t("sectionPositionFilter"))}
           <div style={{ padding: "4px 14px 10px", display: "flex", gap: "8px" }}>
             {["Top 10", "Top 20"].map(v => (
               <button key={v} style={{ display: "flex", alignItems: "center", gap: "5px", padding: "5px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: 600, cursor: "pointer", border: "1px solid var(--color-border)", background: "transparent", color: "#F59E0B" }}>
@@ -3141,16 +3181,16 @@ function AnnotationsFilterDd({ onSetupBranded }: { onSetupBranded?: () => void }
           </div>
 
           {divider}
-          {sec("Saved Filters")}
+          {sec(t("sectionSavedFilters"))}
           <div style={{ padding: "4px 14px 10px", fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
             Add filters and save them to quickly<br />access them later.
           </div>
 
           {divider}
-          {sec("Preset Filters")}
-          {["People Also Ask", "Long Tail Keywords"].map(v => (
+          {sec(t("sectionPresetFilters" as never))}
+          {(["presetPaa", "presetLongTail"] as const).map(v => (
             <button key={v} onClick={() => setOpen(false)} style={{ display: "block", width: "100%", textAlign: "left", padding: "9px 14px", fontSize: "13px", fontWeight: 600, cursor: "pointer", background: "transparent", color: "var(--color-text-primary)", border: "none" }}>
-              {v}
+              {t(v)}
             </button>
           ))}
           <div style={{ height: "6px" }} />
@@ -3162,16 +3202,19 @@ function AnnotationsFilterDd({ onSetupBranded }: { onSetupBranded?: () => void }
 
 // ─── Add Note Modal ───────────────────────────────────────────────────────────
 function AddNoteModal({ onClose, onSave }: { onClose: () => void; onSave: (note: { date: string; title: string; desc: string; scope: string }) => void }) {
+  const { t } = useLanguage();
   const today = new Date();
   const todayStr = today.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   const [title, setTitle] = useState("");
   const [desc, setDesc]   = useState("");
   const [scope, setScope] = useState<"all" | "specific" | "group">("all");
 
+  // l holds an i18n KEY. Both render (3238) and onSave (3246) translate it via t(), so the stored
+  // note scope is the localized label — same as the old hardcoded English, but in the active language.
   const scopeOptions = [
-    { v: "all",      l: "All Pages" },
-    { v: "specific", l: "Specific Page(s)" },
-    { v: "group",    l: "Content Group" },
+    { v: "all",      l: "scopeAllPages" },
+    { v: "specific", l: "scopeSpecificPages" },
+    { v: "group",    l: "scopeContentGroup" },
   ] as const;
 
   return (
@@ -3197,7 +3240,7 @@ function AddNoteModal({ onClose, onSave }: { onClose: () => void; onSave: (note:
           autoFocus
           value={title}
           onChange={e => setTitle(e.target.value)}
-          placeholder="What happened on this day?"
+          placeholder={t("noteTitlePlaceholder")}
           style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: `2px solid ${title ? "#3B82F6" : "#d1d5db"}`, fontSize: "14px", color: "#111", outline: "none", boxSizing: "border-box", marginBottom: "20px" }}
         />
 
@@ -3218,15 +3261,15 @@ function AddNoteModal({ onClose, onSave }: { onClose: () => void; onSave: (note:
               <div onClick={() => setScope(v)} style={{ width: "18px", height: "18px", borderRadius: "50%", border: `2px solid ${scope === v ? "#3B82F6" : "#d1d5db"}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer" }}>
                 {scope === v && <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#3B82F6" }} />}
               </div>
-              {l}
+              {t(l as never)}
             </label>
           ))}
         </div>
 
         {/* Buttons */}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
-          <button onClick={onClose} style={{ padding: "10px 22px", borderRadius: "8px", border: "none", background: "#f3f4f6", color: "#374151", fontSize: "14px", fontWeight: 500, cursor: "pointer" }}>Cancel</button>
-          <button onClick={() => { if (title.trim()) { onSave({ date: todayStr, title, desc, scope: scopeOptions.find(o => o.v === scope)!.l }); onClose(); } }}
+          <button onClick={onClose} style={{ padding: "10px 22px", borderRadius: "8px", border: "none", background: "#f3f4f6", color: "#374151", fontSize: "14px", fontWeight: 500, cursor: "pointer" }}>{t("cancel")}</button>
+          <button onClick={() => { if (title.trim()) { onSave({ date: todayStr, title, desc, scope: t(scopeOptions.find(o => o.v === scope)!.l as never) }); onClose(); } }}
             style={{ padding: "10px 22px", borderRadius: "8px", border: "none", background: title.trim() ? "#374151" : "#9ca3af", color: "#fff", fontSize: "14px", fontWeight: 600, cursor: title.trim() ? "pointer" : "not-allowed" }}>
             Save
           </button>
@@ -3265,7 +3308,7 @@ function AnnotationChart({ series, activeMetrics, changeDate }: {
   const panels = ([
     { m: "clicks" as Metric, key: "clicks", label: t("clicks"), colour: C.clicks, reversed: false, fmt: (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)) },
     { m: "impressions" as Metric, key: "impressions", label: t("impressions"), colour: C.impressions, reversed: false, fmt: (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)) },
-    { m: "ctr" as Metric, key: "ctr", label: "CTR", colour: C.ctr, reversed: false, fmt: (v: number) => `${v}%` },
+    { m: "ctr" as Metric, key: "ctr", label: t("colCtr"), colour: C.ctr, reversed: false, fmt: (v: number) => `${v}%` },
     // Rank counts downwards: 1 is the top of the page, so the axis is reversed and starts at 1.
     { m: "position" as Metric, key: "position", label: t("avgPosition"), colour: C.position, reversed: true, fmt: (v: number) => String(Math.round(v)) },
   ]).filter(p => activeMetrics.has(p.m));
@@ -3450,7 +3493,7 @@ function AnnotationsTab({ period, setPeriod, periodOptions, onSetupBranded, site
           </button>
         }>
           {periodOptions.map(p => {
-            const lbl = PERIOD_OPTIONS.find(o => o.key === p)?.label ?? p;
+            const lbl = t((PERIOD_OPTIONS.find(o => o.key === p)?.label ?? p) as never);
             return (
               <button key={p} onClick={() => setPeriod(p)} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "9px 14px", fontSize: "13px", cursor: "pointer", width: "100%", background: period === p ? "rgba(59,130,246,0.12)" : "transparent", color: period === p ? "#3B82F6" : "var(--color-text-primary)", border: "none" }}>
                 {lbl} {period === p && <Check size={12} style={{ marginLeft: "auto" }} />}
@@ -3774,14 +3817,14 @@ function NewRankingsTable({ queryRows, pageRows, blur }: { queryRows: RankRow[];
       <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "12px", minHeight: "30px" }}>
         <h3 style={{ fontSize: "15px", fontWeight: 700, color: "var(--color-text-primary)" }}>{t("newRankings")}</h3>
         <TabBar tabs={["Queries", "Pages"]} active={tab} onChange={handleTabChange} />
-        <button onClick={handleCSV} title="Export CSV"
+        <button onClick={handleCSV} title={t("exportCsv")}
           style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "4px", padding: "4px 10px", borderRadius: "6px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-secondary)", fontSize: "12px", cursor: "pointer" }}>
           <Download size={12} /> CSV
         </button>
       </div>
       {rows.length === 0 ? (
         <div style={{ padding: "32px 0", textAlign: "center", color: "var(--color-text-secondary)", fontSize: "13px" }}>
-          No new rankings this period
+          {t("noNewRankings")}
         </div>
       ) : (
         <>
@@ -3889,7 +3932,7 @@ function WinnersLosers({ data, blur, onTrack, tracked }: {
   data?: WlData; blur: boolean;
   onTrack?: (label: string) => void; tracked?: Set<string>;
 }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [dim, setDim] = useState<"queries" | "pages">("queries");
   const d = data?.[dim];
   return (
@@ -3934,7 +3977,7 @@ export default function SitePage({
   shareToken,
   guestEngines,
 }: SitePageProps = {}) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const params = useParams();
   const router = useRouter();
   const domain = propDomain || decodeURIComponent(params.id as string);
@@ -4219,7 +4262,7 @@ export default function SitePage({
   const countryRows = useMemo(() => {
     let rows = siteData?.countries ?? [];
     if (filterDimension === "country" && filterText.trim())
-      rows = rows.filter((r: any) => r.country?.toLowerCase().includes(filterText.toLowerCase()) || iso3ToName(r.country ?? "").toLowerCase().includes(filterText.toLowerCase()));
+      rows = rows.filter((r: any) => r.country?.toLowerCase().includes(filterText.toLowerCase()) || iso3ToName(r.country ?? "", language).toLowerCase().includes(filterText.toLowerCase()));
     return rows;
   }, [siteData, filterDimension, filterText]);
 
@@ -4276,7 +4319,7 @@ export default function SitePage({
             {drValue != null && (
               <span style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0 }}>
                 <span style={{ fontSize: "11px", fontWeight: 700, padding: "2px 7px", borderRadius: "6px", background: "rgba(58,87,252,0.12)", color: "#3A57FC", ...blurStyle }}>DR {Math.round(drValue)}</span>
-                <a href="https://ahrefs.com/" target="_blank" rel="noreferrer" style={{ fontSize: "10px", color: "var(--color-text-tertiary)", textDecoration: "none" }} title="Domain Rating by Ahrefs">by Ahrefs</a>
+                <a href="https://ahrefs.com/" target="_blank" rel="noreferrer" style={{ fontSize: "10px", color: "var(--color-text-tertiary)", textDecoration: "none" }} title={t("drByAhrefs")}>{t("byAhrefs")}</a>
               </span>
             )}
           </div>
@@ -4519,7 +4562,7 @@ export default function SitePage({
           {/* Header row with One Click Setup button */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
             <span style={{ fontSize: "13px", color: "var(--color-text-secondary)" }}>
-              {clusterLoading ? "Loading…" : (clusterMetrics?.clusters?.length ?? 0) + (clusterMetrics?.groups?.length ?? 0) > 0 ? "" : "No clusters configured yet"}
+              {clusterLoading ? t("loading") : (clusterMetrics?.clusters?.length ?? 0) + (clusterMetrics?.groups?.length ?? 0) > 0 ? "" : t("noClustersYet")}
             </span>
             <button
               onClick={() => setShowSetupModal(true)}
@@ -4608,7 +4651,7 @@ export default function SitePage({
             </div>
             {qcTotal === 0 ? (
               <div style={{ height: "160px", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-text-secondary)", fontSize: "13px" }}>
-                {dataLoading ? "Loading…" : "No data yet"}
+                {dataLoading ? t("loading") : t("noDataYet")}
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
