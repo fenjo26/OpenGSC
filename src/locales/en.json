@@ -2559,5 +2559,8 @@
   "bvQuestion": "Question",
   "bvSources": "Cited",
   "bvNoLink": "named only",
-  "bvEmpty": "Nothing indexed for {brand} yet on this platform. Press \"Look up brand\" to check, or try matching by brand name instead of domain — a model that names you without linking leaves no trace under the domain match."
+  "bvEmpty": "Nothing indexed for {brand} yet on this platform. Press \"Look up brand\" to check, or try matching by brand name instead of domain — a model that names you without linking leaves no trace under the domain match.",
+  "schemaMissing": "{n} database tables are missing — those features will look empty rather than fail.",
+  "schemaAffects": "Affects: {features}.",
+  "schemaNoDataLoss": "Creates the missing tables; existing data is untouched."
 }

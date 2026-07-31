@@ -3,12 +3,13 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { useState, useEffect, Suspense } from "react";
-import { Settings, LogOut, Sparkles, Globe, Newspaper, LayoutDashboard, TrendingUp, Anchor, BarChart2, Users } from "lucide-react";
+import { Settings, LogOut, Sparkles, Globe, Newspaper, LayoutDashboard, TrendingUp, Anchor, BarChart2, Users, Compass } from "lucide-react";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { useTheme } from "@/lib/ThemeContext";
 import { useLayout } from "@/lib/LayoutContext";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import UpdateBanner from "@/components/UpdateBanner";
+import SchemaBanner from "@/components/SchemaBanner";
 
 // ─── Popup menu helpers ───────────────────────────────────────────────────────
 function MenuItem({ icon, label, onClick }: { icon: string; label: string; onClick?: () => void }) {
@@ -487,6 +488,9 @@ function NavLinks() {
     { href: "/cannibalization", label: t("menuCannibalization"), key: "cannibalization", icon: <Anchor size={14} /> },
     { href: "/decay", label: t("menuDecay"), key: "decay", icon: <BarChart2 size={14} /> },
     { href: "/competitors", label: t("menuCompetitors"), key: "competitors", icon: <Users size={14} /> },
+    // Placed after Competitors: everything before it starts from queries the site already has,
+    // this is the first entry that starts from the market.
+    { href: "/demand", label: t("menuDemand"), key: "demand", icon: <Compass size={14} /> },
     { href: "/seo-tools", label: t("seoNavTitle"), key: "seo-tools", icon: <Sparkles size={14} /> },
     { href: "/indexer", label: t("indexerNavTitle"), key: "indexer", icon: <Globe size={14} /> },
     { href: "/digest", label: t("digestNavTitle"), key: "digest", icon: <Newspaper size={14} /> },
@@ -763,6 +767,7 @@ function Shell({ children }: { children: React.ReactNode }) {
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
       <TopBar />
       <UpdateBanner />
+      <SchemaBanner />
       <main style={{
         flex: 1,
         overflow: "auto",

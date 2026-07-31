@@ -1,0 +1,69 @@
+import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+
+// GET /api/system/schema — which expected tables are missing from the database.
+//
+// This exists because of a failure mode the codebase deliberately created and then had no way to
+// report. Every feature added after the initial schema reads its tables through
+// `$queryRawUnsafe` inside a `try { } catch { return empty }`, so that an instance which has not
+// run `prisma db push` degrades instead of crashing. That is the right call — a missing table
+// should not take down the dashboard — but it makes an un-migrated database indistinguishable
+// from an empty one. "Find competitors, then pull the keywords of one of them" is what the
+// Competitors screen says both when you have not pulled anything yet and when the table it would
+// pull into does not exist.
+//
+// One cheap read of `sqlite_master` tells the two apart, and the banner turns a silent nothing
+// into a sentence naming the command to run.
+
+/**
+ * Tables added after the first release, in the order they arrived. Not the full schema — only
+ * the ones whose absence is survivable and therefore silent. A missing `Site` table would crash
+ * long before anything got here.
+ */
+const EXPECTED_TABLES: { table: string; feature: string }[] = [
+  { table: "KeywordMetricCache", feature: "Keyword weights" },
+  { table: "DomainMetricCache", feature: "Domain metrics" },
+  { table: "RefDomainRow", feature: "Backlink profile" },
+  { table: "BacklinkSnapshot", feature: "Backlink history" },
+  { table: "CompetitorKeyword", feature: "Competitors" },
+  { table: "KeywordVolumeHistory", feature: "Demand check in Content Decay" },
+  { table: "ApiUsage", feature: "Spending cap" },
+  { table: "DemandSearch", feature: "Demand" },
+  { table: "EnginePortfolioCache", feature: "Bing / Yandex portfolio" },
+  { table: "SiteAudit", feature: "Site Audit" },
+  { table: "AlertEvent", feature: "Alerts" },
+  { table: "Digest", feature: "Digests" },
+  { table: "GeoAudit", feature: "GEO Audit" },
+  { table: "LinkWatchBrand", feature: "Link Monitor" },
+];
+
+export async function GET() {
+  // Session-gated, not owner-gated: it reports table names, nothing about data, and a guest on a
+  // share link has no shell to show the banner in anyway.
+  const session = await getServerSession(authOptions);
+  if (!(session?.user as any)?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  let present = new Set<string>();
+  try {
+    const rows: any[] = await prisma.$queryRawUnsafe(
+      `SELECT name FROM sqlite_master WHERE type = 'table'`,
+    );
+    present = new Set(rows.map(r => String(r.name)));
+  } catch {
+    // Reading sqlite_master itself failing means something is wrong that this endpoint is not
+    // equipped to diagnose. Report "cannot tell" rather than "everything is missing", which
+    // would put a false alarm on every screen.
+    return NextResponse.json({ ok: true, checked: false, missing: [] });
+  }
+
+  const missing = EXPECTED_TABLES.filter(t => !present.has(t.table));
+
+  return NextResponse.json({
+    ok: missing.length === 0,
+    checked: true,
+    missing: missing.map(m => m.table),
+    features: [...new Set(missing.map(m => m.feature))],
+  });
+}
