@@ -188,6 +188,11 @@ model Backlink {
   title         String?   // page title from 404-check crawl
   isAlive       Boolean?  // null = not checked; true = alive; false = dead/404
   aliveChecked  DateTime?
+  aliveStatus   String?   // "alive" | "dead" | "blocked" — richer than isAlive. "blocked" = bot
+                          // protection (Cloudflare/WAF 403/429) hid the page, so a 403 is no longer
+                          // misread as a dead link. isAlive is kept in sync for back-compat (older
+                          // rows and the old UI path): blocked maps to isAlive=null ("unknown"),
+                          // never to false, because it is not a death — it is a refusal to answer.
   xrStatus      String?   // "indexed" | "not_indexed" | "error"
   xrChecked     DateTime?
   twoIndexStatus String?  // "submitted"

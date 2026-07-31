@@ -2031,7 +2031,7 @@ function BacklinksTab({ siteDbId }: { siteDbId: string }) {
         body: JSON.stringify({ siteDbId, ids, forceAll: all }),
       });
       const d = await res.json();
-      setActionMsg(`✓ ${t("idxChecked")} ${d.checked}: ${t("blAlive")} ${d.alive}, ${t("blDead")} ${d.dead}`);
+      setActionMsg(`✓ ${t("idxChecked")} ${d.checked}: ${t("blAlive")} ${d.alive}, ${t("blDead")} ${d.dead}${d.blocked ? `, ${t("blBlocked")} ${d.blocked}` : ''}`);
       await load();
     } catch (e: any) { setActionMsg(`✗ ${e.message}`); }
     setChecking404(false);
@@ -2054,8 +2054,8 @@ function BacklinksTab({ siteDbId }: { siteDbId: string }) {
   };
 
   const handleExport = () => {
-    const csv = ['url,title,alive,xr_status,2index,added']
-      .concat(links.map(l => `"${l.url}","${l.title ?? ''}",${l.isAlive ?? ''},${l.xrStatus ?? ''},${l.twoIndexStatus ?? ''},"${l.addedAt}"`))
+    const csv = ['url,title,alive,alive_status,xr_status,2index,added']
+      .concat(links.map(l => `"${l.url}","${l.title ?? ''}",${l.isAlive ?? ''},${l.aliveStatus ?? ''},${l.xrStatus ?? ''},${l.twoIndexStatus ?? ''},"${l.addedAt}"`))
       .join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
@@ -2115,6 +2115,7 @@ function BacklinksTab({ siteDbId }: { siteDbId: string }) {
           { label: t("backlinksTotal"), value: stats.total ?? 0, color: "var(--color-text-primary)" },
           { label: t("backlinksDead"),  value: stats.dead   ?? 0, color: "#F87171" },
           { label: t("backlinksAlive"), value: stats.alive  ?? 0, color: "#4ADE80" },
+          { label: t("backlinksBlocked"), value: stats.blocked ?? 0, color: "#FBBF24" },
           { label: t("backlinksXrIndexed"), value: stats.xrIndexed ?? 0, color: "#60a5fa" },
         ].map(({ label, value, color }) => (
           <span key={label} style={{ fontWeight: 600 }}>
@@ -2234,12 +2235,18 @@ function BacklinksTab({ siteDbId }: { siteDbId: string }) {
                       </td>
                       {/* Alive */}
                       <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
-                        {link.isAlive === null || link.isAlive === undefined
-                          ? <span style={{ color: "rgba(255,255,255,0.2)", fontSize: "11px" }}>—</span>
-                          : link.isAlive
-                            ? <span style={{ color: "#4ADE80", fontWeight: 600, fontSize: "11px" }}>✓ Alive</span>
-                            : <span style={{ color: "#F87171", fontWeight: 600, fontSize: "11px" }}>✗ Dead</span>
-                        }
+                        {(() => {
+                          // aliveStatus is authoritative when present; isAlive is the legacy fallback.
+                          // "blocked" (amber) is neither alive nor dead — it means bot protection hid
+                          // the page, and must never be shown as a death.
+                          const st = link.aliveStatus === 'alive' || link.aliveStatus === 'dead' || link.aliveStatus === 'blocked'
+                            ? link.aliveStatus
+                            : link.isAlive === true ? 'alive' : link.isAlive === false ? 'dead' : 'unknown';
+                          if (st === 'alive')   return <span style={{ color: "#4ADE80", fontWeight: 600, fontSize: "11px" }}>✓ {t("blAliveFull")}</span>;
+                          if (st === 'dead')    return <span style={{ color: "#F87171", fontWeight: 600, fontSize: "11px" }}>✗ {t("blDeadFull")}</span>;
+                          if (st === 'blocked') return <span style={{ color: "#FBBF24", fontWeight: 600, fontSize: "11px" }}>⚠ {t("blBlockedFull")}</span>;
+                          return <span style={{ color: "rgba(255,255,255,0.2)", fontSize: "11px" }}>—</span>;
+                        })()}
                       </td>
                       {/* XR */}
                       <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>

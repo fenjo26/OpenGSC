@@ -19,17 +19,24 @@ export async function GET(req: Request) {
     where: { siteId: siteDbId },
     orderBy: { addedAt: 'desc' },
     select: {
-      id: true, url: true, title: true, isAlive: true, aliveChecked: true,
+      id: true, url: true, title: true, isAlive: true, aliveStatus: true, aliveChecked: true,
       xrStatus: true, xrChecked: true, twoIndexStatus: true, twoIndexAt: true, addedAt: true,
     },
   });
 
   const total = links.length;
-  const alive = links.filter((l: any) => l.isAlive === true).length;
-  const dead  = links.filter((l: any) => l.isAlive === false).length;
+  // aliveStatus is the richer field; fall back to isAlive for rows written before this column
+  // existed, so legacy data still reads correctly without a backfill migration.
+  const status = (l: any): 'alive' | 'dead' | 'blocked' | 'unknown' =>
+    l.aliveStatus === 'alive' || l.aliveStatus === 'dead' || l.aliveStatus === 'blocked'
+      ? l.aliveStatus
+      : l.isAlive === true ? 'alive' : l.isAlive === false ? 'dead' : 'unknown';
+  const alive = links.filter((l: any) => status(l) === 'alive').length;
+  const dead  = links.filter((l: any) => status(l) === 'dead').length;
+  const blocked = links.filter((l: any) => status(l) === 'blocked').length;
   const xrIndexed = links.filter((l: any) => l.xrStatus === 'indexed').length;
 
-  return NextResponse.json({ links, stats: { total, alive, dead, xrIndexed } });
+  return NextResponse.json({ links, stats: { total, alive, dead, blocked, xrIndexed } });
 }
 
 // POST /api/backlinks — { siteDbId, urls: string[] }
