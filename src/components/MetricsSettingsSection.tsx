@@ -27,6 +27,12 @@ const OFFICIAL_DOCS: Record<MetricsProvider, string> = {
   semrush: "https://developer.semrush.com/api/",
 };
 
+/** Shown under the key field so the destination is never implicit. */
+const OFFICIAL_HOST: Record<MetricsProvider, string> = {
+  ahrefs: "https://api.ahrefs.com",
+  semrush: "https://api.semrush.com",
+};
+
 export default function MetricsSettingsSection() {
   const { t } = useLanguage();
 
@@ -169,8 +175,24 @@ export default function MetricsSettingsSection() {
 
         {/* 3. The key itself */}
         <span className="tool-section-label">{t("metricsStep3")}</span>
-        <div style={{ marginBottom: "18px" }}>
+        <div style={{ marginBottom: "6px" }}>
           <SeoKeyCard provider={card} hideDocsLink />
+        </div>
+        {/* The destination, spelled out under the field.
+            One key is stored per provider, not per mode — but an official key and a reseller
+            key are different strings. Without this line, switching modes leaves the old key
+            pointed at a host that will reject it, and the only symptom is a 401 from a screen
+            that looked correctly configured. */}
+        <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", marginBottom: "18px", fontSize: "11px", color: "var(--color-text-secondary)" }}>
+          <span>{t("metricsTarget")}:</span>
+          <code style={{ fontFamily: "monospace", color: "var(--color-text-primary)" }}>
+            {mode === "official" ? OFFICIAL_HOST[provider]
+              : mode === "reseller" ? RESELLER_BASE_URL[provider]
+              : (customUrl.trim() || OFFICIAL_HOST[provider])}
+          </code>
+          {mode !== "official" && (
+            <span style={{ color: "var(--color-text-tertiary)" }}>· {t("metricsKeyPerMode")}</span>
+          )}
         </div>
 
         {/* 4. Spending */}

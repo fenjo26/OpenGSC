@@ -67,6 +67,12 @@ shows an em dash.
 
 ### Fixed
 
+- **Metrics settings were not backed up.** The API key matched the sync rules and survived a
+  restore, but the access mode and host did not — so a reseller key came back pointed at the
+  official API, with the mode silently showing "official" and every request failing 401. The
+  whole `seoMetrics*` group is now part of the snapshot, and a test asserts that any future
+  setting written by this layer is covered.
+- The metrics screen now shows the host a key will be sent to, directly under the field.
 - Assorted bug fixes across the app.
 
 ### Upgrading

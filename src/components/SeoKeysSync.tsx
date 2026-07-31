@@ -18,7 +18,17 @@ const EXACT_KEYS = [
   "seoAutoFactcheck", "seoAutoImages", "seoHardRedact", "seoFactSources",
   "seoFactBearingOnly", "seoFactReuseCorpus",
 ];
-const PREFIXES = ["aiKey_", "aiBaseUrl_", "aiModel_", "seoKey_", "seoTaskProvider_", "seoTaskModel_"];
+// `seoMetrics` covers the whole metrics layer: mode, base URL, monthly cap, active provider.
+//
+// It has to be here, and leaving it out was a real bug rather than a missing nicety. The key
+// itself matches `seoKey_` and so was already backed up and restored — but the host it must be
+// sent to was not. Restore then produced a reseller key pointed at the official API: the mode
+// silently reverted to "official", and every request 401'd for a reason nothing on screen
+// explained. Server-side code reads the same snapshot, so it had no way to learn the host either.
+const PREFIXES = [
+  "aiKey_", "aiBaseUrl_", "aiModel_", "seoKey_", "seoTaskProvider_", "seoTaskModel_",
+  "seoMetrics",
+];
 
 function snapshot(): Record<string, string> {
   const out: Record<string, string> = {};
