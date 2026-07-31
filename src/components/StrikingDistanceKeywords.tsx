@@ -285,7 +285,7 @@ function KeywordsTable({ data, loading, siteDbId, weights, country }: {
           </p>
         </div>
       ) : (
-        <div style={{ border: "1px solid var(--color-border)", borderRadius: "0 0 8px 8px", overflow: "hidden" }}>
+        <div className="privacy-blur-all" style={{ border: "1px solid var(--color-border)", borderRadius: "0 0 8px 8px", overflow: "hidden" }}>
           {filtered.map((item, i) => {
             const prox = proximityLabel(item.position);
             const w = weights.get(item.query, country);

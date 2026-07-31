@@ -242,7 +242,7 @@ function CannibalizationTable({ siteDbId }: { siteDbId: string }) {
           <p style={{ fontSize: "13px", color: "var(--color-text-secondary)", margin: 0 }}>{t("kcEmptyDesc")}</p>
         </div>
       ) : (
-        <div style={{ border: "1px solid var(--color-border)", borderRadius: "0 0 8px 8px", overflow: "hidden" }}>
+        <div className="privacy-blur-all" style={{ border: "1px solid var(--color-border)", borderRadius: "0 0 8px 8px", overflow: "hidden" }}>
           {filtered.map((group, gi) => {
             const isOpen = expanded.has(group.query);
             const topImpr = group.pages[0]?.impressions ?? 1;

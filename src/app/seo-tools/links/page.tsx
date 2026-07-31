@@ -132,7 +132,7 @@ export default function LinkWatchPage() {
       {err && <div className={card} style={{ borderColor: "rgba(255,69,58,0.35)", background: "rgba(255,69,58,0.06)", color: "var(--color-accent-red)", fontSize: "12px" }}>{err}</div>}
 
       {/* Brands */}
-      <div className={card}>
+      <div className="panel privacy-blur-all">
         <div className="tool-section-label">{t("lwBrands")} ({brands.length})</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", margin: "8px 0" }}>
           {brands.map(b => (
@@ -171,7 +171,7 @@ export default function LinkWatchPage() {
           </div>
 
           {view === "domains" ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: "4px", maxHeight: "480px", overflow: "auto" }}>
+            <div className="privacy-blur-all" style={{ display: "flex", flexDirection: "column", gap: "4px", maxHeight: "480px", overflow: "auto" }}>
               <div style={{ display: "grid", gridTemplateColumns: "26px minmax(0,1fr) 110px 80px 80px", gap: "8px", fontSize: "10px", fontWeight: 700, textTransform: "uppercase", color: "var(--color-text-tertiary)", padding: "4px 8px" }}>
                 <span /><span>{t("lwColDomain")}</span><span>{t("lwColBrands")}</span><span>{t("lwColLinks")}</span><span>{t("lwColMaxDr")}</span>
               </div>
@@ -186,7 +186,7 @@ export default function LinkWatchPage() {
               ))}
             </div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "4px", maxHeight: "480px", overflow: "auto" }}>
+            <div className="privacy-blur-all" style={{ display: "flex", flexDirection: "column", gap: "4px", maxHeight: "480px", overflow: "auto" }}>
               {shownMentions.slice(0, 300).map((m: any, i: number) => (
                 <div key={i} style={{ padding: "8px 10px", borderRadius: "8px", border: "1px solid var(--color-border)" }}>
                   <div style={{ fontSize: "12px", color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>

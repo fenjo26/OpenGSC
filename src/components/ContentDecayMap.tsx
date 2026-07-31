@@ -152,7 +152,7 @@ function DecayingPagesTable({ rows }: { rows: DecayRow[] }) {
         <div style={{ textAlign: "right" }}>{t("cdmStatus")}</div>
       </div>
 
-      <div style={{ border: "1px solid var(--color-border)", borderRadius: "0 0 8px 8px", overflow: "hidden" }}>
+      <div className="privacy-blur-all" style={{ border: "1px solid var(--color-border)", borderRadius: "0 0 8px 8px", overflow: "hidden" }}>
         {visible.map((row, i) => (
           <div key={row.url} style={{
             display: "grid", gridTemplateColumns: "1fr 140px 110px 80px 120px 90px",
@@ -379,7 +379,7 @@ function Heatmap({
       {/* Heatmap table */}
       {pages.length > 0 && (
         <div style={{ overflowX: "auto" }}>
-          <table style={{ borderCollapse: "separate", borderSpacing: "3px", width: "100%" }}>
+          <table className="privacy-sensitive" style={{ borderCollapse: "separate", borderSpacing: "3px", width: "100%" }}>
             <thead>
               {period === "month" && yearGroups.length > 0 && (
                 <tr>

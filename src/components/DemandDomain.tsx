@@ -228,7 +228,7 @@ export default function DemandDomain({ sites }: { sites: SiteOption[] }) {
 
       {summary && (
         <div className="panel">
-          <div style={{ display: "flex", gap: "36px", flexWrap: "wrap", alignItems: "flex-start", marginBottom: "14px" }}>
+          <div className="privacy-blur-all" style={{ display: "flex", gap: "36px", flexWrap: "wrap", alignItems: "flex-start", marginBottom: "14px" }}>
             <Stat label={t("dmOrgTraffic")} value={fmt(summary.organicTraffic)} />
             <Stat label={t("dmOrgKeywords")} value={fmt(summary.organicKeywords)} />
             {/* DR and referring domains are not part of this purchase — they come from the free
@@ -271,7 +271,7 @@ export default function DemandDomain({ sites }: { sites: SiteOption[] }) {
         </div>
       ) : tab === "keywords" ? (
         <div className="panel" style={{ padding: 0, overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <table className="privacy-sensitive" style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: "var(--color-bg)", borderBottom: "1px solid var(--color-border)" }}>
                 <th style={th}>{t("sdkColQuery")}</th>
@@ -314,7 +314,7 @@ export default function DemandDomain({ sites }: { sites: SiteOption[] }) {
         </div>
       ) : (
         <div className="panel" style={{ padding: 0, overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <table className="privacy-sensitive" style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: "var(--color-bg)", borderBottom: "1px solid var(--color-border)" }}>
                 <th style={th}>{t("dmColUrl")}</th>

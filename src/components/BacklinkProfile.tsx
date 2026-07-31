@@ -142,7 +142,7 @@ export default function BacklinkProfile({ siteDbId }: { siteDbId: string }) {
         </div>
       ) : (
         <>
-          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginBottom: "14px" }}>
+          <div className="privacy-blur-all" style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginBottom: "14px" }}>
             {chip(t("blpRefDomains"), fmt(latest?.refDomains ?? live.length))}
             {chip(t("blpBacklinks"), fmt(latest?.backlinks))}
             {chip(t("blpDofollow"), latest?.dofollowPct != null ? `${latest.dofollowPct}%` : "—", t("blpDofollowHint"))}
@@ -160,7 +160,7 @@ export default function BacklinkProfile({ siteDbId }: { siteDbId: string }) {
           </div>
 
           <div style={{ border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", overflow: "hidden" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <table className="privacy-sensitive" style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ background: "var(--color-bg)", borderBottom: "1px solid var(--color-border)" }}>
                   <th style={th}>{t("blpDomain")}</th>
