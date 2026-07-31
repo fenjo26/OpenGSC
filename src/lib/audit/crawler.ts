@@ -5,6 +5,7 @@
 // POST /api/audit creates the SiteAudit row and calls runAudit() without awaiting it.
 
 import { prisma } from "@/lib/prisma";
+import { checkAiCrawlability } from "@/lib/audit/aiCrawl";
 
 const UA = "Mozilla/5.0 (compatible; OpenGSC-Audit/1.0; +https://opengsc.org)";
 const PAGE_TIMEOUT_MS = 20_000;
@@ -45,7 +46,19 @@ function extract(html: string) {
     .replace(/<footer[\s\S]*?<\/footer>/gi, " ");
   const wordCount = strip(body).split(/\s+/).filter(w => w.length > 1).length;
 
-  return { title, metaDesc, robots, canonical, h1Count, hrefs, imagesNoAlt, wordCount };
+  // Client-side render detection. The crawler fetches raw HTML only (no headless browser — see
+  // ARCHITECTURE.md §7), so a SPA that mounts content via JS shows up as an empty shell here, and
+  // every content-based signal below (word count, H1 presence) would be a lie about the rendered
+  // page. These two flags feed the js_rendered issue in the second pass; detecting them here, on the
+  // original html before script-stripping, is the only point where the evidence still exists.
+  const spaMarker = /\bid=["']?(root|__next|__nuxt|app)["']?/i.test(html) || /data-reactroot|data-react-helmet/i.test(html);
+  // A large inline/bundled script is the other half of the signal: near-empty static HTML with a
+  // 50KB+ payload is the universal shape of a JS-bundled app shell. Measured on the raw html (the
+  // body above has already had every <script> removed), summing all script tag contents.
+  const hasLargeScript = (html.match(/<script\b[^>]*>([\s\S]*?)<\/script>/gi) ?? [])
+    .reduce((sum, tag) => sum + tag.length, 0) > 50_000;
+
+  return { title, metaDesc, robots, canonical, h1Count, hrefs, imagesNoAlt, wordCount, spaMarker, hasLargeScript };
 }
 
 // ─── URL normalization ──────────────────────────────────────────────────────────
@@ -103,6 +116,7 @@ export const ISSUE_CODES = [
   "http_error", "fetch_failed", "redirect", "title_missing", "title_too_long", "title_duplicate",
   "description_missing", "description_too_long", "h1_missing", "h1_multiple", "noindex",
   "canonical_mismatch", "thin_content", "images_no_alt", "broken_links", "slow_response",
+  "js_rendered",
 ] as const;
 
 // ─── main runner ────────────────────────────────────────────────────────────────
@@ -149,6 +163,11 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
     const rootUrl = audit.site.url.startsWith("http") ? audit.site.url : `https://${audit.site.url.replace(/^sc-domain:/, "")}`;
     const root = new URL(rootUrl);
     const maxPages = Math.min(500, Math.max(10, audit.maxPages));
+
+    // AI Crawlability is a site-wide check (robots.txt + /llms.txt), independent of which pages get
+    // crawled. Started before the BFS loop so its two requests overlap with the page crawl rather
+    // than serialising after it, and awaited only where its result is consumed (the summary below).
+    const aiCrawlPromise = checkAiCrawlability(root).catch(() => null);
 
     // Applied at link-collection time, so an ignored URL is neither crawled nor counted as a
     // broken target. Filtering only at the reporting end would still spend crawl budget on it.
@@ -225,7 +244,7 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
       else if (r.httpStatus >= 300) issues.push("redirect");
       if (r.loadMs > 3000) issues.push("slow_response");
       if (r.ex) {
-        const { title, metaDesc, robots, canonical, h1Count, imagesNoAlt, wordCount } = r.ex;
+        const { title, metaDesc, robots, canonical, h1Count, imagesNoAlt, wordCount, spaMarker, hasLargeScript, hrefs } = r.ex;
         if (!title) issues.push("title_missing");
         else {
           if (title.length > 65) issues.push("title_too_long");
@@ -233,8 +252,21 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
         }
         if (!metaDesc) issues.push("description_missing");
         else if (metaDesc.length > 165) issues.push("description_too_long");
-        if (h1Count === 0) issues.push("h1_missing");
-        if (h1Count > 1) issues.push("h1_multiple");
+        // Client-side render detection — three signals together, never one. A near-empty text body
+        // with no navigation links AND a SPA marker or large bundle is the shape of an unrendered JS
+        // app shell, not a thin static page. Requiring all three keeps false positives off the many
+        // static sites that happen to ship analytics scripts or a small framework bootstrapper.
+        const jsRendered = wordCount < 30 && hrefs.length <= 1 && (spaMarker || hasLargeScript);
+        if (jsRendered) {
+          issues.push("js_rendered");
+        } else {
+          // h1_missing and thin_content are suppressed on a JS-rendered shell because they describe
+          // the (empty) raw HTML, not the rendered DOM — flagging them would send the user to "fix"
+          // content that exists, just not in the bytes the crawler received.
+          if (h1Count === 0) issues.push("h1_missing");
+          if (h1Count > 1) issues.push("h1_multiple");
+          if (wordCount < 150) issues.push("thin_content");
+        }
         if (/noindex/.test(robots)) issues.push("noindex");
         if (canonical) {
           try {
@@ -243,7 +275,6 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
             if (c.href.replace(/\/$/, "") !== here.href.replace(/\/$/, "")) issues.push("canonical_mismatch");
           } catch { /* malformed canonical — ignore */ }
         }
-        if (wordCount < 150) issues.push("thin_content");
         if (imagesNoAlt > 0) issues.push("images_no_alt");
         for (const target of new Set(r.internalTargets ?? [])) {
           const st = statusOf.get(target);
@@ -280,6 +311,10 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
     }
 
     const pagesWithIssues = rows.filter(r => r.issues).length;
+    // Awaited here, at the only point its result is used: the summary. By now the crawl has run
+    // its course, so a slow robots/llms fetch (or one that already resolved) costs no extra latency.
+    // The catch above already nulls a failed check, so a network error here never fails the audit.
+    const aiCrawlability = await aiCrawlPromise;
     await prisma.siteAudit.update({
       where: { id: auditId },
       data: {
@@ -292,6 +327,9 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
           healthScore: rows.length ? Math.round(100 * (1 - pagesWithIssues / rows.length)) : 0,
           issues: issueTotals,
           avgLoadMs: rows.length ? Math.round(rows.reduce((s, r) => s + r.loadMs, 0) / rows.length) : 0,
+          // Site-wide (not per-page), so it lives in the summary rather than as a row issue. Old
+          // audits predating this field simply have no key, and the UI renders nothing for them.
+          ...(aiCrawlability ? { aiCrawlability } : {}),
         }),
       },
     });

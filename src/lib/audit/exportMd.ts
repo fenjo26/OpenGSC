@@ -22,6 +22,27 @@ export interface AuditSummary {
   [k: string]: unknown;
 }
 
+// Mirrors AiCrawlReport in aiCrawl.ts. Duplicated as a local interface (not imported) because this
+// module is pure data shaping with no runtime dependency on the crawler — the summary arrives as a
+// parsed JSON object over the API boundary, and a structural interface is all that's needed.
+export interface AiCrawlSummary {
+  robots: { status: "ok" | "missing" | "failed"; present: boolean };
+  llmsTxt: { status: "ok" | "missing" | "failed"; present: boolean };
+  bots: { token: string; engine: string; status: "allowed" | "blocked" | "unknown" }[];
+  blockedCount: number;
+  total: number;
+}
+
+export interface AiCrawlLabels {
+  title: string;
+  blocked: string;
+  allowed: string;
+  unknown: string;
+  robotsMissing: string;
+  robotsFailed: string;
+  llmsMissing: string;
+}
+
 export interface AuditMeta {
   siteUrl?: string; startedAt?: string; finishedAt?: string | null;
   pagesCrawled?: number; maxPages?: number; summary?: AuditSummary | null;
@@ -57,6 +78,7 @@ function detailFor(code: string, p: AuditPage): string {
     case "images_no_alt": return `${p.imagesNoAlt ?? 0} images`;
     case "slow_response": return `${p.loadMs ?? 0} ms`;
     case "broken_links": return `${(p.brokenLinks ?? []).length} links`;
+    case "js_rendered": return "client-rendered";
     default: return "";
   }
 }
@@ -65,6 +87,7 @@ export function buildAuditMarkdown(
   meta: AuditMeta,
   pages: AuditPage[],
   labelFor: (code: string) => string,
+  aiLabels?: AiCrawlLabels,
 ): string {
   const host = (() => { try { return new URL(meta.siteUrl || "").host; } catch { return meta.siteUrl || "site"; } })();
   const out: string[] = [];
@@ -74,6 +97,24 @@ export function buildAuditMarkdown(
   if (meta.finishedAt) out.push(`- Finished: ${new Date(meta.finishedAt).toISOString().replace("T", " ").slice(0, 16)}`);
   if (meta.summary?.healthScore != null) out.push(`- Health score: ${meta.summary.healthScore}/100`);
   out.push("");
+
+  // AI Crawlability — site-wide section, emitted before the page-level issues so a reader skimming
+  // the top of the report sees the "are we even crawlable by AI?" verdict first. Only rendered when
+  // the audit actually ran the check (older audits have no key) and labels were supplied.
+  const ai = meta.summary?.aiCrawlability as AiCrawlSummary | undefined;
+  if (ai && aiLabels) {
+    out.push(`## ${aiLabels.title}`, "");
+    out.push(`- robots.txt: ${ai.robots.present ? "present" : ai.robots.status === "failed" ? aiLabels.robotsFailed : aiLabels.robotsMissing}`);
+    out.push(`- /llms.txt: ${ai.llmsTxt.present ? "present" : aiLabels.llmsMissing}`);
+    out.push(`- Blocked AI crawlers: ${ai.blockedCount} of ${ai.total}`, "");
+    out.push("| Engine | Token | Status |", "|---|---|---|");
+    for (const b of ai.bots) {
+      const status = b.status === "blocked" ? aiLabels.blocked : b.status === "allowed" ? aiLabels.allowed : aiLabels.unknown;
+      out.push(`| ${esc(b.engine)} | \`${b.token}\` | ${status} |`);
+    }
+    out.push("");
+  }
+
 
   // Group pages by issue code, preserving crawl order within each group.
   const byIssue = new Map<string, AuditPage[]>();

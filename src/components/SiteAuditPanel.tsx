@@ -28,9 +28,93 @@ const ISSUE_LABEL_KEYS: Record<string, string> = {
   images_no_alt: "auditIssueImagesNoAlt",
   broken_links: "auditIssueBrokenLinks",
   slow_response: "auditIssueSlowResponse",
+  js_rendered: "auditIssueJsRendered",
 };
 
 const SEVERE = new Set(["http_error", "fetch_failed", "broken_links", "noindex"]);
+// Info-level issues are not faults to fix but limits of this crawler — flagging them red/orange
+// alongside real problems would send a user to "repair" a JS-rendered page that isn't broken.
+// js_rendered is informational: "we can't audit the rendered DOM", not "your page is wrong".
+const INFO = new Set(["js_rendered"]);
+
+// ─── AI Crawlability card ─────────────────────────────────────────────────────
+// Site-wide (robots.txt + /llms.txt), so it is its own card rather than an entry in the per-page
+// issue chip row. Renders only when summary.aiCrawlability is present: audits run before this
+// check shipped have no key and must not render a half-empty card.
+
+interface AiCrawlBot { token: string; engine: string; status: "allowed" | "blocked" | "unknown" }
+interface AiCrawlSummary {
+  robots: { status: "ok" | "missing" | "failed"; present: boolean };
+  llmsTxt: { status: "ok" | "missing" | "failed"; present: boolean };
+  bots: AiCrawlBot[];
+  blockedCount: number;
+  total: number;
+}
+
+// Inline bádgе: same visual vocabulary as SiteHealthPanel's StatusBadge (green/amber/red pill),
+// kept local because the audit panel does not import that component.
+function AiBadge({ status, label }: { status: AiCrawlBot["status"]; label: string }) {
+  const color = status === "allowed" ? "#34c759" : status === "blocked" ? "#ff375f" : "var(--color-text-tertiary)";
+  const bg = status === "allowed" ? "rgba(52,199,89,0.12)" : status === "blocked" ? "rgba(255,55,95,0.12)" : "var(--color-border-soft)";
+  const mark = status === "allowed" ? "✓" : status === "blocked" ? "✗" : "?";
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "2px 8px", borderRadius: "var(--radius-pill)", fontSize: "11px", fontWeight: 600, color, background: bg, whiteSpace: "nowrap" }}>
+      {mark} {label}
+    </span>
+  );
+}
+
+// The translation function's key type is the dictionary's keyof — same shape useLanguage exposes.
+// Typed locally (not imported) so this card stays a self-contained block.
+function AiCrawlabilityCard({ data, t }: { data: AiCrawlSummary; t: (k: string) => string }) {
+  // File-level badges: present/missing/failed. Missing robots = all allowed per spec (neutral, not
+  // red); failed = we couldn't read it (amber, genuinely uncertain). llms.txt missing is the norm,
+  // never an error.
+  const fileBadge = (status: AiCrawlSummary["robots"]["status"], present: boolean, presentLabel: string, missingLabel: string) =>
+    present ? <AiBadge status="allowed" label={presentLabel} />
+    : status === "failed" ? <AiBadge status="unknown" label={t("auditAiFailed")} />
+    : <AiBadge status="unknown" label={missingLabel} />;
+
+  return (
+    <div className="panel" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", flexWrap: "wrap" }}>
+        <div>
+          <div style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)" }}>{t("auditAiTitle")}</div>
+          <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginTop: "2px" }}>{t("auditAiSub")}</div>
+        </div>
+        <div style={{ fontSize: "12px", fontWeight: 600, color: data.blockedCount > 0 ? "#ff375f" : "#34c759" }}>
+          {t("auditAiBlockedCount").replace("{n}", String(data.blockedCount)).replace("{m}", String(data.total))}
+        </div>
+      </div>
+
+      {/* Files row */}
+      <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", alignItems: "center" }}>
+        <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--color-text-secondary)" }}>
+          robots.txt
+          {fileBadge(data.robots.status, data.robots.present, t("auditAiRobotsPresent"), t("auditAiRobotsMissing"))}
+        </div>
+        <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--color-text-secondary)" }}>
+          /llms.txt
+          {fileBadge(data.llmsTxt.status, data.llmsTxt.present, t("auditAiLlmsPresent"), t("auditAiLlmsMissing"))}
+        </div>
+      </div>
+
+      {/* Bots: one row per engine, engine name + token + status badge */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "8px" }}>
+        {data.bots.map(b => (
+          <div key={b.token} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", padding: "8px 12px", borderRadius: "var(--radius-md)", background: "var(--color-bg)", border: "1px solid var(--color-border)" }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.engine}</div>
+              <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", fontFamily: "monospace" }}>{b.token}</div>
+            </div>
+            <AiBadge status={b.status} label={b.status === "allowed" ? t("auditAiAllowed") : b.status === "blocked" ? t("auditAiBlocked") : t("auditAiUnknown")} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 
 export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
   const { t } = useLanguage();
@@ -121,7 +205,18 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
     setExporting(true);
     try {
       const d = await fetch(withShare(`/api/audit/${id}`)).then(r => r.json());
-      const md = buildAuditMarkdown(d.audit ?? {}, d.pages ?? [], code => t((ISSUE_LABEL_KEYS[code] ?? code) as never) || code);
+      const md = buildAuditMarkdown(
+        d.audit ?? {}, d.pages ?? [],
+        code => t((ISSUE_LABEL_KEYS[code] ?? code) as never) || code,
+        // Passed only so the AI Crawlability section renders in the report's language. The section
+        // is conditional on this object, so an audit without aiCrawlability still exports cleanly.
+        {
+          title: t("auditAiTitle"),
+          blocked: t("auditAiBlocked"), allowed: t("auditAiAllowed"), unknown: t("auditAiUnknown"),
+          robotsMissing: t("auditAiRobotsMissing"), robotsFailed: t("auditAiFailed"),
+          llmsMissing: t("auditAiLlmsMissing"),
+        },
+      );
       const host = (() => { try { return new URL(d.audit?.siteUrl || "").host; } catch { return "site"; } })();
       const day = new Date(d.audit?.finishedAt ?? Date.now()).toISOString().slice(0, 10);
       downloadFile(md, `audit-${host}-${day}.md`, "text/markdown;charset=utf-8");
@@ -141,7 +236,7 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
   return (
     // Padding and a max width to match the sibling tabs (Health, Clarity). Without them the audit
     // table ran edge to edge on a wide monitor, which is what made this tab look unfinished.
-    <div style={{ padding: "28px 32px", maxWidth: "1400px", margin: "0 auto", width: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: "16px" }}>
+    <div style={{ padding: "28px var(--page-padding)", maxWidth: "var(--page-max-width)", margin: "0 auto", width: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: "16px" }}>
       {/* Launcher */}
       <div className="panel" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
@@ -212,6 +307,12 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
             </div>
           </div>
 
+          {/* AI Crawlability — site-wide check, separate from the per-page issue chips below */}
+          {/* t is cast to a plain string-key signature here: the card's keys are known-good literals,
+              and widening at this single point keeps the card's own type honest without importing
+              the dictionary's keyof union. */}
+          {summary.aiCrawlability && <AiCrawlabilityCard data={summary.aiCrawlability} t={t as (k: string) => string} />}
+
           {/* Issue chips */}
           <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
             {Object.entries(summary.issues as Record<string, number>).sort((a, b) => b[1] - a[1]).map(([code, count]) => (
@@ -220,7 +321,7 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
                   display: "inline-flex", alignItems: "center", gap: "6px", padding: "7px 12px", borderRadius: "8px", fontSize: "12px", fontWeight: 600, cursor: "pointer",
                   border: `1px solid ${issueFilter === code ? "var(--color-accent-blue)" : "var(--color-border)"}`,
                   background: issueFilter === code ? "rgba(59,130,246,0.12)" : "var(--color-card)",
-                  color: SEVERE.has(code) ? "#ff375f" : "var(--color-text-primary)",
+                  color: SEVERE.has(code) ? "#ff375f" : INFO.has(code) ? "#60a5fa" : "var(--color-text-primary)",
                 }}>
                 {t((ISSUE_LABEL_KEYS[code] ?? code) as any)} <span style={{ opacity: 0.7 }}>{count}</span>
               </button>
@@ -263,11 +364,17 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
                     <td style={{ padding: "8px 8px", color: p.loadMs > 3000 ? "#ff9f0a" : "var(--color-text-secondary)" }}>{p.loadMs}</td>
                     <td style={{ padding: "8px 14px" }}>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
-                        {p.issues.map((code: string) => (
-                          <span key={code} style={{ fontSize: "10px", padding: "2px 7px", borderRadius: "5px", background: SEVERE.has(code) ? "rgba(255,55,95,0.12)" : "rgba(255,159,10,0.12)", color: SEVERE.has(code) ? "#ff375f" : "#ff9f0a", fontWeight: 600 }}>
-                            {t((ISSUE_LABEL_KEYS[code] ?? code) as any)}
-                          </span>
-                        ))}
+                        {p.issues.map((code: string) => {
+                          // Info-level (js_rendered) gets the blue info tint so it reads as
+                          // "audit limit", not as an orange warning to act on.
+                          const isInfo = INFO.has(code);
+                          const isSevere = SEVERE.has(code);
+                          return (
+                            <span key={code} style={{ fontSize: "10px", padding: "2px 7px", borderRadius: "5px", background: isSevere ? "rgba(255,55,95,0.12)" : isInfo ? "rgba(96,165,250,0.12)" : "rgba(255,159,10,0.12)", color: isSevere ? "#ff375f" : isInfo ? "#60a5fa" : "#ff9f0a", fontWeight: 600 }}>
+                              {t((ISSUE_LABEL_KEYS[code] ?? code) as any)}
+                            </span>
+                          );
+                        })}
                       </div>
                     </td>
                   </tr>
