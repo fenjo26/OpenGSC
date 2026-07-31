@@ -7,6 +7,82 @@ All notable changes to OpenGSC. Dates are release dates; the version shown in
 
 ### Added
 
+**AI Crawlability check (Site Audit)**
+
+A site-wide companion to the page-level audit that answers the one question GEO Audit and the
+AEO Tracker can observe but never explain: *why* is an AI engine not crawling/citing the site.
+Runs automatically with every audit (no separate button) and reports, per AI crawler
+(GPTBot, OAI-SearchBot, PerplexityBot, ClaudeBot, Google-Extended, CCBot, Bytespider), whether
+the bot is allowed/blocked/unknown under a root `Disallow: /` in `robots.txt`, plus whether
+`/llms.txt` exists. A root block on GPTBot is a silent reason ChatGPT never cites the site;
+this surfaces it as a fixable lever. Stored in the audit summary's `aiCrawlability` key
+(free-form JSON, no migration). `src/lib/audit/aiCrawl.ts`.
+
+**JS-rendered page detection (Site Audit)**
+
+New `js_rendered` issue: flags pages whose raw HTML is a near-empty JS app shell (low text +
+≤1 internal link + a SPA marker / large bundled script). On such pages `thin_content` and
+`h1_missing` are suppressed — they describe the empty shell, not the rendered DOM, and would
+send a user to fix content that exists. The flag is informational (blue), not a fault. Keeps
+the audit dependency-free (detection via HTML signals, no headless browser).
+
+**Demand — growth sort & rising filter**
+
+The 12-month trend sparkline is now a selection criterion, not just decoration. A sort toggle
+(Volume / Growth) and a "Rising only" checkbox surface growing markets that volume-sort would
+bury — a niche growing +300% no longer ranks below a stagnant high-volume one. Growth is
+last-3-months vs previous-3-months (smooths one-off spikes).
+
+**Global Privacy Blur**
+
+The Privacy Blur toggle now reaches the components it used to silently skip
+(KeywordCannibalization, StrikingDistanceKeywords, ContentDecayMap, DemandDomain,
+BacklinkProfile, demand/links pages). Driven by a CSS class (`.privacy-sensitive` /
+`.privacy-blur-all`) gated on a `data-privacy` attribute on `<html>`, so new tools opt in by
+adding a class to their table — one toggle, no per-component React subscription.
+
+**Global Layout toggle (Wide/Default)**
+
+The Wide/Default layout toggle now actually works on the dashboards it used to ignore
+(main dashboard, SEO Tools, Indexer, Site Audit). Previously each set its own hardcoded
+`maxWidth` (1600px / 1280px / 1400px) that overrode the toggle. Now all read
+`--page-max-width` / `--page-padding` CSS variables that the toggle sets on `:root`.
+
+### Changed
+
+**Backlinks liveness — retry & "blocked" status**
+
+`check-alive` was a single fetch: a 5xx blip or a Cloudflare WAF 403 marked a live link dead.
+Now retries transient failures (429/408/5xx/network) up to 3× with backoff, and a 401/403/429
+hiding the page is recorded as a separate `blocked` status (not dead). `isAlive` maps
+blocked → null (unknown) for back-compat. New `aliveStatus` column on `Backlink`
+(`prisma db push` to apply).
+
+**Core Web Vitals — INP replaces FID**
+
+FID (First Input Delay) was retired as a Core Web Vital in March 2024. The health check now
+pulls `interaction-to-next-paint` (INP) instead of the deprecated `max-potential-fid` audit,
+with the INP "good" threshold (≤200ms). Existing snapshots still render; a fresh check
+populates INP.
+
+**Site dashboard i18n — ~60 hardcoded strings localized**
+
+The site detail page (`/site/[id]`) had ~60 user-facing strings hardcoded in English (plus two
+Russian strings leaking into all locales): period labels, dimension/filter names, operation
+types, status messages, country names. All now run through `t()`; country names use
+`Intl.DisplayNames` so ~80 names translate without per-country keys. Also fixed a real bug: a
+loop variable `t` in `ClusterTable` shadowed the translation function, so its tab labels never
+translated.
+
+**Removed: dead `Sidebar.tsx`**
+
+The `Sidebar` component was an orphan — imported nowhere, rendered nowhere, its toggles
+(Privacy/Dark/Layout) were non-functional local-state copies of the real ones in
+`DashboardShell`. Deleted to remove the confusion (it looked broken but was simply never
+mounted).
+
+### Added
+
 **Demand — a new tool** (`/seo-tools/demand`)
 
 Keyword discovery, which is the one thing Search Console structurally cannot do: every other

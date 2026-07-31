@@ -143,7 +143,7 @@ Underneath it sits a **second source** with a different job. The tracker asks *y
 
 ### Backlinks Checker
 
-A curated backlink inventory per site with liveness checks (is the link still there?) and indexed-status checks via XML River, rolled up into total / alive / dead / indexed counts.
+A curated backlink inventory per site with liveness checks (is the link still there?) and indexed-status checks via XML River, rolled up into total / alive / dead / blocked / indexed counts. Liveness checks retry transient failures (5xx, rate limits, network drops) and distinguish a genuinely dead link from one a WAF/bot-protection layer refused to answer — so a Cloudflare 403 no longer reads as a dead backlink.
 
 ### Keyword Weights, Backlinks & Competitors
 
@@ -180,7 +180,7 @@ One panel per site combining SSL certificate inspection (expiry, issuer, grade),
 
 ### Site Audit — Built-in Crawler
 
-A free technical audit with **zero external APIs**: OpenGSC crawls your site from your own VPS (up to 500 pages, BFS from the root) and reports broken internal links, missing/too-long/duplicate titles, missing meta descriptions, H1 problems, `noindex` pages, canonical mismatches, thin content, images without alt, and slow responses — rolled up into a health score with a filterable per-page table. Runs as a background job in the site's **Audit** tab; results are kept as audit history.
+A free technical audit with **zero external APIs**: OpenGSC crawls your site from your own VPS (up to 500 pages, BFS from the root) and reports broken internal links, missing/too-long/duplicate titles, missing meta descriptions, H1 problems, `noindex` pages, canonical mismatches, thin content, images without alt, slow responses, and client-rendered (JS) pages where static-HTML signals can't be trusted — rolled up into a health score with a filterable per-page table. Each audit also runs an **AI Crawlability** check: whether AI crawlers (GPTBot, ClaudeBot, PerplexityBot, OAI-SearchBot, Google-Extended, CCBot, Bytespider) are blocked in your `robots.txt`, and whether `/llms.txt` exists — a root `Disallow` on GPTBot is a silent reason an answer engine never cites you, surfaced here as a fixable diagnosis rather than just the symptom. Runs as a background job in the site's **Audit** tab; results are kept as audit history and exportable as Markdown.
 
 ### Alerts & Digests — Telegram Notifications
 

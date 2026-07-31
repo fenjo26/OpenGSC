@@ -450,6 +450,21 @@ broken internal links (a link is "broken" if its target was crawled and returned
 duplicate titles. Results land in `SiteAuditPage` rows plus a JSON summary (issue counts +
 health score) on `SiteAudit`.
 
+Two checks ride along on every audit but live outside the per-page issue model, because they
+are site-wide rather than per-page:
+
+- **AI Crawlability** (`src/lib/audit/aiCrawl.ts`) — fetches `/robots.txt` and `/llms.txt` once
+  and reports, per AI crawler (GPTBot, ClaudeBot, PerplexityBot, OAI-SearchBot, Google-Extended,
+  CCBot, Bytespider), whether the bot is allowed/blocked/unknown under a root `Disallow: /`. A
+  root block on GPTBot is a silent reason an answer engine never cites the site; this surfaces it
+  as a fixable lever rather than just the GEO/AEO symptom ("not cited"). Stored in the audit
+  summary's `aiCrawlability` key (free-form JSON, no migration) and rendered as its own card.
+- **`js_rendered` issue** — a page is flagged when the raw HTML is a near-empty JS app shell
+  (low text word count + ≤1 internal link + a SPA marker like `id="root"`/`__next__` or a large
+  bundled script). On such pages the static-HTML signals `thin_content` and `h1_missing` are
+  suppressed, because they describe the empty shell, not the rendered DOM — flagging them would
+  send a user to fix content that exists. The flag is informational (blue), not a fault.
+
 Runs as the same fire-and-forget job pattern as `SeoJob` (§1): `POST /api/audit` creates the
 row and calls `runAudit()` without awaiting; the client polls `GET /api/audit?siteId=`, and
 rows stuck `running` for >30 min are auto-failed on the next list read. One running audit per
