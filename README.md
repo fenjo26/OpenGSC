@@ -67,6 +67,7 @@ On top of that dashboard, OpenGSC ships two things most GSC tools don't: a full 
   - [AEO Tracker — AI Answer Engine Visibility](#aeo-tracker--ai-answer-engine-visibility)
   - [Backlinks Checker](#backlinks-checker)
   - [Keyword Weights, Backlinks & Competitors](#keyword-weights-backlinks--competitors)
+  - [Demand — Keyword Research & Domain Overview](#demand--keyword-research--domain-overview)
   - [Site Health Checks](#site-health-checks)
   - [Indexing Status Tools](#indexing-status-tools)
 - [🧠 AI SEO Content Suite (`/seo-tools`)](#-ai-seo-content-suite-seo-tools)
@@ -138,6 +139,8 @@ Track keyword rankings (country/language/device-aware) via your configured SERP 
 
 "Answer Engine Optimization": tracks whether **your site gets cited when real questions are asked to AI assistants** — ChatGPT and Perplexity via live web-search citation matching, Claude and Grok via brand-mention detection — building a per-engine, per-question cited/not-cited history over time. Needs the API key(s) of whichever engines you want to track.
 
+Underneath it sits a **second source** with a different job. The tracker asks *your* questions live on *your* keys today; **Brand visibility** reads DataForSEO's index of what models have actually been answering — including questions you never thought to track. It shows how often the brand comes up, in which questions, which of your pages get cited, and **share of voice against up to 9 competitors**, which the live tracker structurally cannot produce because it only ever asks on your own behalf. Matching by domain finds answers that linked to you; matching by brand name finds answers that named you without a link. The index covers ChatGPT and Google AI Overview and refreshes roughly monthly, so the two panels are kept side by side and labelled rather than merged — a zero here is not evidence of invisibility to Claude.
+
 ### Backlinks Checker
 
 A curated backlink inventory per site with liveness checks (is the link still there?) and indexed-status checks via XML River, rolled up into total / alive / dead / indexed counts.
@@ -157,6 +160,19 @@ Search Console tells you how you are performing. It cannot tell you how much dem
 When you do use an API key, every button prices itself before you press it, Keyword Difficulty is an opt-in checkbox (it roughly doubles the cost per keyword), and a monthly unit cap is enforced server-side. Nothing ever fetches on page load.
 
 Setup and cost details: **[docs/METRICS-SETUP.md](docs/METRICS-SETUP.md)**.
+
+### Demand — Keyword Research & Domain Overview
+
+Every other screen in OpenGSC starts from queries you already appear for. **Demand** starts from the market, and it is the only place that can return a keyword Search Console has never heard of. It runs on the DataForSEO key you may already have configured for SERP — no new provider, no new subscription.
+
+- **By keyword** — a seed goes to DataForSEO Labs and comes back as what people actually search, with volume, difficulty, CPC, intent and a 12-month trend sparkline. Then every row is answered by *your* GSC history: **within reach** (top 30 — improve that page, the URL is in the row), **wrong page** (you appear but nothing wins — intent mismatch), **no content** (write it). Ahrefs knows the first half of each row and Search Console knows the second; this is the only screen that holds both.
+- **By domain** — type any domain and get its estimated organic traffic, keyword count, the distribution of those keywords across position bands, the terms actually bringing the traffic, and the pages carrying them. Works on domains you do not own — a competitor, a client you have not onboarded, a drop you are thinking of buying. Passing one of your sites adds a comparison column instead of being required.
+- **Three discovery modes, one billed call.** `related` finds semantic neighbours, `suggestions` the long tail containing your seed, `ideas` the same meaning in different words. **Auto** walks them in order and stops at the first source with enough terms — it does not merge all three, because each one is a separate charge and the overlap is mostly duplicates.
+- **Everything is cached and priced up front.** Searches are kept for 14 days and domain overviews for 7, so returning to a question you already paid for costs nothing. Every button shows its price before you press it, refined "clickstream" volumes are an opt-in checkbox that says it doubles the cost, and a monthly cap is enforced server-side.
+- **Discovered keywords land in the shared metric cache**, so weights appear in Striking Distance and Rank Tracker for free — nobody pays twice for the same number.
+- **Agents can use it too**: `get_keyword_demand` (free, reads what has been researched) and `research_keywords` (paid, gated behind `confirm: true`), plus a ready-made `keyword-research` skill in [`.agents/skills/`](.agents/skills/).
+
+Without a DataForSEO key the tab still opens and shows whatever is already stored — the same "nothing is required" rule the rest of the app follows.
 
 ### Site Health Checks
 
@@ -180,7 +196,7 @@ Share a site's dashboard with a client without giving them an account: **site �
 
 ### MCP Server — Connect AI Agents
 
-OpenGSC ships a built-in **MCP (Model Context Protocol) server** at `/api/mcp` with **34 tools**, so Claude Code, Claude Desktop, Cursor, Codex, or any MCP client can work with your SEO data directly: sites, search performance, striking-distance keywords, cannibalization, content decay, CTR benchmarks, content groups, rank tracking and history, AEO visibility, GEO audits, backlinks, Link Monitor mentions, site health, indexing status, audit results, GA4, Clarity, Bing/Yandex portfolios, the indexer network, fired alerts, digests, generation history, and arbitrary read-only SQL. Generate a token under **Settings → API & MCP**, then:
+OpenGSC ships a built-in **MCP (Model Context Protocol) server** at `/api/mcp` with **40 tools**, so Claude Code, Claude Desktop, Cursor, Codex, or any MCP client can work with your SEO data directly: sites, search performance, striking-distance keywords, cannibalization, content decay, CTR benchmarks, content groups, rank tracking and history, AEO visibility, GEO audits, backlinks, Link Monitor mentions, keyword demand and difficulty, competitor gaps, site health, indexing status, audit results, GA4, Clarity, Bing/Yandex portfolios, the indexer network, fired alerts, digests, generation history, and arbitrary read-only SQL. Generate a token under **Settings → API & MCP**, then:
 
 ```bash
 claude mcp add --transport http opengsc https://your-domain.com/api/mcp \
@@ -189,7 +205,7 @@ claude mcp add --transport http opengsc https://your-domain.com/api/mcp \
 
 Agents can also **optimize pages**, not just read about them. `get_optimization_brief` returns everything known about one URL in a single call — its queries, striking-distance keywords, CTR gaps, decay trend, cannibalization conflicts, audit issues and current content — the agent writes the new version itself, and `analyze_text` verifies it deterministically: uniqueness, heading-structure drift, and any number or brand that appears in the draft but not the source. No model is called for that check, so it costs nothing and always returns the same answer.
 
-Every tool declares what calling it costs, and `get_capabilities` reports the grouping: **local** (reads your database — free and instant, 27 of the 34), **quota** (calls Google on your own OAuth), **net** (fetches a page), and **paid** (spends your own AI credits). The two paid tools — the app's own Content Rewriter and the full article pipeline — refuse to run without an explicit `confirm: true`, so an agent exploring the registry can never bill you by accident. Both are asynchronous: they return a job id and save each finished page as it completes, so a client timeout or a server restart can never discard work you have already paid for.
+Every tool declares what calling it costs, and `get_capabilities` reports the grouping: **local** (reads your database — free and instant, 32 of the 40), **quota** (calls Google on your own OAuth), **net** (fetches a page), and **paid** (spends your own credits). The three paid tools — the app's own Content Rewriter, the full article pipeline, and keyword discovery — refuse to run without an explicit `confirm: true`, so an agent exploring the registry can never bill you by accident. The two AI ones are asynchronous: they return a job id and save each finished page as it completes, so a client timeout or a server restart can never discard work you have already paid for. Keyword discovery is synchronous because it does not need to be — it writes its result to the cache before returning, so an abandoned call still leaves a search that replays for free.
 
 The repo also ships ready-made **agent skills** in [`.agents/skills/`](.agents/skills/) (performance review, page optimization, link prospecting, AEO review, site triage) — copy them into your agent's skills folder for guided SEO workflows. Details: [`docs/MCP-SETUP.md`](docs/MCP-SETUP.md).
 

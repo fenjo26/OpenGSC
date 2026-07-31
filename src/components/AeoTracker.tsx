@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { usePrivacy } from "@/lib/PrivacyContext";
+import BrandVisibility from "@/components/BrandVisibility";
 
 const ENGINES = ["chatgpt", "perplexity", "claude", "grok"] as const;
 type Engine = typeof ENGINES[number];
@@ -428,6 +429,11 @@ export default function AeoTracker({ siteDbId }: { siteDbId: string; domain?: st
           </table>
         </div>
       )}
+
+      {/* Second source, deliberately below the live checks rather than merged into them. The
+          table above is today's answer to questions you chose; this is an index of what models
+          have been answering generally, including questions you never thought to track. */}
+      <BrandVisibility siteDbId={siteDbId} />
     </div>
   );
 }

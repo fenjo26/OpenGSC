@@ -12,13 +12,21 @@ grouping so an agent can see it before choosing:
 | **local** | Reads your instance's SQLite database | Free, instant — most tools |
 | **quota** | Calls a Google API on your own OAuth | Free, but spends Google's daily quota |
 | **net** | Fetches a third-party page over HTTP | Free |
-| **paid** | Spends **your own** AI credits | Refuses to run without `confirm: true` |
+| **paid** | Spends **your own** AI or DataForSEO credits | Refuses to run without `confirm: true` |
 
-The paid tier is two tools (`start_rewrite_job`, `start_generation_job`). Both refuse to run
-unless the agent passes `confirm: true`, and both point at the free path in their own
-descriptions — because an agent connected to OpenGSC is itself a language model, and paying a
-second one to write text the first could have written is money for nothing. See
-[Optimizing a page](#5-optimizing-a-page) for the free workflow.
+The paid tier is three tools. `start_rewrite_job` and `start_generation_job` spend AI credits;
+`research_keywords` spends DataForSEO credits. All three refuse to run unless the agent passes
+`confirm: true`, and all three name the free alternative in their own descriptions — because an
+agent connected to OpenGSC is itself a language model, and paying a second one to write text the
+first could have written is money for nothing. See [Optimizing a page](#5-optimizing-a-page) for
+the free workflow.
+
+The two AI tools are asynchronous and `research_keywords` is not, which is a difference worth
+understanding rather than an inconsistency. Asynchrony exists to stop a client timeout from
+destroying paid work; a rewrite that finishes after the caller has gone is written nowhere.
+Keyword discovery does not have that failure mode, because the result is stored before the tool
+returns — an abandoned call still leaves the search in the cache, where the next call and the
+web UI both read it for free.
 
 ## 1. Generate a token
 
@@ -118,6 +126,21 @@ should I do first?”*
 | `get_geo_audits` | Stored GEO audit reports: who AI search cites for a query |
 | `get_backlinks` | The site's own backlink inventory with liveness/index status |
 | `get_link_mentions` | Competitor backlinks (Link Monitor) + multi-linker domains |
+
+### Market data — demand, difficulty, competitors
+
+Everything Search Console cannot see: how much demand exists, how hard a keyword is, and who is
+winning it. The cached tools read data a human already paid for; only `research_keywords` can
+create new data, and it is the one that costs money.
+
+| Tool | Tier | Returns |
+|---|---|---|
+| `get_keyword_demand` | local | **Start here.** Keyword research already stored, joined against the site's own GSC positions — each row verdicted as reach / wrong_page / none. With no seed, lists what has been researched |
+| `get_keyword_metrics` | local | Volume, difficulty and CPC for specific keywords from the metric cache. Missing ≠ zero volume |
+| `get_competitor_gap` | local | Competitors' keywords joined against your GSC data, bucketed close / weak / missing |
+| `get_domain_metrics` | local | Referring domains, backlinks, estimated traffic for any domain in the cache |
+| `get_backlink_profile` | local | A site's referring domains, live and lost, with stored history |
+| `research_keywords` | **paid** | Discovers a market from one seed via DataForSEO and verdicts every row against your GSC. ~$0.03 per call at 150 rows. Check `get_keyword_demand` first — a seed researched in the last 14 days is free |
 
 ### Health, indexing and infrastructure (local)
 

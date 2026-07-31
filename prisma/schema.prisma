@@ -811,3 +811,27 @@ model ApiUsage {
 
   @@id([userId, provider, month])
 }
+
+// ─── Demand ───────────────────────────────────────────────────────────────────
+// One keyword-discovery search, cached whole. Unlike KeywordMetricCache — which answers "what
+// is this keyword worth" and is shared by every feature — this answers "what did this seed
+// return", a question only the Demand tab asks. Storing the result set as JSON rather than as
+// rows is deliberate: it is never queried by keyword, only replayed intact, and the seed→results
+// mapping is what re-running a search would otherwise have to pay for again.
+//
+// `cacheKey` folds in every parameter that changes the result (seed, country, language, mode,
+// limit, clickstream), because two searches that differ in any of them are different purchases.
+model DemandSearch {
+  userId    String
+  cacheKey  String
+  seed      String
+  country   String   @default("us")
+  language  String   @default("en")
+  mode      String   @default("auto") // auto | related | suggestions | ideas
+  source    String   @default("")     // where the rows actually came from, incl. google_ads
+  rows      String                    // JSON: DemandRow[]
+  createdAt DateTime @default(now())
+
+  @@id([userId, cacheKey])
+  @@index([userId, createdAt])
+}

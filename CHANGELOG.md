@@ -3,6 +3,63 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
+## [Unreleased]
+
+### Added
+
+**Demand — a new tab** (`/demand`)
+
+Keyword discovery, which is the one thing Search Console structurally cannot do: every other
+screen starts from queries the site already appears for, and this one starts from the market.
+
+- **By keyword** — a seed goes to DataForSEO Labs and returns volume, difficulty, CPC, intent
+  and a 12-month trend, then every row is verdicted against the site's own GSC history: *within
+  reach* (top 30 — improve that page), *wrong page* (impressions but nothing winning), *no
+  content* (write it). The join reuses the logic already proven in the Competitors screen.
+- **By domain** — estimated organic traffic, keyword count, position-band distribution, ranking
+  keywords ordered by the traffic they bring, and the pages carrying them. Works on any domain,
+  not only a connected one; comparing against one of your sites is optional.
+- **Three discovery modes** (`related` / `suggestions` / `ideas`) plus `auto`, which walks them
+  in order and stops at the first source with enough terms rather than merging all three —
+  each source is a separate charge and the overlap is mostly duplicates.
+- **Google Ads fallback** for the ~120 countries DataForSEO Labs does not cover. Those rows
+  carry no difficulty and no intent, and the UI says so rather than rendering empty columns.
+- Runs on the **existing** `seoKey_dataforseo` credential — no new provider to configure.
+  Without it the tab still shows whatever is already stored.
+- Searches cached 14 days, domain overviews 7. Prices shown before the click, monthly cap
+  enforced server-side, clickstream refinement opt-in and labelled with its 2× cost.
+- Discovered keywords are written to the shared `KeywordMetricCache`, so weights appear in
+  Striking Distance and Rank Tracker without paying twice for the same number.
+
+**Brand visibility in AI answers** — a second source inside the AEO Tracker
+
+- A panel under the live citation table, reading DataForSEO's LLM Mentions index: how often the
+  brand comes up in AI answers, in which questions, and which of its pages get cited.
+- **Share of voice** against up to 9 competitors in one call — the number the live tracker
+  structurally cannot produce, because it only ever asks on your own behalf and has no way to
+  know how often a competitor was named instead.
+- Matching by **domain** (answers that linked to you) or by **brand name** (answers that named
+  you without linking) is an explicit choice, since the two return different numbers.
+- Kept as a separate panel rather than merged into the table above. The table is a live check on
+  your own keys, today, for questions you chose; this is an index refreshed roughly monthly,
+  covering questions you never thought to track. It also covers ChatGPT and Google AI Overview
+  only — Claude and Grok exist in the live tracker alone, and a zero here is not evidence of
+  invisibility there.
+- Cached 7 days, priced before the click, same monthly cap as the rest of the DataForSEO surface.
+
+**MCP** — two tools, bringing the registry to 40
+
+- `get_keyword_demand` (local, free) — stored research joined against GSC positions; with no
+  seed, an index of what has already been researched.
+- `research_keywords` (**paid**) — discovery from a seed, gated behind `confirm: true`. The
+  third paid tool and the only synchronous one: its result is written to the cache before the
+  tool returns, so an abandoned call still leaves a search that replays for free.
+- New agent skill `keyword-research` in `.agents/skills/`.
+
+### Database
+
+- New model `DemandSearch` (search cache). Run `npx prisma db push` after updating.
+
 ## [1.1.0] — 2026-07-30
 
 The headline is a new **metrics layer**: search volume, keyword difficulty, backlink profiles
