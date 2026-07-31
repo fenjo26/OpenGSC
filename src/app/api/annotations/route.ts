@@ -27,13 +27,27 @@ const iso = (d: Date) => d.toISOString().split("T")[0];
 const addDays = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 
 /** Per-day totals for a window. Position is impression-weighted — a plain average would let a
- *  one-impression query at rank 90 count as much as a 10 000-impression query at rank 3. */
+ *  one-impression query at rank 90 count as much as a 10 000-impression query at rank 3.
+ *
+ *  CRITICAL — which rows to sum depends on scope, and getting it wrong double-counts. DailyMetric
+ *  holds THREE shapes of rows per day: a site-level aggregate (url='', query=''), per-page rows
+ *  (real url, query='') and per-query rows (real url, real query). Summing all of them — which a
+ *  bare `WHERE siteId` does — counts the same clicks two or three times. Every other GSC reader in
+ *  this codebase filters this (gsc/decay: "Exclude the site-level aggregate row", gsc/ctr,
+ *  gsc/cannibalization, gsc/striking all drop url=''). Annotations must do the same:
+ *    • all-pages note (urls=[]) → use ONLY the aggregate row (url='' AND query=''), so the day total
+ *      matches what Search Console shows for the whole site, with no per-page duplication.
+ *    • page-scoped note (urls=[...]) → use ONLY the per-page rows for those urls (query='' rows),
+ *      which the IN(...) filter already selects; the extra AND query='' guards against any
+ *      per-query detail rows those pages may also carry being summed on top. */
 async function dailySeries(siteId: string, from: Date, to: Date, urls: string[]): Promise<DayRow[]> {
   const params: unknown[] = [siteId, from, to];
   let urlFilter = "";
   if (urls.length) {
-    urlFilter = ` AND "url" IN (${urls.map(() => "?").join(",")})`;
+    urlFilter = ` AND "url" IN (${urls.map(() => "?").join(",")}) AND "query" = ''`;
     params.push(...urls);
+  } else {
+    urlFilter = ` AND "url" = '' AND "query" = ''`;
   }
   const rows = await prisma.$queryRawUnsafe<{ day: string; clicks: bigint | number; impressions: bigint | number; posw: number | null }[]>(
     `SELECT ${DAY_EXPR} AS day,
