@@ -18,7 +18,7 @@ export default function SeoToolsLayout({ children }: { children: React.ReactNode
   const { t } = useLanguage();
 
   return (
-    <div style={{ padding: "28px 32px 60px", maxWidth: "1280px", margin: "0 auto", width: "100%", boxSizing: "border-box" }}>
+    <div style={{ padding: "28px var(--page-padding) 60px", maxWidth: "var(--page-max-width)", margin: "0 auto", width: "100%", boxSizing: "border-box" }}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", marginBottom: "6px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>

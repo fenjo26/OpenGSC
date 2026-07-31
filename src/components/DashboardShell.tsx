@@ -760,8 +760,9 @@ function TopBar() {
 const AUTH_PATHS = ["/login", "/share"];
 
 function Shell({ children }: { children: React.ReactNode }) {
-  const { layout } = useLayout();
-
+  // Shell no longer reads the layout context: page width is applied through CSS custom properties
+  // set on :root by LayoutProvider, not by re-rendering here. TopBar still subscribes to show the
+  // toggle's current state in the menu.
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
       <TopBar />
@@ -770,13 +771,13 @@ function Shell({ children }: { children: React.ReactNode }) {
       <main style={{
         flex: 1,
         overflow: "auto",
-        ...(layout === "default" ? {
-          maxWidth: "1280px",
-          margin: "0 auto",
-          width: "100%",
-          padding: "0 24px",
-        } : {}),
       }}>
+        {/*
+          No maxWidth/margin/padding here anymore. The Layout toggle now drives page width via CSS
+          custom properties (--page-max-width / --page-padding) on :root, read by .main-content and
+          the seo-tools/indexer layout wrappers. Centering pages here would have double-constrained
+          those containers; letting them own their geometry means one toggle reaches every page.
+        */}
         {children}
       </main>
     </div>

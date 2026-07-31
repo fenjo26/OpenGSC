@@ -56,6 +56,39 @@
   --shadow-card:    none;
   --shadow-product: 0 3px 40px 6px rgba(0, 0, 0, 0.60);
   --shadow-frosted: 0 1px 0 rgba(255, 255, 255, 0.04);
+
+  /* Page layout — driven by the Layout toggle (LayoutContext sets these on :root).
+     Defaults here = "wide" so the first paint (before the provider's effect runs) matches the
+     default app state and there is no flash of the narrower layout. */
+  --page-max-width: 100%;
+  --page-padding:   32px;
+}
+
+/* Privacy blur — off by default (no data-privacy attribute, or "off"). PrivacyContext flips
+   data-privacy to "on" on <html>, and only then does the rule below fire. Putting the class on a
+   container (table / wrapper div) and targeting the value-bearing leaves (td, a, .metric-value)
+   keeps the table structure, borders, zebra striping and action buttons sharp while obscuring just
+   the sensitive values — the same look the hand-written blurStyle sites use, but driven entirely
+   from CSS with no per-component React subscription. New tool = add .privacy-sensitive to its
+   table; the toggle handles the rest. */
+:root[data-privacy="on"] .privacy-sensitive td,
+:root[data-privacy="on"] .privacy-sensitive a,
+:root[data-privacy="on"] .privacy-sensitive .metric-value,
+:root[data-privacy="on"] .privacy-sensitive .metric-chip {
+  filter: blur(5px);
+  user-select: none;
+  transition: filter 0.25s ease;
+}
+
+/* For grid-div "tables" (cannibalization, striking, decay) there are no <td> elements — values
+   live in plain <div>s, so the leaf-targeting rule above wouldn't reach them. Marking the whole
+   rows-wrapper with .privacy-blur-all blurs the entire block. The structure softens slightly
+   alongside the values, which is an acceptable trade for these dense lists vs. tagging every
+   numeric div with a class by hand. */
+:root[data-privacy="on"] .privacy-blur-all {
+  filter: blur(5px);
+  user-select: none;
+  transition: filter 0.25s ease;
 }
 
 /* ── Light theme — Apple Design Language ───────────────────────────────────── */
@@ -154,11 +187,12 @@ button {
 
 /* Layout Utilities */
 .main-content {
-  padding: 28px 32px;
+  /* Vertical padding is fixed (28px top/bottom); horizontal follows the Layout toggle. */
+  padding: 28px var(--page-padding);
   display: flex;
   flex-direction: column;
   gap: 24px;
-  max-width: 1600px;
+  max-width: var(--page-max-width);
   margin: 0 auto;
   width: 100%;
 }
