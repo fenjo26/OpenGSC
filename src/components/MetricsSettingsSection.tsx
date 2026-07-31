@@ -11,13 +11,13 @@
 // already knowing the answer. Whether you hold an official subscription or bought credits from a
 // reseller is something you *do* know, so the screen asks that and derives the host itself.
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BarChart3, ExternalLink, FileUp } from "lucide-react";
 import Link from "next/link";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { SeoKeyCard, METRICS_PROVIDER_CARDS, METRICS_GATEWAY_URL } from "@/components/SeoToolsSettings";
 import {
-  getMetricsMode, setMetricsMode, RESELLER_BASE_URL,
+  getMetricsMode, setMetricsMode, metricsKeyStorage, RESELLER_BASE_URL,
   type MetricsMode,
 } from "@/lib/seo/metricsClient";
 import type { MetricsProvider } from "@/lib/seo/metrics";
@@ -76,7 +76,13 @@ export default function MetricsSettingsSection() {
     else localStorage.removeItem(`seoMetricsCap_${provider}`);
   };
 
-  const card = METRICS_PROVIDER_CARDS.find(c => c.id === provider)!;
+  // The card writes into the slot belonging to the *current mode*, not a shared cell. Remounting
+  // it on a mode change (via `key`) is what makes the field show that mode's key rather than
+  // keeping the previous one on screen.
+  const card = useMemo(() => {
+    const base = METRICS_PROVIDER_CARDS.find(c => c.id === provider)!;
+    return { ...base, storageKey: metricsKeyStorage(provider, mode) };
+  }, [provider, mode]);
 
   const modeOption = (m: MetricsMode, title: string, desc: string) => (
     <button key={m} onClick={() => chooseMode(m)} style={{
@@ -176,7 +182,7 @@ export default function MetricsSettingsSection() {
         {/* 3. The key itself */}
         <span className="tool-section-label">{t("metricsStep3")}</span>
         <div style={{ marginBottom: "6px" }}>
-          <SeoKeyCard provider={card} hideDocsLink />
+          <SeoKeyCard key={card.storageKey} provider={card} hideDocsLink />
         </div>
         {/* The destination, spelled out under the field.
             One key is stored per provider, not per mode — but an official key and a reseller
@@ -190,9 +196,7 @@ export default function MetricsSettingsSection() {
               : mode === "reseller" ? RESELLER_BASE_URL[provider]
               : (customUrl.trim() || OFFICIAL_HOST[provider])}
           </code>
-          {mode !== "official" && (
-            <span style={{ color: "var(--color-text-tertiary)" }}>· {t("metricsKeyPerMode")}</span>
-          )}
+          <span style={{ color: "var(--color-text-tertiary)" }}>· {t("metricsKeyPerMode")}</span>
         </div>
 
         {/* 4. Spending */}

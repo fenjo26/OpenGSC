@@ -2466,5 +2466,5 @@
   "metricsNoKeyPath": "No API key needed: upload an export from your browser subscription and every feature works the same way.",
   "ahrefsMovedDesc": "Keys, access mode and the spending cap now live in one place — SEO Metrics.",
   "metricsTarget": "Requests go to",
-  "metricsKeyPerMode": "an official key will not work on a gateway, and vice versa — replace it when you switch"
+  "metricsKeyPerMode": "each mode keeps its own key"
 }

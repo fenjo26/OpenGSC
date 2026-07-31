@@ -67,11 +67,14 @@ shows an em dash.
 
 ### Fixed
 
-- **Metrics settings were not backed up.** The API key matched the sync rules and survived a
-  restore, but the access mode and host did not — so a reseller key came back pointed at the
-  official API, with the mode silently showing "official" and every request failing 401. The
-  whole `seoMetrics*` group is now part of the snapshot, and a test asserts that any future
-  setting written by this layer is covered.
+- **One key cell was shared by every access mode.** A key typed under "Reseller" also appeared
+  under "Official API", because both wrote to the same storage slot — so switching modes kept a
+  key the new host would reject while the screen still read "Connected". Keys are now stored per
+  mode, with the official one keeping its historical name so existing installs are untouched and
+  a pre-existing gateway key still resolves.
+- **Metrics settings were not backed up.** The key matched the sync rules and survived a restore,
+  but the access mode and host did not, so they silently reverted to "official". The whole
+  `seoMetrics*` group is now part of the snapshot.
 - The metrics screen now shows the host a key will be sent to, directly under the field.
 - Assorted bug fixes across the app.
 

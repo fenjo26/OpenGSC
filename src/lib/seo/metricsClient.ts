@@ -64,12 +64,38 @@ export function setMetricsMode(provider: MetricsProvider, mode: MetricsMode, cus
   else localStorage.removeItem(key);
 }
 
+/**
+ * Where the key for one provider *and one mode* is stored.
+ *
+ * An official Ahrefs key and a reseller key are different strings that only work against their
+ * own host. Keeping a single cell per provider meant whatever you typed appeared under every
+ * mode — so switching modes silently kept a key the new host would reject, and the screen said
+ * "Connected" throughout.
+ *
+ * Official mode keeps the historical `seoKey_<provider>` name so existing installs keep working
+ * untouched. The other two get suffixed names under the same prefix, which is what makes them
+ * covered by the settings backup for free.
+ */
+export function metricsKeyStorage(provider: MetricsProvider, mode: MetricsMode): string {
+  return mode === "official" ? `seoKey_${provider}` : `seoKey_${provider}__${mode}`;
+}
+
+export function getMetricsApiKey(provider: MetricsProvider, mode?: MetricsMode): string {
+  if (typeof window === "undefined") return "";
+  const m = mode ?? getMetricsMode(provider);
+  const own = (localStorage.getItem(metricsKeyStorage(provider, m)) || "").trim();
+  if (own || m === "official") return own;
+  // Anyone who configured a gateway before the key was split by mode has it in the legacy cell.
+  // Falling back keeps them working; the first save in this mode moves it to its own slot.
+  return (localStorage.getItem(`seoKey_${provider}`) || "").trim();
+}
+
 export function getMetricsCreds(provider?: MetricsProvider): MetricsClientCreds {
   const p = provider ?? getMetricsProvider();
   if (typeof window === "undefined") return { provider: p, apiKey: "", baseUrl: "", cap: 0 };
   return {
     provider: p,
-    apiKey: (localStorage.getItem(`seoKey_${p}`) || "").trim(),
+    apiKey: getMetricsApiKey(p),
     // Empty means the official host. Written by setMetricsMode, never typed directly except in
     // custom mode — this stays the single source of truth for where requests go.
     baseUrl: (localStorage.getItem(`seoMetricsBaseUrl_${p}`) || "").trim(),
