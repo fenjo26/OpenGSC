@@ -4,25 +4,16 @@
 // between tools, but this page is the roomy entry point (tabs were getting too narrow).
 
 import Link from "next/link";
-import { FileText, Search, ScrollText, History, PenLine, Quote, Globe, LayoutTemplate, Link2, Boxes, SlidersHorizontal, Bot, RefreshCw, Fingerprint } from "lucide-react";
+import { SlidersHorizontal } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import { SEO_TOOLS } from "@/lib/seo/toolsNav";
 
+// Same order as the tab bar, because it is the same array. Settings is appended rather than
+// listed among the tools: it configures them, it is not one of them.
 const TILES = [
-  { href: "/seo-tools/cluster", key: "seoTabCluster", desc: "seoTileCluster", icon: Boxes, color: "#bf5af2" },
-  { href: "/seo-tools/outline", key: "seoTabOutline", desc: "seoTileOutline", icon: FileText, color: "#2997ff" },
-  { href: "/seo-tools/landing", key: "seoTabLanding", desc: "seoTileLanding", icon: LayoutTemplate, color: "#ff9f0a" },
-  { href: "/seo-tools/text", key: "seoTabText", desc: "seoTileText", icon: PenLine, color: "#34c759" },
-  { href: "/seo-tools/rewrite", key: "seoTabRewrite", desc: "seoTileRewrite", icon: RefreshCw, color: "#30d158" },
-  { href: "/seo-tools/humanize", key: "seoTabHumanize", desc: "seoTileHumanize", icon: Fingerprint, color: "#ff6482" },
-  { href: "/seo-tools/analysis", key: "seoTabAnalysis", desc: "seoTileAnalysis", icon: Search, color: "#10A37F" },
-  { href: "/seo-tools/googlebot", key: "seoTabGooglebot", desc: "seoTileGooglebot", icon: Bot, color: "#4285F4" },
-  { href: "/seo-tools/geo", key: "geoTabGeo", desc: "seoTileGeo", icon: Globe, color: "#5e5ce6" },
-  { href: "/seo-tools/citations", key: "seoTabCitations", desc: "seoTileCitations", icon: Quote, color: "#ff375f" },
-  { href: "/seo-tools/links", key: "seoTabLinks", desc: "seoTileLinks", icon: Link2, color: "#64d2ff" },
-  { href: "/seo-tools/policy", key: "seoTabPolicy", desc: "seoTilePolicy", icon: ScrollText, color: "#ffd60a" },
-  { href: "/seo-tools/history", key: "seoTabHistory", desc: "seoTileHistory", icon: History, color: "#8e8e93" },
+  ...SEO_TOOLS,
   { href: "/seo-tools/settings", key: "seoTabSettingsTile", desc: "seoTileSettings", icon: SlidersHorizontal, color: "#98989d" },
-] as const;
+];
 
 export default function SeoToolsIndex() {
   const { t } = useLanguage();

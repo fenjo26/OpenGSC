@@ -64,6 +64,13 @@ export default function KeywordWeightsBar({
           </span>
         )}
         {w.notice && <span style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>{w.notice}</span>}
+        {/* Shown when there is no key: the button is dead in that state, and pointing at the
+            free import here is more useful than a disabled control with a tooltip. */}
+        {!w.hasKey && (
+          <a href="/settings?tab=metrics" style={{ fontSize: "11px", color: "var(--color-accent-blue)", textDecoration: "none", whiteSpace: "nowrap" }}>
+            {t("importHintNearWeights")}
+          </a>
+        )}
         <button
           className="metric-action"
           onClick={() => w.load()}

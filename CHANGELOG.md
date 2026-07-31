@@ -34,7 +34,7 @@ shows an em dash.
   burnt drop is caught before you build on it.
 - **Lost-backlink alert** — fires when a referring domain above a DR threshold disappears. Reads
   stored rows only, never calls a provider. Off by default.
-- **CSV import** (`SEO Tools → Import metrics`) — the free path. Upload an Ahrefs/Semrush export
+- **CSV import** (`Settings → SEO Metrics`, and on each site's Settings tab) — the free path. Upload an Ahrefs/Semrush export
   and it fills the same cache the API does, so every feature above works with no key at all. The
   report type is detected from the column headers.
 - **Four MCP tools** — `get_keyword_metrics`, `get_domain_metrics`, `get_backlink_profile`,
@@ -76,6 +76,13 @@ shows an em dash.
   but the access mode and host did not, so they silently reverted to "official". The whole
   `seoMetrics*` group is now part of the snapshot.
 - The metrics screen now shows the host a key will be sent to, directly under the field.
+- **"No data in file" was misleading.** A header-only export — what Ahrefs produces when a filter
+  or date range matches nothing — reported the same error as an unreadable file, so it read as
+  "wrong format". It now says the report *was* recognised and that it simply has no rows.
+- **SEO Tools tile grid was out of order** and missing an entry: the tab bar and the tile grid
+  each held their own copy of the tool list. Both now render one shared array.
+- The site picker in the import panel is searchable — a plain dropdown is unusable at a few
+  hundred sites, let alone a thousand.
 - Assorted bug fixes across the app.
 
 ### Upgrading

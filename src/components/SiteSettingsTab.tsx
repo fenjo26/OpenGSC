@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Settings, Sparkles, Plus, X, Copy, Check, Trash2 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import MetricsImport from "@/components/MetricsImport";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface Cluster { id: string; name: string; rules: string; }
@@ -678,6 +679,12 @@ export default function SiteSettingsTab({ domain, siteDbId }: { domain: string; 
       <ClustersSection siteDbId={siteDbId} />
       <GroupsSection siteDbId={siteDbId} />
       <SharedLinkSection siteDbId={siteDbId} domain={domain} />
+
+      {/* The same import panel as Settings → SEO Metrics, with the target already known.
+          Referring-domain exports belong to one site, and being on that site's page is the
+          moment you have the file — sending people to a global screen to pick the site they
+          just came from is the long way round. */}
+      <MetricsImport siteId={siteDbId} />
 
     </div>
   );

@@ -2466,5 +2466,13 @@
   "metricsNoKeyPath": "No API key needed: upload an export from your browser subscription and every feature works the same way.",
   "ahrefsMovedDesc": "Keys, access mode and the spending cap now live in one place — SEO Metrics.",
   "metricsTarget": "Requests go to",
-  "metricsKeyPerMode": "each mode keeps its own key"
+  "metricsKeyPerMode": "each mode keeps its own key",
+  "importNoRows": "The file has only a header row — no data. In Ahrefs/Semrush this happens when a filter or date range returned nothing; re-export with the filters cleared.",
+  "importRecognisedAs": "Report recognised as",
+  "importProviderHint": "Which tool the file came from — volumes are stored separately per source.",
+  "importSiteSearch": "Search sites…",
+  "importSiteNone": "No sites match",
+  "importSiteMore": "Keep typing to narrow the list",
+  "importOpen": "Import from file",
+  "importHintNearWeights": "or import an export — free"
 }

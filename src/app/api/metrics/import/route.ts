@@ -50,7 +50,7 @@ export async function POST(req: Request) {
 
   const text = decodeExport(await file.arrayBuffer());
   const table = parseTable(text);
-  if (!table.headers.length || !table.rows.length) {
+  if (!table.headers.length) {
     return NextResponse.json({ error: "empty_file" }, { status: 400 });
   }
 
@@ -59,6 +59,16 @@ export async function POST(req: Request) {
     return NextResponse.json({
       error: "unknown_report",
       headers: table.headers.slice(0, 25),
+    }, { status: 400 });
+  }
+
+  // A header-only export is a different failure from an unreadable one, and conflating them
+  // sends people hunting for a parser bug that does not exist. This happens for real: a filter
+  // or a date range with no results still downloads, producing a valid file with zero rows.
+  // Reporting the recognised report type alongside the error is what makes that legible.
+  if (!table.rows.length) {
+    return NextResponse.json({
+      error: "no_data_rows", kind, headers: table.headers.slice(0, 25),
     }, { status: 400 });
   }
 

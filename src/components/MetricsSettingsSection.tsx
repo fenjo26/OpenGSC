@@ -13,9 +13,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { BarChart3, ExternalLink, FileUp } from "lucide-react";
-import Link from "next/link";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { SeoKeyCard, METRICS_PROVIDER_CARDS, METRICS_GATEWAY_URL } from "@/components/SeoToolsSettings";
+import MetricsImport from "@/components/MetricsImport";
 import {
   getMetricsMode, setMetricsMode, metricsKeyStorage, RESELLER_BASE_URL,
   type MetricsMode,
@@ -108,9 +108,6 @@ export default function MetricsSettingsSection() {
       }}>
         <FileUp size={16} style={{ flexShrink: 0, color: "var(--color-accent-blue)" }} />
         <span style={{ flex: 1 }}>{t("metricsNoKeyPath")}</span>
-        <Link href="/seo-tools/import" className="pill" style={{ textDecoration: "none", flexShrink: 0 }}>
-          {t("menuImport")}
-        </Link>
       </div>
 
       <div className="panel">
@@ -217,6 +214,8 @@ export default function MetricsSettingsSection() {
           {t("metricsCapHint")}
         </div>
       </div>
+
+      <MetricsImport />
     </div>
   );
 }
