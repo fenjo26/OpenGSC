@@ -98,6 +98,24 @@ function Spark({ points }: { points: MonthlyPoint[] }) {
   );
 }
 
+/**
+ * Growth as last-3-months vs previous-3-months average. Chosen over first-vs-last because a single
+ * outlier month (a press hit, a season) would dominate first-vs-last and present a one-off spike as
+ * a sustained trend. Comparing two 3-month windows smooths that: only a market that actually moved
+ * shows up as growing. Returns null when there aren't enough points to compute both windows.
+ */
+function growthPct(points: MonthlyPoint[]): number | null {
+  if (points.length < 6) return null;
+  const v = points.map((p) => p.volume);
+  const recent = v.slice(-3);
+  const prev = v.slice(-6, -3);
+  const avg = (a: number[]) => (a.reduce((s, n) => s + n, 0) / a.length) || 0;
+  const r = avg(recent);
+  const p = avg(prev);
+  if (p === 0) return r > 0 ? Infinity : 0;
+  return ((r - p) / p) * 100;
+}
+
 export default function DemandPage() {
   const { t } = useLanguage();
 
@@ -124,6 +142,10 @@ export default function DemandPage() {
   const [hasKey, setHasKey] = useState(false);
   const [verdict, setVerdict] = useState<Verdict | "all">("all");
   const [search, setSearch] = useState("");
+  // Default is volume — the existing behaviour, unchanged unless the user opts into growth. "growth"
+  // surfaces rising markets that volume-sort would bury (a +300% niche below a stagnant high-volume one).
+  const [sortBy, setSortBy] = useState<"volume" | "growth">("volume");
+  const [risingOnly, setRisingOnly] = useState(false);
 
   useEffect(() => {
     setHasKey(getDataForSeoKey().length > 4);
@@ -196,13 +218,26 @@ export default function DemandPage() {
     return rows
       .filter((r) => verdict === "all" || r.verdict === verdict)
       .filter((r) => !search || r.keyword.includes(search.toLowerCase()))
+      // "rising" = positive growth over the trailing 3-vs-3 window. Flat and falling markets stay
+      // when the filter is off; turning it on is how a growing niche stops being buried under the
+      // high-volume-but-stagnant ones that volume-sort always ranks first.
+      .filter((r) => !risingOnly || (growthPct(r.trend) ?? -Infinity) > 0)
       .sort((a, b) => {
+        // Verdict (reach > wrong_page > none) stays the primary key either way: it is the action
+        // signal, and growth is only meaningful within "what should I do about this". Sorting purely
+        // by growth would float a rising niche you have no page for above one you can improve today.
         const d = order[a.verdict] - order[b.verdict];
         if (d !== 0) return d;
+        if (sortBy === "growth") {
+          // Infinity (prev window was zero, recent is positive) sorts highest; null/unknown last.
+          const ga = growthPct(a.trend);
+          const gb = growthPct(b.trend);
+          return (gb ?? -Infinity) - (ga ?? -Infinity);
+        }
         return (b.volume ?? 0) - (a.volume ?? 0);
       })
       .slice(0, 500);
-  }, [rows, verdict, search]);
+  }, [rows, verdict, search, sortBy, risingOnly]);
 
   function exportCsv() {
     const head = ["keyword", "volume", "kd", "cpc", "intent", "our_position", "our_url", "verdict"];
@@ -322,8 +357,20 @@ export default function DemandPage() {
             <button key={k} className={verdict === k ? "pill active" : "pill"}
               onClick={() => setVerdict(k as Verdict | "all")} style={{ cursor: "pointer" }}>{label}</button>
           ))}
+          {/* Sort + rising filter turn the trend sparkline from decoration into a selection criterion.
+              Without these, a growing niche is ordered below a stagnant high-volume one every time. */}
+          <select className="tool-input inline" value={sortBy} onChange={(e) => setSortBy(e.target.value as "volume" | "growth")}
+            style={{ marginLeft: "auto" }}>
+            <option value="volume">{t("dmSortVolume")}</option>
+            <option value="growth">{t("dmSortGrowth")}</option>
+          </select>
+          <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--color-text-secondary)", cursor: "pointer" }}
+            title={t("dmRisingOnlyHint")}>
+            <input type="checkbox" checked={risingOnly} onChange={(e) => setRisingOnly(e.target.checked)} />
+            {t("dmRisingOnly")}
+          </label>
           <input className="tool-input inline" value={search} onChange={(e) => setSearch(e.target.value)}
-            placeholder={t("sdkSearch")} style={{ marginLeft: "auto", minWidth: "180px" }} />
+            placeholder={t("sdkSearch")} style={{ minWidth: "180px" }} />
           <button className="metric-action" onClick={exportCsv}><Download size={13} />CSV</button>
         </div>
       )}
@@ -334,7 +381,7 @@ export default function DemandPage() {
         </div>
       ) : (
         <div className="panel" style={{ padding: 0, overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <table className="privacy-sensitive" style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: "var(--color-bg)", borderBottom: "1px solid var(--color-border)" }}>
                 <th style={th}>{t("sdkColQuery")}</th>
