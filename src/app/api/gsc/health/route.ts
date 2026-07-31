@@ -85,10 +85,14 @@ async function checkSafeBrowsing(domain: string, apiKey: string): Promise<{
 
 // ─── Core Web Vitals (PageSpeed Insights API) ─────────────────────────────────
 async function checkVitals(domain: string, apiKey: string): Promise<{
-  lcp: number | null; fid: number | null; cls: number | null; ttfb: number | null;
+  lcp: number | null; inp: number | null; cls: number | null; ttfb: number | null;
   score: number | null; category: string; error?: string;
 }> {
-  const empty = { lcp: null, fid: null, cls: null, ttfb: null, score: null, category: "unknown" };
+  // INP replaced FID as a Core Web Vital in March 2024. Lighthouse exposed the old metric as the
+  // "max-potential-fid" audit; the replacement is "interaction-to-next-paint". Pulling the old
+  // audit name returns a deprecated number that no longer matches what Google ranks on, so a page
+  // could look healthy here while failing the CWV assessment in Search Console.
+  const empty = { lcp: null, inp: null, cls: null, ttfb: null, score: null, category: "unknown" };
   if (!apiKey) return { ...empty, error: "no_key" };
   try {
     const url = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=https://${domain}&strategy=mobile&key=${apiKey}&category=PERFORMANCE`;
@@ -103,12 +107,12 @@ async function checkVitals(domain: string, apiKey: string): Promise<{
 
     const audits = lhr?.audits ?? {};
     const lcp   = audits["largest-contentful-paint"]?.numericValue ?? null;
-    const fid   = audits["max-potential-fid"]?.numericValue ?? null;
+    const inp   = audits["interaction-to-next-paint"]?.numericValue ?? null;
     const cls   = audits["cumulative-layout-shift"]?.numericValue ?? null;
     const ttfb  = audits["server-response-time"]?.numericValue ?? null;
 
     const category = score == null ? "unknown" : score >= 90 ? "good" : score >= 50 ? "needs_improvement" : "poor";
-    return { lcp: lcp ? Math.round(lcp) : null, fid: fid ? Math.round(fid) : null, cls: cls ? parseFloat(cls.toFixed(3)) : null, ttfb: ttfb ? Math.round(ttfb) : null, score, category };
+    return { lcp: lcp ? Math.round(lcp) : null, inp: inp ? Math.round(inp) : null, cls: cls ? parseFloat(cls.toFixed(3)) : null, ttfb: ttfb ? Math.round(ttfb) : null, score, category };
   } catch (err: any) {
     return { ...empty, error: err.message };
   }

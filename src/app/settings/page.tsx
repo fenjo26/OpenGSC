@@ -1724,7 +1724,7 @@ const HEALTH_PROVIDERS = [
     id: "google",
     name: "PageSpeed Insights (Core Web Vitals)",
     placeholder: "AIzaSy...",
-    hint: "Fetches LCP, CLS, TTFB and overall Performance score via PageSpeed Insights API.",
+    hint: "Fetches LCP, INP, CLS, TTFB and overall Performance score via PageSpeed Insights API.",
     docsUrl: "https://developers.google.com/speed/docs/insights/v5/get-started",
     color: "#34A853",
     logo: "PS",

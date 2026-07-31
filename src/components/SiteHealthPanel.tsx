@@ -18,7 +18,7 @@ interface SafeBrowsingData {
   safe: boolean; threats: string[]; error?: string;
 }
 interface VitalsData {
-  lcp: number | null; fid: number | null; cls: number | null; ttfb: number | null;
+  lcp: number | null; inp: number | null; cls: number | null; ttfb: number | null;
   score: number | null; category: string; error?: string;
 }
 interface VirusTotalData {
@@ -218,7 +218,7 @@ function VitalsCard({ data, loading, noKey }: { data: VitalsData | null; loading
             <MetricPill label="LCP" value={data.lcp} good={data.lcp != null && data.lcp < 2500} />
             <MetricPill label="TTFB" value={data.ttfb} good={data.ttfb != null && data.ttfb < 800} />
             <MetricPill label="CLS" value={data.cls} unit="" good={data.cls != null && data.cls < 0.1} />
-            {data.fid != null && <MetricPill label="FID" value={data.fid} good={data.fid < 100} />}
+            {data.inp != null && <MetricPill label="INP" value={data.inp} good={data.inp <= 200} />}
           </div>
           {data.error && <p style={{ fontSize: "11px", color: "var(--color-text-secondary)", width: "100%" }}>Error: {data.error}</p>}
         </div>
