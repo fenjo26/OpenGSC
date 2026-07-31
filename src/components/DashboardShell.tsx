@@ -487,10 +487,9 @@ function NavLinks() {
     { href: "/striking", label: t("menuStriking"), key: "striking", icon: <TrendingUp size={14} /> },
     { href: "/cannibalization", label: t("menuCannibalization"), key: "cannibalization", icon: <Anchor size={14} /> },
     { href: "/decay", label: t("menuDecay"), key: "decay", icon: <BarChart2 size={14} /> },
-    { href: "/competitors", label: t("menuCompetitors"), key: "competitors", icon: <Users size={14} /> },
-    // Placed after Competitors: everything before it starts from queries the site already has,
-    // this is the first entry that starts from the market.
-    { href: "/demand", label: t("menuDemand"), key: "demand", icon: <Compass size={14} /> },
+    // Competitors and Demand are not here: both live under SEO Tools. Everything in this bar
+    // reads data the instance already holds; those two buy data from outside it, which is the
+    // line SEO Tools draws.
     { href: "/seo-tools", label: t("seoNavTitle"), key: "seo-tools", icon: <Sparkles size={14} /> },
     { href: "/indexer", label: t("indexerNavTitle"), key: "indexer", icon: <Globe size={14} /> },
     { href: "/digest", label: t("digestNavTitle"), key: "digest", icon: <Newspaper size={14} /> },

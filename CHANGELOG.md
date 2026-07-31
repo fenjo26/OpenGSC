@@ -7,7 +7,7 @@ All notable changes to OpenGSC. Dates are release dates; the version shown in
 
 ### Added
 
-**Demand — a new tab** (`/demand`)
+**Demand — a new tool** (`/seo-tools/demand`)
 
 Keyword discovery, which is the one thing Search Console structurally cannot do: every other
 screen starts from queries the site already appears for, and this one starts from the market.
@@ -55,6 +55,21 @@ screen starts from queries the site already appears for, and this one starts fro
   third paid tool and the only synchronous one: its result is written to the cache before the
   tool returns, so an abandoned call still leaves a search that replays for free.
 - New agent skill `keyword-research` in `.agents/skills/`.
+
+### Changed
+
+- **Competitors moved into SEO Tools** (`/seo-tools/competitors`), next to Demand. Both buy
+  data from outside the instance, which is the line SEO Tools draws — everything left in the
+  main nav reads what OpenGSC already holds. Old URLs redirect.
+- **Missing tables are now reported instead of looking like missing data.** Every route in the
+  metrics layer catches an absent table and returns an empty result so the dashboard survives an
+  un-migrated database — but that made "you have not loaded anything yet" and "the table does not
+  exist" identical on screen. A banner now names the tables and the command
+  (`GET /api/system/schema`, `SchemaBanner`).
+- **The competitor keyword pull verifies its own write.** If keywords come back from the provider
+  and the table still reads empty, the reply says so rather than succeeding silently — the
+  signature of a relative `DATABASE_URL`, where the CLI and the running app resolve to different
+  database files.
 
 ### Database
 

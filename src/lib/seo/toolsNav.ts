@@ -10,7 +10,7 @@
 
 import {
   Boxes, Globe, FileText, LayoutTemplate, PenLine, RefreshCw, Fingerprint, Search, Bot,
-  Quote, Link2, ScrollText, History, type LucideIcon,
+  Quote, Link2, ScrollText, History, Compass, Users, type LucideIcon,
 } from "lucide-react";
 
 export interface SeoTool {
@@ -25,6 +25,10 @@ export interface SeoTool {
 }
 
 export const SEO_TOOLS: SeoTool[] = [
+  // Research comes first: both entries answer "what should I write about" and are where a
+  // session starts, whereas everything below them assumes that question is already settled.
+  { href: "/seo-tools/demand",      key: "seoTabDemand",      desc: "seoTileDemand",      icon: Compass, color: "#2997ff" },
+  { href: "/seo-tools/competitors", key: "seoTabCompetitors", desc: "seoTileCompetitors", icon: Users,   color: "#5e5ce6" },
   { href: "/seo-tools/cluster",   key: "seoTabCluster",   desc: "seoTileCluster",   icon: Boxes,         color: "#bf5af2" },
   { href: "/seo-tools/geo",       key: "geoTabGeo",       desc: "seoTileGeo",       icon: Globe,         color: "#5e5ce6" },
   { href: "/seo-tools/outline",   key: "seoTabOutline",   desc: "seoTileOutline",   icon: FileText,      color: "#2997ff" },

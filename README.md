@@ -607,6 +607,8 @@ src/
     login/page.tsx
     settings/page.tsx            # Global settings — Google accounts, AI/SERP/API keys
     seo-tools/                   # AI SEO Content Suite
+      demand/page.tsx            # Demand — keyword research + domain overview (DataForSEO)
+      competitors/page.tsx       # Competitor keyword gap vs your own GSC data
       cluster/page.tsx           # Keyword Clustering (SERP URL-overlap)
       outline/page.tsx           # Outline Generator
       text/page.tsx              # Text Generator

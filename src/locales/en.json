@@ -2562,5 +2562,10 @@
   "bvEmpty": "Nothing indexed for {brand} yet on this platform. Press \"Look up brand\" to check, or try matching by brand name instead of domain — a model that names you without linking leaves no trace under the domain match.",
   "schemaMissing": "{n} database tables are missing — those features will look empty rather than fail.",
   "schemaAffects": "Affects: {features}.",
-  "schemaNoDataLoss": "Creates the missing tables; existing data is untouched."
+  "schemaNoDataLoss": "Creates the missing tables; existing data is untouched.",
+  "seoTabDemand": "Demand",
+  "seoTileDemand": "What the market searches for, crossed with where you already stand on each query. Keyword research and any domain's organic profile.",
+  "seoTabCompetitors": "Competitors",
+  "seoTileCompetitors": "A competitor's keywords joined against your Search Console data: what to improve, what missed the intent, and what does not exist yet.",
+  "gapWriteNotVisible": "Keywords were saved but read back empty — the app and prisma are using different database files. Make DATABASE_URL an absolute path."
 }

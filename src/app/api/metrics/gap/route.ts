@@ -180,6 +180,17 @@ export async function POST(req: Request) {
       return respond({ error: "not_migrated" }, 500);
     }
 
+    // Written, then read straight back. If the provider returned keywords and the table still
+    // reads empty, the write and the read are not looking at the same database — which is what
+    // a relative `DATABASE_URL` produces: Prisma CLI resolves it against the schema directory,
+    // the running app against its working directory, and the two quietly diverge into separate
+    // files. Everything here would otherwise succeed in silence and the screen would show its
+    // ordinary "nothing loaded yet" state, which is how this costs an afternoon to find.
+    const after = await buildGap();
+    if (res.items.length > 0 && after.rows.length === 0) {
+      return respond({ error: "write_not_visible", imported: res.items.length, competitor }, 500);
+    }
+
     return respond({ units, imported: res.items.length, competitor });
   }
 
