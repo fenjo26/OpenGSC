@@ -120,6 +120,33 @@ function toSeries(rows: DayRow[], from: Date, days: number, phase: "before" | "a
   });
 }
 
+/**
+ * Forward-fill position across days with no impressions, so the position chart draws a continuous
+ * line like the other three metrics instead of breaking wherever rank was undefined.
+ *
+ * The other metrics use 0 for a missing day (0 clicks is a real value, and the line sits on the
+ * axis). Position cannot use 0 — rank 0 does not exist and would render at the TOP of an inverted
+ * axis as if the page were ranking #1. Holding the LAST KNOWN position forward is the honest
+ * equivalent: "we don't have a new rank today, so the line continues at the rank we last saw",
+ * which is what a person reading the chart assumes a gap means anyway.
+ *
+ * Applied to the merged before+after array (not per-phase) so a gap right at the change date is
+ * bridged too. Leading nulls (no impressions yet at the start of the window) stay null: there is
+ * no previous rank to hold, and connectNulls will still join once the first real point appears.
+ */
+function fillPositionGaps(series: SeriesPoint[]): SeriesPoint[] {
+  let last: number | null = null;
+  return series.map(p => {
+    if (p.position != null) {
+      last = p.position;
+      return p;
+    }
+    // Only fill when we have something to hold forward; a leading gap stays null.
+    if (last != null) return { ...p, position: last };
+    return p;
+  });
+}
+
 async function ownedSite(userId: string, siteId: string) {
   return prisma.site.findFirst({ where: { id: siteId, userId }, select: { id: true } });
 }
@@ -184,8 +211,9 @@ export async function GET(req: Request) {
         position: { before: +b.position.toFixed(1), after: +a.position.toFixed(1), delta: +(b.position - a.position).toFixed(1) },
         sparkBefore: densify(before, beforeFrom, days),
         sparkAfter: densify(after, d, days),
-        // Full per-day values for the chart, with the change date marking the boundary.
-        series: [...toSeries(before, beforeFrom, days, "before"), ...toSeries(after, d, days, "after")],
+        // Full per-day values for the chart, with the change date marking the boundary. Position
+        // gaps are forward-filled so its line is continuous like the other three metrics.
+        series: fillPositionGaps([...toSeries(before, beforeFrom, days, "before"), ...toSeries(after, d, days, "after")]),
       };
     }));
 

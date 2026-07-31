@@ -3339,8 +3339,9 @@ function AnnotationChart({ series, activeMetrics, changeDate }: {
               />
               <ReferenceLine x={changeDate} stroke="var(--color-text-secondary)" strokeDasharray="4 3"
                 label={{ value: t("annChangeMarker"), position: "top", fontSize: 9, fill: "var(--color-text-secondary)" }} />
-              {/* connectNulls matters only for position: on days with no impressions rank is
-                  undefined, and breaking the line there would imply a collapse to zero. */}
+              {/* connectNulls bridges any residual leading nulls (a window that starts before the site
+                  had any impressions); the API forward-fills position elsewhere so all four metrics
+                  draw continuous lines in one consistent format. */}
               <Line type="monotone" dataKey={p.key} name={p.label} stroke={p.colour} strokeWidth={2}
                 dot={false} connectNulls isAnimationActive={false} />
             </ComposedChart>
