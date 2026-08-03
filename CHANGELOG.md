@@ -170,6 +170,13 @@ screen starts from queries the site already appears for, and this one starts fro
   `npm rebuild better-sqlite3` — it is a native module compiled against the running major, and
   skipping the rebuild makes the app fail on start.
 
+- **Install scripts are now allow-listed** (`allowScripts` in `package.json`). npm 11 warns about
+  unreviewed install scripts and npm 12 blocks them by default; without the list, `better-sqlite3`
+  would silently skip its native build and the app would fail on first database access. The six
+  entries are the packages whose install script *is* their installation — native binaries and
+  Prisma engines. The list is version-pinned by npm's own design, so bumping any of them brings
+  the warning back for a fresh review, which is the point.
+
 ### Database
 
 - New model `DemandSearch` (search cache). Run `npx prisma db push` after updating.
