@@ -14,14 +14,21 @@ const globalForPrisma = globalThis as unknown as { prisma: PrismaClient }
  * Note the schema still says `provider = "sqlite"`, and Prisma refuses `env()` there, so
  * pointing DATABASE_URL at MySQL is not yet enough to run on it. This function is here so the
  * remaining gap is one file rather than two.
+ *
+ * The module name is assembled at runtime rather than written as a literal. A `try/catch` is
+ * enough to survive a missing package while the process runs, but it does nothing at build
+ * time: the bundler still resolves every literal it can see, and reports the absent optional
+ * dependency as "Module not found" on every build. Hiding the string from static analysis is
+ * the difference between an optional dependency and a permanent build warning.
  */
 function createAdapter(url: string, isMysql: boolean) {
   if (!isMysql) return new PrismaBetterSqlite3({ url });
 
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const pkg = ["@prisma", "adapter-mariadb"].join("/");
   const mod = (() => {
     try {
-      return require("@prisma/adapter-mariadb");
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      return require(pkg);
     } catch {
       throw new Error(
         "DATABASE_URL points at MySQL/MariaDB but @prisma/adapter-mariadb is not installed. " +
