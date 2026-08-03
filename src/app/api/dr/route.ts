@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { runUpsert } from "@/lib/db/upsert";
 
 // GET /api/dr?domains=a.com,b.com — Ahrefs Domain Rating via the free public endpoint
 // (no API key required). Cached in SQLite for 7 days so the dashboard doesn't hammer
@@ -59,10 +60,12 @@ export async function GET(req: Request) {
       if (dr == null) continue;
       out[d] = { dr, checkedAt: new Date().toISOString() };
       try {
-        await prisma.$executeRawUnsafe(
-          `INSERT INTO "DrCache" (domain, dr, checkedAt) VALUES (?, ?, ?)
-           ON CONFLICT(domain) DO UPDATE SET dr = excluded.dr, checkedAt = excluded.checkedAt`,
-          d, dr, new Date().toISOString());
+        await runUpsert({
+          table: "DrCache",
+          conflict: ["domain"],
+          values: { domain: d, dr, checkedAt: new Date().toISOString() },
+          update: { dr: "set", checkedAt: "set" },
+        });
       } catch { /* cache best-effort */ }
     }
   }));

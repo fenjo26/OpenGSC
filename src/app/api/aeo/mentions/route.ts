@@ -8,6 +8,7 @@ import {
 } from "@/lib/seo/llmMentions";
 import { normDomain } from "@/lib/seo/demand";
 import { readUsage, recordUsage, withinCap } from "@/lib/seo/metricsStore";
+import { runUpsert } from "@/lib/db/upsert";
 
 // POST /api/aeo/mentions { siteId, action, platform?, kind?, brand?, competitors?, country?, language?, apiKey?, cap?, fetch? }
 //
@@ -87,14 +88,16 @@ export async function POST(req: Request) {
 
   const writeCache = async (data: unknown) => {
     try {
-      await prisma.$executeRawUnsafe(
-        `INSERT INTO "DemandSearch" (userId, cacheKey, seed, country, language, mode, source, rows, createdAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(userId, cacheKey) DO UPDATE SET
-           rows = excluded.rows, createdAt = excluded.createdAt`,
-        userId, cacheKey, value, country, language, `llm_${action}`, platform,
-        JSON.stringify(data), new Date().toISOString(),
-      );
+      await runUpsert({
+        table: "DemandSearch",
+        conflict: ["userId", "cacheKey"],
+        values: {
+          userId, cacheKey, seed: value, country, language,
+          mode: `llm_${action}`, source: platform,
+          rows: JSON.stringify(data), createdAt: new Date().toISOString(),
+        },
+        update: { rows: "set", createdAt: "set" },
+      });
     } catch { /* best effort */ }
   };
 

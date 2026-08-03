@@ -7,6 +7,7 @@ import {
   writeDomainCache, readDomainCache, writeKeywordCache,
   readUsage, recordUsage, withinCap, normalizeKeyword,
 } from "@/lib/seo/metricsStore";
+import { runUpsert } from "@/lib/db/upsert";
 
 // POST /api/demand/domain { domain, siteId?, country?, language?, keywordLimit?, pageLimit?, apiKey?, cap?, fetch? }
 //
@@ -122,14 +123,16 @@ export async function POST(req: Request) {
 
   const writeCache = async (data: unknown) => {
     try {
-      await prisma.$executeRawUnsafe(
-        `INSERT INTO "DemandSearch" (userId, cacheKey, seed, country, language, mode, source, rows, createdAt)
-         VALUES (?, ?, ?, ?, ?, 'domain', 'labs', ?, ?)
-         ON CONFLICT(userId, cacheKey) DO UPDATE SET
-           rows = excluded.rows, createdAt = excluded.createdAt`,
-        userId, `domain:${cacheKey}`, domain, country, language,
-        JSON.stringify(data), new Date().toISOString(),
-      );
+      await runUpsert({
+        table: "DemandSearch",
+        conflict: ["userId", "cacheKey"],
+        values: {
+          userId, cacheKey: `domain:${cacheKey}`, seed: domain, country, language,
+          mode: "domain", source: "labs",
+          rows: JSON.stringify(data), createdAt: new Date().toISOString(),
+        },
+        update: { rows: "set", createdAt: "set" },
+      });
     } catch { /* best effort */ }
   };
 

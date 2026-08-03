@@ -7,6 +7,7 @@ import {
   estimateCompetitorUnits, estimateOrganicKeywordUnits, MetricsProvider,
 } from "@/lib/seo/metrics";
 import { readUsage, recordUsage, withinCap } from "@/lib/seo/metricsStore";
+import { runUpsert } from "@/lib/db/upsert";
 
 // POST /api/metrics/gap { siteId, action, ... }
 //
@@ -165,16 +166,23 @@ export async function POST(req: Request) {
         site.id, competitor, country,
       );
       for (const k of res.items) {
-        await prisma.$executeRawUnsafe(
-          `INSERT INTO "CompetitorKeyword" (siteId, competitor, keyword, country, position, volume, difficulty, url, source, fetchedAt)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'api', ?)
-           ON CONFLICT(siteId, competitor, keyword, country) DO UPDATE SET
-             position = excluded.position, volume = excluded.volume,
-             difficulty = COALESCE(excluded.difficulty, "CompetitorKeyword".difficulty),
-             url = excluded.url, fetchedAt = excluded.fetchedAt`,
-          site.id, competitor, k.keyword, country,
-          k.position ?? null, k.volume ?? null, k.difficulty ?? null, k.url, new Date().toISOString(),
-        );
+        await runUpsert({
+          table: "CompetitorKeyword",
+          conflict: ["siteId", "competitor", "keyword", "country"],
+          values: {
+            siteId: site.id, competitor, keyword: k.keyword, country,
+            position: k.position ?? null, volume: k.volume ?? null,
+            difficulty: k.difficulty ?? null, url: k.url,
+            source: "api", fetchedAt: new Date().toISOString(),
+          },
+          // Difficulty is the one field kept rather than overwritten: it is optional on the
+          // request and costs extra, so a pull made without it must not erase a value a previous
+          // pull paid for.
+          update: {
+            position: "set", volume: "set", difficulty: "keep",
+            url: "set", fetchedAt: "set",
+          },
+        });
       }
     } catch {
       return respond({ error: "not_migrated" }, 500);

@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { fetchVolumeHistory, AHREFS_UNIT_FLOOR, MetricsProvider } from "@/lib/seo/metrics";
 import { readUsage, recordUsage, withinCap } from "@/lib/seo/metricsStore";
+import { runUpsert } from "@/lib/db/upsert";
 
 // POST /api/metrics/demand { siteId, url, country?, fetch?, apiKey?, ... }
 //
@@ -105,13 +106,12 @@ export async function POST(req: Request) {
   }
 
   try {
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO "KeywordVolumeHistory" (keyword, country, provider, points, fetchedAt)
-       VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(keyword, country, provider) DO UPDATE SET
-         points = excluded.points, fetchedAt = excluded.fetchedAt`,
-      keyword, country, provider, JSON.stringify(res.items), new Date().toISOString(),
-    );
+    await runUpsert({
+      table: "KeywordVolumeHistory",
+      conflict: ["keyword", "country", "provider"],
+      values: { keyword, country, provider, points: JSON.stringify(res.items), fetchedAt: new Date().toISOString() },
+      update: { points: "set", fetchedAt: "set" },
+    });
   } catch { /* cache is best effort */ }
 
   return answer(res.items, { units, usage: await readUsage(userId, provider) });

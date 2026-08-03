@@ -24,7 +24,8 @@ import {
   discoverKeywords, estimateDemandCost, providerFor,
   type DemandMode, type DemandRow,
 } from "@/lib/seo/demand";
-import { writeKeywordCache, normalizeKeyword } from "@/lib/seo/metricsStore";
+import { writeKeywordCache, normalizeKeyword, recordUsage } from "@/lib/seo/metricsStore";
+import { runUpsert } from "@/lib/db/upsert";
 
 /** Mirrors `/api/demand/keywords`, which owns the canonical values. */
 const SEARCH_TTL_DAYS = 14;
@@ -316,23 +317,20 @@ export const DEMAND_TOOLS: McpTool[] = [
       // before returning, so an abandoned call still leaves the instance better off.
       const units = Math.max(1, Math.round((res.cost || estimateDemandCost(provider, limit, clickstream)) * UNITS_PER_USD));
       try {
-        await prisma.$executeRawUnsafe(
-          `INSERT INTO "ApiUsage" (userId, provider, month, units, requests, updatedAt)
-           VALUES (?, ?, ?, ?, 1, ?)
-           ON CONFLICT(userId, provider, month) DO UPDATE SET
-             units = "ApiUsage".units + excluded.units,
-             requests = "ApiUsage".requests + 1,
-             updatedAt = excluded.updatedAt`,
-          userId, PROVIDER, new Date().toISOString().slice(0, 7), units, new Date().toISOString(),
-        );
-        await prisma.$executeRawUnsafe(
-          `INSERT INTO "DemandSearch" (userId, cacheKey, seed, country, language, mode, source, rows, createdAt)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(userId, cacheKey) DO UPDATE SET
-             source = excluded.source, rows = excluded.rows, createdAt = excluded.createdAt`,
-          userId, key, normalizeKeyword(seed), country, language, mode, res.source,
-          JSON.stringify(res.rows), new Date().toISOString(),
-        );
+        // Through the shared recorder rather than its own copy of the statement: the web route
+        // and this tool spend from the same monthly budget, and two hand-written versions of
+        // "add to this month's total" is how they drift apart.
+        await recordUsage(userId, PROVIDER, units);
+        await runUpsert({
+          table: "DemandSearch",
+          conflict: ["userId", "cacheKey"],
+          values: {
+            userId, cacheKey: key, seed: normalizeKeyword(seed), country, language,
+            mode, source: res.source,
+            rows: JSON.stringify(res.rows), createdAt: new Date().toISOString(),
+          },
+          update: { source: "set", rows: "set", createdAt: "set" },
+        });
       } catch { /* pre-migration instance: the result is still returned, just not remembered */ }
 
       await writeKeywordCache(

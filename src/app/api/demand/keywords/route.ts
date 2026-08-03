@@ -7,6 +7,7 @@ import {
   type DemandMode, type DemandRow,
 } from "@/lib/seo/demand";
 import { writeKeywordCache, readUsage, recordUsage, withinCap, normalizeKeyword } from "@/lib/seo/metricsStore";
+import { runUpsert } from "@/lib/db/upsert";
 
 // POST /api/demand/keywords { seed, siteId?, country?, language?, mode?, limit?, clickstream?, apiKey?, cap?, fetch? }
 //
@@ -163,14 +164,15 @@ export async function POST(req: Request) {
 
   const writeCache = async (rows: DemandRow[], source: string) => {
     try {
-      await prisma.$executeRawUnsafe(
-        `INSERT INTO "DemandSearch" (userId, cacheKey, seed, country, language, mode, source, rows, createdAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(userId, cacheKey) DO UPDATE SET
-           source = excluded.source, rows = excluded.rows, createdAt = excluded.createdAt`,
-        userId, cacheKey, normalizeKeyword(seed), country, language, mode, source,
-        JSON.stringify(rows), new Date().toISOString(),
-      );
+      await runUpsert({
+        table: "DemandSearch",
+        conflict: ["userId", "cacheKey"],
+        values: {
+          userId, cacheKey, seed: normalizeKeyword(seed), country, language, mode, source,
+          rows: JSON.stringify(rows), createdAt: new Date().toISOString(),
+        },
+        update: { source: "set", rows: "set", createdAt: "set" },
+      });
     } catch { /* best effort */ }
   };
 

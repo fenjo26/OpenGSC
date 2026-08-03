@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { runUpsert } from "@/lib/db/upsert";
 
 // Server-side backup of the SEO Tools history. localStorage stays the working cache;
 // this survives browser-data resets. Raw SQL so it works without regenerating the client.
@@ -47,14 +48,20 @@ export async function PUT(req: Request) {
       if (!r?.id || !r?.type || r.data == null) continue;
       const dataJson = JSON.stringify(r.data);
       if (dataJson.length > 1_500_000) continue; // sanity cap per record
-      await prisma.$executeRawUnsafe(
-        `INSERT INTO "SeoHistory" (id, userId, type, keyword, status, data, meta, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET data = excluded.data, meta = excluded.meta,
-           status = excluded.status, keyword = excluded.keyword, updatedAt = excluded.updatedAt`,
-        String(r.id), userId, String(r.type), String(r.keyword ?? ""), String(r.status ?? "completed"),
-        dataJson, r.meta != null ? JSON.stringify(r.meta) : null,
-        new Date(Number(r.createdAt) || Date.now()).toISOString(), new Date().toISOString());
+      await runUpsert({
+        table: "SeoHistory",
+        conflict: ["id"],
+        values: {
+          id: String(r.id), userId, type: String(r.type),
+          keyword: String(r.keyword ?? ""), status: String(r.status ?? "completed"),
+          data: dataJson, meta: r.meta != null ? JSON.stringify(r.meta) : null,
+          createdAt: new Date(Number(r.createdAt) || Date.now()).toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        // `userId`, `type` and `createdAt` are inserted but never updated: this is a backup of a
+        // record the browser owns, and its identity must not drift when the copy is refreshed.
+        update: { data: "set", meta: "set", status: "set", keyword: "set", updatedAt: "set" },
+      });
       saved++;
     }
     return NextResponse.json({ ok: true, saved });

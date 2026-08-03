@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getOwnerSettings, listEngineKeys } from "@/lib/engineKeysServer";
+import { runUpsert } from "@/lib/db/upsert";
 
 // Live portfolio for Bing / Yandex. Unlike the Google portfolio (which lists the sites in our
 // DB), this enumerates the engine's OWN verified sites — across every connected account —
@@ -129,11 +130,12 @@ async function mergeSticky(userId: string, engine: string, period: string, fresh
 async function writeCache(userId: string, engine: string, period: string, sites: any[]): Promise<void> {
   try {
     const id = (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)) as string;
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO "EnginePortfolioCache" (id, userId, engine, period, data, updatedAt) VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT(userId, engine, period) DO UPDATE SET data = excluded.data, updatedAt = excluded.updatedAt`,
-      id, userId, engine, period, JSON.stringify(sites), new Date().toISOString(),
-    );
+    await runUpsert({
+      table: "EnginePortfolioCache",
+      conflict: ["userId", "engine", "period"],
+      values: { id, userId, engine, period, data: JSON.stringify(sites), updatedAt: new Date().toISOString() },
+      update: { data: "set", updatedAt: "set" },
+    });
   } catch { /* cache write is best-effort */ }
 }
 

@@ -11,6 +11,7 @@
 // down with it.
 
 import { prisma } from "@/lib/prisma";
+import { runUpsert } from "@/lib/db/upsert";
 
 export interface RefDomainRecord {
   refDomain: string;
@@ -103,23 +104,28 @@ export async function syncRefDomains(
     seenNow.add(d);
     if (!knownLive.has(d)) added++;
     try {
-      await prisma.$executeRawUnsafe(
-        `INSERT INTO "RefDomainRow"
-           (target, refDomain, provider, dr, linksToTarget, dofollow, firstSeen, lost, lostAt, source, fetchedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?)
-         ON CONFLICT(target, refDomain, provider) DO UPDATE SET
-           dr            = COALESCE(excluded.dr,            "RefDomainRow".dr),
-           linksToTarget = COALESCE(excluded.linksToTarget, "RefDomainRow".linksToTarget),
-           dofollow      = excluded.dofollow,
-           firstSeen     = CASE WHEN excluded.firstSeen != '' THEN excluded.firstSeen ELSE "RefDomainRow".firstSeen END,
-           lost          = 0,
-           lostAt        = '',
-           source        = excluded.source,
-           fetchedAt     = excluded.fetchedAt`,
-        t, d, provider,
-        r.dr ?? null, r.linksToTarget ?? null, r.dofollow === false ? 0 : 1, r.firstSeen ?? "",
-        source, at,
-      );
+      await runUpsert({
+        table: "RefDomainRow",
+        conflict: ["target", "refDomain", "provider"],
+        values: {
+          target: t, refDomain: d, provider,
+          dr: r.dr ?? null,
+          linksToTarget: r.linksToTarget ?? null,
+          dofollow: r.dofollow === false ? 0 : 1,
+          firstSeen: r.firstSeen ?? "",
+          // A domain present in this pull is live by definition, so both insert and update
+          // reset the lost flag — that is how a link that came back stops reading as lost.
+          lost: 0, lostAt: "",
+          source, fetchedAt: at,
+        },
+        update: {
+          dr: "keep", linksToTarget: "keep",
+          dofollow: "set",
+          firstSeen: "keepEmpty",
+          lost: "set", lostAt: "set",
+          source: "set", fetchedAt: "set",
+        },
+      });
     } catch { /* best effort */ }
   }
 
@@ -156,18 +162,24 @@ export async function writeSnapshot(
   opts: { provider?: string; source?: "api" | "csv" } = {},
 ): Promise<void> {
   try {
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO "BacklinkSnapshot" (target, date, provider, refDomains, backlinks, dofollowPct, source, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(target, date, provider) DO UPDATE SET
-         refDomains  = COALESCE(excluded.refDomains,  "BacklinkSnapshot".refDomains),
-         backlinks   = COALESCE(excluded.backlinks,   "BacklinkSnapshot".backlinks),
-         dofollowPct = COALESCE(excluded.dofollowPct, "BacklinkSnapshot".dofollowPct),
-         source      = excluded.source`,
-      normDomain(target), today(), opts.provider ?? "ahrefs",
-      s.refDomains ?? null, s.backlinks ?? null, s.dofollowPct ?? null,
-      opts.source ?? "api", new Date().toISOString(),
-    );
+    await runUpsert({
+      table: "BacklinkSnapshot",
+      conflict: ["target", "date", "provider"],
+      values: {
+        target: normDomain(target), date: today(), provider: opts.provider ?? "ahrefs",
+        refDomains: s.refDomains ?? null,
+        backlinks: s.backlinks ?? null,
+        dofollowPct: s.dofollowPct ?? null,
+        source: opts.source ?? "api",
+        createdAt: new Date().toISOString(),
+      },
+      // `createdAt` is absent from the update map on purpose: a correction later the same day
+      // should not move the moment the day's row was first written.
+      update: {
+        refDomains: "keep", backlinks: "keep", dofollowPct: "keep",
+        source: "set",
+      },
+    });
   } catch { /* best effort */ }
 }
 

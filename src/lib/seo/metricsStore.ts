@@ -6,6 +6,7 @@
 // Striking Distance page down with it. A paid add-on must never be able to break a free feature.
 
 import { prisma } from "@/lib/prisma";
+import { runUpsert } from "@/lib/db/upsert";
 
 export type MetricSource = "api" | "csv";
 
@@ -106,27 +107,27 @@ export async function writeKeywordCache(
     const keyword = normalizeKeyword(r.keyword);
     if (!keyword) continue;
     try {
-      await prisma.$executeRawUnsafe(
-        `INSERT INTO "KeywordMetricCache"
-           (keyword, country, provider, volume, difficulty, cpc, globalVolume, parentTopic, intents, payload, source, checkedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(keyword, country, provider) DO UPDATE SET
-           volume       = COALESCE(excluded.volume,       "KeywordMetricCache".volume),
-           difficulty   = COALESCE(excluded.difficulty,   "KeywordMetricCache".difficulty),
-           cpc          = COALESCE(excluded.cpc,          "KeywordMetricCache".cpc),
-           globalVolume = COALESCE(excluded.globalVolume, "KeywordMetricCache".globalVolume),
-           parentTopic  = COALESCE(excluded.parentTopic,  "KeywordMetricCache".parentTopic),
-           intents      = COALESCE(excluded.intents,      "KeywordMetricCache".intents),
-           payload      = COALESCE(excluded.payload,      "KeywordMetricCache".payload),
-           source       = excluded.source,
-           checkedAt    = excluded.checkedAt
-         WHERE excluded.checkedAt >= "KeywordMetricCache".checkedAt`,
-        keyword, country, provider,
-        r.volume ?? null, r.difficulty ?? null, r.cpc ?? null, r.globalVolume ?? null,
-        r.parentTopic ?? null, r.intents ?? null,
-        r.payload ? JSON.stringify(r.payload) : null,
-        source, at,
-      );
+      await runUpsert({
+        table: "KeywordMetricCache",
+        conflict: ["keyword", "country", "provider"],
+        values: {
+          keyword, country, provider,
+          volume: r.volume ?? null,
+          difficulty: r.difficulty ?? null,
+          cpc: r.cpc ?? null,
+          globalVolume: r.globalVolume ?? null,
+          parentTopic: r.parentTopic ?? null,
+          intents: r.intents ?? null,
+          payload: r.payload ? JSON.stringify(r.payload) : null,
+          source, checkedAt: at,
+        },
+        update: {
+          volume: "keep", difficulty: "keep", cpc: "keep", globalVolume: "keep",
+          parentTopic: "keep", intents: "keep", payload: "keep",
+          source: "set", checkedAt: "set",
+        },
+        onlyIfNewer: "checkedAt",
+      });
       written++;
     } catch { /* best effort — a cache miss is recoverable, a crash is not */ }
   }
@@ -205,27 +206,27 @@ export async function writeDomainCache(
     const domain = r.domain.trim().toLowerCase().replace(/^www\./, "");
     if (!domain) continue;
     try {
-      await prisma.$executeRawUnsafe(
-        `INSERT INTO "DomainMetricCache"
-           (domain, provider, dr, refDomains, backlinks, orgTraffic, orgKeywords, orgCost, payload, source, checkedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(domain, provider) DO UPDATE SET
-           dr          = COALESCE(excluded.dr,          "DomainMetricCache".dr),
-           refDomains  = COALESCE(excluded.refDomains,  "DomainMetricCache".refDomains),
-           backlinks   = COALESCE(excluded.backlinks,   "DomainMetricCache".backlinks),
-           orgTraffic  = COALESCE(excluded.orgTraffic,  "DomainMetricCache".orgTraffic),
-           orgKeywords = COALESCE(excluded.orgKeywords, "DomainMetricCache".orgKeywords),
-           orgCost     = COALESCE(excluded.orgCost,     "DomainMetricCache".orgCost),
-           payload     = COALESCE(excluded.payload,     "DomainMetricCache".payload),
-           source      = excluded.source,
-           checkedAt   = excluded.checkedAt
-         WHERE excluded.checkedAt >= "DomainMetricCache".checkedAt`,
-        domain, provider,
-        r.dr ?? null, r.refDomains ?? null, r.backlinks ?? null,
-        r.orgTraffic ?? null, r.orgKeywords ?? null, r.orgCost ?? null,
-        r.payload ? JSON.stringify(r.payload) : null,
-        source, at,
-      );
+      await runUpsert({
+        table: "DomainMetricCache",
+        conflict: ["domain", "provider"],
+        values: {
+          domain, provider,
+          dr: r.dr ?? null,
+          refDomains: r.refDomains ?? null,
+          backlinks: r.backlinks ?? null,
+          orgTraffic: r.orgTraffic ?? null,
+          orgKeywords: r.orgKeywords ?? null,
+          orgCost: r.orgCost ?? null,
+          payload: r.payload ? JSON.stringify(r.payload) : null,
+          source, checkedAt: at,
+        },
+        update: {
+          dr: "keep", refDomains: "keep", backlinks: "keep",
+          orgTraffic: "keep", orgKeywords: "keep", orgCost: "keep", payload: "keep",
+          source: "set", checkedAt: "set",
+        },
+        onlyIfNewer: "checkedAt",
+      });
       written++;
     } catch { /* best effort */ }
   }
@@ -266,15 +267,14 @@ export async function recordUsage(userId: string, provider: string, units: numbe
   if (units <= 0) return;
   const month = monthKey();
   try {
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO "ApiUsage" (userId, provider, month, units, requests, updatedAt)
-       VALUES (?, ?, ?, ?, 1, ?)
-       ON CONFLICT(userId, provider, month) DO UPDATE SET
-         units     = "ApiUsage".units + excluded.units,
-         requests  = "ApiUsage".requests + 1,
-         updatedAt = excluded.updatedAt`,
-      userId, provider, month, units, nowIso(),
-    );
+    await runUpsert({
+      table: "ApiUsage",
+      conflict: ["userId", "provider", "month"],
+      values: { userId, provider, month, units, requests: 1, updatedAt: nowIso() },
+      // Both counters accumulate: `requests` inserts 1 and adds 1, which is what the previous
+      // hand-written `requests + 1` did.
+      update: { units: "add", requests: "add", updatedAt: "set" },
+    });
   } catch { /* accounting is best-effort; the cap check below still reads what was written */ }
 }
 
