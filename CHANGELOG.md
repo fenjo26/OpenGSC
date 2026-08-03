@@ -161,6 +161,15 @@ screen starts from queries the site already appears for, and this one starts fro
   pointing at different files). The MCP SQL tool's dynamic imports are marked `turbopackIgnore`,
   which removes the "Encountered unexpected file in NFT list" build warning.
 
+- **Node.js 24 (Active LTS) instead of Node 20.** `install.sh` and the Dockerfile both pinned
+  Node 20, which reached end of life on 30 April 2026 and no longer receives security patches —
+  so every fresh install was landing on an unmaintained runtime. `package.json` now declares
+  `engines.node >= 22.12`, which it never did, so npm can say something about it.
+
+  **Existing installs:** upgrading the runtime is not automatic. Install Node 22 or 24, then
+  `npm rebuild better-sqlite3` — it is a native module compiled against the running major, and
+  skipping the rebuild makes the app fail on start.
+
 ### Database
 
 - New model `DemandSearch` (search cache). Run `npx prisma db push` after updating.

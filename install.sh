@@ -41,7 +41,7 @@ fi
 
 # ─── OS check ─────────────────────────────────────────────────────────────────
 if ! command -v apt-get &>/dev/null; then
-  error "Only Debian/Ubuntu supported. For other distros install Node.js 20+ manually."
+  error "Only Debian/Ubuntu supported. For other distros install Node.js 22+ manually."
 fi
 
 # ─── Auto-clone if running via curl | bash ────────────────────────────────────
@@ -106,13 +106,21 @@ apt-get install -y -qq curl git unzip build-essential
 
 success "System packages ready"
 
-# ─── Node.js 20 ───────────────────────────────────────────────────────────────
+# ─── Node.js 24 (Active LTS) ──────────────────────────────────────────────────
+#
+# Was 20, which reached end of life on 30 April 2026 — no more security patches. A version
+# pinned in an installer is a decision made on behalf of everyone who runs it, so it tracks
+# Active LTS rather than whatever worked when the line was written.
+#
+# The check below accepts 22 as well: it is still in maintenance until April 2027, and an
+# instance already running it does not need a major version change forced on it mid-install.
+# Anything older is replaced.
 header "Node.js"
-if command -v node &>/dev/null && [ "$(node -e "console.log(process.versions.node.split('.')[0])")" -ge 20 ]; then
+if command -v node &>/dev/null && [ "$(node -e "console.log(process.versions.node.split('.')[0])")" -ge 22 ]; then
   success "Node.js $(node -v) already installed"
 else
-  info "Installing Node.js 20 LTS..."
-  curl -fsSL https://deb.nodesource.com/setup_20.x | bash - > /dev/null 2>&1
+  info "Installing Node.js 24 LTS..."
+  curl -fsSL https://deb.nodesource.com/setup_24.x | bash - > /dev/null 2>&1
   apt-get install -y -qq nodejs
   success "Node.js $(node -v) installed"
 fi

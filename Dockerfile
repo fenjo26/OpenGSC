@@ -2,7 +2,7 @@
 # Build:  docker compose build   (or: docker build -t opengsc .)
 # Run:    docker compose up -d   (see compose.yaml / docs/DOCKER-SETUP.md)
 
-FROM node:20-bookworm-slim AS build
+FROM node:24-bookworm-slim AS build
 WORKDIR /app
 
 # Native build tools for better-sqlite3 (its prebuilds usually suffice on x64,
@@ -19,7 +19,7 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM node:20-bookworm-slim
+FROM node:24-bookworm-slim
 WORKDIR /app
 ENV NODE_ENV=production
 ENV DATABASE_URL="file:/data/prod.db"

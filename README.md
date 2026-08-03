@@ -379,6 +379,7 @@ A self-hosted **doorway-domain network** for operators who need pages indexed fa
 | **RAM** | 1 GB | 2 GB |
 | **Disk** | 10 GB SSD | 20 GB SSD |
 | **Domain** | **Required** | With SSL (Let's Encrypt) |
+| **Node.js** | 22 LTS | 24 LTS (installed for you) |
 
 > Node.js, PM2, Nginx, and every dependency are installed **automatically** by the script — nothing to set up by hand.
 
@@ -417,7 +418,7 @@ Every step below is a direct link that opens exactly the right page in Google Cl
 curl -fsSL https://raw.githubusercontent.com/fenjo26/opengsc/main/install.sh | sudo bash
 ```
 
-The script clones the repo into `/root/opengsc`, then asks for: your domain, whether to install Nginx (recommended), whether to set up SSL via Let's Encrypt (recommended), an email for the SSL cert, and your Google Client ID/Secret. It then automatically installs Node.js 20 LTS, installs PM2 and runs the app as a managed service, configures Nginx as a reverse proxy, issues an SSL certificate via Certbot, and configures the UFW firewall (ports 22/80/443).
+The script clones the repo into `/root/opengsc`, then asks for: your domain, whether to install Nginx (recommended), whether to set up SSL via Let's Encrypt (recommended), an email for the SSL cert, and your Google Client ID/Secret. It then automatically installs Node.js 24 LTS, installs PM2 and runs the app as a managed service, configures Nginx as a reverse proxy, issues an SSL certificate via Certbot, and configures the UFW firewall (ports 22/80/443).
 
 ### 3. Open it
 
@@ -440,8 +441,8 @@ Sign in with Google — the **first account becomes the dashboard owner**. Add m
 git clone https://github.com/fenjo26/opengsc.git
 cd opengsc
 
-# Node.js 20
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash -
+# Node.js 24 (Active LTS — Node 20 reached end of life in April 2026)
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo bash -
 sudo apt-get install -y nodejs
 
 # PM2

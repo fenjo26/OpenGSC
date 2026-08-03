@@ -251,6 +251,7 @@ claude mcp add --transport http opengsc https://your-domain.com/api/mcp \
 | **RAM** | 1 GB | 2 GB |
 | **Disk** | 10 GB SSD | 20 GB SSD |
 | **Домен** | **Обязательно** | С поддержкой SSL (Let's Encrypt) |
+| **Node.js** | 22 LTS | 24 LTS (ставится автоматически) |
 
 > ⚠️ Google OAuth требует доменное имя с HTTPS. На чистом IP-адресе авторизация работать не будет.
 
@@ -264,7 +265,7 @@ claude mcp add --transport http opengsc https://your-domain.com/api/mcp \
 ```bash
 curl -fsSL https://raw.githubusercontent.com/fenjo26/opengsc/main/install.sh | sudo bash
 ```
-Скрипт спросит домен, установит Node.js, PM2, Nginx, выпустит SSL Let's Encrypt, настроит файрвол и запустит приложение.
+Скрипт спросит домен, установит Node.js 24 LTS, PM2, Nginx, выпустит SSL Let's Encrypt, настроит файрвол и запустит приложение.
 
 Для обновления версии достаточно выполнить:
 ```bash
