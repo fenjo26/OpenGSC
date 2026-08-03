@@ -147,6 +147,20 @@ screen starts from queries the site already appears for, and this one starts fro
   signature of a relative `DATABASE_URL`, where the CLI and the running app resolve to different
   database files.
 
+- **`src/middleware.ts` is now `src/proxy.ts`**, following the Next.js 16 rename. Same logic, but
+  the runtime changes from Edge to Node.js (proxy's runtime is fixed and not configurable). The
+  MCP token check stays in the route rather than moving into the gate: the obstacle that forced it
+  out was Prisma's incompatibility with Edge, but the gate runs on every request to every path,
+  and a database lookup there to serve one endpoint is not worth it.
+- **All upserts go through one builder** (`src/lib/db/upsert.ts`) instead of 15 hand-written
+  statements. Behaviour is unchanged — the `COALESCE` guards, the freshness check and the
+  accumulating counters are declared rather than repeated — and adding a second SQL dialect is now
+  one function. `scripts/check-upsert-sql.ts` prints and checks the generated statements.
+- Quieter output: the Prisma client no longer logs its database path on every boot and build
+  (set `DEBUG_PRISMA=1` to bring it back — it is the fastest way to diagnose an app and a CLI
+  pointing at different files). The MCP SQL tool's dynamic imports are marked `turbopackIgnore`,
+  which removes the "Encountered unexpected file in NFT list" build warning.
+
 ### Database
 
 - New model `DemandSearch` (search cache). Run `npx prisma db push` after updating.

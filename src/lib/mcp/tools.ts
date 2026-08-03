@@ -663,13 +663,20 @@ const CORE_TOOLS: McpTool[] = [
       // readonly flag — the engine itself refuses any write no matter how the query
       // text is disguised. prepare() also throws on multi-statement input, and
       // stmt.reader confirms the statement returns rows.
+      //
+      // Both imports below carry `turbopackIgnore`. Without it the bundler follows a dynamic
+      // import next to a `path.resolve(process.cwd(), …)` and concludes the whole project may be
+      // read at runtime, so it traces every file into the build — that is the "Encountered
+      // unexpected file in NFT list" warning. Neither module needs bundling: `path` is built in,
+      // and better-sqlite3 is a native addon that has to be required from node_modules at
+      // runtime regardless.
       const dbUrl = process.env.DATABASE_URL || "";
       const rawPath = dbUrl.replace(/^file:/, "").split("?")[0];
-      const path = await import("path");
+      const path = await import(/* turbopackIgnore: true */ "path");
       const dbPath = path.isAbsolute(rawPath) ? rawPath : path.resolve(process.cwd(), rawPath);
       // better-sqlite3 ships no bundled types (@types not installed).
       // @ts-ignore -- no declaration file for better-sqlite3
-      const { default: Database } = (await import("better-sqlite3")) as any;
+      const { default: Database } = (await import(/* turbopackIgnore: true */ "better-sqlite3")) as any;
       const db = new Database(dbPath, { readonly: true, fileMustExist: true });
       let rows: any[];
       try {

@@ -263,8 +263,9 @@ means what it was meant to mean — silence is a crash, not slowness.
 ## Troubleshooting
 
 **You get an HTML login page, or a 307 to `/api/auth/signin`.** Your instance predates the
-middleware fix — `withAuth` was matching `/api/mcp` and redirecting before the route could
-read your `Authorization` header. Update and rebuild:
+request-gate fix — `withAuth` was matching `/api/mcp` and redirecting before the route could
+read your `Authorization` header. (The gate lives in `src/proxy.ts`; it was `src/middleware.ts`
+until Next.js 16 renamed the convention.) Update and rebuild:
 
 ```bash
 cd /root/opengsc && git pull && npm install && npx prisma db push && npm run build && pm2 restart opengsc

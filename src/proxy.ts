@@ -1,8 +1,17 @@
+// Request gate for the whole app — formerly `src/middleware.ts`.
+//
+// Renamed for Next.js 16, which deprecated the `middleware` convention in favour of `proxy`.
+// The functionality is unchanged, but the runtime is not: proxy runs on **Node.js**, and unlike
+// middleware that is not configurable. That removes the constraint this file used to work
+// around — Prisma could now run here — but the MCP token check stays in the route regardless,
+// because a per-request database lookup on the gate that fronts every request is a cost with no
+// matching benefit. See docs/ARCHITECTURE.md §6.
+
 import { withAuth } from "next-auth/middleware";
 import { NextResponse } from "next/server";
 
 export default withAuth(
-  function middleware() {
+  function proxy() {
     return NextResponse.next();
   },
   {
@@ -17,8 +26,7 @@ export default withAuth(
       //     to /api/auth/signin and the client gets the HTML login page instead of
       //     JSON-RPC — the route's own Bearer check never gets to run. The check is
       //     not skipped, only moved: /api/mcp validates User.mcpToken itself and
-      //     answers a JSON-RPC 401 when it is missing or wrong. It cannot live here,
-      //     since middleware runs on the Edge runtime and Prisma does not.
+      //     answers a JSON-RPC 401 when it is missing or wrong.
       authorized: ({ token, req }) => {
         const { pathname, searchParams } = req.nextUrl;
         if (pathname === "/api/indexer/webhook") return true;

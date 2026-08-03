@@ -340,13 +340,19 @@ to the HTML login page instead, which a client can read as an OAuth server that 
 sending it into a flow this server cannot finish — and the connector then fails with nothing
 useful in the error.
 
-**The endpoint must be excluded from the NextAuth middleware, and this is not optional.**
-`src/middleware.ts` matches everything outside `/login` and `/api/auth`, so without an
+**The endpoint must be excluded from the NextAuth request gate, and this is not optional.**
+`src/proxy.ts` matches everything outside `/login` and `/api/auth`, so without an
 explicit exclusion `withAuth` answers an agent's POST with a 307 to `/api/auth/signin` and
 the client receives the HTML login page instead of JSON-RPC — the route's own Bearer check
 never runs. The check is not skipped, only relocated: `/api/mcp` validates `User.mcpToken`
-itself and returns a JSON-RPC 401 when it is absent or wrong. It cannot live in the
-middleware, because that runs on the Edge runtime and Prisma does not.
+itself and returns a JSON-RPC 401 when it is absent or wrong.
+
+That relocation used to be forced rather than chosen: the file was `src/middleware.ts`, and
+middleware runs on the Edge runtime, where Prisma cannot. Next.js 16 renamed the convention to
+`proxy` and fixed its runtime to Node.js — not configurable — so the technical obstacle is gone
+and the token check *could* live in the gate now. It still shouldn't. The gate runs on every
+request to every path; putting a database lookup there to serve one endpoint would spend a query
+on every page load to save one inside `/api/mcp`. The exclusion list stays where it is.
 
 The tool registry is split across three files for readability and flattened into one
 `MCP_TOOLS` array at the bottom of `src/lib/mcp/tools.ts`: the GSC core (`tools.ts`), the
