@@ -23,7 +23,10 @@
 // did not have. So the dialect stays in SQL, and this module is the only file that has to learn
 // a second one.
 //
-// Adding a database is now one function: {@link buildUpsert}'s `default` branch.
+// Adding a database is one branch of {@link buildUpsert}. SQLite is the only dialect any
+// instance actually runs today; the MySQL branch is written but has never executed against a
+// real server, and the Prisma schema cannot switch providers yet — see the note above that
+// branch before relying on it.
 
 import { prisma } from "@/lib/prisma";
 
@@ -59,22 +62,20 @@ export interface UpsertSpec {
 /**
  * Which SQL dialect to emit.
  *
- * Read from the Prisma datasource rather than from a setting of its own: two places that can
- * disagree about the database is a worse failure than not being configurable. Today the schema
- * only ever says `sqlite`; the point of reading it is that adding a provider changes one file.
+ * Derived from `DATABASE_URL` rather than from a setting of its own, because two places that can
+ * disagree about which database this is would be a worse failure than not being configurable:
+ * the connection would succeed and the statements would be wrong.
  */
-export type SqlDialect = "sqlite";
+export type SqlDialect = "sqlite" | "mysql";
 
 export function currentDialect(): SqlDialect {
-  return "sqlite";
+  const url = process.env.DATABASE_URL ?? "";
+  return /^mysql:/i.test(url) || /^mariadb:/i.test(url) ? "mysql" : "sqlite";
 }
 
-/** Quote an identifier for the dialect. SQLite and Postgres use double quotes; MySQL backticks. */
+/** SQLite and Postgres quote identifiers with double quotes; MySQL and MariaDB use backticks. */
 function quote(id: string, dialect: SqlDialect): string {
-  switch (dialect) {
-    case "sqlite":
-      return `"${id}"`;
-  }
+  return dialect === "mysql" ? `\`${id}\`` : `"${id}"`;
 }
 
 /**
@@ -116,19 +117,61 @@ export function buildUpsert(spec: UpsertSpec, dialect: SqlDialect = currentDiale
       return { sql, params };
     }
 
-    // MySQL / MariaDB goes here, and the translation is mechanical rather than difficult:
+    // ── MySQL / MariaDB ───────────────────────────────────────────────────────────────────
     //
-    //   ON CONFLICT(a, b) DO UPDATE SET …   →  ON DUPLICATE KEY UPDATE …
-    //   excluded.col                        →  VALUES(col)   (or a row alias on MySQL 8.0.19+)
-    //   "identifier"                         →  `identifier`
-    //   WHERE excluded.x >= table.x          →  no direct equivalent; each assignment becomes
-    //                                           IF(VALUES(x) >= x, <new value>, <column>)
+    // UNVERIFIED AGAINST A REAL SERVER. Every statement below is generated correctly in shape —
+    // `scripts/check-upsert-sql.ts` asserts that — but no one has yet watched MySQL *execute*
+    // them. Until someone has, this path should be treated as a draft rather than a feature.
+    // See docs/ARCHITECTURE.md for what still has to be done around it (the schema's `provider`
+    // cannot be an environment variable, so it is not switchable yet).
     //
-    // Deliberately not written on spec. Untested SQL that looks authoritative is worse than a
-    // clear gap: it would be trusted, and the failure would show up as quietly wrong cached
-    // metrics rather than an error. Whoever adds it should also add a case to the test that
-    // compares generated statements, and run the metric-cache paths against a real MariaDB —
-    // particularly the freshness guard, which is the one piece with no direct translation.
+    // Three differences from the SQLite form, the third being the only interesting one:
+    //
+    //   ON CONFLICT(a, b) DO UPDATE SET …  →  ON DUPLICATE KEY UPDATE …   (no conflict target;
+    //                                          MySQL matches on any unique key, which is fine
+    //                                          here — every spec conflicts on its primary key)
+    //   excluded.col                       →  VALUES(col)
+    //   WHERE excluded.x >= table.x        →  nothing. MySQL has no conditional on-duplicate
+    //                                          clause at all, so the guard has to move inside
+    //                                          every single assignment as an IF().
+    case "mysql": {
+      const v = (col: string) => `VALUES(${q(col)})`;
+
+      const valueFor = (col: string, mode: UpsertMode): string => {
+        switch (mode) {
+          case "set":       return v(col);
+          case "keep":      return `COALESCE(${v(col)}, ${q(col)})`;
+          case "add":       return `${q(col)} + ${v(col)}`;
+          case "keepEmpty": return `CASE WHEN ${v(col)} != '' THEN ${v(col)} ELSE ${q(col)} END`;
+        }
+      };
+
+      const guard = spec.onlyIfNewer;
+
+      // Assignment order is load-bearing here, and it is the easiest thing to get wrong.
+      //
+      // MySQL evaluates ON DUPLICATE KEY UPDATE assignments left to right, and a later
+      // assignment sees the values written by earlier ones. The guard compares the incoming
+      // row against the *stored* timestamp — so if the timestamp column were updated first,
+      // every assignment after it would compare against the value just written and the guard
+      // would always pass. Writing it last is what keeps the comparison meaningful.
+      const updateCols = Object.keys(spec.update).filter(c => c !== guard);
+      if (guard && guard in spec.update) updateCols.push(guard);
+
+      const assignments = updateCols.map(col => {
+        const next = valueFor(col, spec.update[col]);
+        return guard
+          ? `${q(col)} = IF(${v(guard)} >= ${q(guard)}, ${next}, ${q(col)})`
+          : `${q(col)} = ${next}`;
+      });
+
+      const sql =
+        `INSERT INTO ${q(spec.table)} (${cols.map(q).join(", ")}) ` +
+        `VALUES (${cols.map(() => "?").join(", ")}) ` +
+        `ON DUPLICATE KEY UPDATE ${assignments.join(", ")}`;
+
+      return { sql, params };
+    }
   }
 }
 

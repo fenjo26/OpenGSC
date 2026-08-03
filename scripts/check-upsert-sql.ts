@@ -13,7 +13,7 @@
 // why the run prints one line of client debug output before the first case. Harmless, and worth
 // knowing before someone reads it as a failure.
 
-import { buildUpsert, type UpsertSpec } from "../src/lib/db/upsert";
+import { buildUpsert, type SqlDialect, type UpsertSpec } from "../src/lib/db/upsert";
 
 const CASES: { name: string; spec: UpsertSpec }[] = [
   {
@@ -152,30 +152,83 @@ const CASES: { name: string; spec: UpsertSpec }[] = [
   },
 ];
 
-let bad = 0;
-for (const { name, spec } of CASES) {
-  const { sql, params } = buildUpsert(spec);
+/**
+ * The three behaviours that can break on a dialect switch, asserted per dialect.
+ *
+ * These are not stylistic checks. Each one corresponds to a way the data goes quietly wrong:
+ * a dropped COALESCE erases values someone paid for, a missing guard lets a stale CSV import
+ * overwrite fresh API data, and a lost accumulator silently resets the spend counter.
+ */
+function problemsFor(spec: UpsertSpec, sql: string, params: unknown[], dialect: SqlDialect): string[] {
+  const problems: string[] = [];
   const cols = Object.keys(spec.values).length;
 
-  // Cheap invariants that would catch a builder bug without anyone reading the SQL.
-  const problems: string[] = [];
   if (params.length !== cols) problems.push(`params ${params.length} != columns ${cols}`);
   if ((sql.match(/\?/g) ?? []).length !== cols) problems.push("placeholder count != column count");
-  for (const [col, mode] of Object.entries(spec.update)) {
-    if (mode === "keep" && !sql.includes(`COALESCE(excluded."${col}"`)) problems.push(`${col}: COALESCE missing`);
-    if (mode === "add" && !sql.includes(`"${spec.table}"."${col}" + excluded."${col}"`)) problems.push(`${col}: not accumulating`);
-  }
-  if (spec.onlyIfNewer && !sql.includes(`WHERE excluded."${spec.onlyIfNewer}"`)) problems.push("freshness guard missing");
 
-  console.log(`\n── ${name}`);
-  console.log(sql);
-  if (problems.length) {
-    bad++;
-    console.log(`   ✗ ${problems.join("; ")}`);
-  } else {
-    console.log(`   ✓ ${cols} columns, ${Object.keys(spec.update).length} updated${spec.onlyIfNewer ? ", freshness-guarded" : ""}`);
+  const incoming = (c: string) => (dialect === "mysql" ? `VALUES(\`${c}\`)` : `excluded."${c}"`);
+  const stored = (c: string) => (dialect === "mysql" ? `\`${c}\`` : `"${spec.table}"."${c}"`);
+
+  for (const [col, mode] of Object.entries(spec.update)) {
+    if (mode === "keep" && !sql.includes(`COALESCE(${incoming(col)}`)) {
+      problems.push(`${col}: COALESCE missing`);
+    }
+    if (mode === "add" && !sql.includes(`${stored(col)} + ${incoming(col)}`)) {
+      problems.push(`${col}: not accumulating`);
+    }
+  }
+
+  const guard = spec.onlyIfNewer;
+  if (guard) {
+    if (dialect === "mysql") {
+      // MySQL has no conditional on-duplicate clause, so the guard must appear on every
+      // assignment rather than once at the end.
+      const wrapped = (sql.match(/IF\(/g) ?? []).length;
+      const expected = Object.keys(spec.update).length;
+      if (wrapped !== expected) problems.push(`guard on ${wrapped}/${expected} assignments`);
+
+      // And the guarded column has to be written last, or the assignments after it would
+      // compare against the value it just wrote instead of the stored one.
+      const assignOrder = [...sql.matchAll(/`(\w+)` = IF\(/g)].map(m => m[1]);
+      if (assignOrder[assignOrder.length - 1] !== guard) {
+        problems.push(`guard column "${guard}" is not assigned last (order: ${assignOrder.join(", ")})`);
+      }
+    } else if (!sql.includes(`WHERE excluded."${guard}"`)) {
+      problems.push("freshness guard missing");
+    }
+  }
+
+  return problems;
+}
+
+const DIALECTS: SqlDialect[] = ["sqlite", "mysql"];
+
+let bad = 0;
+for (const dialect of DIALECTS) {
+  console.log(`\n${"=".repeat(78)}\n  ${dialect.toUpperCase()}\n${"=".repeat(78)}`);
+  for (const { name, spec } of CASES) {
+    const { sql, params } = buildUpsert(spec, dialect);
+    const problems = problemsFor(spec, sql, params, dialect);
+
+    console.log(`\n── ${name}`);
+    console.log(sql);
+    if (problems.length) {
+      bad++;
+      console.log(`   ✗ ${problems.join("; ")}`);
+    } else {
+      const cols = Object.keys(spec.values).length;
+      console.log(`   ✓ ${cols} columns, ${Object.keys(spec.update).length} updated${spec.onlyIfNewer ? ", freshness-guarded" : ""}`);
+    }
   }
 }
 
-console.log(bad ? `\n${bad} case(s) failed` : `\nAll ${CASES.length} cases consistent`);
+console.log(
+  bad
+    ? `\n${bad} case(s) failed`
+    : `\nAll ${CASES.length} cases consistent across ${DIALECTS.length} dialects`,
+);
+console.log(
+  "\nNote: this checks the shape of the SQL, not that a server accepts or executes it.\n" +
+  "The MySQL branch has never run against a real MariaDB.",
+);
 process.exit(bad ? 1 : 0);

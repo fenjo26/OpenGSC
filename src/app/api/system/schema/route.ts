@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { currentDialect } from "@/lib/db/upsert";
 
 // GET /api/system/schema — which expected tables are missing from the database.
 //
@@ -47,9 +48,16 @@ export async function GET() {
 
   let present = new Set<string>();
   try {
-    const rows: any[] = await prisma.$queryRawUnsafe(
-      `SELECT name FROM sqlite_master WHERE type = 'table'`,
-    );
+    // `sqlite_master` does not exist outside SQLite, and this check would otherwise report every
+    // table as missing on MySQL — turning the "run prisma db push" banner into a permanent false
+    // alarm on exactly the setup that is hardest to debug.
+    const rows: any[] = currentDialect() === "mysql"
+      ? await prisma.$queryRawUnsafe(
+          `SELECT TABLE_NAME AS name FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE()`,
+        )
+      : await prisma.$queryRawUnsafe(
+          `SELECT name FROM sqlite_master WHERE type = 'table'`,
+        );
     present = new Set(rows.map(r => String(r.name)));
   } catch {
     // Reading sqlite_master itself failing means something is wrong that this endpoint is not
