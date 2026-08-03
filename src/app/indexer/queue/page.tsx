@@ -456,8 +456,13 @@ export default function IndexerQueuePage() {
               <thead>
                 <tr style={{ color: "var(--color-text-secondary)", height: "36px" }}>
                   {[
-                    { label: "Domain", w: undefined as string | undefined, align: "left" as const },
-                    { label: "URL Path", w: undefined, align: "left" as const },
+                    // Renamed from "Domain"/"URL Path". Both columns are domains, and the old
+                    // labels gave no hint which was which: the first is the doorway that will
+                    // host the link, the second is the site the link points at. With several
+                    // sites queued at once, the second was the one you needed and the one that
+                    // had its host stripped off.
+                    { label: "Doorway", w: undefined as string | undefined, align: "left" as const },
+                    { label: "Target URL", w: undefined, align: "left" as const },
                     { label: "Status", w: "100px", align: "left" as const },
                     { label: "Индекс", w: "56px", align: "center" as const },
                   ].map(h => (
@@ -482,6 +487,10 @@ export default function IndexerQueuePage() {
               </thead>
               <tbody>
                 {queue.map(item => {
+                  // Host and path shown separately rather than the path alone. The queue mixes
+                  // URLs from every site an operator has submitted, and a bare "/category/x"
+                  // does not say whose page it is.
+                  const host = item.url.replace(/^https?:\/\//, "").split("/")[0];
                   const path = item.url.replace(/^https?:\/\/[^/]+/, "");
                   const isCrawled = item.status.toLowerCase() === "crawled";
                   return (
@@ -491,9 +500,12 @@ export default function IndexerQueuePage() {
                       </td>
                       <td
                         title={item.url}
-                        style={{ padding: "0 8px", fontFamily: "monospace", color: "var(--color-text-secondary)", maxWidth: "220px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                        style={{ padding: "0 8px", fontFamily: "monospace", maxWidth: "320px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                       >
-                        {path || "/"}
+                        {/* Host carries the weight, path is context — the reverse of how a URL
+                            usually reads, because here the question is "which site" first. */}
+                        <span style={{ color: "var(--color-text-primary)", fontWeight: 600 }}>{host}</span>
+                        <span style={{ color: "var(--color-text-tertiary)" }}>{path || "/"}</span>
                       </td>
                       <td style={{ padding: "0 8px" }}>
                         <span style={{

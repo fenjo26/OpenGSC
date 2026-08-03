@@ -2403,7 +2403,9 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
 
   // ── Custom Bot Farm Indexer ──
   const [indexerDomains, setIndexerDomains] = useState<any[]>([]);
-  const [selectedFarmDomainId, setSelectedFarmDomainId] = useState("");
+  // "all" mirrors the Indexer's own default: let the queue distribute URLs across every doorway
+  // domain instead of making the operator pick one per submission.
+  const [selectedFarmDomainId, setSelectedFarmDomainId] = useState("all");
   const [submittingToFarm, setSubmittingToFarm] = useState(false);
   const [farmSubmitResult, setFarmSubmitResult] = useState<string | null>(null);
 
@@ -2530,10 +2532,11 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
 
   // ── Private Bot Farm submit ──
   const runFarmSubmit = async () => {
-    if (!selectedFarmDomainId) {
-      setFarmSubmitResult(`✗ ${t("farmChooseDomain")}`);
-      return;
-    }
+    // No guard on an empty selection any more: the picker defaults to "all", which the queue
+    // endpoint already understands as "spread these across every doorway domain, round-robin".
+    // The old check refused to submit while the select visibly showed a domain — the state
+    // started empty but the browser renders the first <option>, so the two disagreed and the
+    // button answered "choose a domain first" for a domain that was on screen.
     const urls = selected.size > 0
       ? [...selected]
       : urlRows.map(r => r.url);
@@ -2846,6 +2849,12 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
                   outline: "none"
                 }}
               >
+                {/* Auto first, and selected by default: spreading links over the whole network
+                    is the normal case, and pinning every URL of one site to a single doorway is
+                    the footprint you would rather not leave. */}
+                <option value="all">
+                  {t("farmAutoDistribute").replace("{n}", String(indexerDomains.length))}
+                </option>
                 {indexerDomains.map(d => (
                   <option key={d.id} value={d.id}>{d.domain}</option>
                 ))}
