@@ -664,16 +664,24 @@ const CORE_TOOLS: McpTool[] = [
       // text is disguised. prepare() also throws on multi-statement input, and
       // stmt.reader confirms the statement returns rows.
       //
-      // Both imports below carry `turbopackIgnore`. Without it the bundler follows a dynamic
-      // import next to a `path.resolve(process.cwd(), …)` and concludes the whole project may be
-      // read at runtime, so it traces every file into the build — that is the "Encountered
-      // unexpected file in NFT list" warning. Neither module needs bundling: `path` is built in,
-      // and better-sqlite3 is a native addon that has to be required from node_modules at
-      // runtime regardless.
+      // Three `turbopackIgnore` markers, and the one that matters is on `process.cwd()`.
+      //
+      // Turbopack reports "Encountered unexpected file in NFT list" when it decides a route may
+      // read arbitrary files at runtime, and then traces the entire project into the build. What
+      // triggers that here is not the dynamic imports — it is `path.resolve(process.cwd(), …)`,
+      // a filesystem path rooted at the project directory, which the bundler cannot narrow. The
+      // warning names this case explicitly and gives the fix in its own text; marking only the
+      // imports leaves the warning exactly as it was.
+      //
+      // The imports keep their markers because neither needs bundling anyway: `path` is built in,
+      // and better-sqlite3 is a native addon that has to be resolved from node_modules at
+      // runtime.
       const dbUrl = process.env.DATABASE_URL || "";
       const rawPath = dbUrl.replace(/^file:/, "").split("?")[0];
       const path = await import(/* turbopackIgnore: true */ "path");
-      const dbPath = path.isAbsolute(rawPath) ? rawPath : path.resolve(process.cwd(), rawPath);
+      const dbPath = path.isAbsolute(rawPath)
+        ? rawPath
+        : path.resolve(/* turbopackIgnore: true */ process.cwd(), rawPath);
       // better-sqlite3 ships no bundled types (@types not installed).
       // @ts-ignore -- no declaration file for better-sqlite3
       const { default: Database } = (await import(/* turbopackIgnore: true */ "better-sqlite3")) as any;
