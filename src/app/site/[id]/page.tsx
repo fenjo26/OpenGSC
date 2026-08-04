@@ -4702,15 +4702,6 @@ export default function SitePage({
                 {t("algoNoneInPeriod")}
               </span>
             )}
-            {/* What the shading means, said once next to the toggle instead of as a second label
-                on every band. A swatch beside the sentence ties the two together without needing
-                to name a colour that changes per update type. */}
-            {googleUpdates && visibleAlgoUpdates.some(u => u.x2) && (
-              <span style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "11px", color: "var(--color-text-tertiary)", whiteSpace: "nowrap" }}>
-                <span style={{ width: 14, height: 9, borderRadius: 2, background: "rgba(139,92,246,0.18)", borderLeft: "1.5px dashed #8B5CF6", borderRight: "1px dashed rgba(139,92,246,0.5)" }} />
-                {t("algoBandHint")}
-              </span>
-            )}
             <FilterDd
               positionFilter={positionFilter}
               onPositionFilter={v => { setPositionFilter(v); if (v !== null) scrollToResults(); }}
