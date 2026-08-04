@@ -14,7 +14,7 @@ import EngineView, { type AltEngine, type EngineSummary } from "@/components/Eng
 import SearchEnginesPanel from "@/components/SearchEnginesPanel";
 import { withShare } from "@/lib/shareParam";
 import AeoTracker from "@/components/AeoTracker";
-import { ALGO_UPDATES, ALGO_UPDATE_COLORS, algoDateLabel } from "@/lib/algoUpdates";
+import { ALGO_UPDATES, ALGO_UPDATE_COLORS, snapToChartLabel, type AlgoUpdate } from "@/lib/algoUpdates";
 import { useParams, useRouter } from "next/navigation";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
@@ -3406,13 +3406,6 @@ function mapApiNote(n: ApiNote): AnnotationNote {
   };
 }
 
-const getMockAnnotations = (t: any): AnnotationNote[] => [
-  { date: "Sep 5, 2024",  title: t("annMovedToAstro"),          scope: t("annAllPages"),       cBefore: 1500, cAfter: 2000,  cPct: 36,  iBefore: 49200, iAfter: 176300, iPct: 258, tBefore: 3.1, tAfter: 1.2, tPct: 1.9,  pBefore: 55.3, pAfter: 58,   pDelta: 2.7,  dateRange: "Jul 5 to Sep 3 → Sep 6 to Nov 5",    sparkBefore: [20,22,18,25,23,21,28,30], sparkAfter: [32,38,42,45,50,55,58,62] },
-  { date: "Jun 28, 2024", title: t("annRedirectGlossary"),    scope: t("annAllPages"),       cBefore: 683,  cAfter: 1400,  cPct: 118, iBefore: 37900, iAfter: 46400,  iPct: 22,  tBefore: 1.8, tAfter: 3.2, tPct: 1.4,  pBefore: 65.8, pAfter: 55.9, pDelta: 9.9,  dateRange: "Apr 29 to Jun 27 → Jun 28 to Aug 26", sparkBefore: [15,14,16,13,15,14,16,15], sparkAfter: [18,22,25,28,30,32,35,38] },
-  { date: "Aug 21, 2024", title: t("annFeaturePostsUpdate"),                    scope: t("annContentGroup"),   cBefore: 16,   cAfter: 80,    cPct: 400, iBefore: 6400,  iAfter: 17100,  iPct: 164, tBefore: 0.2, tAfter: 0.5, tPct: 0.3,  pBefore: 37.4, pAfter: 47.6, pDelta: 10.2, dateRange: "Jun 22 to Aug 20 → Aug 21 to Oct 19", sparkBefore: [5,6,4,7,5,6,5,6],        sparkAfter: [8,12,18,25,32,40,48,55]  },
-  { date: "Aug 5, 2024",  title: t("annUpdatedBrandedKw"),      scope: t("annSpecificPages"), cBefore: 4,    cAfter: 32,    cPct: 700, iBefore: 2000,  iAfter: 11200,  iPct: 456, tBefore: 0.2, tAfter: 0.3, tPct: 0.1,  pBefore: 51.3, pAfter: 48.8, pDelta: 2.5,  dateRange: "Jun 6 to Aug 4 → Aug 5 to Oct 3",    sparkBefore: [2,3,2,3,2,3,2,3],        sparkAfter: [4,8,12,18,22,26,30,32]   },
-];
-
 // Comparison window in days for each period key — how far back and forward from a note's date the
 // before/after figures reach. Keys without a natural day count fall back to 28.
 const ANNOTATION_WINDOW: Record<string, number> = {
@@ -3426,7 +3419,12 @@ function AnnotationsTab({ period, setPeriod, periodOptions, onSetupBranded, site
 }) {
   const { t } = useLanguage();
   const [viewMode, setViewMode] = useState<"notes" | "updates">("notes");
-  const [onboarding, setOnboarding] = useState(true);
+  // Was `useState(true)`, which blurred the table and covered it with a panel advertising four
+  // invented notes from 2024 ("Moved to Astro", and so on). It appeared before the real notes had
+  // even loaded, so an operator with a full history saw fake data first. The onboarding panel now
+  // waits until the request has come back empty, and the fake rows are gone entirely — an empty
+  // table with a working "add note" button says the same thing without pretending to have data.
+  const [onboarding, setOnboarding] = useState(false);
   const [showAddNote, setShowAddNote] = useState(false);
   const [notes, setNotes] = useState<AnnotationNote[]>([]);
   const [loading, setLoading] = useState(false);
@@ -3438,24 +3436,35 @@ function AnnotationsTab({ period, setPeriod, periodOptions, onSetupBranded, site
   // Notes and their figures both come from the server: the note rows persist in the Annotation
   // table, the before/after numbers are derived from DailyMetric on every read. Re-fetching when
   // the period changes is what makes the window selector actually mean something here.
+  // `viewMode` now reaches the request. It used to exist only to colour the two buttons, so
+  // pressing "Updates" highlighted it and changed nothing at all — the same list of notes stayed
+  // on screen. The endpoint scores Google's update dates with the identical before/after logic.
   const loadNotes = useCallback(async () => {
     if (!siteDbId) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/annotations?siteId=${encodeURIComponent(siteDbId)}&days=${days}`, { cache: "no-store" });
+      const q = `siteId=${encodeURIComponent(siteDbId)}&days=${days}${viewMode === "updates" ? "&source=updates" : ""}`;
+      const res = await fetch(`/api/annotations?${q}`, { cache: "no-store" });
       const d = await res.json();
       setUnavailable(!!d.unavailable);
       setNotes(Array.isArray(d.notes) ? d.notes.map(mapApiNote) : []);
     } catch { setNotes([]); }
     setLoading(false);
-  }, [siteDbId, days]);
+  }, [siteDbId, days, viewMode]);
 
   useEffect(() => { loadNotes(); }, [loadNotes]);
-  useEffect(() => { if (notes.length > 0) setOnboarding(false); }, [notes.length]);
+
+  // Onboarding is for an operator who has written nothing yet, so it can only be decided after the
+  // request returns — and never in Updates mode, where the rows come from Google rather than
+  // from them.
+  useEffect(() => {
+    if (loading || viewMode === "updates") return;
+    setOnboarding(notes.length === 0 && !unavailable);
+  }, [loading, notes.length, unavailable, viewMode]);
 
   const toggleMetric = (m: Metric) => setActiveMetrics(p => { const n = new Set(p); n.has(m) ? n.delete(m) : n.add(m); return n; });
 
-  const displayNotes = notes.length > 0 ? notes : (onboarding ? getMockAnnotations(t) : []);
+  const displayNotes = notes;
 
   const fK = (n: number) => n >= 1000 ? `${(n/1000).toFixed(1)}k` : String(n);
 
@@ -3522,7 +3531,9 @@ function AnnotationsTab({ period, setPeriod, periodOptions, onSetupBranded, site
       )}
 
       {/* ── Background content ── */}
-      <div style={{ filter: onboarding ? "blur(2px)" : "none", pointerEvents: onboarding ? "none" : "auto", userSelect: onboarding ? "none" : "auto", transition: "filter 0.2s" }}>
+      {/* No blur any more: it existed to make invented rows look like real data behind frosted
+          glass, and with the rows gone there is nothing to obscure. */}
+      <div>
         {displayNotes.map((note, idx) => (
           <div key={idx} style={{ display: "grid", gridTemplateColumns: "280px 1fr auto", gap: "0", borderBottom: "1px solid var(--color-border)", alignItems: "center", padding: "0 32px" }}>
             {/* Left: date + title + scope */}
@@ -3576,9 +3587,11 @@ function AnnotationsTab({ period, setPeriod, periodOptions, onSetupBranded, site
       </div>
 
       {/* Empty state when not onboarding and no notes */}
-      {!onboarding && notes.length === 0 && (
+      {!onboarding && !loading && notes.length === 0 && (
         <div style={{ padding: "64px 32px", textAlign: "center" }}>
-          <p style={{ fontSize: "14px", color: "var(--color-text-secondary)" }}>{t("annEmptyDesc")}</p>
+          <p style={{ fontSize: "14px", color: "var(--color-text-secondary)" }}>
+            {viewMode === "updates" ? t("annNoUpdatesInRange") : t("annEmptyDesc")}
+          </p>
         </div>
       )}
 
@@ -4214,13 +4227,32 @@ export default function SitePage({
     }));
   }, [chartData]);
 
-  // Google updates that fall inside the visible chart window
+  // Google's published update list, with the built-in one as the starting value so the chart has
+  // something to draw before the request lands (and if it never does).
+  const [algoUpdates, setAlgoUpdates] = useState<AlgoUpdate[]>(ALGO_UPDATES);
+  useEffect(() => {
+    if (readOnly) return;
+    fetch(getUrl("/api/gsc/algo-updates"))
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (Array.isArray(d?.updates) && d.updates.length) setAlgoUpdates(d.updates); })
+      .catch(() => { /* built-in list stays */ });
+  }, [readOnly]);
+
+  // Google updates inside the visible window, each already snapped to a real point on the axis.
+  // Snapping happens here rather than at render time because an update with no matching point is
+  // dropped entirely, and doing that in the map below would leave holes in the JSX.
   const visibleAlgoUpdates = useMemo(() => {
-    const start = siteData?.chartData?.[0]?.dateIso;
-    const end   = siteData?.chartData?.[siteData.chartData.length - 1]?.dateIso;
+    const chart = siteData?.chartData;
+    if (!chart?.length) return [];
+    const start = chart[0]?.dateIso;
+    const end = chart[chart.length - 1]?.dateIso;
     if (!start || !end) return [];
-    return ALGO_UPDATES.filter(u => u.date >= start && u.date <= end);
-  }, [siteData]);
+
+    return algoUpdates
+      .filter(u => u.date >= start && u.date <= end)
+      .map(u => ({ ...u, x: snapToChartLabel(chart, u.date) }))
+      .filter((u): u is AlgoUpdate & { x: string } => u.x !== null);
+  }, [siteData, algoUpdates]);
 
   // ── Rank tracker: which queries are already tracked (for Track buttons) ──────
   const [trackedKws, setTrackedKws] = useState<Set<string>>(new Set());
@@ -4558,7 +4590,7 @@ export default function SitePage({
               )}
               {/* Google algorithm update markers (core / spam / discover) */}
               {googleUpdates && visibleAlgoUpdates.map(u => (
-                <ReferenceLine key={`${u.name}-${u.date}`} x={algoDateLabel(u.date)} yAxisId="left"
+                <ReferenceLine key={`${u.name}-${u.date}`} x={u.x} yAxisId="left"
                   stroke={ALGO_UPDATE_COLORS[u.type]} strokeWidth={1.5} strokeDasharray="3 3"
                   label={{ value: u.name, position: "top", fontSize: 9, fill: ALGO_UPDATE_COLORS[u.type], fontWeight: 600 }} />
               ))}

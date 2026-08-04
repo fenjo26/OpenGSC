@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getAlgoUpdates } from "@/lib/algoUpdatesServer";
 
 // Annotations — dated notes about site changes, scored against real Search Console data.
 //
@@ -159,18 +160,42 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const siteId = searchParams.get("siteId") || "";
   const days = Math.max(1, Math.min(180, parseInt(searchParams.get("days") || "28", 10) || 28));
+  // "updates" scores Google's own ranking updates instead of the operator's notes. Same question,
+  // different list of dates: what did traffic do on either side of this day. Reusing this endpoint
+  // rather than writing a second one is the point — the day bucketing, the impression-weighted
+  // position and the "no data yet" handling are subtle enough that a parallel copy would drift.
+  const source = searchParams.get("source") === "updates" ? "updates" : "notes";
   if (!siteId) return NextResponse.json({ error: "no_site" }, { status: 400 });
   if (!(await ownedSite(userId, siteId))) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
   try {
-    const rows = await prisma.$queryRawUnsafe<{
+    const rows: {
       id: string; date: Date | string | number; title: string; description: string | null;
       scope: string; urls: string | null;
-    }[]>(
-      `SELECT "id", "date", "title", "description", "scope", "urls"
-       FROM "Annotation" WHERE "siteId" = ? ORDER BY "date" DESC LIMIT 200`,
-      siteId,
-    );
+    }[] = source === "updates"
+      ? await (async () => {
+          const { updates } = await getAlgoUpdates();
+          // Only updates the site could actually have lived through. An update needs a full
+          // `days` window on each side to be worth scoring, and one that rolled out yesterday
+          // would report a confident nothing.
+          const oldest = iso(addDays(new Date(), -(400 + days)));
+          return updates
+            .filter(u => u.date >= oldest && u.date <= iso(addDays(new Date(), -1)))
+            .sort((a, b) => b.date.localeCompare(a.date))
+            .map(u => ({
+              id: `google:${u.date}:${u.type}`,
+              date: new Date(`${u.date}T00:00:00Z`),
+              title: u.name,
+              description: u.duration ? `Rollout: ${u.duration}` : null,
+              scope: "all",
+              urls: null,
+            }));
+        })()
+      : await prisma.$queryRawUnsafe(
+          `SELECT "id", "date", "title", "description", "scope", "urls"
+           FROM "Annotation" WHERE "siteId" = ? ORDER BY "date" DESC LIMIT 200`,
+          siteId,
+        );
 
     // One shared query covers every all-pages note; only page-scoped notes need their own.
     const dates = rows.map(r => new Date(r.date as any));
@@ -217,11 +242,11 @@ export async function GET(req: Request) {
       };
     }));
 
-    return NextResponse.json({ notes, days });
+    return NextResponse.json({ notes, days, source });
   } catch (e) {
     // Table not created yet (no `prisma db push`) — an empty list, not a 500.
     console.error("[Annotations] read failed", e);
-    return NextResponse.json({ notes: [], days, unavailable: true });
+    return NextResponse.json({ notes: [], days, source, unavailable: true });
   }
 }
 

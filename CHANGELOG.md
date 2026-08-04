@@ -3,7 +3,7 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
-## [Unreleased]
+## [1.2.0] — 2026-08-03
 
 ### Added
 
@@ -160,6 +160,31 @@ screen starts from queries the site already appears for, and this one starts fro
   (set `DEBUG_PRISMA=1` to bring it back — it is the fastest way to diagnose an app and a CLI
   pointing at different files). The MCP SQL tool's dynamic imports are marked `turbopackIgnore`,
   which removes the "Encountered unexpected file in NFT list" build warning.
+
+### Fixed
+
+- **Google algorithm update markers on the site chart.** Two independent reasons they never
+  appeared. The list of updates was hardcoded and stopped at March 2026, so recent windows had
+  nothing to draw; updates now come from Google's own feed
+  (`status.search.google.com/incidents.json`) via `/api/gsc/algo-updates`, merged with the built-in
+  list and cached for an hour, falling back to the built-in list when the feed is unreachable. And
+  markers were positioned by a computed label string, which Recharts silently drops when no data
+  point carries that exact label — a daily gap in Search Console was enough to erase a marker.
+  They now snap to the first real point on or after the update date.
+- **The Updates view in the Annotations tab did nothing.** `viewMode` was read only to colour the
+  two buttons, so switching to Updates left the same list of notes on screen. It now scores
+  Google's update dates through the same before/after pipeline as a hand-written note, so you can
+  see where a site went after each one.
+- **Annotations no longer opens on invented data.** The tab blurred itself and displayed four
+  fabricated notes from 2024 before the real ones had loaded. The fake rows are gone, and the
+  onboarding panel waits until the request comes back genuinely empty.
+- **Indexing tab: "auto" is now the default doorway target.** The queue endpoint always understood
+  `all` (round-robin across every doorway), but the site page offered no such option, and its
+  select started with empty state while the browser displayed the first domain — so Submit
+  answered "choose a domain first" about a domain that was visibly selected.
+- **Indexer queue: you can tell which site a row belongs to.** The two columns were "Domain" and
+  "URL Path" and both concern domains: the first is the doorway hosting the link, the second had
+  its host stripped. Now "Doorway" and "Target URL", with the target's host shown.
 
 - **Node.js 24 (Active LTS) instead of Node 20.** `install.sh` and the Dockerfile both pinned
   Node 20, which reached end of life on 30 April 2026 and no longer receives security patches —
