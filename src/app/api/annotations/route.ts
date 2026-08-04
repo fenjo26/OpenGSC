@@ -164,46 +164,51 @@ export async function GET(req: Request) {
   // comparison reaches on either side of each row. Two different questions that used to share one
   // number, which is why picking a longer period changed the figures but never the list.
   const lookback = Math.max(7, Math.min(1200, parseInt(searchParams.get("lookback") || "400", 10) || 400));
-  // "updates" scores Google's own ranking updates instead of the operator's notes. Same question,
-  // different list of dates: what did traffic do on either side of this day. Reusing this endpoint
-  // rather than writing a second one is the point — the day bucketing, the impression-weighted
-  // position and the "no data yet" handling are subtle enough that a parallel copy would drift.
-  const source = searchParams.get("source") === "updates" ? "updates" : "notes";
   if (!siteId) return NextResponse.json({ error: "no_site" }, { status: 400 });
   if (!(await ownedSite(userId, siteId))) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
   try {
-    const rows: {
+    // Notes and Google updates come back as one list rather than two views.
+    //
+    // They were separate because they have separate origins, but that is the app's problem, not
+    // the reader's: the question is "what moved this site", and answering it meant flipping
+    // between two screens and holding one of them in your head. Both are dated events scored the
+    // same way against the same traffic, so they belong on one timeline — `kind` is all the
+    // distinction the UI needs.
+    const noteRows = await prisma.$queryRawUnsafe<{
       id: string; date: Date | string | number; title: string; description: string | null;
       scope: string; urls: string | null;
-    }[] = source === "updates"
-      ? await (async () => {
-          const { updates } = await getAlgoUpdates();
-          // Only updates the site could actually have lived through, and only as far back as the
-          // selected period. An update that rolled out yesterday would report a confident nothing,
-          // so the newest day is excluded too.
-          const oldest = iso(addDays(new Date(), -lookback));
-          return updates
-            .filter(u => u.date >= oldest && u.date <= iso(addDays(new Date(), -1)))
-            .sort((a, b) => b.date.localeCompare(a.date))
-            .map(u => ({
-              id: `google:${u.date}:${u.type}`,
-              date: new Date(`${u.date}T00:00:00Z`),
-              title: u.name,
-              description: u.duration ? `Rollout: ${u.duration}` : null,
-              scope: "all",
-              urls: null,
-            }));
-        })()
-      : await prisma.$queryRawUnsafe(
-          // Notes follow the same period as updates do. `date` is compared through the same
-          // normalizer the day bucketing uses, because the column holds either milliseconds or an
-          // ISO string depending on how the row was written.
-          `SELECT "id", "date", "title", "description", "scope", "urls"
-           FROM "Annotation" WHERE "siteId" = ? AND ${DAY_EXPR} >= ?
-           ORDER BY "date" DESC LIMIT 200`,
-          siteId, iso(addDays(new Date(), -lookback)),
-        );
+    }[]>(
+      // `date` is compared through the same normalizer the day bucketing uses, because the column
+      // holds either milliseconds or an ISO string depending on how the row was written.
+      `SELECT "id", "date", "title", "description", "scope", "urls"
+       FROM "Annotation" WHERE "siteId" = ? AND ${DAY_EXPR} >= ?
+       ORDER BY "date" DESC LIMIT 200`,
+      siteId, iso(addDays(new Date(), -lookback)),
+    );
+
+    const { updates } = await getAlgoUpdates();
+    // Only updates the site could have lived through, and only as far back as the selected period.
+    // Yesterday's update would report a confident nothing, so the newest day is excluded too.
+    const oldest = iso(addDays(new Date(), -lookback));
+    const updateRows = updates
+      .filter(u => u.date >= oldest && u.date <= iso(addDays(new Date(), -1)))
+      .map(u => ({
+        id: `google:${u.date}:${u.type}`,
+        date: new Date(`${u.date}T00:00:00Z`),
+        title: u.name,
+        description: u.duration ? `Rollout: ${u.duration}` : null,
+        scope: "all",
+        urls: null as string | null,
+        kind: "update" as const,
+        updateType: u.type,
+        endDate: u.end ?? null,
+      }));
+
+    const rows = [
+      ...noteRows.map(r => ({ ...r, kind: "note" as const, updateType: null, endDate: null })),
+      ...updateRows,
+    ].sort((a, b) => +new Date(b.date as any) - +new Date(a.date as any));
 
     // One shared query covers every all-pages note; only page-scoped notes need their own.
     const dates = rows.map(r => new Date(r.date as any));
@@ -228,6 +233,11 @@ export async function GET(req: Request) {
 
       return {
         id: r.id,
+        kind: r.kind,
+        // Only set on updates: the chart colours a rollout band by type and shades from start to
+        // end, and a note has neither.
+        updateType: r.updateType,
+        endDate: r.endDate,
         date: iso(d),
         title: r.title,
         description: r.description || "",
@@ -250,11 +260,11 @@ export async function GET(req: Request) {
       };
     }));
 
-    return NextResponse.json({ notes, days, source });
+    return NextResponse.json({ notes, days });
   } catch (e) {
     // Table not created yet (no `prisma db push`) — an empty list, not a 500.
     console.error("[Annotations] read failed", e);
-    return NextResponse.json({ notes: [], days, source, unavailable: true });
+    return NextResponse.json({ notes: [], days, unavailable: true });
   }
 }
 

@@ -17,7 +17,7 @@ import AeoTracker from "@/components/AeoTracker";
 import {
   ALGO_UPDATES, ALGO_UPDATE_COLORS, snapToChartLabel, snapBackToChartLabel, updateEnd,
   algoChartLabel, algoImpact, withNeighbours, type AlgoImpactResult,
-  type AlgoUpdate,
+  type AlgoUpdate, type AlgoUpdateType,
 } from "@/lib/algoUpdates";
 import { useParams, useRouter } from "next/navigation";
 import { usePrivacy } from "@/lib/PrivacyContext";
@@ -3238,6 +3238,35 @@ function renderAlgoMarkers(updates: AlgoMarker[], t: (k: never) => string) {
   ));
 }
 
+/**
+ * The operator's own notes as chart children — solid lines against the updates' shaded bands.
+ *
+ * A note is a moment, not a window: a redirect either shipped or it did not, so there is nothing
+ * to shade. Deliberately one flat colour rather than the per-type palette updates use, because
+ * the first thing to read off the chart is whose event it was, and only then which one.
+ */
+function renderNoteMarkers(notes: { id: string; title: string; x: string }[]) {
+  return notes.map(n => (
+    <ReferenceLine key={n.id} x={n.x} yAxisId="left"
+      stroke="var(--color-text-secondary)" strokeWidth={1.2} strokeOpacity={0.55}
+      label={<NoteMarkerLabel title={n.title} />} />
+  ));
+}
+
+function NoteMarkerLabel({ viewBox, title }: { viewBox?: { x?: number; y?: number }; title?: string }) {
+  const x = viewBox?.x ?? 0;
+  const y = (viewBox?.y ?? 0) - 6;
+  // Truncated rather than wrapped: a note title can be a sentence, and the chart has one line of
+  // headroom. The full text is in the native tooltip and in the row below.
+  const short = (title ?? "").length > 22 ? `${(title ?? "").slice(0, 21)}…` : title ?? "";
+  return (
+    <text x={x} y={y} textAnchor="middle" fontSize={9} fontWeight={600} fill="var(--color-text-secondary)">
+      <title>{title}</title>
+      {short}
+    </text>
+  );
+}
+
 // ─── Annotations Filter Dropdown ──────────────────────────────────────────────
 function AnnotationsFilterDd({ onSetupBranded }: { onSetupBranded?: () => void }) {
   const { t } = useLanguage();
@@ -3395,83 +3424,30 @@ function AddNoteModal({ onClose, onSave }: { onClose: () => void; onSave: (note:
   );
 }
 
-// ─── Annotation sparkline ─────────────────────────────────────────────────────
+// ─── Annotations Tab ──────────────────────────────────────────────────────────
+
+/**
+ * Per-day values the API returns alongside each row.
+ *
+ * Nothing on screen draws these any more — the one timeline above the list covers the whole
+ * period, which is what the per-row sparklines used to do for a single event. Kept because the
+ * endpoint still sends them and the shape has to be described somewhere; drop the field from the
+ * response first if it is ever removed for good.
+ */
 type SeriesPoint = {
   date: string; clicks: number; impressions: number; ctr: number; position: number | null;
   phase: "before" | "after";
 };
-
-/**
- * Before/after chart for one annotation — one small chart per selected metric.
- *
- * Two earlier attempts failed for the same underlying reason. A single clicks-only sparkline
- * ignored the metric toggles and had no axes, so its shape carried no magnitude. Putting all four
- * on one chart with a left and a right axis then broke differently: CTR and position had to share
- * the right-hand scale, and reversing it for position (lower rank is better) silently flipped CTR
- * upside down too.
- *
- * There is no arrangement of two axes that fits four metrics spanning 1% to 17 000. Small multiples
- * remove the conflict instead of managing it: every metric gets its own scale, its own direction,
- * and a label saying what it is. The x-axis and the change marker are the same in each, which is
- * what makes them comparable at a glance.
- */
-function AnnotationChart({ series, activeMetrics, changeDate }: {
-  series: SeriesPoint[]; activeMetrics: Set<Metric>; changeDate: string;
-}) {
-  const { t } = useLanguage();
-  if (!series?.length) return null;
-
-  const panels = ([
-    { m: "clicks" as Metric, key: "clicks", label: t("clicks"), colour: C.clicks, reversed: false, fmt: (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)) },
-    { m: "impressions" as Metric, key: "impressions", label: t("impressions"), colour: C.impressions, reversed: false, fmt: (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)) },
-    { m: "ctr" as Metric, key: "ctr", label: t("colCtr"), colour: C.ctr, reversed: false, fmt: (v: number) => `${v}%` },
-    // Rank counts downwards: 1 is the top of the page, so the axis is reversed and starts at 1.
-    { m: "position" as Metric, key: "position", label: t("avgPosition"), colour: C.position, reversed: true, fmt: (v: number) => String(Math.round(v)) },
-  ]).filter(p => activeMetrics.has(p.m));
-
-  if (!panels.length) return null;
-
-  const fmtDay = (d: string) => d.slice(5).replace("-", ".");
-  const cols = panels.length === 1 ? 1 : 2;
-
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: "10px 16px" }}>
-      {panels.map(p => (
-        <div key={p.key}>
-          <div style={{ fontSize: "10px", fontWeight: 600, color: p.colour, marginBottom: "2px" }}>{p.label}</div>
-          {/* top margin leaves room for the marker label, which used to be clipped in half */}
-          <ResponsiveContainer width="100%" height={panels.length > 2 ? 96 : 118}>
-            <ComposedChart data={series} margin={{ top: 16, right: 6, left: -14, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
-              <XAxis dataKey="date" tickFormatter={fmtDay} tick={{ fontSize: 9, fill: "var(--color-text-secondary)" }}
-                interval="preserveStartEnd" minTickGap={24} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 9, fill: "var(--color-text-secondary)" }} axisLine={false} tickLine={false}
-                width={40} reversed={p.reversed} domain={p.reversed ? [1, "dataMax"] : [0, "dataMax"]}
-                tickFormatter={p.fmt} allowDecimals={false} />
-              <Tooltip
-                contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: "8px", fontSize: "12px" }}
-                labelFormatter={(d) => String(d ?? "")}
-                formatter={(v) => [v == null ? "—" : (v as number), p.label]}
-              />
-              <ReferenceLine x={changeDate} stroke="var(--color-text-secondary)" strokeDasharray="4 3"
-                label={{ value: t("annChangeMarker"), position: "top", fontSize: 9, fill: "var(--color-text-secondary)" }} />
-              {/* connectNulls bridges any residual leading nulls (a window that starts before the site
-                  had any impressions); the API forward-fills position elsewhere so all four metrics
-                  draw continuous lines in one consistent format. */}
-              <Line type="monotone" dataKey={p.key} name={p.label} stroke={p.colour} strokeWidth={2}
-                dot={false} connectNulls isAnimationActive={false} />
-            </ComposedChart>
-          </ResponsiveContainer>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ─── Annotations Tab ──────────────────────────────────────────────────────────
 interface AnnotationNote {
   id?: string;
   date: string; title: string; scope: string;
+  /** Where the row came from: an operator's own note, or a Google ranking update. The two live on
+   *  one timeline and differ only in how they are drawn. */
+  kind: "note" | "update";
+  /** Update type, for the band colour. Null on notes. */
+  updateType?: AlgoUpdateType | null;
+  /** Last day of a rollout, for the band's closing edge. Null on notes. */
+  endDate?: string | null;
   /** Free text under the title. For Google updates this carries the rollout length, which is the
    *  one fact a bare date does not give you: a 2-day spam update and a 3-week core update leave
    *  very different shapes in the data. */
@@ -3492,6 +3468,7 @@ interface AnnotationNote {
 // Shape returned by /api/annotations, flattened into the row shape this table renders.
 type ApiNote = {
   id: string; date: string; title: string; description?: string | null;
+  kind: "note" | "update"; updateType?: AlgoUpdateType | null; endDate?: string | null;
   scope: string; dateRange: string; hasAfter: boolean;
   clicks: { before: number; after: number; pct: number | null };
   impressions: { before: number; after: number; pct: number | null };
@@ -3506,6 +3483,9 @@ function mapApiNote(n: ApiNote): AnnotationNote {
     id: n.id,
     date: n.date,
     title: n.title,
+    kind: n.kind ?? "note",
+    updateType: n.updateType ?? null,
+    endDate: n.endDate ?? null,
     description: n.description || undefined,
     scope: n.scope === "pages" ? "Specific pages" : "All Pages",
     hasAfter: n.hasAfter,
@@ -3554,12 +3534,12 @@ function AnnotationsTab({ period, setPeriod, periodOptions, onSetupBranded, site
   period: string; setPeriod: (p: string) => void; periodOptions: string[]; onSetupBranded?: () => void;
   siteDbId?: string;
   /** The same series and markers the dashboard draws — passed down rather than refetched, so the
-   *  two views cannot disagree about what happened in the selected period. */
-  chartData?: { date: string; clicks: number; impressions: number }[];
+   *  two views cannot disagree about what happened in the selected period. `dateIso` is what
+   *  markers snap against; `date` is the axis label. */
+  chartData?: { date: string; dateIso: string; clicks: number; impressions: number; ctr: number; position: number }[];
   algoMarkers?: AlgoMarker[];
 }) {
   const { t } = useLanguage();
-  const [viewMode, setViewMode] = useState<"notes" | "updates">("notes");
   // Was `useState(true)`, which blurred the table and covered it with a panel advertising four
   // invented notes from 2024 ("Moved to Astro", and so on). It appeared before the real notes had
   // even loaded, so an operator with a full history saw fake data first. The onboarding panel now
@@ -3581,32 +3561,42 @@ function AnnotationsTab({ period, setPeriod, periodOptions, onSetupBranded, site
   // Notes and their figures both come from the server: the note rows persist in the Annotation
   // table, the before/after numbers are derived from DailyMetric on every read. Re-fetching when
   // the period changes is what makes the window selector actually mean something here.
-  // `viewMode` now reaches the request. It used to exist only to colour the two buttons, so
-  // pressing "Updates" highlighted it and changed nothing at all — the same list of notes stayed
-  // on screen. The endpoint scores Google's update dates with the identical before/after logic.
+  // One request, one list. Notes and Google updates arrive merged and already scored the same
+  // way; the client only needs `kind` to decide how to draw each.
   const loadNotes = useCallback(async () => {
     if (!siteDbId) return;
     setLoading(true);
     try {
-      const q = `siteId=${encodeURIComponent(siteDbId)}&days=${days}&lookback=${lookback}`
-        + (viewMode === "updates" ? "&source=updates" : "");
+      const q = `siteId=${encodeURIComponent(siteDbId)}&days=${days}&lookback=${lookback}`;
       const res = await fetch(`/api/annotations?${q}`, { cache: "no-store" });
       const d = await res.json();
       setUnavailable(!!d.unavailable);
       setNotes(Array.isArray(d.notes) ? d.notes.map(mapApiNote) : []);
     } catch { setNotes([]); }
     setLoading(false);
-  }, [siteDbId, days, lookback, viewMode]);
+  }, [siteDbId, days, lookback]);
 
   useEffect(() => { loadNotes(); }, [loadNotes]);
 
-  // Onboarding is for an operator who has written nothing yet, so it can only be decided after the
-  // request returns — and never in Updates mode, where the rows come from Google rather than
-  // from them.
+  const ownNotes = useMemo(() => notes.filter(n => n.kind !== "update"), [notes]);
+
+  // Notes snapped onto the axis, the same way updates are. Search Console has gaps, and a marker
+  // pointing at a label no data point carries is dropped by Recharts without a word.
+  const noteMarkers = useMemo(() => {
+    if (!chartData?.length) return [];
+    return ownNotes
+      .map((n, i) => ({ id: n.id ?? `note-${i}`, title: n.title, x: snapToChartLabel(chartData, n.date) }))
+      .filter((n): n is { id: string; title: string; x: string } => n.x !== null);
+  }, [ownNotes, chartData]);
+  // The onboarding panel is an absolutely-positioned overlay covering everything below the
+  // sub-header, so it can only appear when there is genuinely nothing underneath. Keying it on
+  // "no notes of your own" would hide the Google-update timeline the moment a fresh instance
+  // opened the tab — a card inviting you to add something, drawn over the only thing on screen.
+  // The "+ add note" button is always present when the panel is not.
   useEffect(() => {
-    if (loading || viewMode === "updates") return;
+    if (loading) return;
     setOnboarding(notes.length === 0 && !unavailable);
-  }, [loading, notes.length, unavailable, viewMode]);
+  }, [loading, notes.length, unavailable]);
 
   const toggleMetric = (m: Metric) => setActiveMetrics(p => { const n = new Set(p); n.has(m) ? n.delete(m) : n.add(m); return n; });
 
@@ -3619,18 +3609,6 @@ function AnnotationsTab({ period, setPeriod, periodOptions, onSetupBranded, site
       {/* ── Sub-header controls ── */}
       <div style={{ padding: "10px 32px", borderBottom: "1px solid var(--color-border)", display: "flex", alignItems: "center", gap: "8px", background: "var(--color-card)", flexWrap: "wrap" }}>
         <AnnotationsFilterDd onSetupBranded={onSetupBranded} />
-
-        {/* Notes / Updates toggle */}
-        <div style={{ display: "flex", gap: "4px" }}>
-          {([
-            { key: "notes",   label: t("annNotes"),   icon: <FileText size={13}/> },
-            { key: "updates", label: t("annUpdates"), icon: <GoogleIcon size={13}/> },
-          ] as const).map(({ key, label, icon }) => (
-            <button key={key} onClick={() => setViewMode(key)} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "6px 12px", borderRadius: "8px", fontSize: "13px", fontWeight: 500, cursor: "pointer", border: `1px solid ${viewMode === key ? "#3B82F6" : "var(--color-border)"}`, background: viewMode === key ? "rgba(59,130,246,0.1)" : "var(--color-bg)", color: viewMode === key ? "#3B82F6" : "var(--color-text-secondary)", transition: "all 0.15s" }}>
-              {icon} {label}
-            </button>
-          ))}
-        </div>
 
         {/* Metric icons */}
         <div style={{ display: "flex", gap: "4px" }}>
@@ -3676,29 +3654,50 @@ function AnnotationsTab({ period, setPeriod, periodOptions, onSetupBranded, site
         </div>
       )}
 
-      {/* ── Traffic curve with the rollout bands, above the list ──
-          The list answers "which updates and what did each do"; the curve answers "what did the
-          period look like", and people read one to find a candidate and the other to sanity-check
-          it. Same markers as the dashboard, drawn by the same function. */}
-      {viewMode === "updates" && (chartData?.length ?? 0) > 0 && (algoMarkers?.length ?? 0) > 0 && (
+      {/* ── One timeline: traffic, the operator's notes, and Google's updates ──
+          These were two views with a toggle between them, and the toggle was the problem: the
+          question people actually ask is "what moved my site", and answering it meant flipping
+          screens and holding one in your head. Both kinds of event are dated, both are scored the
+          same way, so they belong on the same curve. Notes are solid lines, updates are shaded
+          bands — enough to tell them apart without a legend. */}
+      {(chartData?.length ?? 0) > 0 && (
         <div style={{ padding: "16px 32px 4px" }}>
-          <ResponsiveContainer width="100%" height={190}>
-            <ComposedChart data={chartData} margin={{ top: 26, right: 8, left: -18, bottom: 0 }}>
+          <ResponsiveContainer width="100%" height={230}>
+            <ComposedChart data={chartData} margin={{ top: 26, right: 4, left: -14, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
-              <XAxis dataKey="date" tick={{ fontSize: 9, fill: "var(--color-text-secondary)" }}
+              <XAxis dataKey="date" tick={{ fontSize: 10, fill: "var(--color-text-secondary)" }}
                 interval="preserveStartEnd" minTickGap={28} axisLine={false} tickLine={false} />
-              <YAxis yAxisId="left" tick={{ fontSize: 9, fill: "var(--color-text-secondary)" }}
+              <YAxis yAxisId="left" tick={{ fontSize: 10, fill: "var(--color-text-secondary)" }}
                 axisLine={false} tickLine={false} width={38} />
-              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 9, fill: "var(--color-text-secondary)" }}
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: "var(--color-text-secondary)" }}
                 axisLine={false} tickLine={false} width={44} />
               <Tooltip
                 contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: "8px", fontSize: "12px" }}
                 labelStyle={{ color: "var(--color-text-secondary)" }} />
-              <Area yAxisId="right" type="monotone" dataKey="impressions" stroke={C.impressions}
-                fill={C.impressions} fillOpacity={0.08} strokeWidth={1.2} dot={false} name={t("impressions")} />
-              <Line yAxisId="left" type="monotone" dataKey="clicks" stroke={C.clicks}
-                strokeWidth={1.8} dot={false} name={t("clicks")} />
+              {/* The same four metrics and the same toggle buttons as the dashboard. CTR and
+                  position were missing here, which made the tab feel like a lesser chart rather
+                  than the same one with events drawn on it. Impressions keep the right axis;
+                  putting a five-figure count on the same scale as a 1.4% CTR flattens both. */}
+              {activeMetrics.has("impressions") && (
+                <Area yAxisId="right" type="monotone" dataKey="impressions" stroke={C.impressions}
+                  fill={C.impressions} fillOpacity={0.08} strokeWidth={1.2} dot={false} name={t("impressions")} />
+              )}
+              {activeMetrics.has("clicks") && (
+                <Line yAxisId="left" type="monotone" dataKey="clicks" stroke={C.clicks}
+                  strokeWidth={1.8} dot={false} name={t("clicks")} />
+              )}
+              {activeMetrics.has("ctr") && (
+                <Line yAxisId="left" type="monotone" dataKey="ctr" stroke={C.ctr}
+                  strokeWidth={1.5} dot={false} name="CTR" />
+              )}
+              {/* Position is inverted: rank 1 belongs at the top of the chart, and the default
+                  scale would draw an improvement as a fall. */}
+              {activeMetrics.has("position") && (
+                <Line yAxisId="left" type="monotone" dataKey="position" stroke={C.position}
+                  strokeWidth={1.5} dot={false} connectNulls name={t("avgPosition")} />
+              )}
               {renderAlgoMarkers(algoMarkers ?? [], t as never)}
+              {renderNoteMarkers(noteMarkers)}
             </ComposedChart>
           </ResponsiveContainer>
         </div>
@@ -3713,25 +3712,19 @@ function AnnotationsTab({ period, setPeriod, periodOptions, onSetupBranded, site
           // study; updates are a timeline they want to read down. Eight charts on screen made the
           // page a scroll where the useful part — the date and the deltas — was the smallest thing
           // on it.
-          <div key={idx} style={{ display: "grid", gridTemplateColumns: viewMode === "updates" ? "300px 1fr" : "280px 1fr auto", gap: "0", borderBottom: "1px solid var(--color-border)", alignItems: "center", padding: "0 32px" }}>
+          <div key={idx} style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: "0", borderBottom: "1px solid var(--color-border)", alignItems: "center", padding: "0 32px" }}>
             {/* Left: date + title + scope */}
             <div style={{ padding: "18px 24px 18px 0" }}>
               <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--color-text-primary)", marginBottom: "4px" }}>{note.title}</div>
               <div style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
-                {note.date}{viewMode === "updates" ? (note.description ? ` · ${note.description}` : "") : ` · ${note.scope}`}
+                {note.date} · {note.kind === "update" ? (note.description || t("annUpdates")) : note.scope}
               </div>
             </div>
 
             {/* Center: before/after chart + date range — notes only */}
-            {viewMode !== "updates" && (
-            <div style={{ padding: "12px 24px" }}>
-              <AnnotationChart series={note.series ?? []} activeMetrics={activeMetrics} changeDate={note.date} />
-              <div style={{ fontSize: "10px", color: "var(--color-text-secondary)", textAlign: "center", marginTop: "2px" }}>{note.dateRange}</div>
-            </div>
-            )}
 
             {/* Right: metrics before → after */}
-            <div style={{ padding: "18px 0 18px 0", display: "flex", flexDirection: viewMode === "updates" ? "row" : "column", flexWrap: "wrap", gap: viewMode === "updates" ? "18px" : "4px", minWidth: "260px", alignItems: viewMode === "updates" ? "center" : undefined }}>
+            <div style={{ padding: "18px 0", display: "flex", flexDirection: "row", flexWrap: "wrap", gap: "18px", minWidth: "260px", alignItems: "center" }}>
               {/* Every delta used to render as a green "+" regardless of sign, so a drop appeared
                   as a green "+-20%". Sign and colour now follow the actual number, and a note with
                   no post-change data yet says so instead of claiming a confident zero. */}
@@ -3770,7 +3763,7 @@ function AnnotationsTab({ period, setPeriod, periodOptions, onSetupBranded, site
       {!onboarding && !loading && notes.length === 0 && (
         <div style={{ padding: "64px 32px", textAlign: "center" }}>
           <p style={{ fontSize: "14px", color: "var(--color-text-secondary)" }}>
-            {viewMode === "updates" ? t("annNoUpdatesInRange") : t("annEmptyDesc")}
+            {t("annEmptyDesc")}
           </p>
         </div>
       )}
@@ -3789,12 +3782,9 @@ function AnnotationsTab({ period, setPeriod, periodOptions, onSetupBranded, site
               {t("annCreateNoteBtn")}
             </button>
 
-            <p style={{ textAlign: "center", fontSize: "13px", color: "var(--color-text-secondary)" }}>
-              {t("annOrTryItWith")}{" "}
-              <button onClick={() => { setOnboarding(false); setViewMode("updates"); }} style={{ display: "inline-flex", alignItems: "center", gap: "4px", background: "none", border: "none", cursor: "pointer", color: "var(--color-text-primary)", fontWeight: 600, fontSize: "13px", padding: 0 }}>
-                <GoogleIcon size={14} /> {t("annUpdates")}
-              </button>
-            </p>
+            {/* No "try it with Google updates" line any more: the panel only shows when the
+                timeline is empty, so there are no updates in this period to point at. Claiming
+                otherwise would be false exactly when someone reads it. */}
           </div>
         </div>
       )}
