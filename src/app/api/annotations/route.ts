@@ -160,6 +160,10 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const siteId = searchParams.get("siteId") || "";
   const days = Math.max(1, Math.min(180, parseInt(searchParams.get("days") || "28", 10) || 28));
+  // How far back the list reaches, as opposed to `days`, which is how far the before/after
+  // comparison reaches on either side of each row. Two different questions that used to share one
+  // number, which is why picking a longer period changed the figures but never the list.
+  const lookback = Math.max(7, Math.min(1200, parseInt(searchParams.get("lookback") || "400", 10) || 400));
   // "updates" scores Google's own ranking updates instead of the operator's notes. Same question,
   // different list of dates: what did traffic do on either side of this day. Reusing this endpoint
   // rather than writing a second one is the point — the day bucketing, the impression-weighted
@@ -175,10 +179,10 @@ export async function GET(req: Request) {
     }[] = source === "updates"
       ? await (async () => {
           const { updates } = await getAlgoUpdates();
-          // Only updates the site could actually have lived through. An update needs a full
-          // `days` window on each side to be worth scoring, and one that rolled out yesterday
-          // would report a confident nothing.
-          const oldest = iso(addDays(new Date(), -(400 + days)));
+          // Only updates the site could actually have lived through, and only as far back as the
+          // selected period. An update that rolled out yesterday would report a confident nothing,
+          // so the newest day is excluded too.
+          const oldest = iso(addDays(new Date(), -lookback));
           return updates
             .filter(u => u.date >= oldest && u.date <= iso(addDays(new Date(), -1)))
             .sort((a, b) => b.date.localeCompare(a.date))
@@ -192,9 +196,13 @@ export async function GET(req: Request) {
             }));
         })()
       : await prisma.$queryRawUnsafe(
+          // Notes follow the same period as updates do. `date` is compared through the same
+          // normalizer the day bucketing uses, because the column holds either milliseconds or an
+          // ISO string depending on how the row was written.
           `SELECT "id", "date", "title", "description", "scope", "urls"
-           FROM "Annotation" WHERE "siteId" = ? ORDER BY "date" DESC LIMIT 200`,
-          siteId,
+           FROM "Annotation" WHERE "siteId" = ? AND ${DAY_EXPR} >= ?
+           ORDER BY "date" DESC LIMIT 200`,
+          siteId, iso(addDays(new Date(), -lookback)),
         );
 
     // One shared query covers every all-pages note; only page-scoped notes need their own.

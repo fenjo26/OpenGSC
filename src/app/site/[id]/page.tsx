@@ -3151,11 +3151,13 @@ function AlgoMarkerLabel({ viewBox, text, impact, color, title }: {
   color: string; title: string;
 }) {
   const x = viewBox?.x ?? 0;
-  const y = viewBox?.y ?? 0;
+  // 6px above the plot area rather than 4: the descender-free label still needs room for its
+  // own height, and the chart reserves 26px of top margin when markers are shown.
+  const y = (viewBox?.y ?? 0) - 6;
   const pct = impact.ok ? impact.clicks : null;
   const tone = pct == null ? "" : pct > 0 ? "#10B981" : pct < 0 ? "#EF4444" : "var(--color-text-tertiary)";
   return (
-    <text x={x} y={y - 4} textAnchor="middle" fontSize={9} fontWeight={600}>
+    <text x={x} y={y} textAnchor="middle" fontSize={9} fontWeight={600}>
       {/* All four metrics live in a native SVG tooltip rather than in the label. Four figures at
           9px, on a chart where two updates can sit days apart, is unreadable — and clicks is the
           one people actually decide on. The rest are a hover away, and the Annotations tab lists
@@ -3193,6 +3195,47 @@ function algoImpactTitle(name: string, range: string, impact: AlgoImpactResult, 
     .replace("{a}", String(impact.afterDays));
   const caveat = impact.confident ? null : t("algoImpactApprox" as never);
   return [name, range, ...lines, window, caveat].filter(Boolean).join("\n");
+}
+
+/** An update as the chart needs it: snapped to real axis labels, with its measured impact. */
+type AlgoMarker = AlgoUpdate & { x: string; x2: string | null; impact: AlgoImpactResult };
+
+/**
+ * Rollout bands and their edges, as chart children.
+ *
+ * A plain function returning an array rather than a component, because Recharts identifies its
+ * children by component type — a `<AlgoMarkers />` wrapper would be passed through as an unknown
+ * element and silently ignored, which is a slow way to learn how the library works.
+ *
+ * Shared by the dashboard chart and the Annotations one so the two cannot drift into drawing the
+ * same fact differently.
+ */
+function renderAlgoMarkers(updates: AlgoMarker[], t: (k: never) => string) {
+  return updates.map(u => (
+    <Fragment key={`${u.name}-${u.date}`}>
+      {/* Shaded rollout window first so the start line draws on top of it. */}
+      {u.x2 && (
+        <ReferenceArea x1={u.x} x2={u.x2} yAxisId="left"
+          fill={ALGO_UPDATE_COLORS[u.type]} fillOpacity={0.07} stroke="none" />
+      )}
+      <ReferenceLine x={u.x} yAxisId="left"
+        stroke={ALGO_UPDATE_COLORS[u.type]} strokeWidth={1.5} strokeDasharray="3 3"
+        label={
+          <AlgoMarkerLabel
+            text={algoChartLabel(u)}
+            impact={u.impact}
+            color={ALGO_UPDATE_COLORS[u.type]}
+            title={algoImpactTitle(u.name, updateEnd(u) ? `${u.date} → ${updateEnd(u)}` : u.date, u.impact, t)}
+          />
+        } />
+      {/* Closing edge, thinner and faded: the rollout end is a softer fact than its start, and
+          two identical lines would read as two separate updates. */}
+      {u.x2 && (
+        <ReferenceLine x={u.x2} yAxisId="left"
+          stroke={ALGO_UPDATE_COLORS[u.type]} strokeWidth={1} strokeOpacity={0.5} strokeDasharray="2 4" />
+      )}
+    </Fragment>
+  ));
 }
 
 // ─── Annotations Filter Dropdown ──────────────────────────────────────────────
@@ -3478,14 +3521,42 @@ function mapApiNote(n: ApiNote): AnnotationNote {
 
 // Comparison window in days for each period key — how far back and forward from a note's date the
 // before/after figures reach. Keys without a natural day count fall back to 28.
-const ANNOTATION_WINDOW: Record<string, number> = {
-  yesterday: 7, "7d": 7, "14d": 14, "28d": 28, last_week: 7, this_month: 28,
-  last_month: 28, this_quarter: 90, last_quarter: 90, ytd: 90,
+/**
+ * Span of every period option in days.
+ *
+ * This map used to hold ten of the seventeen keys, and the seven it was missing — 3m through 3y —
+ * silently fell back to 28. Picking "3 months", "6 months" or "12 months" therefore produced
+ * byte-identical output, which is what "the selector does nothing" looked like from outside.
+ * Every key the dropdown offers now has an entry.
+ */
+const PERIOD_DAYS: Record<string, number> = {
+  yesterday: 1, "7d": 7, "14d": 14, "28d": 28,
+  last_week: 7, this_month: 30, last_month: 30,
+  this_quarter: 90, last_quarter: 90, ytd: 180,
+  "3m": 90, "6m": 180, "8m": 240, "12m": 365, "16m": 480,
+  "2y": 730, "3y": 1095,
 };
 
-function AnnotationsTab({ period, setPeriod, periodOptions, onSetupBranded, siteDbId }: {
+/**
+ * How far before and after a dated event the comparison reaches.
+ *
+ * Scaled from the period rather than equal to it: on a three-year view nobody is asking what
+ * happened in the three years after an update, and the endpoint caps the window at 180 days
+ * anyway. A third of the period, floored at a week so short views still have something to
+ * compare, and capped at 90 so long ones stay legible.
+ */
+function annotationWindow(period: string): number {
+  const span = PERIOD_DAYS[period] ?? 28;
+  return Math.max(7, Math.min(90, Math.round(span / 3)));
+}
+
+function AnnotationsTab({ period, setPeriod, periodOptions, onSetupBranded, siteDbId, chartData, algoMarkers }: {
   period: string; setPeriod: (p: string) => void; periodOptions: string[]; onSetupBranded?: () => void;
   siteDbId?: string;
+  /** The same series and markers the dashboard draws — passed down rather than refetched, so the
+   *  two views cannot disagree about what happened in the selected period. */
+  chartData?: { date: string; clicks: number; impressions: number }[];
+  algoMarkers?: AlgoMarker[];
 }) {
   const { t } = useLanguage();
   const [viewMode, setViewMode] = useState<"notes" | "updates">("notes");
@@ -3501,7 +3572,11 @@ function AnnotationsTab({ period, setPeriod, periodOptions, onSetupBranded, site
   const [unavailable, setUnavailable] = useState(false);
   const [activeMetrics, setActiveMetrics] = useState<Set<Metric>>(new Set(["clicks", "impressions", "ctr", "position"]));
 
-  const days = ANNOTATION_WINDOW[period] ?? 28;
+  const days = annotationWindow(period);
+  // The period also decides how far back the list itself reaches. Without this, switching from
+  // 28 days to 3 years returned the same rows and only widened the comparison — half a working
+  // selector, and the half nobody notices is missing until they go looking for an old update.
+  const lookback = PERIOD_DAYS[period] ?? 28;
 
   // Notes and their figures both come from the server: the note rows persist in the Annotation
   // table, the before/after numbers are derived from DailyMetric on every read. Re-fetching when
@@ -3513,14 +3588,15 @@ function AnnotationsTab({ period, setPeriod, periodOptions, onSetupBranded, site
     if (!siteDbId) return;
     setLoading(true);
     try {
-      const q = `siteId=${encodeURIComponent(siteDbId)}&days=${days}${viewMode === "updates" ? "&source=updates" : ""}`;
+      const q = `siteId=${encodeURIComponent(siteDbId)}&days=${days}&lookback=${lookback}`
+        + (viewMode === "updates" ? "&source=updates" : "");
       const res = await fetch(`/api/annotations?${q}`, { cache: "no-store" });
       const d = await res.json();
       setUnavailable(!!d.unavailable);
       setNotes(Array.isArray(d.notes) ? d.notes.map(mapApiNote) : []);
     } catch { setNotes([]); }
     setLoading(false);
-  }, [siteDbId, days, viewMode]);
+  }, [siteDbId, days, lookback, viewMode]);
 
   useEffect(() => { loadNotes(); }, [loadNotes]);
 
@@ -3597,6 +3673,34 @@ function AnnotationsTab({ period, setPeriod, periodOptions, onSetupBranded, site
       {unavailable && (
         <div style={{ margin: "16px 32px", padding: "12px 14px", borderRadius: "10px", border: "1px solid rgba(245,158,11,0.35)", background: "rgba(245,158,11,0.08)", fontSize: "13px", color: "var(--color-text-secondary)" }}>
           {t("annUnavailable")}
+        </div>
+      )}
+
+      {/* ── Traffic curve with the rollout bands, above the list ──
+          The list answers "which updates and what did each do"; the curve answers "what did the
+          period look like", and people read one to find a candidate and the other to sanity-check
+          it. Same markers as the dashboard, drawn by the same function. */}
+      {viewMode === "updates" && (chartData?.length ?? 0) > 0 && (algoMarkers?.length ?? 0) > 0 && (
+        <div style={{ padding: "16px 32px 4px" }}>
+          <ResponsiveContainer width="100%" height={190}>
+            <ComposedChart data={chartData} margin={{ top: 26, right: 8, left: -18, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
+              <XAxis dataKey="date" tick={{ fontSize: 9, fill: "var(--color-text-secondary)" }}
+                interval="preserveStartEnd" minTickGap={28} axisLine={false} tickLine={false} />
+              <YAxis yAxisId="left" tick={{ fontSize: 9, fill: "var(--color-text-secondary)" }}
+                axisLine={false} tickLine={false} width={38} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 9, fill: "var(--color-text-secondary)" }}
+                axisLine={false} tickLine={false} width={44} />
+              <Tooltip
+                contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: "8px", fontSize: "12px" }}
+                labelStyle={{ color: "var(--color-text-secondary)" }} />
+              <Area yAxisId="right" type="monotone" dataKey="impressions" stroke={C.impressions}
+                fill={C.impressions} fillOpacity={0.08} strokeWidth={1.2} dot={false} name={t("impressions")} />
+              <Line yAxisId="left" type="monotone" dataKey="clicks" stroke={C.clicks}
+                strokeWidth={1.8} dot={false} name={t("clicks")} />
+              {renderAlgoMarkers(algoMarkers ?? [], t as never)}
+            </ComposedChart>
+          </ResponsiveContainer>
         </div>
       )}
 
@@ -4522,7 +4626,7 @@ export default function SitePage({
 
       {/* ── Annotations tab ── */}
       {activeTab === "annotations" && (
-        <AnnotationsTab period={period} setPeriod={setPeriod} periodOptions={periodOptions} onSetupBranded={() => setShowSetupModal(true)} siteDbId={siteDbId} />
+        <AnnotationsTab period={period} setPeriod={setPeriod} periodOptions={periodOptions} onSetupBranded={() => setShowSetupModal(true)} siteDbId={siteDbId} chartData={siteData?.chartData} algoMarkers={visibleAlgoUpdates} />
       )}
 
       {/* ── Optimize tab ── */}
@@ -4664,7 +4768,14 @@ export default function SitePage({
         ) : (
         <div style={{ background: "var(--color-card)", borderRadius: "12px", padding: "16px", border: "1px solid var(--color-border)" }}>
           <ResponsiveContainer width="100%" height={300}>
-            <ComposedChart data={aioMode ? aioChartData : chartData} margin={{ top: 8, right: 0, left: 0, bottom: 0 }}>
+            {/* Extra headroom when update markers are on: their labels sit above the plot area,
+                and at the default 8px they were clipped by the top of the chart — the text was
+                half-drawn and unreadable. Only reserved when something needs it, so the plot
+                keeps its full height the rest of the time. */}
+            <ComposedChart
+              data={aioMode ? aioChartData : chartData}
+              margin={{ top: googleUpdates && visibleAlgoUpdates.length > 0 ? 26 : 8, right: 0, left: 0, bottom: 0 }}
+            >
               <defs>
                 {(["clicks", "impressions", "ctr", "position"] as const).map(m => (
                   <linearGradient key={m} id={`sg-${m}`} x1="0" y1="0" x2="0" y2="1">
@@ -4699,31 +4810,7 @@ export default function SitePage({
                 </>
               )}
               {/* Google algorithm update markers (core / spam / discover) */}
-              {googleUpdates && visibleAlgoUpdates.map(u => (
-                <Fragment key={`${u.name}-${u.date}`}>
-                  {/* Shaded rollout window first so the start line draws on top of it. */}
-                  {u.x2 && (
-                    <ReferenceArea x1={u.x} x2={u.x2} yAxisId="left"
-                      fill={ALGO_UPDATE_COLORS[u.type]} fillOpacity={0.07} stroke="none" />
-                  )}
-                  <ReferenceLine x={u.x} yAxisId="left"
-                    stroke={ALGO_UPDATE_COLORS[u.type]} strokeWidth={1.5} strokeDasharray="3 3"
-                    label={
-                      <AlgoMarkerLabel
-                        text={algoChartLabel(u)}
-                        impact={u.impact}
-                        color={ALGO_UPDATE_COLORS[u.type]}
-                        title={algoImpactTitle(u.name, updateEnd(u) ? `${u.date} → ${updateEnd(u)}` : u.date, u.impact, t as never)}
-                      />
-                    } />
-                  {/* Closing edge, solid-free and thinner: the rollout end is a softer fact than
-                      its start, and two identical lines would read as two separate updates. */}
-                  {u.x2 && (
-                    <ReferenceLine x={u.x2} yAxisId="left"
-                      stroke={ALGO_UPDATE_COLORS[u.type]} strokeWidth={1} strokeOpacity={0.5} strokeDasharray="2 4" />
-                  )}
-                </Fragment>
-              ))}
+              {googleUpdates && renderAlgoMarkers(visibleAlgoUpdates, t as never)}
             </ComposedChart>
           </ResponsiveContainer>
         </div>
