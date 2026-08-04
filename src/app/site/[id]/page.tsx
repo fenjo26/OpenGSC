@@ -4695,13 +4695,6 @@ export default function SitePage({
               <Sparkles size={13} /> {t("aioImpact")}
             </button>
             <GoogleUpdatesToggle on={googleUpdates} onToggle={() => setGoogleUpdates(v => !v)} />
-            {/* Pressing the toggle on a window Google published nothing in used to do visibly
-                nothing, which is indistinguishable from a broken button. Say which it is. */}
-            {googleUpdates && visibleAlgoUpdates.length === 0 && (
-              <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)", whiteSpace: "nowrap" }}>
-                {t("algoNoneInPeriod")}
-              </span>
-            )}
             <FilterDd
               positionFilter={positionFilter}
               onPositionFilter={v => { setPositionFilter(v); if (v !== null) scrollToResults(); }}

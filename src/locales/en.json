@@ -2647,7 +2647,6 @@
   "seoTileCompetitors": "A competitor's keywords joined against your Search Console data: what to improve, what missed the intent, and what does not exist yet.",
   "gapWriteNotVisible": "Keywords were saved but read back empty — the app and prisma are using different database files. Make DATABASE_URL an absolute path.",
   "farmAutoDistribute": "Auto - spread across all {n} doorways",
-  "algoNoneInPeriod": "no Google updates in this period",
   "algoImpactUnknown": "Not enough data on both sides of the rollout to judge.",
   "algoImpactAdjacent": "Another update ran too close by — its effect cannot be separated from this one.",
   "algoImpactWindow": "Measured on {b} days before and {a} after",
