@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { Fragment, useState, useMemo, useRef, useEffect, useCallback } from "react";
 import ContentDecayMap from "@/components/ContentDecayMap";
 import KeywordCannibalization from "@/components/KeywordCannibalization";
 import StrikingDistanceKeywords from "@/components/StrikingDistanceKeywords";
@@ -14,7 +14,11 @@ import EngineView, { type AltEngine, type EngineSummary } from "@/components/Eng
 import SearchEnginesPanel from "@/components/SearchEnginesPanel";
 import { withShare } from "@/lib/shareParam";
 import AeoTracker from "@/components/AeoTracker";
-import { ALGO_UPDATES, ALGO_UPDATE_COLORS, snapToChartLabel, type AlgoUpdate } from "@/lib/algoUpdates";
+import {
+  ALGO_UPDATES, ALGO_UPDATE_COLORS, snapToChartLabel, snapBackToChartLabel, updateEnd,
+  algoChartLabel, algoImpact, withNeighbours, type AlgoImpactResult,
+  type AlgoUpdate,
+} from "@/lib/algoUpdates";
 import { useParams, useRouter } from "next/navigation";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
@@ -28,7 +32,7 @@ import {
 } from "lucide-react";
 import {
   ComposedChart, LineChart, AreaChart, Area, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Legend, ReferenceLine,
+  Tooltip, ResponsiveContainer, Legend, ReferenceLine, ReferenceArea,
 } from "recharts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -3131,6 +3135,66 @@ function YandexIconSite({ size = 14 }: { size?: number }) {
   );
 }
 
+// ─── Algorithm update marker label ────────────────────────────────────────────
+/**
+ * The text above an update's start line: name, rollout length, and what traffic did across it.
+ *
+ * A custom element rather than Recharts' `label` object because the two halves need different
+ * colours — the name carries the update *type* (core / spam / discover), the percentage carries
+ * the *outcome*, and collapsing both into one colour would make a spam update and a traffic drop
+ * indistinguishable at a glance.
+ *
+ * Recharts injects `viewBox` when a label is given as an element.
+ */
+function AlgoMarkerLabel({ viewBox, text, impact, color, title }: {
+  viewBox?: { x?: number; y?: number }; text: string; impact: AlgoImpactResult;
+  color: string; title: string;
+}) {
+  const x = viewBox?.x ?? 0;
+  const y = viewBox?.y ?? 0;
+  const pct = impact.ok ? impact.clicks : null;
+  const tone = pct == null ? "" : pct > 0 ? "#10B981" : pct < 0 ? "#EF4444" : "var(--color-text-tertiary)";
+  return (
+    <text x={x} y={y - 4} textAnchor="middle" fontSize={9} fontWeight={600}>
+      {/* All four metrics live in a native SVG tooltip rather than in the label. Four figures at
+          9px, on a chart where two updates can sit days apart, is unreadable — and clicks is the
+          one people actually decide on. The rest are a hover away, and the Annotations tab lists
+          them in full. */}
+      <title>{title}</title>
+      <tspan fill={color}>{text}</tspan>
+      {/* A tilde on a thin window. Since the minimum was lowered to three days, a figure from
+          three days and one from fourteen would otherwise be typeset identically — and the first
+          is a hint while the second is close to a fact. */}
+      {pct != null && (
+        <tspan fill={tone}>{` ${impact.ok && !impact.confident ? "~" : ""}${pct > 0 ? "+" : ""}${pct}%`}</tspan>
+      )}
+    </text>
+  );
+}
+
+/** Multi-line hover text for an update marker: every metric, or a reason there is no figure. */
+function algoImpactTitle(name: string, range: string, impact: AlgoImpactResult, t: (k: never) => string): string {
+  if (!impact.ok) {
+    // "Waiting for data" and "cannot be separated from the update next to it" call for different
+    // reactions — one resolves itself in a week, the other never will.
+    return `${name}\n${range}\n${t((impact.reason === "adjacent" ? "algoImpactAdjacent" : "algoImpactUnknown") as never)}`;
+  }
+  const sign = (v: number) => (v > 0 ? "+" : "");
+  const lines = [
+    impact.clicks != null && `${t("clicks" as never)}: ${sign(impact.clicks)}${impact.clicks}%`,
+    impact.impressions != null && `${t("impressions" as never)}: ${sign(impact.impressions)}${impact.impressions}%`,
+    impact.ctrPp != null && `CTR: ${sign(impact.ctrPp)}${impact.ctrPp} pp`,
+    impact.position != null && `${t("avgPosition" as never)}: ${sign(impact.position)}${impact.position}`,
+  ].filter(Boolean);
+  // The window is part of the answer: a verdict from 5 clean days deserves less weight than one
+  // from 14, and only saying so lets the reader apply that discount.
+  const window = t("algoImpactWindow" as never)
+    .replace("{b}", String(impact.beforeDays))
+    .replace("{a}", String(impact.afterDays));
+  const caveat = impact.confident ? null : t("algoImpactApprox" as never);
+  return [name, range, ...lines, window, caveat].filter(Boolean).join("\n");
+}
+
 // ─── Annotations Filter Dropdown ──────────────────────────────────────────────
 function AnnotationsFilterDd({ onSetupBranded }: { onSetupBranded?: () => void }) {
   const { t } = useLanguage();
@@ -3365,6 +3429,10 @@ function AnnotationChart({ series, activeMetrics, changeDate }: {
 interface AnnotationNote {
   id?: string;
   date: string; title: string; scope: string;
+  /** Free text under the title. For Google updates this carries the rollout length, which is the
+   *  one fact a bare date does not give you: a 2-day spam update and a 3-week core update leave
+   *  very different shapes in the data. */
+  description?: string;
   /** false when the window after the note has no Search Console data yet (it lags 2-3 days) */
   hasAfter?: boolean;
   // `null` percentages mean there was no baseline to divide by — rendered as "—", never as 0%.
@@ -3380,7 +3448,8 @@ interface AnnotationNote {
 
 // Shape returned by /api/annotations, flattened into the row shape this table renders.
 type ApiNote = {
-  id: string; date: string; title: string; scope: string; dateRange: string; hasAfter: boolean;
+  id: string; date: string; title: string; description?: string | null;
+  scope: string; dateRange: string; hasAfter: boolean;
   clicks: { before: number; after: number; pct: number | null };
   impressions: { before: number; after: number; pct: number | null };
   ctr: { before: number; after: number; pct: number | null };
@@ -3394,6 +3463,7 @@ function mapApiNote(n: ApiNote): AnnotationNote {
     id: n.id,
     date: n.date,
     title: n.title,
+    description: n.description || undefined,
     scope: n.scope === "pages" ? "Specific pages" : "All Pages",
     hasAfter: n.hasAfter,
     cBefore: n.clicks.before, cAfter: n.clicks.after, cPct: n.clicks.pct,
@@ -3535,23 +3605,29 @@ function AnnotationsTab({ period, setPeriod, periodOptions, onSetupBranded, site
           glass, and with the rows gone there is nothing to obscure. */}
       <div>
         {displayNotes.map((note, idx) => (
-          <div key={idx} style={{ display: "grid", gridTemplateColumns: "280px 1fr auto", gap: "0", borderBottom: "1px solid var(--color-border)", alignItems: "center", padding: "0 32px" }}>
+          // Updates drop the four sparklines a note gets. A note is one event an operator wants to
+          // study; updates are a timeline they want to read down. Eight charts on screen made the
+          // page a scroll where the useful part — the date and the deltas — was the smallest thing
+          // on it.
+          <div key={idx} style={{ display: "grid", gridTemplateColumns: viewMode === "updates" ? "300px 1fr" : "280px 1fr auto", gap: "0", borderBottom: "1px solid var(--color-border)", alignItems: "center", padding: "0 32px" }}>
             {/* Left: date + title + scope */}
             <div style={{ padding: "18px 24px 18px 0" }}>
               <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--color-text-primary)", marginBottom: "4px" }}>{note.title}</div>
               <div style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
-                {note.date} · {note.scope}
+                {note.date}{viewMode === "updates" ? (note.description ? ` · ${note.description}` : "") : ` · ${note.scope}`}
               </div>
             </div>
 
-            {/* Center: before/after chart + date range */}
+            {/* Center: before/after chart + date range — notes only */}
+            {viewMode !== "updates" && (
             <div style={{ padding: "12px 24px" }}>
               <AnnotationChart series={note.series ?? []} activeMetrics={activeMetrics} changeDate={note.date} />
               <div style={{ fontSize: "10px", color: "var(--color-text-secondary)", textAlign: "center", marginTop: "2px" }}>{note.dateRange}</div>
             </div>
+            )}
 
             {/* Right: metrics before → after */}
-            <div style={{ padding: "18px 0 18px 0", display: "flex", flexDirection: "column", gap: "4px", minWidth: "260px" }}>
+            <div style={{ padding: "18px 0 18px 0", display: "flex", flexDirection: viewMode === "updates" ? "row" : "column", flexWrap: "wrap", gap: viewMode === "updates" ? "18px" : "4px", minWidth: "260px", alignItems: viewMode === "updates" ? "center" : undefined }}>
               {/* Every delta used to render as a green "+" regardless of sign, so a drop appeared
                   as a green "+-20%". Sign and colour now follow the actual number, and a note with
                   no post-change data yet says so instead of claiming a confident zero. */}
@@ -4248,10 +4324,28 @@ export default function SitePage({
     const end = chart[chart.length - 1]?.dateIso;
     if (!start || !end) return [];
 
-    return algoUpdates
-      .filter(u => u.date >= start && u.date <= end)
-      .map(u => ({ ...u, x: snapToChartLabel(chart, u.date) }))
-      .filter((u): u is AlgoUpdate & { x: string } => u.x !== null);
+    // Neighbours are resolved over the whole list before filtering to the window, so an update
+    // just outside the period still bounds the measurement of the one inside it.
+    return withNeighbours(algoUpdates)
+      // Overlap, not containment: a core update that began before the window and finished inside
+      // it is exactly the one an operator is looking for when traffic moved early in the period.
+      .filter(u => (updateEnd(u) ?? u.date) >= start && u.date <= end)
+      .map(u => {
+        const x = snapToChartLabel(chart, u.date);
+        const endIso = updateEnd(u);
+        const x2 = endIso ? snapBackToChartLabel(chart, endIso) : null;
+        // A band only when the rollout actually spans more than one point on this axis; on a
+        // 16-month window most updates collapse into a single label and a zero-width area would
+        // render as an invisible sliver.
+        return {
+          ...u,
+          x,
+          x2: x2 && x2 !== x ? x2 : null,
+          impact: algoImpact(chart, u.date, endIso ?? u.date,
+            { prevEndIso: u.prevEndIso, nextStartIso: u.nextStartIso }),
+        };
+      })
+      .filter((u): u is AlgoUpdate & { x: string; x2: string | null; impact: AlgoImpactResult } => u.x !== null);
   }, [siteData, algoUpdates]);
 
   // ── Rank tracker: which queries are already tracked (for Track buttons) ──────
@@ -4507,6 +4601,22 @@ export default function SitePage({
               <Sparkles size={13} /> {t("aioImpact")}
             </button>
             <GoogleUpdatesToggle on={googleUpdates} onToggle={() => setGoogleUpdates(v => !v)} />
+            {/* Pressing the toggle on a window Google published nothing in used to do visibly
+                nothing, which is indistinguishable from a broken button. Say which it is. */}
+            {googleUpdates && visibleAlgoUpdates.length === 0 && (
+              <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)", whiteSpace: "nowrap" }}>
+                {t("algoNoneInPeriod")}
+              </span>
+            )}
+            {/* What the shading means, said once next to the toggle instead of as a second label
+                on every band. A swatch beside the sentence ties the two together without needing
+                to name a colour that changes per update type. */}
+            {googleUpdates && visibleAlgoUpdates.some(u => u.x2) && (
+              <span style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "11px", color: "var(--color-text-tertiary)", whiteSpace: "nowrap" }}>
+                <span style={{ width: 14, height: 9, borderRadius: 2, background: "rgba(139,92,246,0.18)", borderLeft: "1.5px dashed #8B5CF6", borderRight: "1px dashed rgba(139,92,246,0.5)" }} />
+                {t("algoBandHint")}
+              </span>
+            )}
             <FilterDd
               positionFilter={positionFilter}
               onPositionFilter={v => { setPositionFilter(v); if (v !== null) scrollToResults(); }}
@@ -4590,9 +4700,29 @@ export default function SitePage({
               )}
               {/* Google algorithm update markers (core / spam / discover) */}
               {googleUpdates && visibleAlgoUpdates.map(u => (
-                <ReferenceLine key={`${u.name}-${u.date}`} x={u.x} yAxisId="left"
-                  stroke={ALGO_UPDATE_COLORS[u.type]} strokeWidth={1.5} strokeDasharray="3 3"
-                  label={{ value: u.name, position: "top", fontSize: 9, fill: ALGO_UPDATE_COLORS[u.type], fontWeight: 600 }} />
+                <Fragment key={`${u.name}-${u.date}`}>
+                  {/* Shaded rollout window first so the start line draws on top of it. */}
+                  {u.x2 && (
+                    <ReferenceArea x1={u.x} x2={u.x2} yAxisId="left"
+                      fill={ALGO_UPDATE_COLORS[u.type]} fillOpacity={0.07} stroke="none" />
+                  )}
+                  <ReferenceLine x={u.x} yAxisId="left"
+                    stroke={ALGO_UPDATE_COLORS[u.type]} strokeWidth={1.5} strokeDasharray="3 3"
+                    label={
+                      <AlgoMarkerLabel
+                        text={algoChartLabel(u)}
+                        impact={u.impact}
+                        color={ALGO_UPDATE_COLORS[u.type]}
+                        title={algoImpactTitle(u.name, updateEnd(u) ? `${u.date} → ${updateEnd(u)}` : u.date, u.impact, t as never)}
+                      />
+                    } />
+                  {/* Closing edge, solid-free and thinner: the rollout end is a softer fact than
+                      its start, and two identical lines would read as two separate updates. */}
+                  {u.x2 && (
+                    <ReferenceLine x={u.x2} yAxisId="left"
+                      stroke={ALGO_UPDATE_COLORS[u.type]} strokeWidth={1} strokeOpacity={0.5} strokeDasharray="2 4" />
+                  )}
+                </Fragment>
               ))}
             </ComposedChart>
           </ResponsiveContainer>
