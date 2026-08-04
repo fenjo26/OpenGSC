@@ -3,6 +3,36 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
+## [1.2.1] — 2026-08-04
+
+### Fixed
+
+**`npm run build` failed with "adapter-mariadb is not installed" on machines that had it**
+
+Reported in [#2](https://github.com/fenjo26/opengsc/issues/2), where the build claimed the
+package was missing seconds after `prisma db push` had used it to create the schema.
+
+The adapter's package name is assembled at runtime so a SQLite install — every install today —
+isn't asked to carry a MySQL driver. That keeps the name away from the bundler's static
+analysis, but the `require` doing the loading was still *the bundler's*: inside a Turbopack
+chunk a non-literal specifier throws `Cannot find module as expression is too dynamic` whether
+the package is installed or not, and the `catch` around it reported that as "not installed".
+The build was telling people to install something it had no way of loading.
+
+The load now goes through `createRequire` from `node:module`, which is Node's own resolver and
+looks at `node_modules` on disk rather than at the chunk graph. The failure message no longer
+claims "not installed" either — it prints the underlying resolver errors, since that claim was
+wrong in the first case that actually occurred. SQLite installs are unaffected: the MySQL branch
+is still only reached when `DATABASE_URL` names MySQL or MariaDB.
+
+This fixes the *build*. Running OpenGSC on MySQL is still unproven — the schema's provider is
+fixed to `sqlite`, and no one has yet run the app against a MySQL server.
+
+**MCP `get_capabilities` reported a stale version**
+
+It returned a hard-coded `1.1.0`, a release behind what Settings → System showed. It now reads
+`package.json`, so there is one version string to bump instead of two.
+
 ## [1.2.0] — 2026-08-03
 
 ### Added

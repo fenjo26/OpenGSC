@@ -27,6 +27,11 @@
 
 import { prisma } from "@/lib/prisma";
 import { google } from "googleapis";
+// Same version the UI shows in Settings → System, rather than a second copy that has to be
+// remembered on release day — it was already a release behind (1.1.0 against 1.2.0) by the time
+// anyone noticed. Imported rather than read at runtime: the bundler inlines the string, so the
+// route gains no filesystem access and nothing to trace.
+import pkg from "../../../package.json";
 import { getUserGoogleAccounts, makeOAuth2, queryGsc, isoDaysAgo } from "@/lib/gscQuery";
 import {
   type McpTool, type ToolCost,
@@ -603,7 +608,7 @@ const CORE_TOOLS: McpTool[] = [
       const named = (c: ToolCost) => MCP_TOOLS.filter(t => (t.cost ?? "local") === c).map(t => t.name);
       return {
         server: "opengsc",
-        version: "1.1.0",
+        version: pkg.version,
         toolCount: MCP_TOOLS.length,
         tools: {
           local: named("local"),
