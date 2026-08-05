@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getAlertSettings, DEFAULT_ALERT_SETTINGS, runAlertsOnce } from "@/lib/alertScheduler";
 import { normalizeLang } from "@/lib/notifyI18n";
+import { rawExec } from "@/lib/db/raw";
 
 // Alert rules (Settings → Notifications).
 // GET  → { settings, recent (last 20 fired alerts) }
@@ -58,7 +59,7 @@ export async function POST(req: Request) {
     s.lostLink.minDr = Number.isFinite(raw) ? Math.min(90, Math.max(0, raw)) : DEFAULT_ALERT_SETTINGS.lostLink.minDr;
   }
   try {
-    await prisma.$executeRawUnsafe(`UPDATE "User" SET alertSettings = ? WHERE id = ?`, JSON.stringify(s), userId);
+    await rawExec(`UPDATE "User" SET alertSettings = ? WHERE id = ?`, JSON.stringify(s), userId);
     return NextResponse.json({ ok: true, settings: s });
   } catch {
     return NextResponse.json({ error: "not_migrated" }, { status: 500 });

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import { MCP_TOOLS } from "@/lib/mcp/tools";
+import { rawQuery } from "@/lib/db/raw";
 
 // GET /api/mcp/tools — the tool registry as plain JSON.
 //
@@ -35,7 +35,7 @@ async function authUserId(req: Request): Promise<string | null> {
   }
   if (token.startsWith("ogsc_")) {
     try {
-      const rows: any[] = await prisma.$queryRawUnsafe(`SELECT id FROM "User" WHERE mcpToken = ?`, token);
+      const rows: any[] = await rawQuery(`SELECT id FROM "User" WHERE mcpToken = ?`, token);
       if (rows?.[0]?.id) return rows[0].id;
     } catch {
       // mcpToken column missing (prisma db push not run yet) — fall through to the session.

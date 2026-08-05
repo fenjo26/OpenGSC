@@ -1,11 +1,9 @@
-// Server-side mirror of resolveEngineKey (src/lib/engineKeys.ts). The browser normally holds
+
+import { rawQuery } from "@/lib/db/raw";// Server-side mirror of resolveEngineKey (src/lib/engineKeys.ts). The browser normally holds
 // the Bing/Yandex key and passes it per-request, but that doesn't work for guests opening a
 // share link (they don't have the owner's localStorage). Since SeoKeysSync backs those keys
 // up to User.seoSettings, the server can resolve the right key for a site the same way the
 // client does — honouring the per-site account selection.
-
-import { prisma } from "@/lib/prisma";
-
 type Engine = "bing" | "yandex";
 
 export function resolveEngineKeyFromSettings(settings: Record<string, any>, engine: Engine, siteId: string): string {
@@ -26,7 +24,7 @@ export function resolveEngineKeyFromSettings(settings: Record<string, any>, engi
 // The owner's full saved settings snapshot (read once, then resolve many sites in-memory).
 export async function getOwnerSettings(ownerUserId: string): Promise<Record<string, any>> {
   try {
-    const rows: any[] = await prisma.$queryRawUnsafe(`SELECT seoSettings FROM "User" WHERE id = ?`, ownerUserId);
+    const rows: any[] = await rawQuery(`SELECT seoSettings FROM "User" WHERE id = ?`, ownerUserId);
     return rows?.[0]?.seoSettings ? JSON.parse(rows[0].seoSettings) : {};
   } catch {
     return {};

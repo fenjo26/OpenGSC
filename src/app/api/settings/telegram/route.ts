@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import { detectChatId, sendTelegram } from "@/lib/notify";
+import { rawQuery, rawExec } from "@/lib/db/raw";
 
 // Telegram bot connection (Settings → Notifications).
 // GET             → { connected, botTokenMasked, chatId }
@@ -17,7 +17,7 @@ async function uid(): Promise<string | null> {
 
 async function readRow(userId: string): Promise<{ token: string; chatId: string }> {
   try {
-    const rows: any[] = await prisma.$queryRawUnsafe(
+    const rows: any[] = await rawQuery(
       `SELECT telegramBotToken, telegramChatId FROM "User" WHERE id = ?`, userId);
     return { token: rows?.[0]?.telegramBotToken ?? "", chatId: rows?.[0]?.telegramChatId ?? "" };
   } catch {
@@ -46,7 +46,7 @@ export async function POST(req: Request) {
     if (action === "save") {
       const botToken = String(b.botToken ?? "").trim();
       if (!/^\d+:[\w-]{30,}$/.test(botToken)) return NextResponse.json({ error: "invalid_token_format" }, { status: 400 });
-      await prisma.$executeRawUnsafe(`UPDATE "User" SET telegramBotToken = ?, telegramChatId = NULL WHERE id = ?`, botToken, userId);
+      await rawExec(`UPDATE "User" SET telegramBotToken = ?, telegramChatId = NULL WHERE id = ?`, botToken, userId);
       return NextResponse.json({ ok: true });
     }
 
@@ -56,7 +56,7 @@ export async function POST(req: Request) {
     if (action === "detect") {
       const r = await detectChatId(token);
       if (!r.chatId) return NextResponse.json({ error: r.error ?? "no_messages" }, { status: 400 });
-      await prisma.$executeRawUnsafe(`UPDATE "User" SET telegramChatId = ? WHERE id = ?`, r.chatId, userId);
+      await rawExec(`UPDATE "User" SET telegramChatId = ? WHERE id = ?`, r.chatId, userId);
       return NextResponse.json({ ok: true, chatId: r.chatId, username: r.username });
     }
 
@@ -76,7 +76,7 @@ export async function DELETE() {
   const userId = await uid();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    await prisma.$executeRawUnsafe(`UPDATE "User" SET telegramBotToken = NULL, telegramChatId = NULL WHERE id = ?`, userId);
+    await rawExec(`UPDATE "User" SET telegramBotToken = NULL, telegramChatId = NULL WHERE id = ?`, userId);
   } catch { /* not migrated */ }
   return NextResponse.json({ ok: true });
 }

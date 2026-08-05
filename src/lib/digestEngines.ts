@@ -1,4 +1,5 @@
-// Optional Bing/Yandex section for the portfolio digest. Runs ONLY if the user has an
+
+import { rawQuery } from "@/lib/db/raw";// Optional Bing/Yandex section for the portfolio digest. Runs ONLY if the user has an
 // engine key stored server-side (User.seoSettings — the same snapshot SeoKeysSync backs up).
 //
 // Everything here is best-effort and strictly bounded so it can never slow down or break the
@@ -6,9 +7,6 @@
 //   • capped at CAP sites per engine, concurrency-limited, per-request timeouts;
 //   • the whole thing is wrapped in try/catch by the caller and returns [] on any failure.
 // Bing costs 1 request/site; Yandex shares one /user + /hosts lookup then 1 request/site.
-
-import { prisma } from "@/lib/prisma";
-
 type Site = { id: string; url: string };
 export type EngineRow = { name: string; clicks: number; impr: number };
 
@@ -29,7 +27,7 @@ async function pool<T, R>(items: T[], n: number, fn: (t: T) => Promise<R>): Prom
 
 async function readEngineKeys(userId: string): Promise<{ bing: string; yandex: string }> {
   try {
-    const rows: any[] = await prisma.$queryRawUnsafe(`SELECT seoSettings FROM "User" WHERE id = ?`, userId);
+    const rows: any[] = await rawQuery(`SELECT seoSettings FROM "User" WHERE id = ?`, userId);
     const s = rows?.[0]?.seoSettings ? JSON.parse(rows[0].seoSettings) : {};
     const acc = (k: string) => { try { return JSON.parse(s[k] || "[]"); } catch { return []; } };
     const bing = (acc("seoKey_bing_accounts_list")[0]?.key || s["seoKey_bing"] || "").trim();

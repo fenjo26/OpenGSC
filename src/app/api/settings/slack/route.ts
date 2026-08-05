@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import { sendSlack } from "@/lib/notify";
+import { rawQuery, rawExec } from "@/lib/db/raw";
 
 async function uid(): Promise<string | null> {
   const session = await getServerSession(authOptions);
@@ -11,7 +11,7 @@ async function uid(): Promise<string | null> {
 
 async function readRow(userId: string): Promise<string> {
   try {
-    const rows: any[] = await prisma.$queryRawUnsafe(
+    const rows: any[] = await rawQuery(
       `SELECT slackWebhook FROM "User" WHERE id = ?`, userId);
     return rows?.[0]?.slackWebhook ?? "";
   } catch {
@@ -41,7 +41,7 @@ export async function POST(req: Request) {
       if (!/^https:\/\/hooks\.slack\.com\/services\/\S+$/i.test(webhookUrl)) {
         return NextResponse.json({ error: "invalid_webhook_format" }, { status: 400 });
       }
-      await prisma.$executeRawUnsafe(`UPDATE "User" SET slackWebhook = ? WHERE id = ?`, webhookUrl, userId);
+      await rawExec(`UPDATE "User" SET slackWebhook = ? WHERE id = ?`, webhookUrl, userId);
       return NextResponse.json({ ok: true });
     }
 
@@ -63,7 +63,7 @@ export async function DELETE() {
   const userId = await uid();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    await prisma.$executeRawUnsafe(`UPDATE "User" SET slackWebhook = NULL WHERE id = ?`, userId);
+    await rawExec(`UPDATE "User" SET slackWebhook = NULL WHERE id = ?`, userId);
   } catch { /* ignored */ }
   return NextResponse.json({ ok: true });
 }

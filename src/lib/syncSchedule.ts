@@ -9,7 +9,7 @@
 // at ten" — and a UTC hour silently drifts an hour away from that twice a year, at exactly the
 // moment nobody is looking at it.
 
-import { prisma } from "@/lib/prisma";
+import { rawQuery, rawExec } from "@/lib/db/raw";
 
 export type SyncSchedule = {
   enabled: boolean;
@@ -31,7 +31,7 @@ export const DEFAULT_SYNC_SCHEDULE: SyncSchedule = {
 export async function getSyncSchedule(userId: string): Promise<SyncSchedule> {
   try {
     const rows: { syncSettings: string | null }[] =
-      await prisma.$queryRawUnsafe(`SELECT syncSettings FROM "User" WHERE id = ?`, userId);
+      await rawQuery(`SELECT syncSettings FROM "User" WHERE id = ?`, userId);
     const raw = rows?.[0]?.syncSettings;
     return raw ? { ...DEFAULT_SYNC_SCHEDULE, ...JSON.parse(raw) } : DEFAULT_SYNC_SCHEDULE;
   } catch {
@@ -40,7 +40,7 @@ export async function getSyncSchedule(userId: string): Promise<SyncSchedule> {
 }
 
 export async function saveSyncSchedule(userId: string, s: SyncSchedule): Promise<void> {
-  await prisma.$executeRawUnsafe(`UPDATE "User" SET syncSettings = ? WHERE id = ?`, JSON.stringify(s), userId);
+  await rawExec(`UPDATE "User" SET syncSettings = ? WHERE id = ?`, JSON.stringify(s), userId);
 }
 
 /** Sanitise whatever the client sent. An invalid zone would otherwise disable the schedule silently. */

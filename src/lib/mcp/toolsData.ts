@@ -18,6 +18,7 @@ import {
 } from "./shared";
 import { makeOAuth2, dateWindows, GA4_API_METRICS, type GoogleAccount } from "@/lib/ga4";
 import { aggregateSnapshots } from "@/lib/clarityParse";
+import { rawQuery } from "@/lib/db/raw";
 
 // ─── decay bucketing (mirrors /api/gsc/decay) ───────────────────────────────────
 
@@ -355,7 +356,7 @@ export const DATA_TOOLS: McpTool[] = [
       const id = String(args.id ?? "").trim();
       try {
         if (id) {
-          const rows: any[] = await prisma.$queryRawUnsafe(
+          const rows: any[] = await rawQuery(
             `SELECT id, type, keyword, status, data, meta, createdAt FROM "SeoHistory" WHERE id = ? AND userId = ?`, id, userId);
           if (!rows.length) throw new Error(`Generation not found: ${id}`);
           const r = rows[0];
@@ -367,7 +368,7 @@ export const DATA_TOOLS: McpTool[] = [
         const params: any[] = [userId];
         if (type) { where.push(`type = ?`); params.push(type); }
         if (keyword) { where.push(`keyword LIKE ?`); params.push(`%${keyword}%`); }
-        const rows: any[] = await prisma.$queryRawUnsafe(
+        const rows: any[] = await rawQuery(
           `SELECT id, type, keyword, status, createdAt, LENGTH(data) as size FROM "SeoHistory"
            WHERE ${where.join(" AND ")} ORDER BY createdAt DESC LIMIT ${lim(args.limit, 25, 100)}`, ...params);
         return {
@@ -398,7 +399,7 @@ export const DATA_TOOLS: McpTool[] = [
       const engine = args.engine === "yandex" ? "yandex" : "bing";
       const period = String(args.period ?? "28d");
       try {
-        const rows: any[] = await prisma.$queryRawUnsafe(
+        const rows: any[] = await rawQuery(
           `SELECT data, updatedAt FROM "EnginePortfolioCache" WHERE userId = ? AND engine = ? AND period = ?`,
           userId, engine, period);
         if (!rows.length) {
@@ -594,12 +595,12 @@ export const DATA_TOOLS: McpTool[] = [
       const id = String(args.id ?? "").trim();
       try {
         if (id) {
-          const rows: any[] = await prisma.$queryRawUnsafe(
+          const rows: any[] = await rawQuery(
             `SELECT id, tag, days, content, sentTo, createdAt FROM "Digest" WHERE id = ? AND userId = ?`, id, userId);
           if (!rows.length) throw new Error(`Digest not found: ${id}`);
           return rows[0];
         }
-        const rows: any[] = await prisma.$queryRawUnsafe(
+        const rows: any[] = await rawQuery(
           `SELECT id, tag, days, sentTo, createdAt, LENGTH(content) as size FROM "Digest"
            WHERE userId = ? ORDER BY createdAt DESC LIMIT ${lim(args.limit, 10, 50)}`, userId);
         return {
@@ -638,7 +639,7 @@ export const DATA_TOOLS: McpTool[] = [
         const params: any[] = [userId, since];
         if (siteId) { where.push(`siteId = ?`); params.push(siteId); }
         if (type) { where.push(`type = ?`); params.push(type); }
-        const rows: any[] = await prisma.$queryRawUnsafe(
+        const rows: any[] = await rawQuery(
           `SELECT type, siteId, title, message, sent, createdAt FROM "AlertEvent"
            WHERE ${where.join(" AND ")} ORDER BY createdAt DESC LIMIT ${lim(args.limit, 50, 200)}`, ...params);
         const sites = await prisma.site.findMany({ where: { userId }, select: { id: true, url: true } });
@@ -662,7 +663,7 @@ export const DATA_TOOLS: McpTool[] = [
 export async function dataModuleCounts(userId: string): Promise<Json> {
   const safeCount = async (sql: string, ...params: any[]) => {
     try {
-      const rows: any[] = await prisma.$queryRawUnsafe(sql, ...params);
+      const rows: any[] = await rawQuery(sql, ...params);
       return Number(rows?.[0]?.c ?? 0);
     } catch { return 0; }
   };

@@ -5,8 +5,8 @@
 // tables do not exist, and the correct behaviour is an empty result — not a 500 that takes the
 // Striking Distance page down with it. A paid add-on must never be able to break a free feature.
 
-import { prisma } from "@/lib/prisma";
 import { runUpsert } from "@/lib/db/upsert";
+import { rawQuery } from "@/lib/db/raw";
 
 export type MetricSource = "api" | "csv";
 
@@ -48,7 +48,7 @@ export async function readKeywordCache(
   for (let i = 0; i < keys.length; i += 400) {
     const chunk = keys.slice(i, i + 400);
     try {
-      const rows: any[] = await prisma.$queryRawUnsafe(
+      const rows: any[] = await rawQuery(
         `SELECT keyword, country, provider, volume, difficulty, cpc, globalVolume, parentTopic,
                 intents, source, checkedAt
            FROM "KeywordMetricCache"
@@ -172,7 +172,7 @@ export async function readDomainCache(domains: string[], provider: string): Prom
   if (!list.length) return {};
   const out: Record<string, CachedDomain> = {};
   try {
-    const rows: any[] = await prisma.$queryRawUnsafe(
+    const rows: any[] = await rawQuery(
       `SELECT domain, provider, dr, refDomains, backlinks, orgTraffic, orgKeywords, orgCost, source, checkedAt
          FROM "DomainMetricCache"
         WHERE provider = ? AND domain IN (${list.map(() => "?").join(",")})`,
@@ -244,7 +244,7 @@ export interface UsageState {
 export async function readUsage(userId: string, provider: string): Promise<UsageState> {
   const month = monthKey();
   try {
-    const rows: any[] = await prisma.$queryRawUnsafe(
+    const rows: any[] = await rawQuery(
       `SELECT units, requests FROM "ApiUsage" WHERE userId = ? AND provider = ? AND month = ?`,
       userId, provider, month,
     );

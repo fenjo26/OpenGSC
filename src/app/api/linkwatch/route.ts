@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { rawQuery, rawExec } from "@/lib/db/raw";
 
 // Link Monitor brands + aggregated report (detailed.com/ai-backlinks-api workflow).
 // GET    /api/linkwatch                → { brands, mentions, topDomains }
@@ -20,11 +20,11 @@ export async function GET() {
   const userId = await uid();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    const brands: any[] = await prisma.$queryRawUnsafe(`SELECT id, domain, createdAt FROM "LinkWatchBrand" WHERE userId = ? ORDER BY domain`, userId);
-    const mentions: any[] = await prisma.$queryRawUnsafe(
+    const brands: any[] = await rawQuery(`SELECT id, domain, createdAt FROM "LinkWatchBrand" WHERE userId = ? ORDER BY domain`, userId);
+    const mentions: any[] = await rawQuery(
       `SELECT brand, urlFrom, domainFrom, title, anchor, drFrom, firstSeen, dofollow, fetchedAt
        FROM "LinkMention" WHERE userId = ? ORDER BY firstSeen DESC LIMIT 1000`, userId);
-    const topDomains: any[] = await prisma.$queryRawUnsafe(
+    const topDomains: any[] = await rawQuery(
       `SELECT domainFrom, COUNT(DISTINCT brand) as brandsLinked, COUNT(*) as links, MAX(drFrom) as maxDr
        FROM "LinkMention" WHERE userId = ? GROUP BY domainFrom ORDER BY brandsLinked DESC, links DESC LIMIT 100`, userId);
     return NextResponse.json({ brands, mentions, topDomains });
@@ -42,7 +42,7 @@ export async function POST(req: Request) {
   let added = 0;
   for (const d of domains) {
     try {
-      await prisma.$executeRawUnsafe(
+      await rawExec(
         `INSERT OR IGNORE INTO "LinkWatchBrand" (id, userId, domain, createdAt) VALUES (?, ?, ?, ?)`,
         rid(), userId, d, new Date().toISOString());
       added++;
@@ -58,8 +58,8 @@ export async function DELETE(req: Request) {
   const domain = norm(String(searchParams.get("domain") ?? ""));
   if (!domain) return NextResponse.json({ error: "no_domain" }, { status: 400 });
   try {
-    await prisma.$executeRawUnsafe(`DELETE FROM "LinkWatchBrand" WHERE userId = ? AND domain = ?`, userId, domain);
-    await prisma.$executeRawUnsafe(`DELETE FROM "LinkMention" WHERE userId = ? AND brand = ?`, userId, domain);
+    await rawExec(`DELETE FROM "LinkWatchBrand" WHERE userId = ? AND domain = ?`, userId, domain);
+    await rawExec(`DELETE FROM "LinkMention" WHERE userId = ? AND brand = ?`, userId, domain);
   } catch { /* table missing */ }
   return NextResponse.json({ ok: true });
 }

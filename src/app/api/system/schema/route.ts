@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import { currentDialect } from "@/lib/db/upsert";
+import { rawQuery } from "@/lib/db/raw";
 
 // GET /api/system/schema — which expected tables are missing from the database.
 //
@@ -52,10 +52,10 @@ export async function GET() {
     // table as missing on MySQL — turning the "run prisma db push" banner into a permanent false
     // alarm on exactly the setup that is hardest to debug.
     const rows: any[] = currentDialect() === "mysql"
-      ? await prisma.$queryRawUnsafe(
+      ? await rawQuery(
           `SELECT TABLE_NAME AS name FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE()`,
         )
-      : await prisma.$queryRawUnsafe(
+      : await rawQuery(
           `SELECT name FROM sqlite_master WHERE type = 'table'`,
         );
     // Lower-cased on both sides, because MySQL on Windows runs with lower_case_table_names=1 and

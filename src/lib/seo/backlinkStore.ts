@@ -10,8 +10,8 @@
 // that has not run `prisma db push`, every one of these returns empty instead of taking a page
 // down with it.
 
-import { prisma } from "@/lib/prisma";
 import { runUpsert } from "@/lib/db/upsert";
+import { rawQuery, rawExec } from "@/lib/db/raw";
 
 export interface RefDomainRecord {
   refDomain: string;
@@ -42,7 +42,7 @@ export async function readRefDomains(
   const provider = opts.provider ?? "ahrefs";
   const limit = Math.max(1, Math.min(2000, opts.limit ?? 500));
   try {
-    const rows: any[] = await prisma.$queryRawUnsafe(
+    const rows: any[] = await rawQuery(
       `SELECT refDomain, dr, linksToTarget, dofollow, firstSeen, lost, lostAt, source, fetchedAt
          FROM "RefDomainRow"
         WHERE target = ? AND provider = ?${opts.includeLost ? "" : " AND lost = 0"}
@@ -134,7 +134,7 @@ export async function syncRefDomains(
     for (const prev of before) {
       if (prev.lost || seenNow.has(prev.refDomain)) continue;
       try {
-        await prisma.$executeRawUnsafe(
+        await rawExec(
           `UPDATE "RefDomainRow" SET lost = 1, lostAt = ? WHERE target = ? AND refDomain = ? AND provider = ?`,
           day, t, prev.refDomain, provider,
         );
@@ -185,7 +185,7 @@ export async function writeSnapshot(
 
 export async function readSnapshots(target: string, limit = 90, provider = "ahrefs"): Promise<Snapshot[]> {
   try {
-    const rows: any[] = await prisma.$queryRawUnsafe(
+    const rows: any[] = await rawQuery(
       `SELECT date, refDomains, backlinks, dofollowPct FROM "BacklinkSnapshot"
         WHERE target = ? AND provider = ? ORDER BY date DESC LIMIT ${Math.max(1, Math.min(365, limit))}`,
       normDomain(target), provider,
@@ -204,7 +204,7 @@ export async function readSnapshots(target: string, limit = 90, provider = "ahre
 /** Referring domains marked lost since a given day — the input to the lost-link alert. */
 export async function lostSince(target: string, sinceDay: string, minDr: number, provider = "ahrefs") {
   try {
-    const rows: any[] = await prisma.$queryRawUnsafe(
+    const rows: any[] = await rawQuery(
       `SELECT refDomain, dr, lostAt FROM "RefDomainRow"
         WHERE target = ? AND provider = ? AND lost = 1 AND lostAt >= ? AND dr >= ?
         ORDER BY dr DESC LIMIT 50`,

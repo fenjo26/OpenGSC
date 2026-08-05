@@ -1,9 +1,7 @@
-// Telegram delivery for alerts & digests. The user brings their own bot (created via
+
+import { rawQuery } from "@/lib/db/raw";// Telegram delivery for alerts & digests. The user brings their own bot (created via
 // @BotFather, token pasted in Settings → Notifications) — free, no third-party service,
 // messages go straight from this server to Telegram's Bot API.
-
-import { prisma } from "@/lib/prisma";
-
 const TG = (token: string) => `https://api.telegram.org/bot${token}`;
 
 // Telegram hard-caps messages at 4096 chars — split long digests on paragraph boundaries.
@@ -75,7 +73,7 @@ export async function detectChatId(botToken: string): Promise<{ chatId?: string;
 // Server-side read of a user's Telegram credentials (raw SQL — see seoSettings convention).
 export async function getTelegramCreds(userId: string): Promise<{ botToken: string; chatId: string } | null> {
   try {
-    const rows: any[] = await prisma.$queryRawUnsafe(
+    const rows: any[] = await rawQuery(
       `SELECT telegramBotToken, telegramChatId FROM "User" WHERE id = ?`, userId);
     const r = rows?.[0];
     if (!r?.telegramBotToken || !r?.telegramChatId) return null;
@@ -87,7 +85,7 @@ export async function getTelegramCreds(userId: string): Promise<{ botToken: stri
 
 export async function getSlackWebhook(userId: string): Promise<string | null> {
   try {
-    const rows: any[] = await prisma.$queryRawUnsafe(
+    const rows: any[] = await rawQuery(
       `SELECT slackWebhook FROM "User" WHERE id = ?`, userId);
     return rows?.[0]?.slackWebhook || null;
   } catch {

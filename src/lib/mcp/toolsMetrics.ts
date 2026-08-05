@@ -13,6 +13,7 @@ import { prisma } from "@/lib/prisma";
 import { McpTool, lim, resolveSite, siteArg, normDomain } from "./shared";
 import { readKeywordCache, readDomainCache } from "@/lib/seo/metricsStore";
 import { readRefDomains, readSnapshots } from "@/lib/seo/backlinkStore";
+import { rawQuery } from "@/lib/db/raw";
 
 const asStrings = (v: unknown): string[] => {
   if (Array.isArray(v)) return v.map(x => String(x)).filter(Boolean);
@@ -160,7 +161,7 @@ export const METRICS_TOOLS: McpTool[] = [
 
       let stored: any[] = [];
       try {
-        stored = await prisma.$queryRawUnsafe(
+        stored = await rawQuery(
           `SELECT competitor, keyword, position, volume, difficulty, url
              FROM "CompetitorKeyword" WHERE siteId = ? AND country = ?
             ORDER BY volume DESC LIMIT 3000`,

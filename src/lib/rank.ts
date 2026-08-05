@@ -9,6 +9,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { runSerp } from "@/lib/seo/serp";
+import { rawQuery } from "@/lib/db/raw";
 
 export const RANK_STALE_MS = 20 * 60 * 60 * 1000; // ~daily, resilient to restarts
 
@@ -20,7 +21,7 @@ export interface SerpCreds { provider: string; apiKey: string }
 // Read the user's SERP provider + key from the server-side settings snapshot.
 export async function getUserSerpCreds(userId: string): Promise<SerpCreds | null> {
   try {
-    const rows: any[] = await prisma.$queryRawUnsafe(
+    const rows: any[] = await rawQuery(
       `SELECT seoSettings FROM "User" WHERE id = ?`, userId,
     );
     const raw = rows?.[0]?.seoSettings;

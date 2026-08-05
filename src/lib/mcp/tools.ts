@@ -41,6 +41,7 @@ import { DATA_TOOLS, dataModuleCounts } from "./toolsData";
 import { OPTIMIZE_TOOLS } from "./toolsOptimize";
 import { METRICS_TOOLS } from "./toolsMetrics";
 import { DEMAND_TOOLS } from "./toolsDemand";
+import { rawQuery } from "@/lib/db/raw";
 
 export type { McpTool, ToolCost };
 
@@ -298,15 +299,15 @@ const CORE_TOOLS: McpTool[] = [
     handler: async (userId, args) => {
       const brand = String(args.brand ?? "").trim().toLowerCase();
       try {
-        const mentions: any[] = await prisma.$queryRawUnsafe(
+        const mentions: any[] = await rawQuery(
           `SELECT brand, urlFrom, domainFrom, title, anchor, drFrom, firstSeen, dofollow FROM "LinkMention"
            WHERE userId = ? ${brand ? "AND brand = ?" : ""} ORDER BY firstSeen DESC LIMIT ${lim(args.limit, 100, 500)}`,
           ...(brand ? [userId, brand] : [userId]));
-        const topDomains: any[] = await prisma.$queryRawUnsafe(
+        const topDomains: any[] = await rawQuery(
           `SELECT domainFrom, COUNT(DISTINCT brand) as brandsLinked, COUNT(*) as links, MAX(drFrom) as maxDr
            FROM "LinkMention" WHERE userId = ? GROUP BY domainFrom HAVING COUNT(DISTINCT brand) >= 2
            ORDER BY brandsLinked DESC, links DESC LIMIT 50`, userId);
-        const brands: any[] = await prisma.$queryRawUnsafe(`SELECT domain FROM "LinkWatchBrand" WHERE userId = ?`, userId);
+        const brands: any[] = await rawQuery(`SELECT domain FROM "LinkWatchBrand" WHERE userId = ?`, userId);
         return {
           watchedBrands: brands.map(b => b.domain),
           multiLinkerDomains: topDomains.map(d => ({ domain: d.domainFrom, brandsLinked: Number(d.brandsLinked), links: Number(d.links), maxDr: Number(d.maxDr) })),
@@ -586,7 +587,7 @@ const CORE_TOOLS: McpTool[] = [
       ]);
       let linkMentions = 0;
       try {
-        const rows: any[] = await prisma.$queryRawUnsafe(`SELECT COUNT(*) as c FROM "LinkMention" WHERE userId = ?`, userId);
+        const rows: any[] = await rawQuery(`SELECT COUNT(*) as c FROM "LinkMention" WHERE userId = ?`, userId);
         linkMentions = Number(rows?.[0]?.c ?? 0);
       } catch { /* not migrated */ }
       const extra = await dataModuleCounts(userId);
@@ -595,7 +596,7 @@ const CORE_TOOLS: McpTool[] = [
       // tool it can call will fill it, rather than reading an empty answer as a real one.
       const metricCounts = async (table: string, where = "") => {
         try {
-          const rows: any[] = await prisma.$queryRawUnsafe(`SELECT COUNT(*) as c FROM "${table}" ${where}`);
+          const rows: any[] = await rawQuery(`SELECT COUNT(*) as c FROM "${table}" ${where}`);
           return Number(rows?.[0]?.c ?? 0);
         } catch { return 0; }
       };

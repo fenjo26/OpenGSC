@@ -11,6 +11,7 @@ import { prisma } from "@/lib/prisma";
 import { buildEngineData, type EngineRow } from "@/lib/digestEngines";
 import { fetchLLM } from "@/lib/llm";
 import { NOTIFY_L, normalizeLang, type NotifyLang } from "@/lib/notifyI18n";
+import { rawQuery, rawExec } from "@/lib/db/raw";
 
 export interface DigestSettings {
   enabled: boolean;
@@ -55,7 +56,7 @@ export interface DigestData {
 
 export async function getDigestSettings(userId: string): Promise<DigestSettings> {
   try {
-    const rows: any[] = await prisma.$queryRawUnsafe(`SELECT digestSettings FROM "User" WHERE id = ?`, userId);
+    const rows: any[] = await rawQuery(`SELECT digestSettings FROM "User" WHERE id = ?`, userId);
     const raw = rows?.[0]?.digestSettings;
     return raw ? { ...DEFAULT_DIGEST_SETTINGS, ...JSON.parse(raw) } : DEFAULT_DIGEST_SETTINGS;
   } catch {
@@ -64,7 +65,7 @@ export async function getDigestSettings(userId: string): Promise<DigestSettings>
 }
 
 export async function saveDigestSettings(userId: string, s: DigestSettings): Promise<void> {
-  await prisma.$executeRawUnsafe(`UPDATE "User" SET digestSettings = ? WHERE id = ?`, JSON.stringify(s), userId);
+  await rawExec(`UPDATE "User" SET digestSettings = ? WHERE id = ?`, JSON.stringify(s), userId);
 }
 
 const hasTag = (tagsField: string | null, tag: string): boolean => {
@@ -286,7 +287,7 @@ export async function buildDigest(
 // user's own AI key (User.seoSettings); silently skipped when no key is configured.
 export async function aiSummary(userId: string, digestMarkdown: string, lang: NotifyLang = "en"): Promise<string | null> {
   try {
-    const rows: any[] = await prisma.$queryRawUnsafe(`SELECT seoSettings FROM "User" WHERE id = ?`, userId);
+    const rows: any[] = await rawQuery(`SELECT seoSettings FROM "User" WHERE id = ?`, userId);
     const s = rows?.[0]?.seoSettings ? JSON.parse(rows[0].seoSettings) : null;
     if (!s) return null;
     const provider = s.seoProvider || s.aiProvider || "anthropic";

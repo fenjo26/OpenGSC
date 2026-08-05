@@ -1,10 +1,8 @@
-// Casino RAG — knowledge-base retrieval for outline/text generation.
+
+import { rawQuery } from "@/lib/db/raw";// Casino RAG — knowledge-base retrieval for outline/text generation.
 // Matches slot/casino/provider names against the keyword and renders their attributes
 // as a compact facts block. Uses $queryRawUnsafe so it works with the existing generated
 // Prisma client (no regenerate needed after adding the Rag* tables).
-
-import { prisma } from "@/lib/prisma";
-
 export interface RagFacts {
   slots: any[];
   casinos: any[];
@@ -59,16 +57,16 @@ export async function findRagFacts(keyword: string): Promise<RagFacts | null> {
     // Candidate rows whose name occurs inside the keyword (SQLite instr scan is fast enough
     // at ~40k rows), then precise word-boundary filtering in JS. Longest names first =
     // most specific match wins (e.g. "Book of Sun Multichance" over "Book of Sun").
-    const slots: any[] = await prisma.$queryRawUnsafe(
+    const slots: any[] = await rawQuery(
       `SELECT name, nameNorm, provider, released, slotType, rtp, volatility, maxWin, minBet, maxBet,
               layout, lines, features, themes, demoUrl, platform
        FROM "RagSlot" WHERE length(nameNorm) >= 3 AND instr(?, nameNorm) > 0
        ORDER BY length(nameNorm) DESC LIMIT 40`, kw);
-    const casinos: any[] = await prisma.$queryRawUnsafe(
+    const casinos: any[] = await rawQuery(
       `SELECT name, nameNorm, website, country, founded, locality, region, size
        FROM "RagCasino" WHERE length(nameNorm) >= 3 AND instr(?, nameNorm) > 0
        ORDER BY length(nameNorm) DESC LIMIT 20`, kw);
-    const providerRows: any[] = await prisma.$queryRawUnsafe(
+    const providerRows: any[] = await rawQuery(
       `SELECT provider, COUNT(*) as cnt FROM "RagSlot"
        WHERE provider != '' AND instr(?, lower(provider)) > 0
        GROUP BY provider ORDER BY cnt DESC LIMIT 5`, kw);
@@ -89,7 +87,7 @@ export async function findRagFacts(keyword: string): Promise<RagFacts | null> {
     // Provider pages ("3 oaks slots"): add the provider's notable titles as context.
     let providerBlock = "";
     for (const p of providers) {
-      const top: any[] = await prisma.$queryRawUnsafe(
+      const top: any[] = await rawQuery(
         `SELECT name, released, rtp FROM "RagSlot" WHERE provider = ? ORDER BY name LIMIT 12`, p.provider);
       providerBlock += `\nПровайдер ${p.provider}: ${Number(p.cnt)} слотов в базе. Известные тайтлы: ${top.map(x => x.name).join(", ")}.`;
     }

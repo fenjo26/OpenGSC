@@ -14,6 +14,7 @@ import { prisma } from "@/lib/prisma";
 import { notifyUser } from "@/lib/notify";
 import { NOTIFY_L, normalizeLang, type NotifyLang } from "@/lib/notifyI18n";
 import { lostSince } from "@/lib/seo/backlinkStore";
+import { rawQuery } from "@/lib/db/raw";
 
 const TICK_MS = 60 * 60 * 1000; // hourly
 
@@ -39,7 +40,7 @@ export const DEFAULT_ALERT_SETTINGS: AlertSettings = {
 
 export async function getAlertSettings(userId: string): Promise<AlertSettings> {
   try {
-    const rows: any[] = await prisma.$queryRawUnsafe(`SELECT alertSettings FROM "User" WHERE id = ?`, userId);
+    const rows: any[] = await rawQuery(`SELECT alertSettings FROM "User" WHERE id = ?`, userId);
     const raw = rows?.[0]?.alertSettings;
     if (!raw) return DEFAULT_ALERT_SETTINGS;
     const s = JSON.parse(raw);
@@ -188,7 +189,7 @@ export async function runAlertsOnce(userId?: string): Promise<number> {
   try {
     const rows: any[] = userId
       ? [{ id: userId }]
-      : await prisma.$queryRawUnsafe(`SELECT id FROM "User" WHERE (telegramBotToken IS NOT NULL AND telegramChatId IS NOT NULL) OR slackWebhook IS NOT NULL`);
+      : await rawQuery(`SELECT id FROM "User" WHERE (telegramBotToken IS NOT NULL AND telegramChatId IS NOT NULL) OR slackWebhook IS NOT NULL`);
     userIds = rows.map(r => r.id);
   } catch {
     return 0; // columns not migrated yet

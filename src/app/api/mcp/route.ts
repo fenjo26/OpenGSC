@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { MCP_TOOLS, findTool, type McpTool } from "@/lib/mcp/tools";
+import { rawQuery } from "@/lib/db/raw";
 
 // MCP (Model Context Protocol) endpoint — Streamable HTTP transport, stateless mode.
 // Lets AI agents (Claude Code, Cursor, Codex, any MCP client) query this instance's
@@ -56,7 +56,7 @@ async function authUserId(req: Request): Promise<string | null> {
   }
   if (!token || !token.startsWith("ogsc_")) return null;
   try {
-    const rows: any[] = await prisma.$queryRawUnsafe(`SELECT id FROM "User" WHERE mcpToken = ?`, token);
+    const rows: any[] = await rawQuery(`SELECT id FROM "User" WHERE mcpToken = ?`, token);
     return rows?.[0]?.id ?? null;
   } catch {
     return null; // mcpToken column missing (prisma db push not run yet)

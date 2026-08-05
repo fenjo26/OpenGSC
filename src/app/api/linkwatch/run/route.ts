@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { rawQuery, rawExec } from "@/lib/db/raw";
 
 // POST /api/linkwatch/run { ahrefsKey, months?, minDr?, limit? }
 // For every watched brand, pull fresh quality backlinks via Ahrefs API v3 and store them.
@@ -66,7 +66,7 @@ export async function POST(req: Request) {
   const since = new Date(Date.now() - months * 30 * 24 * 3600 * 1000).toISOString().slice(0, 10);
 
   let brands: any[] = [];
-  try { brands = await prisma.$queryRawUnsafe(`SELECT domain FROM "LinkWatchBrand" WHERE userId = ?`, userId); }
+  try { brands = await rawQuery(`SELECT domain FROM "LinkWatchBrand" WHERE userId = ?`, userId); }
   catch { return NextResponse.json({ error: "not_migrated" }, { status: 500 }); }
   if (!brands.length) return NextResponse.json({ error: "no_brands" }, { status: 400 });
 
@@ -77,11 +77,11 @@ export async function POST(req: Request) {
     const r = await fetchBrandLinks(ahrefsKey, baseUrl, brand, since, minDr, limit);
     if (r.error) { errors[brand] = r.error; continue; }
     try {
-      await prisma.$executeRawUnsafe(`DELETE FROM "LinkMention" WHERE userId = ? AND brand = ?`, userId, brand);
+      await rawExec(`DELETE FROM "LinkMention" WHERE userId = ? AND brand = ?`, userId, brand);
       for (const row of r.rows || []) {
         const urlFrom = String(row.url_from ?? "");
         if (!urlFrom) continue;
-        await prisma.$executeRawUnsafe(
+        await rawExec(
           `INSERT INTO "LinkMention" (id, userId, brand, urlFrom, domainFrom, title, anchor, drFrom, firstSeen, urlTo, dofollow, fetchedAt)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           rid(), userId, brand, urlFrom, domainOf(urlFrom),

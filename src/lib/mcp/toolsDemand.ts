@@ -26,6 +26,7 @@ import {
 } from "@/lib/seo/demand";
 import { writeKeywordCache, normalizeKeyword, recordUsage } from "@/lib/seo/metricsStore";
 import { runUpsert } from "@/lib/db/upsert";
+import { rawQuery } from "@/lib/db/raw";
 
 /** Mirrors `/api/demand/keywords`, which owns the canonical values. */
 const SEARCH_TTL_DAYS = 14;
@@ -168,7 +169,7 @@ export const DEMAND_TOOLS: McpTool[] = [
       if (!seed) {
         let searches: any[] = [];
         try {
-          searches = await prisma.$queryRawUnsafe(
+          searches = await rawQuery(
             `SELECT seed, country, language, mode, source, createdAt FROM "DemandSearch"
               WHERE userId = ? ORDER BY createdAt DESC LIMIT 100`,
             userId,
@@ -184,7 +185,7 @@ export const DEMAND_TOOLS: McpTool[] = [
 
       let hit: any;
       try {
-        const rows: any[] = await prisma.$queryRawUnsafe(
+        const rows: any[] = await rawQuery(
           `SELECT rows, source, mode, language, createdAt FROM "DemandSearch"
             WHERE userId = ? AND seed = ? AND country = ?
             ORDER BY createdAt DESC LIMIT 1`,
@@ -287,7 +288,7 @@ export const DEMAND_TOOLS: McpTool[] = [
       // skipped the free tool should not be billed for the omission.
       const key = cacheKeyFor(seed, country, language, mode, limit, clickstream);
       try {
-        const cached: any[] = await prisma.$queryRawUnsafe(
+        const cached: any[] = await rawQuery(
           `SELECT rows, source, createdAt FROM "DemandSearch" WHERE userId = ? AND cacheKey = ?`,
           userId, key,
         );

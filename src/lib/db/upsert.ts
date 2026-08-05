@@ -28,7 +28,12 @@
 // real server, and the Prisma schema cannot switch providers yet — see the note above that
 // branch before relying on it.
 
-import { prisma } from "@/lib/prisma";
+import { rawExec, currentDialect, type SqlDialect } from "@/lib/db/raw";
+
+// Dialect detection moved to db/raw.ts when this builder started running its statements through
+// `rawExec` — keeping it here would have made the two modules import each other. Re-exported so
+// the call sites that already import it from this module keep working.
+export { currentDialect, type SqlDialect } from "@/lib/db/raw";
 
 /** How a column behaves when the row already exists. */
 export type UpsertMode =
@@ -57,20 +62,6 @@ export interface UpsertSpec {
    * the stored one. The freshness guard from behaviour 2 above.
    */
   onlyIfNewer?: string;
-}
-
-/**
- * Which SQL dialect to emit.
- *
- * Derived from `DATABASE_URL` rather than from a setting of its own, because two places that can
- * disagree about which database this is would be a worse failure than not being configurable:
- * the connection would succeed and the statements would be wrong.
- */
-export type SqlDialect = "sqlite" | "mysql";
-
-export function currentDialect(): SqlDialect {
-  const url = process.env.DATABASE_URL ?? "";
-  return /^mysql:/i.test(url) || /^mariadb:/i.test(url) ? "mysql" : "sqlite";
 }
 
 /** SQLite and Postgres quote identifiers with double quotes; MySQL and MariaDB use backticks. */
@@ -182,5 +173,5 @@ export function buildUpsert(spec: UpsertSpec, dialect: SqlDialect = currentDiale
  */
 export async function runUpsert(spec: UpsertSpec): Promise<void> {
   const { sql, params } = buildUpsert(spec);
-  await prisma.$executeRawUnsafe(sql, ...params);
+  await rawExec(sql, ...params);
 }

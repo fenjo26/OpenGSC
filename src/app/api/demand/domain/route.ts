@@ -8,6 +8,7 @@ import {
   readUsage, recordUsage, withinCap, normalizeKeyword,
 } from "@/lib/seo/metricsStore";
 import { runUpsert } from "@/lib/db/upsert";
+import { rawQuery } from "@/lib/db/raw";
 
 // POST /api/demand/domain { domain, siteId?, country?, language?, keywordLimit?, pageLimit?, apiKey?, cap?, fetch? }
 //
@@ -110,7 +111,7 @@ export async function POST(req: Request) {
 
   const readCache = async () => {
     try {
-      const rows: any[] = await prisma.$queryRawUnsafe(
+      const rows: any[] = await rawQuery(
         `SELECT rows, createdAt FROM "DemandSearch" WHERE userId = ? AND cacheKey = ?`,
         userId, `domain:${cacheKey}`,
       );

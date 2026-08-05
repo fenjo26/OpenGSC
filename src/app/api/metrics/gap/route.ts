@@ -8,6 +8,7 @@ import {
 } from "@/lib/seo/metrics";
 import { readUsage, recordUsage, withinCap } from "@/lib/seo/metricsStore";
 import { runUpsert } from "@/lib/db/upsert";
+import { rawQuery, rawExec } from "@/lib/db/raw";
 
 // POST /api/metrics/gap { siteId, action, ... }
 //
@@ -56,7 +57,7 @@ export async function POST(req: Request) {
   const buildGap = async (): Promise<{ rows: GapRow[]; competitors: string[] }> => {
     let stored: any[] = [];
     try {
-      stored = await prisma.$queryRawUnsafe(
+      stored = await rawQuery(
         `SELECT competitor, keyword, position, volume, difficulty, url
            FROM "CompetitorKeyword" WHERE siteId = ? AND country = ?
           ORDER BY volume DESC LIMIT 3000`,
@@ -161,7 +162,7 @@ export async function POST(req: Request) {
     // Replace rather than merge: a keyword the competitor no longer ranks for should disappear
     // from the gap, and an upsert alone would keep it forever.
     try {
-      await prisma.$executeRawUnsafe(
+      await rawExec(
         `DELETE FROM "CompetitorKeyword" WHERE siteId = ? AND competitor = ? AND country = ?`,
         site.id, competitor, country,
       );

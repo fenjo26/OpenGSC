@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import { fetchLLM } from "@/lib/llm";
+import { rawQuery } from "@/lib/db/raw";
 
 // POST /api/linkwatch/insights { aiProvider, aiApiKey, model?, aiBaseUrl?, language? }
 // AI summary over the stored mentions — themes, mention contexts, anchor patterns,
@@ -18,7 +18,7 @@ export async function POST(req: Request) {
 
   let mentions: any[] = [];
   try {
-    mentions = await prisma.$queryRawUnsafe(
+    mentions = await rawQuery(
       `SELECT brand, urlFrom, domainFrom, title, anchor, drFrom, firstSeen, dofollow
        FROM "LinkMention" WHERE userId = ? ORDER BY drFrom DESC LIMIT 400`, userId);
   } catch { return NextResponse.json({ error: "not_migrated" }, { status: 500 }); }

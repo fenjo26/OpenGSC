@@ -4,6 +4,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { runAeoCheck, AEO_ENGINES, type AeoEngine, type AeoCheckResult } from "@/lib/seo/aeo";
+import { rawQuery } from "@/lib/db/raw";
 
 export const AEO_STALE_MS = 24 * 60 * 60 * 1000; // daily — AEO checks cost real money per engine
 
@@ -16,7 +17,7 @@ export interface AeoCreds { chatgpt?: string; perplexity?: string; claude?: stri
 // SEO Tools SERP keys in Settings → SEO Tools.
 export async function getUserAeoCreds(userId: string): Promise<AeoCreds> {
   try {
-    const rows: any[] = await prisma.$queryRawUnsafe(
+    const rows: any[] = await rawQuery(
       `SELECT seoSettings FROM "User" WHERE id = ?`, userId,
     );
     const raw = rows?.[0]?.seoSettings;

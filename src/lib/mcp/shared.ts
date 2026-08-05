@@ -6,6 +6,7 @@
 // a cycle through the registry array is easy to create and annoying to unpick.
 
 import { prisma } from "@/lib/prisma";
+import { rawQuery } from "@/lib/db/raw";
 
 export type Json = Record<string, unknown>;
 
@@ -102,7 +103,7 @@ export const siteOrAllArg = {
 
 export async function getUserSettings(userId: string): Promise<Record<string, any>> {
   try {
-    const rows: any[] = await prisma.$queryRawUnsafe(`SELECT seoSettings FROM "User" WHERE id = ?`, userId);
+    const rows: any[] = await rawQuery(`SELECT seoSettings FROM "User" WHERE id = ?`, userId);
     return rows?.[0]?.seoSettings ? JSON.parse(rows[0].seoSettings) : {};
   } catch {
     return {};

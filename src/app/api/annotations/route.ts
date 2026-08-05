@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getAlgoUpdates } from "@/lib/algoUpdatesServer";
+import { rawQuery, rawExec } from "@/lib/db/raw";
 
 // Annotations — dated notes about site changes, scored against real Search Console data.
 //
@@ -50,7 +51,7 @@ async function dailySeries(siteId: string, from: Date, to: Date, urls: string[])
   } else {
     urlFilter = ` AND "url" = '' AND "query" = ''`;
   }
-  const rows = await prisma.$queryRawUnsafe<{ day: string; clicks: bigint | number; impressions: bigint | number; posw: number | null }[]>(
+  const rows = await rawQuery<{ day: string; clicks: bigint | number; impressions: bigint | number; posw: number | null }[]>(
     `SELECT ${DAY_EXPR} AS day,
             SUM("clicks") AS clicks,
             SUM("impressions") AS impressions,
@@ -175,7 +176,7 @@ export async function GET(req: Request) {
     // between two screens and holding one of them in your head. Both are dated events scored the
     // same way against the same traffic, so they belong on one timeline — `kind` is all the
     // distinction the UI needs.
-    const noteRows = await prisma.$queryRawUnsafe<{
+    const noteRows = await rawQuery<{
       id: string; date: Date | string | number; title: string; description: string | null;
       scope: string; urls: string | null;
     }[]>(
@@ -287,7 +288,7 @@ export async function POST(req: Request) {
   try {
     const id = `ann_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
     date.setHours(0, 0, 0, 0);
-    await prisma.$executeRawUnsafe(
+    await rawExec(
       `INSERT INTO "Annotation" ("id","siteId","date","title","description","scope","urls","createdAt")
        VALUES (?,?,?,?,?,?,?,?)`,
       id, siteId, date, title, String(b.description || ""), scope, urls || null, new Date(),
@@ -310,7 +311,7 @@ export async function DELETE(req: Request) {
   try {
     // The join to Site is the ownership check — a note can only be deleted through a site the
     // caller owns, so an id guessed from elsewhere does nothing.
-    await prisma.$executeRawUnsafe(
+    await rawExec(
       `DELETE FROM "Annotation" WHERE "id" = ?
        AND "siteId" IN (SELECT "id" FROM "Site" WHERE "userId" = ?)`,
       id, userId,

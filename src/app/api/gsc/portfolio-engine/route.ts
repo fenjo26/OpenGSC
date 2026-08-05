@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getOwnerSettings, listEngineKeys } from "@/lib/engineKeysServer";
 import { runUpsert } from "@/lib/db/upsert";
+import { rawQuery } from "@/lib/db/raw";
 
 // Live portfolio for Bing / Yandex. Unlike the Google portfolio (which lists the sites in our
 // DB), this enumerates the engine's OWN verified sites — across every connected account —
@@ -112,7 +113,7 @@ const splitWindows = (daily: Daily[], start: string, curEnd: string, prevStart: 
 // ── Persistent cache (raw SQL so it works right after `prisma db push`, before generate) ──
 async function readCache(userId: string, engine: string, period: string): Promise<{ sites: any[]; cachedAt: string } | null> {
   try {
-    const rows: any[] = await prisma.$queryRawUnsafe(`SELECT data, updatedAt FROM "EnginePortfolioCache" WHERE userId = ? AND engine = ? AND period = ?`, userId, engine, period);
+    const rows: any[] = await rawQuery(`SELECT data, updatedAt FROM "EnginePortfolioCache" WHERE userId = ? AND engine = ? AND period = ?`, userId, engine, period);
     if (!rows?.[0]?.data) return null;
     return { sites: JSON.parse(rows[0].data), cachedAt: new Date(rows[0].updatedAt).toISOString() };
   } catch { return null; }

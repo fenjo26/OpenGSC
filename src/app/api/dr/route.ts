@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { runUpsert } from "@/lib/db/upsert";
+import { rawQuery } from "@/lib/db/raw";
 
 // GET /api/dr?domains=a.com,b.com — Ahrefs Domain Rating via the free public endpoint
 // (no API key required). Cached in SQLite for 7 days so the dashboard doesn't hammer
@@ -42,7 +43,7 @@ export async function GET(req: Request) {
   const out: Record<string, { dr: number; checkedAt: string }> = {};
   let cached: any[] = [];
   try {
-    cached = await prisma.$queryRawUnsafe(
+    cached = await rawQuery(
       `SELECT domain, dr, checkedAt FROM "DrCache" WHERE domain IN (${domains.map(() => "?").join(",")})`, ...domains);
   } catch { /* table missing until prisma db push */ }
   const fresh = new Set<string>();

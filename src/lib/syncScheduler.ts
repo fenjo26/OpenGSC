@@ -11,16 +11,16 @@
 // second one finds the run already done for the day. On a single-operator instance — which is
 // what OpenGSC is — that distinction never comes up.
 
-import { prisma } from "@/lib/prisma";
 import { runGscSync, isSyncInProgress } from "@/lib/gscSync";
 import { getSyncSchedule, saveSyncSchedule, isDue } from "@/lib/syncSchedule";
+import { rawQuery } from "@/lib/db/raw";
 
 const TICK_MS = 15 * 60 * 1000;
 
 async function tick() {
   let users: { id: string }[] = [];
   try {
-    users = await prisma.$queryRawUnsafe(`SELECT id FROM "User" WHERE syncSettings IS NOT NULL`);
+    users = await rawQuery(`SELECT id FROM "User" WHERE syncSettings IS NOT NULL`);
   } catch {
     return; // column not there yet — the instance simply has no schedules
   }

@@ -6,6 +6,7 @@ import { buildDigestData, renderDigestMarkdown, aiSummary, getDigestSettings, sa
 import { buildEngineRows, configuredEngines } from "@/lib/digestEngines";
 import { notifyUser } from "@/lib/notify";
 import { normalizeLang } from "@/lib/notifyI18n";
+import { rawQuery } from "@/lib/db/raw";
 
 const hasTag = (tagsField: string | null, tag: string): boolean => {
   if (!tagsField) return false;
@@ -51,7 +52,7 @@ export async function GET() {
   // "telegram" flag historically gates the Send button — true when ANY channel works.
   let telegram = false;
   try {
-    const rows: any[] = await prisma.$queryRawUnsafe(
+    const rows: any[] = await rawQuery(
       `SELECT telegramBotToken, telegramChatId, slackWebhook FROM "User" WHERE id = ?`, userId);
     telegram = !!((rows?.[0]?.telegramBotToken && rows?.[0]?.telegramChatId) || rows?.[0]?.slackWebhook);
   } catch { /* not migrated */ }

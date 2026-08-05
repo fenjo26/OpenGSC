@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { fetchVolumeHistory, AHREFS_UNIT_FLOOR, MetricsProvider } from "@/lib/seo/metrics";
 import { readUsage, recordUsage, withinCap } from "@/lib/seo/metricsStore";
 import { runUpsert } from "@/lib/db/upsert";
+import { rawQuery } from "@/lib/db/raw";
 
 // POST /api/metrics/demand { siteId, url, country?, fetch?, apiKey?, ... }
 //
@@ -56,7 +57,7 @@ export async function POST(req: Request) {
 
   const readCache = async () => {
     try {
-      const rows: any[] = await prisma.$queryRawUnsafe(
+      const rows: any[] = await rawQuery(
         `SELECT points, fetchedAt FROM "KeywordVolumeHistory" WHERE keyword = ? AND country = ? AND provider = ?`,
         keyword, country, provider,
       );
