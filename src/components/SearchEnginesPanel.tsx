@@ -156,7 +156,9 @@ export default function SearchEnginesPanel({ siteDbId, domain }: { siteDbId: str
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ siteUrl: `https://${cleanDomain}/`, sitemapUrl, apiKey: bingKey || undefined }),
       }).then(r => r.json());
-      setBingMsg(d.ok ? `✓ ${t("sePanelSitemapOk")} (${d.method})` : String(d.error ?? "error"));
+      // No "(method)" suffix any more: there is one way in since the anonymous ping endpoint
+      // was retired, so naming it only raised the question of what the other one was.
+      setBingMsg(d.ok ? `✓ ${t("sePanelSitemapOk")}` : String(d.error ?? "error"));
     } catch (e: any) { setBingMsg(String(e?.message ?? e)); }
     setBingBusy("");
   };

@@ -81,6 +81,22 @@ reloading a page mid-run picks the spinner back up rather than showing an idle b
 
 ### Fixed
 
+**Bing sitemap submission no longer falls back to an endpoint that has been dead since 2022**
+
+Submitting a sitemap to Bing without an API key tried `https://www.bing.com/ping?sitemap=`,
+which Bing retired in 2022 after spammers abused anonymous submission. It answers 410 Gone, so
+that path never did anything. It also hid the real failure: because the API call fell through to
+the ping on any error, a wrong API key was reported as "Bing ping failed with status 410"
+instead of InvalidApiKey.
+
+The ping is gone. A key is now required, and its absence says so, along with the alternative
+(list the sitemap in robots.txt). Errors from `SubmitSitemap` go through the same reader the
+stats calls use, so InvalidApiKey and InvalidSiteUrl come back as themselves.
+
+Unrelated but worth recording, since it prompted the check: Bing is retiring its SOAP and POX
+endpoints on 31 August 2026. OpenGSC is unaffected — all five Bing calls already use
+`api.svc/json/`.
+
 **MySQL: the provider no longer has to be edited by hand after every update**
 
 Reported in [#2](https://github.com/fenjo26/opengsc/issues/2). Prisma rejects `env()` in the
