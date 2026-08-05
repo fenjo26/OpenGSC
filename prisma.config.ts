@@ -33,6 +33,12 @@ function schemaForDatabase(): string {
   if (!/^(mysql|mariadb):/i.test(url)) return BASE_SCHEMA;
 
   const source = readFileSync(BASE_SCHEMA, "utf8");
+
+  // Someone who edited the provider by hand before this existed already has the file this would
+  // produce. Deriving a copy of it would work, but using theirs directly means `git status` keeps
+  // showing them the edit they made, instead of a second file quietly shadowing it.
+  if (/provider\s*=\s*"mysql"/.test(source)) return BASE_SCHEMA;
+
   const swapped = source.replace(/provider(\s*)=(\s*)"sqlite"/, 'provider$1=$2"mysql"');
   if (swapped === source) {
     // Failing loudly beats generating a SQLite client for a MySQL database, which surfaces much
