@@ -66,6 +66,27 @@ reloading a page mid-run picks the spinner back up rather than showing an idle b
 
 ### Fixed
 
+**MySQL: the provider no longer has to be edited by hand after every update**
+
+Reported in [#2](https://github.com/fenjo26/opengsc/issues/2). Prisma rejects `env()` in the
+datasource provider, so running on MySQL meant editing `provider = "sqlite"` in
+`prisma/schema.prisma` — a tracked file, which every `git pull` and every `update.sh` run (it
+does `git reset --hard`) quietly reverted. The failure that follows is unhelpful: `prisma
+generate` rebuilds the client for SQLite without complaint and the app dies later with "the
+Driver Adapter `@prisma/adapter-mariadb` is not compatible with the provider `sqlite`", which
+reads like a broken adapter rather than a file that changed underneath you.
+
+`prisma.config.ts` is TypeScript and runs before the CLI reads anything, so it now picks the
+schema itself: for a `mysql://` or `mariadb://` connection string it derives a copy with the
+provider swapped and points the CLI at that. The copy sits beside the original — `output` in the
+generator block resolves relative to the schema file, so a copy one directory deeper would
+generate the client into the wrong place — is gitignored, and is rewritten on every CLI run, so
+it cannot drift from the real schema. SQLite installs are untouched: same file, same path, no
+copy made.
+
+MySQL support is still unproven end to end; this only removes the trap that made it impossible
+to keep testing across updates.
+
 **"Last synced" could roll backwards after a page reload**
 
 The timestamp under the Sync button lived only in `localStorage`, written one line after the
