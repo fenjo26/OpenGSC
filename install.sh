@@ -138,7 +138,10 @@ fi
 # ─── App dependencies ─────────────────────────────────────────────────────────
 header "App dependencies"
 info "Running npm install..."
-npm install --silent
+# --include=dev for the same reason as update.sh: the build needs Tailwind, its PostCSS plugin
+# and TypeScript, all of which are devDependencies that npm skips when NODE_ENV=production is
+# set in the environment this script happens to inherit.
+npm install --include=dev --silent
 success "Dependencies installed"
 
 # ─── .env ─────────────────────────────────────────────────────────────────────

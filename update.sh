@@ -17,7 +17,17 @@ echo "[update] git reset --hard origin/main..."
 git reset --hard origin/main || { echo "[update] git reset FAILED"; echo "___OPENGSC_UPDATE_FAIL___"; exit 1; }
 
 echo "[update] npm install..."
-npm i || { echo "[update] npm i FAILED"; echo "___OPENGSC_UPDATE_FAIL___"; exit 1; }
+# --include=dev is not optional here, and the reason is easy to miss.
+#
+# When this script is launched from the UI it is a child of the running Next server, which has
+# NODE_ENV=production. npm reads that and quietly installs dependencies only. Tailwind, its
+# PostCSS plugin and TypeScript all live in devDependencies, so the install "succeeds" and the
+# build then dies on the first stylesheet with "Cannot find module '@tailwindcss/postcss'" —
+# a message that points at the CSS and says nothing about the install that caused it.
+#
+# Running the same script by hand in a shell works, because there NODE_ENV is usually unset.
+# That difference is what made this look like a Windows problem rather than an env one.
+npm i --include=dev || { echo "[update] npm i FAILED"; echo "___OPENGSC_UPDATE_FAIL___"; exit 1; }
 
 echo "[update] prisma db push..."
 npx prisma db push --skip-generate || npx prisma db push || { echo "[update] prisma db push FAILED"; echo "___OPENGSC_UPDATE_FAIL___"; exit 1; }

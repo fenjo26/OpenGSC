@@ -58,7 +58,12 @@ export async function GET() {
       : await prisma.$queryRawUnsafe(
           `SELECT name FROM sqlite_master WHERE type = 'table'`,
         );
-    present = new Set(rows.map(r => String(r.name)));
+    // Lower-cased on both sides, because MySQL on Windows runs with lower_case_table_names=1 and
+    // stores every table folded to lowercase. `KeywordMetricCache` comes back as
+    // `keywordmetriccache`, an exact-match check finds none of the fourteen, and the banner tells
+    // a correctly migrated instance to run `prisma db push` — which then reports the schema is
+    // already in sync, leaving the user with two tools contradicting each other.
+    present = new Set(rows.map(r => String(r.name).toLowerCase()));
   } catch {
     // Reading sqlite_master itself failing means something is wrong that this endpoint is not
     // equipped to diagnose. Report "cannot tell" rather than "everything is missing", which
@@ -66,7 +71,7 @@ export async function GET() {
     return NextResponse.json({ ok: true, checked: false, missing: [] });
   }
 
-  const missing = EXPECTED_TABLES.filter(t => !present.has(t.table));
+  const missing = EXPECTED_TABLES.filter(t => !present.has(t.table.toLowerCase()));
 
   return NextResponse.json({
     ok: missing.length === 0,
