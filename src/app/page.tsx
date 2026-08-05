@@ -14,6 +14,7 @@ import { AreaChart, Area, ResponsiveContainer, Tooltip } from "recharts";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { useHealthStatus } from "@/components/SiteHealthPanel";
+import { loadSyncedAt, rememberSyncedAt } from "@/lib/syncedAt";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Metric = "clicks" | "impressions" | "ctr" | "position";
@@ -568,9 +569,13 @@ function PortfolioPageContent() {
   const [syncedAt, setSyncedAt] = useState<Date | null>(null);
   const [syncWarning, setSyncWarning] = useState<string | null>(null);
 
+  // Asked of the server rather than of localStorage, so the label reflects the instance's last
+  // sync rather than the last one this particular browser happened to watch finish. See
+  // src/lib/syncedAt.ts.
   useEffect(() => {
-    const s = localStorage.getItem('gsc_synced_at');
-    if (s) setSyncedAt(new Date(s));
+    let cancelled = false;
+    loadSyncedAt().then(d => { if (!cancelled && d) setSyncedAt(d); });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -668,9 +673,11 @@ function PortfolioPageContent() {
                   setTimeout(() => setSyncStatus("idle"), 30_000);
                 } else {
                   // Only mark as synced on actual success
-                  const now = new Date();
+                  // Prefer the server's own completion time; `now` is only when this tab
+                  // noticed, which can be up to one poll interval late.
+                  const now = s.lastResult?.completedAt ? new Date(s.lastResult.completedAt) : new Date();
                   setSyncedAt(now);
-                  localStorage.setItem('gsc_synced_at', now.toISOString());
+                  rememberSyncedAt(now);
                   setSyncStatus("done");
                   setTimeout(() => setSyncStatus("idle"), 5_000);
                 }

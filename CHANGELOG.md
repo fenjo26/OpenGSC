@@ -7,6 +7,24 @@ All notable changes to OpenGSC. Dates are release dates; the version shown in
 
 ### Fixed
 
+**"Last synced" could roll backwards after a page reload**
+
+The timestamp under the Sync button lived only in `localStorage`, written one line after the
+React state update and inside a promise chain that ended in an empty `.catch()`. When
+`localStorage.setItem` threw — a full store is the usual reason — the label showed the correct
+time until the page was reloaded, then reverted to whatever was written last time it worked.
+Nothing was logged, so it looked exactly like a sync that had silently failed and taken the
+fresh data with it, which is a bad thing for a dashboard to imply when the data is in fact
+there.
+
+The label now comes from the server, which already recorded it: `runGscSync` stores
+`completedAt` and GET `/api/gsc/sync` returns it. `localStorage` stays as a fallback for the
+one case the server can't answer — the result is held in memory, so a restart forgets it — and
+a failed write now says so in the console instead of vanishing. The completion time also comes
+from the server rather than from `new Date()` at the moment the browser noticed, which was up
+to one 15-second poll late. New `src/lib/syncedAt.ts`, used by both the dashboard and the site
+page, which had their own copies of the same logic.
+
 **`npm run build` failed with "adapter-mariadb is not installed" on machines that had it**
 
 Reported in [#2](https://github.com/fenjo26/opengsc/issues/2), where the build claimed the

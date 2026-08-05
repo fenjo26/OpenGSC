@@ -13,6 +13,7 @@ import SiteAuditPanel from "@/components/SiteAuditPanel";
 import EngineView, { type AltEngine, type EngineSummary } from "@/components/EngineView";
 import SearchEnginesPanel from "@/components/SearchEnginesPanel";
 import { withShare } from "@/lib/shareParam";
+import { loadSyncedAt, rememberSyncedAt } from "@/lib/syncedAt";
 import AeoTracker from "@/components/AeoTracker";
 import {
   ALGO_UPDATES, ALGO_UPDATE_COLORS, snapToChartLabel, snapBackToChartLabel, updateEnd,
@@ -4279,8 +4280,9 @@ export default function SitePage({
   const [syncedAt, setSyncedAt] = useState<Date | null>(null);
   useEffect(() => {
     if (readOnly) return;
-    const s = localStorage.getItem('gsc_synced_at');
-    if (s) setSyncedAt(new Date(s));
+    let cancelled = false;
+    loadSyncedAt().then(d => { if (!cancelled && d) setSyncedAt(d); });
+    return () => { cancelled = true; };
   }, [readOnly]);
 
   const handleSync = () => {
@@ -4297,9 +4299,9 @@ export default function SitePage({
             .then(s => {
               if (!s.syncing) {
                 clearInterval(poll);
-                const now = new Date();
+                const now = s.lastResult?.completedAt ? new Date(s.lastResult.completedAt) : new Date();
                 setSyncedAt(now);
-                localStorage.setItem('gsc_synced_at', now.toISOString());
+                rememberSyncedAt(now);
                 // Sync-all: also refresh the live Bing/Yandex views if any are connected.
                 setEngineRefresh(k => k + 1);
                 fetch(getUrl(`/api/gsc/site?domain=${encodeURIComponent(domain)}&period=${period}`))
