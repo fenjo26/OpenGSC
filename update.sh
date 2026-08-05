@@ -29,6 +29,12 @@ echo "[update] npm install..."
 # That difference is what made this look like a Windows problem rather than an env one.
 npm i --include=dev || { echo "[update] npm i FAILED"; echo "___OPENGSC_UPDATE_FAIL___"; exit 1; }
 
+# npm can finish successfully and still leave an install the app cannot run: under npm 12 a
+# dependency's build script is skipped unless the exact version is listed in allowScripts, and a
+# better-sqlite3 that never built is only discovered at boot. Checked here so the message names
+# the cause, instead of the build or the first request doing it much less clearly.
+node scripts/check-native-deps.mjs || { echo "[update] dependency check FAILED"; echo "___OPENGSC_UPDATE_FAIL___"; exit 1; }
+
 echo "[update] prisma db push..."
 npx prisma db push --skip-generate || npx prisma db push || { echo "[update] prisma db push FAILED"; echo "___OPENGSC_UPDATE_FAIL___"; exit 1; }
 

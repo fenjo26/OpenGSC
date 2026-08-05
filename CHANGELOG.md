@@ -81,6 +81,19 @@ reloading a page mid-run picks the spinner back up rather than showing an idle b
 
 ### Fixed
 
+**Installs and updates now check that the install is usable, not just that npm exited 0**
+
+npm 12 blocks a dependency's lifecycle scripts unless the root package lists that exact version
+in `allowScripts`. better-sqlite3 builds its native binding in one of those scripts, so a
+blocked install leaves the package on disk and unloadable: npm reports success, and the failure
+turns up later at boot as a module that will not load. The pins are exact by design, which also
+means a dependency bump silently stops matching them.
+
+`scripts/check-native-deps.mjs` compares the pins against the lockfile and then loads
+better-sqlite3 for real, because the comparison suggests a cause while the load is the thing
+that actually matters. Run by `update.sh` and `install.sh` right after npm, so the message names
+the problem instead of the build reporting something unrelated three minutes later.
+
 **Bing sitemap submission no longer falls back to an endpoint that has been dead since 2022**
 
 Submitting a sitemap to Bing without an API key tried `https://www.bing.com/ping?sitemap=`,

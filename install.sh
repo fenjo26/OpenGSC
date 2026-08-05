@@ -142,6 +142,8 @@ info "Running npm install..."
 # and TypeScript, all of which are devDependencies that npm skips when NODE_ENV=production is
 # set in the environment this script happens to inherit.
 npm install --include=dev --silent
+# A successful npm install is not the same as a usable one — see the comment in update.sh.
+node scripts/check-native-deps.mjs || error "Dependencies installed but not usable — see above."
 success "Dependencies installed"
 
 # ─── .env ─────────────────────────────────────────────────────────────────────
