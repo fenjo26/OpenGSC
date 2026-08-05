@@ -293,7 +293,13 @@ export async function aiSummary(userId: string, digestMarkdown: string, lang: No
     const apiKey = s[`aiKey_${provider}`] || s.aiApiKey || "";
     if (!apiKey) return null;
     const model = s.seoModel || s[`aiModel_${provider}`] || undefined;
-    const langName = lang === "ru" ? "Russian" : lang === "uk" ? "Ukrainian" : "English";
+    const langName = lang === "ru" ? "Russian"
+      : lang === "uk" ? "Ukrainian"
+      : lang === "fr" ? "French"
+      : lang === "es" ? "Spanish"
+      : lang === "de" ? "German"
+      : lang === "zh" ? "Simplified Chinese"
+      : "English";
     const text = await fetchLLM(
       `You are a senior SEO analyst reviewing a multi-site portfolio digest. Write in ${langName}.\n\n` +
       `Rules:\n` +

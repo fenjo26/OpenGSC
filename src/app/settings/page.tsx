@@ -755,12 +755,12 @@ function PreferencesSection({ user }: { user: any }) {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: "rgba(255,255,255,0.03)", borderRadius: "8px", border: "1px solid var(--color-border)" }}>
           <div>
             <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--color-text-primary)" }}>{t("language")}</div>
-            <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginTop: "2px" }}>English / Русский / Українська</div>
+            <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginTop: "2px" }}>English / Русский / Українська / Français / Español / Deutsch / 简体中文</div>
           </div>
-          <div style={{ display: "flex", gap: "6px" }}>
-            {(["en", "ru", "uk"] as const).map(lang => (
-              <button key={lang} onClick={() => setLanguage(lang)} style={{ padding: "6px 16px", borderRadius: "8px", fontSize: "13px", fontWeight: 600, cursor: "pointer", background: language === lang ? "rgba(139,92,246,0.15)" : "transparent", color: language === lang ? "#8B5CF6" : "var(--color-text-secondary)", border: `1px solid ${language === lang ? "rgba(139,92,246,0.3)" : "var(--color-border)"}`, transition: "all 0.15s" }}>
-                {lang === "en" ? "🇬🇧 EN" : lang === "ru" ? "🇷🇺 RU" : "🇺🇦 UK"}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", justifyContent: "flex-end" }}>
+            {(["en", "ru", "uk", "fr", "es", "de", "zh"] as const).map(lang => (
+              <button key={lang} onClick={() => setLanguage(lang)} style={{ padding: "6px 12px", borderRadius: "8px", fontSize: "13px", fontWeight: 600, cursor: "pointer", background: language === lang ? "rgba(139,92,246,0.15)" : "transparent", color: language === lang ? "#8B5CF6" : "var(--color-text-secondary)", border: `1px solid ${language === lang ? "rgba(139,92,246,0.3)" : "var(--color-border)"}`, transition: "all 0.15s" }}>
+                {lang === "en" ? "🇬🇧 EN" : lang === "ru" ? "🇷🇺 RU" : lang === "uk" ? "🇺🇦 UK" : lang === "fr" ? "🇫🇷 FR" : lang === "es" ? "🇪🇸 ES" : lang === "de" ? "🇩🇪 DE" : "🇨🇳 ZH"}
               </button>
             ))}
           </div>

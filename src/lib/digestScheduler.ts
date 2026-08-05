@@ -6,10 +6,11 @@
 import { prisma } from "@/lib/prisma";
 import { notifyUser } from "@/lib/notify";
 import { buildDigest, aiSummary, getDigestSettings, saveDigestSettings } from "@/lib/digest";
+import type { NotifyLang } from "@/lib/notifyI18n";
 
 const TICK_MS = 60 * 60 * 1000;
 
-export async function sendDigestNow(userId: string, tag: string, days: number, ai: boolean, lang: "en" | "ru" | "uk" = "en"): Promise<{ content: string; sent: boolean }> {
+export async function sendDigestNow(userId: string, tag: string, days: number, ai: boolean, lang: NotifyLang = "en"): Promise<{ content: string; sent: boolean }> {
   const { content } = await buildDigest(userId, tag, days, lang);
   let full = content;
   if (ai) {

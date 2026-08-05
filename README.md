@@ -8,7 +8,7 @@
 
 Self-hosted on your own VPS. No subscriptions, no seat limits, no third party touching your data.
 
-[![Version 1.2.1](https://img.shields.io/badge/version-1.2.1-brightgreen)](https://github.com/fenjo26/opengsc/releases)
+[![Version 1.2.2](https://img.shields.io/badge/version-1.2.2-brightgreen)](https://github.com/fenjo26/opengsc/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Next.js 16](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue?logo=typescript)](https://www.typescriptlang.org/)
@@ -33,6 +33,24 @@ curl -fsSL https://raw.githubusercontent.com/fenjo26/opengsc/main/install.sh | s
 <div align="center">
 <img src="screenshot/main%20dashbord.png" alt="OpenGSC main dashboard" width="90%" />
 </div>
+
+<br/>
+
+## 🌍 Supported languages
+
+OpenGSC's interface is available in **seven languages** — pick one from the language switcher on the login screen or in **Settings → Preferences**:
+
+| Code | Language | Native name |
+|------|----------|-------------|
+| `en` | English | English 🇬🇧 |
+| `ru` | Russian | Русский 🇷🇺 |
+| `uk` | Ukrainian | Українська 🇺🇦 |
+| `fr` | French | Français 🇫🇷 |
+| `es` | Spanish | Español 🇪🇸 |
+| `de` | German | Deutsch 🇩🇪 |
+| `zh` | Simplified Chinese | 简体中文 🇨🇳 |
+
+Telegram/Slack alerts and digests are sent in the same language you pick. SEO and Search Console terms that have no native equivalent (CTR, SEO, GSC, sitemap, canonical…) stay in English, the way practitioners use them.
 
 <br/>
 

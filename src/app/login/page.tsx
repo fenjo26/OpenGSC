@@ -62,6 +62,66 @@ const content = {
     signIn: "Увійти через Google",
     bullets: ["Лише Google OAuth — без паролів", "Можна підключити кілька акаунтів", "Self-hosted на вашому VPS"],
   },
+  fr: {
+    tagline: "Votre",
+    highlight: "Search Console",
+    tagline2: "personnel",
+    sub: "Tous vos comptes Google, tous vos sites — un tableau de bord épuré. Sans limites, sans bruit, sans abonnement.",
+    features: [
+      { title: "Tous vos comptes au même endroit", desc: "Connectez plusieurs comptes Google et voyez tous vos sites GSC sur un seul écran." },
+      { title: "Le trafic d'un coup d'œil", desc: "Des mini-graphiques pour chaque site. Repérez aussitôt les gains, les chutes et les tendances." },
+      { title: "Vos données, votre serveur", desc: "Self-hosted. Vos données Search Console ne quittent jamais votre VPS." },
+    ],
+    getStarted: "Commencer",
+    signInSub: "Connectez-vous avec votre compte Google. Le premier compte devient propriétaire de ce tableau de bord.",
+    signIn: "Se connecter avec Google",
+    bullets: ["Google OAuth uniquement — aucun mot de passe", "Connectez plusieurs comptes Google", "Self-hosted sur votre VPS"],
+  },
+  es: {
+    tagline: "Tu",
+    highlight: "Search Console",
+    tagline2: "personal",
+    sub: "Todas tus cuentas de Google, todos tus sitios — un panel limpio. Sin límites, sin ruido, sin suscripción.",
+    features: [
+      { title: "Todas las cuentas en un solo lugar", desc: "Conecta varias cuentas de Google y ve todos tus sitios de GSC en una sola pantalla." },
+      { title: "El tráfico de un vistazo", desc: "Minigráficas para cada sitio. Detecta al instante las subidas, las caídas y las tendencias." },
+      { title: "Tus datos, tu servidor", desc: "Self-hosted. Los datos de Search Console nunca salen de tu VPS." },
+    ],
+    getStarted: "Empezar",
+    signInSub: "Inicia sesión con tu cuenta de Google. La primera cuenta pasa a ser la propietaria de este panel.",
+    signIn: "Iniciar sesión con Google",
+    bullets: ["Solo Google OAuth — sin contraseñas", "Conecta varias cuentas de Google", "Self-hosted en tu VPS"],
+  },
+  de: {
+    tagline: "Dein persönliches",
+    highlight: "Search Console",
+    tagline2: "Kontrollzentrum",
+    sub: "Alle deine Google-Konten, alle deine Websites — ein aufgeräumtes Dashboard. Keine Limits, kein Rauschen, kein Abo.",
+    features: [
+      { title: "Alle Konten an einem Ort", desc: "Verbinde mehrere Google-Konten und sieh alle deine GSC-Websites auf einem Bildschirm." },
+      { title: "Traffic auf einen Blick", desc: "Mini-Diagramme für jede Website. Gewinner, Einbrüche und Trends sofort erkennen." },
+      { title: "Deine Daten, dein Server", desc: "Self-hosted. Deine Search-Console-Daten verlassen nie deinen VPS." },
+    ],
+    getStarted: "Loslegen",
+    signInSub: "Melde dich mit deinem Google-Konto an. Das erste Konto wird zum Besitzer dieses Dashboards.",
+    signIn: "Mit Google anmelden",
+    bullets: ["Nur Google OAuth — keine Passwörter", "Mehrere Google-Konten verbinden", "Self-hosted auf deinem VPS"],
+  },
+  zh: {
+    tagline: "你的专属",
+    highlight: "Search Console",
+    tagline2: "指挥中心",
+    sub: "所有 Google 账号、所有网站 —— 一个清爽的仪表盘。无限制、无干扰、无订阅。",
+    features: [
+      { title: "所有账号集中管理", desc: "连接多个 Google 账号，在同一块屏幕上查看所有 GSC 网站。" },
+      { title: "流量一目了然", desc: "每个站点都有迷你走势图，立刻看出上涨、下跌和趋势。" },
+      { title: "你的数据，你的服务器", desc: "Self-hosted。Search Console 数据永远不会离开你的 VPS。" },
+    ],
+    getStarted: "开始使用",
+    signInSub: "用你的 Google 账号登录。第一个账号将成为本仪表盘的所有者。",
+    signIn: "使用 Google 登录",
+    bullets: ["仅支持 Google OAuth —— 无需密码", "可连接多个 Google 账号", "Self-hosted 在你的 VPS 上"],
+  },
 };
 
 const featureIcons = [
@@ -96,12 +156,12 @@ export default function LoginPage() {
           border: "1px solid var(--color-border)",
           borderRadius: "8px", overflow: "hidden",
         }}>
-          {(["en", "ru", "uk"] as const).map(lang => (
+          {(["en", "ru", "uk", "fr", "es", "de", "zh"] as const).map(lang => (
             <button
               key={lang}
               onClick={() => setLanguage(lang)}
               style={{
-                padding: "6px 12px",
+                padding: "6px 9px",
                 fontSize: "12px", fontWeight: 600,
                 border: "none", cursor: "pointer",
                 background: language === lang ? "var(--color-accent-purple)" : "transparent",

@@ -3,6 +3,21 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
+## [1.2.2] — 2026-08-05
+
+### Added
+
+**Four new interface languages: French, Spanish, German, and Simplified Chinese**
+
+The app now ships in seven languages instead of three. Pick any of them from the language switcher on the login screen or in **Settings → Preferences**; the choice also drives the language Telegram/Slack alerts and digests are written in.
+
+- 🇫🇷 Français, 🇪🇸 Español, 🇩🇪 Deutsch, and 🇨🇳 简体中文 join 🇬🇧 English, 🇷🇺 Русский, and 🇺🇦 Українська.
+- All 2,659 UI strings are translated for each new locale, with the same key coverage as the existing translations.
+- Server-side notification templates (alerts and the daily/weekly digest) were translated too, so a French/Spanish/German/Chinese user gets their alerts in their language rather than silently falling back to English.
+- The browser language is auto-detected on first visit for the new locales as well.
+
+Terms that practitioners use in English stay in English across every language — **CTR**, **SEO**, **GSC**, **sitemap**, **canonical**, **Core Web Vitals**, and the like are not translated, because no working SEO specialist says them differently. Brand and product names (Google, Search Console, OpenGSC, Ahrefs, Telegram…) are left untouched.
+
 ## [1.2.1] — 2026-08-04
 
 ### Added
