@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { rawQuery, dayExpr } from "@/lib/db/raw";
 
 // Indexer statistics.
 //
@@ -107,8 +108,9 @@ export async function GET(req: Request) {
 
     // ─── Daily breakdown ──────────────────────────────────────────────────────
     // Raw SQL because day bucketing needs a date function Prisma's groupBy cannot express. The
-    // typeof() switch handles both ways a DateTime can sit in SQLite (integer milliseconds or an
-    // ISO string), so this keeps working if the column representation ever differs.
+    // expression itself comes from db/raw.ts, which knows that SQLite has to normalise a DateTime
+    // stored either as integer milliseconds or as an ISO string, and that MySQL has neither that
+    // ambiguity nor the strftime function this used to call.
     const dailyMap: Record<string, DailyRow> = {};
     for (let i = WINDOW_DAYS - 1; i >= 0; i--) {
       const d = new Date();
@@ -118,19 +120,21 @@ export async function GET(req: Request) {
     }
 
     try {
-      const rows = await prisma.$queryRaw<{ day: string; botType: string; is304: number; c: bigint | number }[]>`
-        SELECT
-          strftime('%Y-%m-%d',
-            CASE WHEN typeof("timestamp") = 'integer' THEN "timestamp" / 1000
-                 ELSE strftime('%s', "timestamp") END,
-            'unixepoch') AS day,
+      // Positional parameters through rawQuery rather than a tagged template, so the identifiers
+      // get quoted for whichever database this is — a tagged `$queryRaw` goes straight to the
+      // driver with its SQLite-style double quotes intact.
+      const rows = await rawQuery<{ day: string; botType: string; is304: number; c: bigint | number }[]>(
+        `SELECT
+          ${dayExpr("timestamp")} AS day,
           "botType" AS botType,
           CASE WHEN "statusCode" = 304 THEN 1 ELSE 0 END AS is304,
           COUNT(*) AS c
         FROM "IndexerLog"
-        WHERE "domainId" IN (SELECT "id" FROM "IndexerDomain" WHERE "userId" = ${userId})
-          AND "timestamp" >= ${since}
-        GROUP BY day, botType, is304`;
+        WHERE "domainId" IN (SELECT "id" FROM "IndexerDomain" WHERE "userId" = ?)
+          AND "timestamp" >= ?
+        GROUP BY day, botType, is304`,
+        userId, since,
+      );
 
       for (const row of rows) {
         const day = dailyMap[row.day];

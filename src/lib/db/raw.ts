@@ -73,6 +73,22 @@ export function portableSql(sql: string, dialect = currentDialect()): string {
   return out;
 }
 
+/**
+ * A `YYYY-MM-DD` day bucket from a DateTime column, in whichever dialect is in use.
+ *
+ * SQLite needs the awkward version. Prisma can store a DateTime there as integer milliseconds or
+ * as an ISO string depending on how the row was written, so the expression has to look at
+ * `typeof()` and normalise both. MySQL has a real DATETIME column and none of that ambiguity, so
+ * `DATE_FORMAT` is the whole of it.
+ *
+ * Identifiers are written with double quotes here and rewritten by {@link portableSql} on the way
+ * out, so this returns a fragment for embedding rather than a finished statement.
+ */
+export function dayExpr(column: string, dialect = currentDialect()): string {
+  if (dialect === "mysql") return `DATE_FORMAT("${column}", '%Y-%m-%d')`;
+  return `strftime('%Y-%m-%d', CASE WHEN typeof("${column}") = 'integer' THEN "${column}" / 1000 ELSE strftime('%s', "${column}") END, 'unixepoch')`;
+}
+
 /** `prisma.$queryRawUnsafe` with identifiers quoted for the database actually in use. */
 export function rawQuery<T = unknown>(sql: string, ...params: unknown[]): Promise<T> {
   return prisma.$queryRawUnsafe<T>(portableSql(sql), ...params);

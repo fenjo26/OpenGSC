@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getAlgoUpdates } from "@/lib/algoUpdatesServer";
-import { rawQuery, rawExec } from "@/lib/db/raw";
+import { rawQuery, rawExec, dayExpr } from "@/lib/db/raw";
 
 // Annotations — dated notes about site changes, scored against real Search Console data.
 //
@@ -21,9 +21,10 @@ import { rawQuery, rawExec } from "@/lib/db/raw";
 
 type DayRow = { day: string; clicks: number; impressions: number; posw: number };
 
-// SQLite can hold a DateTime as integer milliseconds or as an ISO string depending on how the row
-// was written; this normalizes both to YYYY-MM-DD so day bucketing is stable either way.
-const DAY_EXPR = `strftime('%Y-%m-%d', CASE WHEN typeof("date") = 'integer' THEN "date" / 1000 ELSE strftime('%s', "date") END, 'unixepoch')`;
+// Day bucketing differs per database — strftime does not exist in MySQL — so the expression comes
+// from db/raw.ts rather than being spelled here. See {@link dayExpr} for why SQLite needs the
+// long version.
+const DAY_EXPR = dayExpr("date");
 
 const iso = (d: Date) => d.toISOString().split("T")[0];
 const addDays = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
