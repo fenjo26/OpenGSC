@@ -23,6 +23,13 @@
 // Every row it writes uses reserved keys (see below) and is deleted again at the end, on both
 // success and failure. It never touches real data.
 
+// Loaded before anything that reads the environment. Next.js reads .env by itself, but a plain
+// `tsx script.ts` does not — and src/lib/prisma.ts falls back to `file:./data/prod.db` when
+// DATABASE_URL is unset. Without this, running the script from a MySQL install would test a
+// SQLite file in the current directory and print PASS, which is the exact failure mode this
+// script exists to catch.
+import "dotenv/config";
+
 import { runUpsert } from "../src/lib/db/upsert";
 import { rawQuery, rawExec, currentDialect } from "../src/lib/db/raw";
 
@@ -102,9 +109,27 @@ async function cleanup() {
   ).catch(() => {});
 }
 
+/** The connection string with its password removed, so the output can be pasted into an issue. */
+function safeUrl(url: string): string {
+  return url.replace(/\/\/([^:/@]+):[^@]*@/, "//$1:***@");
+}
+
 async function main() {
+  // Refusing to guess. An unset DATABASE_URL would send every check to a SQLite file in the
+  // current directory and pass, which reads as "MySQL works".
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    console.error(
+      "\nDATABASE_URL is not set, and guessing would make this script lie: it would test a " +
+      "local SQLite file and report success.\n\nRun it from the directory holding your .env, " +
+      "or pass the string explicitly:\n\n  DATABASE_URL='mysql://user:pass@host:3306/db' " +
+      "npx tsx scripts/verify-upsert-live.ts\n",
+    );
+    process.exit(2);
+  }
+
   const dialect = currentDialect();
-  console.log(`\nDialect from DATABASE_URL: ${dialect}\n`);
+  console.log(`\nDatabase: ${safeUrl(url)}\nDialect:  ${dialect}\n`);
 
   await cleanup();
 

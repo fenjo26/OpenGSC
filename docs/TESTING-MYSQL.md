@@ -23,12 +23,36 @@ once as well.
 
 ## Route A — the self-test script (start here)
 
+Run it from the project directory, the one holding your `.env`:
+
 ```bash
 npx tsx scripts/verify-upsert-live.ts
 ```
 
-Reads `DATABASE_URL`, reports the dialect it detected, then runs all three behaviours against your
-server and prints PASS/FAIL per assertion. It writes rows under reserved keys
+On Windows, same command in PowerShell. Inside Docker it has to run in the container, which
+already has the connection string in its environment:
+
+```bash
+docker compose exec opengsc npx tsx scripts/verify-upsert-live.ts
+```
+
+If `tsx` is missing, the install skipped dev dependencies: `npm install --include=dev`.
+
+The first two lines of output are the database it actually connected to (password masked) and the
+dialect it derived from it. Read them before reading the results — a run against the wrong database
+is the one way this script can mislead you, so check that line says what you expect. If
+`DATABASE_URL` is not set at all it refuses to run rather than falling back to a local SQLite file
+and reporting success; to point it somewhere explicitly:
+
+```bash
+DATABASE_URL='mysql://user:pass@host:3306/db' npx tsx scripts/verify-upsert-live.ts
+```
+
+```powershell
+$env:DATABASE_URL='mysql://user:pass@host:3306/db'; npx tsx scripts/verify-upsert-live.ts
+```
+
+It then runs all three behaviours against your server and prints PASS/FAIL per assertion. It writes rows under reserved keys
 (`keyword = __opengsc_selftest__`, `provider = __selftest__`) and deletes them again on the way
 out, on success and on failure. Your data is not touched.
 
