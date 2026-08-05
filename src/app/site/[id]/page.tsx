@@ -13,7 +13,7 @@ import SiteAuditPanel from "@/components/SiteAuditPanel";
 import EngineView, { type AltEngine, type EngineSummary } from "@/components/EngineView";
 import SearchEnginesPanel from "@/components/SearchEnginesPanel";
 import { withShare } from "@/lib/shareParam";
-import { loadSyncedAt, rememberSyncedAt } from "@/lib/syncedAt";
+import { loadSyncedAt, rememberSyncedAt, fetchSyncState, watchSync, type SyncState } from "@/lib/syncedAt";
 import AeoTracker from "@/components/AeoTracker";
 import {
   ALGO_UPDATES, ALGO_UPDATE_COLORS, snapToChartLabel, snapBackToChartLabel, updateEnd,
@@ -4285,40 +4285,6 @@ export default function SitePage({
     return () => { cancelled = true; };
   }, [readOnly]);
 
-  const handleSync = () => {
-    if (syncing || readOnly) return;
-    setSyncing(true);
-
-    fetch('/api/gsc/sync', { method: 'POST' })
-      .then(r => r.json())
-      .then(() => {
-        // Poll until done, then refresh site data
-        const poll = setInterval(() => {
-          fetch('/api/gsc/sync')
-            .then(r => r.json())
-            .then(s => {
-              if (!s.syncing) {
-                clearInterval(poll);
-                const now = s.lastResult?.completedAt ? new Date(s.lastResult.completedAt) : new Date();
-                setSyncedAt(now);
-                rememberSyncedAt(now);
-                // Sync-all: also refresh the live Bing/Yandex views if any are connected.
-                setEngineRefresh(k => k + 1);
-                fetch(getUrl(`/api/gsc/site?domain=${encodeURIComponent(domain)}&period=${period}`))
-                  .then(r => r.json())
-                  .then(d => { if (d?.chartData) setSiteData(d); })
-                  .catch(() => {})
-                  .finally(() => setSyncing(false));
-              }
-            })
-            .catch(() => {});
-        }, 15_000);
-        // Safety: stop after 15 min
-        setTimeout(() => { clearInterval(poll); setSyncing(false); }, 15 * 60_000);
-      })
-      .catch(() => setSyncing(false));
-  };
-
   // Fetch data from DB whenever domain or period changes
   useEffect(() => {
     setDataLoading(true);
@@ -4365,6 +4331,58 @@ export default function SitePage({
   const [engineSummary, setEngineSummary] = useState<EngineSummary | null>(null); // KPI row for Bing/Yandex
   const [engineRefresh, setEngineRefresh] = useState(0); // bumped by Sync to refetch live views
   const [altEngines, setAltEngines] = useState<AltEngine[]>([]);
+
+  // ── Sync. The run itself belongs to the server process, so everything here only watches it.
+  // Sits below the engine state because it bumps `engineRefresh` when a run ends.
+  //
+  // Runs when the server reports the sync finished. See src/lib/syncedAt.ts for why the watcher
+  // has no deadline: a full sync of a couple of hundred properties takes longer than the fifteen
+  // minutes the old code allowed, and cutting the spinner off mid-run made a healthy sync look
+  // like a failed one.
+  const settleSync = (s: SyncState) => {
+    const at = s.completedAt ?? new Date();
+    setSyncedAt(at);
+    rememberSyncedAt(at);
+    // Sync-all: also refresh the live Bing/Yandex views if any are connected.
+    setEngineRefresh(k => k + 1);
+    fetch(getUrl(`/api/gsc/site?domain=${encodeURIComponent(domain)}&period=${period}`))
+      .then(r => r.json())
+      .then(d => { if (d?.chartData) setSiteData(d); })
+      .catch(() => {})
+      .finally(() => setSyncing(false));
+  };
+
+  const stopWatch = useRef<(() => void) | null>(null);
+  useEffect(() => () => { stopWatch.current?.(); }, []);
+
+  const handleSync = () => {
+    if (syncing || readOnly) return;
+    setSyncing(true);
+
+    fetch('/api/gsc/sync', { method: 'POST' })
+      .then(r => r.json())
+      .then(() => {
+        stopWatch.current?.();
+        stopWatch.current = watchSync(settleSync, () => setSyncing(false));
+      })
+      .catch(() => setSyncing(false));
+  };
+
+  // Pick up a run that is already going, so opening this page mid-sync shows the spinner rather
+  // than an idle button.
+  useEffect(() => {
+    if (readOnly) return;
+    let cancelled = false;
+    fetchSyncState().then(s => {
+      if (cancelled || !s?.syncing) return;
+      setSyncing(true);
+      stopWatch.current?.();
+      stopWatch.current = watchSync(settleSync, () => setSyncing(false));
+    });
+    return () => { cancelled = true; };
+    // settleSync is rebuilt every render; listing it would restart the watcher each time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readOnly]);
   useEffect(() => {
     // Guest (share link): the owner's keys aren't in this browser — use the server-provided
     // list of engines configured for this site instead.

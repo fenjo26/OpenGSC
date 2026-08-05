@@ -14,7 +14,7 @@ import { AreaChart, Area, ResponsiveContainer, Tooltip } from "recharts";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { useHealthStatus } from "@/components/SiteHealthPanel";
-import { loadSyncedAt, rememberSyncedAt } from "@/lib/syncedAt";
+import { loadSyncedAt, rememberSyncedAt, fetchSyncState, watchSync, type SyncState } from "@/lib/syncedAt";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Metric = "clicks" | "impressions" | "ctr" | "position";
@@ -642,6 +642,33 @@ function PortfolioPageContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // What a finished run means, in one place — shared by the button and by the resume effect
+  // below, so a sync watched from a freshly opened tab ends exactly like one watched from the
+  // tab that started it.
+  const settleSync = (s: SyncState) => {
+    refetchPortfolio();
+    if (s.needsReauth) {
+      setSyncStatus("reauth");
+      setSyncWarning("reauth");
+      setTimeout(() => setSyncStatus("idle"), 30_000);
+    } else if (s.accountErrors > 0 && s.sitesSynced === 0) {
+      setSyncStatus("error");
+      setSyncWarning("error");
+      setTimeout(() => setSyncStatus("idle"), 30_000);
+    } else {
+      // The server's completion time, not this tab's clock — the tab only hears about it on the
+      // next poll, up to fifteen seconds later.
+      const at = s.completedAt ?? new Date();
+      setSyncedAt(at);
+      rememberSyncedAt(at);
+      setSyncStatus("done");
+      setTimeout(() => setSyncStatus("idle"), 5_000);
+    }
+  };
+
+  const stopWatch = useRef<(() => void) | null>(null);
+  useEffect(() => () => { stopWatch.current?.(); }, []);
+
   const handleSync = () => {
     if (syncStatus === "syncing") return;
     setSyncStatus("syncing");
@@ -654,42 +681,28 @@ function PortfolioPageContent() {
     fetch('/api/gsc/sync', { method: 'POST' })
       .then(r => r.json())
       .then(() => {
-        // Poll status every 15s until sync finishes, then refresh data
-        const poll = setInterval(() => {
-          fetch('/api/gsc/sync')
-            .then(r => r.json())
-            .then(s => {
-              if (!s.syncing) {
-                clearInterval(poll);
-                refetchPortfolio();
-                // Check for auth errors in the result
-                if (s.lastResult?.needsReauth) {
-                  setSyncStatus("reauth");
-                  setSyncWarning("reauth");
-                  setTimeout(() => setSyncStatus("idle"), 30_000);
-                } else if (s.lastResult?.accountErrors > 0 && s.lastResult?.sitesSynced === 0) {
-                  setSyncStatus("error");
-                  setSyncWarning("error");
-                  setTimeout(() => setSyncStatus("idle"), 30_000);
-                } else {
-                  // Only mark as synced on actual success
-                  // Prefer the server's own completion time; `now` is only when this tab
-                  // noticed, which can be up to one poll interval late.
-                  const now = s.lastResult?.completedAt ? new Date(s.lastResult.completedAt) : new Date();
-                  setSyncedAt(now);
-                  rememberSyncedAt(now);
-                  setSyncStatus("done");
-                  setTimeout(() => setSyncStatus("idle"), 5_000);
-                }
-              }
-            })
-            .catch(() => {});
-        }, 15_000);
-        // Safety: stop polling after 15 min
-        setTimeout(() => { clearInterval(poll); setSyncStatus("idle"); }, 15 * 60_000);
+        stopWatch.current?.();
+        stopWatch.current = watchSync(settleSync, () => setSyncStatus("idle"));
       })
       .catch(() => setSyncStatus("idle"));
   };
+
+  // A sync outlives the page that started it: it runs in the server process, not in the tab. So
+  // a reload, or a different browser entirely, picks the spinner back up rather than showing an
+  // idle button while two hundred properties are still being fetched one by one.
+  useEffect(() => {
+    let cancelled = false;
+    fetchSyncState().then(s => {
+      if (cancelled || !s?.syncing) return;
+      setSyncStatus("syncing");
+      stopWatch.current?.();
+      stopWatch.current = watchSync(settleSync, () => setSyncStatus("idle"));
+    });
+    return () => { cancelled = true; };
+    // settleSync closes over setState functions and refetchPortfolio, all of which are recreated
+    // every render; listing it would restart the watcher on each one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Fetch real data from portfolio API whenever period or comparison settings change
   useEffect(() => {

@@ -13,5 +13,7 @@ export async function register() {
     startAlertScheduler();
     const { startDigestScheduler } = await import('@/lib/digestScheduler');
     startDigestScheduler();
+    const { startSyncScheduler } = await import('@/lib/syncScheduler');
+    startSyncScheduler();
   }
 }

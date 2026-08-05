@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { runGscSync, isSyncInProgress, getLastSyncResult } from '@/lib/gscSync';
+import { runGscSync, isSyncInProgress, getLastSyncResult, getSyncStartedAt } from '@/lib/gscSync';
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -11,6 +11,9 @@ export async function GET() {
   const result = getLastSyncResult();
   return NextResponse.json({
     syncing: isSyncInProgress(),
+    // Lets a page opened mid-run pick the spinner back up, and lets it say how long the run has
+    // been going instead of spinning mutely.
+    startedAt: getSyncStartedAt(),
     lastResult: result.completedAt ? {
       sitesSynced: result.sitesSynced,
       needsReauth: result.accountErrors.some(e => e.needsReauth),

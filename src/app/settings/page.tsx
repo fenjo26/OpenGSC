@@ -792,18 +792,79 @@ function PreferencesSection({ user }: { user: any }) {
           </div>
         </div>
       </SectionCard>
-      <SectionCard>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
-          <div>
-            <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--color-text-primary)" }}>{t("apiKeysMovedTitle")}</div>
-            <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginTop: "2px" }}>{t("apiKeysMovedDesc")}</div>
-          </div>
-          <a href="/settings?tab=api-keys" style={{ display: "flex", alignItems: "center", gap: "6px", padding: "8px 16px", borderRadius: "8px", background: "rgba(59,130,246,0.12)", color: "#3B82F6", border: "1px solid rgba(59,130,246,0.25)", fontSize: "13px", fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" }}>
-            <KeyRound size={14} /> {t("navApiKeys")}
-          </a>
-        </div>
-      </SectionCard>
+      {/* Automatic sync. Lives here rather than next to the Google accounts: it is a preference
+          about how the instance behaves, not a property of any one connected account. */}
+      <SyncScheduleSection />
     </div>
+  );
+}
+
+// ─── Automatic sync schedule (Settings → Preferences) ────────────────────────
+// The hour is stored in the user's own zone rather than UTC, because the thing being scheduled
+// is "be ready before I start work" and a UTC hour drifts away from that at every DST change.
+// See src/lib/syncSchedule.ts.
+function SyncScheduleSection() {
+  const { t } = useLanguage() as any;
+  type Schedule = { enabled: boolean; hour: number; timeZone: string; lastRunAt: string | null };
+  const [s, setS] = useState<Schedule | null>(null);
+  const [err, setErr] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/settings/sync").then(r => r.json()).then(d => {
+      if (!d?.settings) return;
+      // The stored default is UTC, which is nobody's working day. Until the user saves anything,
+      // show the zone their own browser is in — that is the one they mean by "nine in the morning".
+      const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+      setS({ ...d.settings, timeZone: d.settings.timeZone === "UTC" ? browserZone : d.settings.timeZone });
+    }).catch(() => {});
+  }, []);
+
+  const save = async (next: Schedule) => {
+    setS(next); setErr(""); setSaved(false);
+    try {
+      const res = await fetch("/api/settings/sync", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ settings: next }),
+      });
+      if (!res.ok) { setErr(t("autoSyncNotMigrated")); return; }
+      setSaved(true); setTimeout(() => setSaved(false), 1500);
+    } catch {
+      setErr(t("autoSyncNotMigrated"));
+    }
+  };
+
+  if (!s) return null;
+
+  const select: React.CSSProperties = {
+    padding: "7px 10px", borderRadius: "8px", border: "1px solid var(--color-border)",
+    background: "var(--color-card)", color: "var(--color-text-primary)", fontSize: "13px",
+  };
+
+  return (
+    <SectionCard>
+      <SectionTitle icon={<Zap size={17} color="#10B981" />} title={t("autoSyncTitle")} sub={t("autoSyncSub")} />
+      <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: "8px", fontSize: "13px", color: "var(--color-text-primary)", cursor: "pointer" }}>
+          <input type="checkbox" checked={s.enabled} onChange={e => save({ ...s, enabled: e.target.checked })} />
+          {t("autoSyncEnable")}
+        </label>
+        <span style={{ fontSize: "13px", color: "var(--color-text-secondary)" }}>{t("autoSyncAt")}</span>
+        <select value={s.hour} onChange={e => save({ ...s, hour: Number(e.target.value) })} style={select}>
+          {Array.from({ length: 24 }, (_, h) => (
+            <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>
+          ))}
+        </select>
+        <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>{t("autoSyncZone")}: {s.timeZone}</span>
+        {saved && <span style={{ fontSize: "12px", color: "#10B981" }}>✓</span>}
+      </div>
+      <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginTop: "10px", lineHeight: 1.6 }}>
+        {t("autoSyncLastRun")}: {s.lastRunAt ? new Date(s.lastRunAt).toLocaleString() : t("autoSyncNever")}
+        <br />
+        {t("autoSyncNote")}
+      </div>
+      {err && <div style={{ fontSize: "12px", color: "#f87171", marginTop: "8px" }}>{err}</div>}
+    </SectionCard>
   );
 }
 

@@ -5,6 +5,65 @@ All notable changes to OpenGSC. Dates are release dates; the version shown in
 
 ## [1.2.1] — 2026-08-04
 
+### Added
+
+**Automatic sync on a schedule (Settings → Preferences)**
+
+Pick an hour and the instance syncs Search Console once a day by itself, so the dashboard is
+current before the working day starts instead of after a manual click and a twenty-minute wait.
+
+The hour is stored in the operator's own time zone, not in UTC as the digest does it. The
+setting is chosen against a working day — "ready before I sit down at ten" — and a UTC hour
+drifts an hour away from that at every DST change, silently, at the one moment nobody is
+watching. The browser fills the zone in on first save.
+
+Due once per local day, from the configured hour onwards rather than only exactly at it: a
+server that was restarting or mid-deploy at nine would otherwise skip the day entirely and leave
+the dashboard a day stale with nothing to explain it. `lastRunAt` is written after the run, so a
+run that dies halfway is retried on the next tick instead of counting as done. New
+`src/lib/syncSchedule.ts` (settings and the due rule), `src/lib/syncScheduler.ts` (a fifteen
+minute tick, same in-process pattern as the digest and rank schedulers) and
+`User.syncSettings` — **run `npx prisma db push` after updating**, or the schedule saves nothing
+and the feature stays off.
+
+The schedule is stored per user, but `runGscSync()` is instance-wide: it walks every connected
+Google account of every user. On a single-operator instance the distinction never surfaces; with
+two operators the earlier hour wins and the second finds the day's run already done.
+
+The stale "API keys have moved" card in Preferences is gone — the move it announced was two
+releases ago.
+
+### Changed
+
+**Sync walks five sites at a time instead of one**
+
+A sync of 200 properties took tens of minutes because sites were fetched strictly in sequence:
+three Google calls each, at a second or two per call, one after another. Google is nowhere near
+that conservative — Search Analytics allows 1,200 queries per minute per user and per site, and
+a whole run of 200 sites is about 600 calls.
+
+Sites now go through a pool of five. The three calls within one site stay sequential, and the
+pool is deliberately small rather than unlimited: the binding constraint is not QPS but the load
+quota, which is measured in ten-minute chunks and grows with the date range and with grouping by
+page and query. A `quotaExceeded` reply now waits and retries — starting at twenty seconds,
+since a one-second retry against a ten-minute bucket just fails again — instead of losing that
+site's data for the run.
+
+Progress is logged as one line per site rather than five as it goes, because interleaved lines
+from five sites in flight are a log you have to reassemble by hand. The final line now carries
+the elapsed time: `Done in 4m12s. sites=201 …`. That number is what settles the question the old
+logs couldn't answer — "it's stuck" and "it takes twenty minutes" looked identical from the
+browser.
+
+**The Sync button no longer gives up before the sync does**
+
+The page polled for fifteen minutes and then stopped, whatever the server was doing. A run
+longer than that left the spinner switched off, the timestamp unwritten and the data arriving
+minutes later with nothing to say so — indistinguishable from a sync that had failed and taken
+the fresh data with it. The watcher now stops when the server says the run is over, and gives up
+only on five solid minutes of no reply, which means "lost track", not "finished". Opening or
+reloading a page mid-run picks the spinner back up rather than showing an idle button.
+
 ### Fixed
 
 **"Last synced" could roll backwards after a page reload**

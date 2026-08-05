@@ -76,6 +76,7 @@ model User {
   slackWebhook     String? // Slack Incoming Webhook URL — optional second delivery channel
   alertSettings    String? // JSON: { rankDrop: {on,threshold}, trafficDrop: {on,percent}, ssl: {on,days}, audit: {on,minScore} }
   digestSettings   String? // JSON: { enabled, frequency: "daily"|"weekly", hourUtc, tag, days, ai, lastSentAt }
+  syncSettings     String? // JSON: { enabled, hour, timeZone, lastRunAt } — automatic GSC sync, see src/lib/syncSchedule.ts
 
   // Third-party API integrations
   neuralIndexerToken String?

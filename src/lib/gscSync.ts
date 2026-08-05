@@ -17,8 +17,68 @@ let lastSyncResult: SyncResult = {
   siteErrors: [],
 };
 
+// When the run in progress began. Sites are synced one after another against Google's API, so a
+// couple of hundred properties take tens of minutes; without this the UI can only show a spinner
+// and hope, and a run that is merely long is indistinguishable from one that has died.
+let syncStartedAt: Date | null = null;
+
 export function isSyncInProgress() { return isSyncing; }
 export function getLastSyncResult() { return lastSyncResult; }
+export function getSyncStartedAt() { return syncStartedAt; }
+
+// How many properties are fetched at once.
+//
+// Sites used to be walked strictly one at a time, which is why a couple of hundred of them took
+// tens of minutes: three Google calls per site at a second or two each, all in single file.
+// Google's own limits are nowhere near that conservative — Search Analytics allows 1,200 queries
+// per minute per user and per site, and a whole run of 200 sites is about 600 calls.
+//
+// The limit that actually matters is the load quota, which is measured in ten-minute chunks and
+// grows with the date range and with grouping by page and query — exactly what the third call
+// does. That is an argument for a modest pool rather than an unlimited one: five keeps the run
+// short without turning the whole day's load into one burst.
+const SITE_CONCURRENCY = 5;
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/** Run `worker` over `items`, at most `limit` at a time, preserving no order. */
+async function pooled<T>(items: T[], limit: number, worker: (item: T) => Promise<void>): Promise<void> {
+  let next = 0;
+  const lanes = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    for (let i = next++; i < items.length; i = next++) {
+      await worker(items[i]);
+    }
+  });
+  await Promise.all(lanes);
+}
+
+function isQuotaError(err: unknown): boolean {
+  const e = err as { code?: number | string; status?: number; message?: string };
+  const status = Number(e?.code ?? e?.status);
+  return status === 429 || /quota|rate.?limit|too many requests/i.test(String(e?.message ?? ''));
+}
+
+/**
+ * Retry a Google call that came back over quota.
+ *
+ * Only quota errors are retried, and only a few times: everything else — a revoked token, a
+ * property that no longer exists — is a real answer and repeating it just makes the run longer.
+ * The wait starts at 20 seconds because the short-term quota is measured in ten-minute chunks,
+ * so a one-second retry would simply fail again.
+ */
+async function withQuotaRetry<T>(label: string, fn: () => Promise<T>, attempts = 3): Promise<T> {
+  let wait = 20_000;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt >= attempts || !isQuotaError(err)) throw err;
+      console.warn(`[GSC Sync]   ${label}: over quota, waiting ${Math.round(wait / 1000)}s`);
+      await sleep(wait);
+      wait *= 2;
+    }
+  }
+}
 
 function cleanSiteUrl(siteUrl: string): string {
   if (siteUrl.startsWith('sc-domain:')) {
@@ -37,6 +97,7 @@ export async function runGscSync() {
     return;
   }
   isSyncing = true;
+  syncStartedAt = new Date();
 
   const result: SyncResult = {
     completedAt: null,
@@ -125,12 +186,20 @@ export async function runGscSync() {
         continue;
       }
 
-      for (const gscSite of siteList) {
-        if (!gscSite.siteUrl) continue;
+      // One site, start to finish. The three Google calls inside stay sequential — they are the
+      // same property, and the second and third are the expensive ones — while `pooled` below
+      // runs several sites side by side.
+      //
+      // Progress is logged as a single line at the end rather than five lines as it goes: with
+      // five sites in flight, interleaved lines belong to whichever site got there first, and a
+      // log you have to reassemble by hand is worse than no log.
+      const syncOneSite = async (gscSite: { siteUrl?: string | null }) => {
+        if (!gscSite.siteUrl) return;
 
         const gscUrl   = gscSite.siteUrl;
         const hostname = cleanSiteUrl(gscUrl);
         const hostnameNoWww = hostname.replace(/^www\./, '');
+        const note: string[] = [];
 
         // ── Step 1: ensure site exists in DB for this user ──────────────────
         let dbSite = await prisma.site.findFirst({
@@ -163,7 +232,7 @@ export async function runGscSync() {
             });
             if (!dbSite) {
               console.error(`[GSC Sync]   Could not create site: ${err.message}`);
-              continue;
+              return;
             }
           }
         } else if (dbSite.siteId !== gscUrl) {
@@ -175,8 +244,6 @@ export async function runGscSync() {
         }
 
         // ── Step 2: sync daily metrics (recent first, then history) ─────────
-        console.log(`[GSC Sync]   Syncing ${hostname}…`);
-
         // Check if we already have recent data (to decide whether to do full history)
         const recentCount = await prisma.dailyMetric.count({
           where: { siteId: dbSite.id, date: { gte: recentStart }, url: '', query: '' },
@@ -184,10 +251,10 @@ export async function runGscSync() {
         const needsHistory = recentCount === 0; // new site → fetch full history
 
         const startDateStr = needsHistory ? histStartStr : recentStartStr;
-        console.log(`[GSC Sync]     Range: ${startDateStr} → ${endDateStr} (${needsHistory ? 'full history' : 'recent only'})`);
+        note.push(`${startDateStr} → ${endDateStr}${needsHistory ? ' (full history)' : ''}`);
 
         try {
-          const res = await wm.searchanalytics.query({
+          const res = await withQuotaRetry(hostname, () => wm.searchanalytics.query({
             siteUrl: gscUrl,
             requestBody: {
               startDate:  startDateStr,
@@ -196,10 +263,10 @@ export async function runGscSync() {
               rowLimit:   25000,
               dataState:  'all',
             },
-          });
+          }));
 
           const rows = res.data.rows ?? [];
-          console.log(`[GSC Sync]     ${rows.length} days of data`);
+          note.push(`${rows.length} days`);
 
           if (rows.length > 0) {
             const rangeStart = new Date(startDateStr);
@@ -243,7 +310,7 @@ export async function runGscSync() {
         const url90StartStr = url90Start.toISOString().split('T')[0];
 
         try {
-          const urlRes = await wm.searchanalytics.query({
+          const urlRes = await withQuotaRetry(hostname, () => wm.searchanalytics.query({
             siteUrl: gscUrl,
             requestBody: {
               startDate:  url90StartStr,
@@ -252,10 +319,10 @@ export async function runGscSync() {
               rowLimit:   25000,
               dataState:  'all',
             },
-          });
+          }));
 
           const urlRows = urlRes.data.rows ?? [];
-          console.log(`[GSC Sync]     ${urlRows.length} url-day rows`);
+          note.push(`${urlRows.length} url-day`);
 
           if (urlRows.length > 0) {
             await prisma.dailyMetric.deleteMany({
@@ -289,7 +356,7 @@ export async function runGscSync() {
         // No date dimension — returns aggregated totals over the 90-day window.
         // Stored with date=endDate so tools querying date>=since always find it.
         try {
-          const qpRes = await wm.searchanalytics.query({
+          const qpRes = await withQuotaRetry(hostname, () => wm.searchanalytics.query({
             siteUrl: gscUrl,
             requestBody: {
               startDate:  url90StartStr,
@@ -298,10 +365,10 @@ export async function runGscSync() {
               rowLimit:   25000,
               dataState:  'all',
             },
-          });
+          }));
 
           const qpRows = qpRes.data.rows ?? [];
-          console.log(`[GSC Sync]     ${qpRows.length} query+page rows`);
+          note.push(`${qpRows.length} query+page`);
 
           if (qpRows.length > 0) {
             // Delete all prior query+url summary rows for this site, then re-insert
@@ -330,7 +397,11 @@ export async function runGscSync() {
         } catch (err: any) {
           console.error(`[GSC Sync]     Error syncing query+page data for ${hostname}: ${err.message}`);
         }
-      }
+
+        console.log(`[GSC Sync]   ${hostname}: ${note.join(', ')}`);
+      };
+
+      await pooled(siteList, SITE_CONCURRENCY, syncOneSite);
     }
   } catch (e) {
     console.error('[GSC Sync] Fatal error:', e);
@@ -338,6 +409,11 @@ export async function runGscSync() {
     result.completedAt = new Date();
     lastSyncResult = result;
     isSyncing = false;
-    console.log(`[GSC Sync] Done. sites=${result.sitesSynced} accountErrors=${result.accountErrors.length} siteErrors=${result.siteErrors.length}`);
+    // Elapsed time is logged because it is the number that settles arguments: "the sync is
+    // stuck" and "the sync takes 22 minutes for 201 sites" look identical from the browser.
+    const elapsedMs = syncStartedAt ? result.completedAt.getTime() - syncStartedAt.getTime() : 0;
+    const elapsed = `${Math.floor(elapsedMs / 60000)}m${String(Math.floor((elapsedMs % 60000) / 1000)).padStart(2, '0')}s`;
+    syncStartedAt = null;
+    console.log(`[GSC Sync] Done in ${elapsed}. sites=${result.sitesSynced} accountErrors=${result.accountErrors.length} siteErrors=${result.siteErrors.length}`);
   }
 }
