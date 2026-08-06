@@ -106,6 +106,20 @@ export default function OutlinePage() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
 
+  // Append keyword(s) to the "additional keywords" field without duplicating entries. Splitting on
+  // comma keeps the field's own format consistent — it is later parsed the same way at line ~296.
+  const addKw = (kw: string | string[]) => {
+    const incoming = (Array.isArray(kw) ? kw : [kw])
+      .flatMap(s => s.split(/[\n,]+/)).map(s => s.trim().toLowerCase()).filter(Boolean);
+    if (!incoming.length) return;
+    setAddKeywords(prev => {
+      const existing = new Set(prev.split(/[\n,]+/).map(s => s.trim().toLowerCase()).filter(Boolean));
+      const merged = [...prev.split(/[\n,]+/).map(s => s.trim()).filter(Boolean)];
+      for (const k of incoming) if (!existing.has(k)) { merged.push(k); existing.add(k); }
+      return merged.join(", ");
+    });
+  };
+
   // Read after mount only — localStorage during render would make the first client pass disagree
   // with the server-rendered HTML.
   const kwSrc = mounted ? getKeywordSource() : { source: "off" as const, apiKey: "", baseUrl: undefined };
@@ -594,13 +608,23 @@ export default function OutlinePage() {
                 <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", display: "flex", alignItems: "center", gap: "7px" }}><Loader2 size={13} className="spin" /> {t("seoKwLoading")}</div>
               ) : (
                 <>
-                  <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "8px" }}>{t("seoKwFeedNote")}</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: "2px", maxHeight: "240px", overflow: "auto" }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 70px 60px 80px", gap: "8px", fontSize: "10px", fontWeight: 700, color: "var(--color-text-tertiary)", textTransform: "uppercase", padding: "4px 0", borderBottom: "1px solid var(--color-border)" }}>
-                      <span>{t("seoKeyword")}</span><span style={{ textAlign: "right" }}>{t("seoKwVolume")}</span><span style={{ textAlign: "right" }}>{t("seoKwCpc")}</span><span style={{ textAlign: "right" }}>{t("seoKwComp")}</span>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                    <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>{t("seoKwFeedNote")}</div>
+                    {/* Bulk-add the visible keywords into the "additional keywords" field below, so the
+                        SEO does not copy-paste row by row. Uses the same helper that guards dupes. */}
+                    <button onClick={() => addKw(keywordsData.slice(0, 40).map(k => k.keyword))}
+                      style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "11px", fontWeight: 600, color: "var(--color-accent-blue)", background: "transparent", border: "1px solid var(--color-border)", borderRadius: "6px", padding: "3px 8px", cursor: "pointer" }}
+                      title={t("seoKwAddAllHint")}>
+                      <Plus size={11} /> {t("seoKwAddAll")}
+                    </button>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "2px", maxHeight: "240px", overflow: "auto" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 70px 60px 80px 28px", gap: "8px", fontSize: "10px", fontWeight: 700, color: "var(--color-text-tertiary)", textTransform: "uppercase", padding: "4px 0", borderBottom: "1px solid var(--color-border)" }}>
+                      <span>{t("seoKeyword")}</span><span style={{ textAlign: "right" }}>{t("seoKwVolume")}</span><span style={{ textAlign: "right" }}>{t("seoKwCpc")}</span><span style={{ textAlign: "right" }}>{t("seoKwComp")}</span><span />
                     </div>
                     {keywordsData.slice(0, 40).map((k, i) => (
-                      <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 70px 60px 80px", gap: "8px", fontSize: "12px", padding: "4px 0", color: "var(--color-text-secondary)" }}>
+                      <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 70px 60px 80px 28px", gap: "8px", fontSize: "12px", padding: "4px 0", color: "var(--color-text-secondary)", alignItems: "center" }}>
                         <span style={{ color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{k.keyword}</span>
                         {/* Local volume; when it is zero but a global volume exists, show it muted so a
                             brand/niche term does not read as "dead" — it is just not searched here. */}
@@ -610,8 +634,18 @@ export default function OutlinePage() {
                         </span>
                         <span style={{ textAlign: "right" }}>{k.cpc ? `$${k.cpc.toFixed(2)}` : "—"}</span>
                         <span style={{ textAlign: "right" }}>{k.competition ? `${Math.round(k.competition * 100)}%` : "—"}</span>
+                        {/* Per-row add into "additional keywords". A keyword already there still shows the
+                            button (cheap to re-click, and the helper dedupes), so there is no second
+                            state to keep in sync with the textarea. */}
+                        <button onClick={() => addKw(k.keyword)} title={t("seoKwAddHint")}
+                          style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: "22px", height: "22px", border: "none", background: "transparent", color: "var(--color-text-tertiary)", cursor: "pointer", borderRadius: "5px", padding: 0 }}
+                          onMouseEnter={e => { e.currentTarget.style.background = "var(--color-bg)"; e.currentTarget.style.color = "var(--color-accent-blue)"; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--color-text-tertiary)"; }}>
+                          <Plus size={13} />
+                        </button>
                       </div>
                     ))}
+                  </div>
                   </div>
                 </>
               )}
