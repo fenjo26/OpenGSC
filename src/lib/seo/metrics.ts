@@ -139,8 +139,16 @@ export function estimateKeywordUnits(count: number, withDifficulty: boolean): nu
  */
 export type IdeaMode = "matching" | "related";
 
-/** Ideas carry the same columns as an overview row; KD stays optional for the same reason. */
-export const IDEA_FIELDS_BASE = ["keyword", "volume", "cpc", "parent_topic"];
+/**
+ * Ideas carry the same columns as an overview row; KD stays optional for the same reason.
+ *
+ * `global_volume` and `intents` are included unconditionally even though both are 10-unit premium
+ * fields. A brand/niche term often has zero local demand but real worldwide demand, and the
+ * outline prompt's intent→section rule depends on the intent label — without it the rule is dead.
+ * The combined cost (≈$0.05 extra per 100 ideas over the volume-only base) is worth paying on
+ * every call rather than gating behind a toggle an SEO user would leave on anyway.
+ */
+export const IDEA_FIELDS_BASE = ["keyword", "volume", "global_volume", "cpc", "intents", "parent_topic"];
 
 export function ideaEndpoint(mode: IdeaMode): string {
   return mode === "related" ? "keywords-explorer/related-terms" : "keywords-explorer/matching-terms";
