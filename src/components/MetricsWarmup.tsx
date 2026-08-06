@@ -42,12 +42,22 @@ export default function MetricsWarmup() {
   const [counting, setCounting] = useState(false);
   const [running, setRunning] = useState(false);
   const [notice, setNotice] = useState("");
+  // The scheduled half. Stored with the other SEO settings so it rides along with the existing
+  // server-side mirror; the scheduler reads it from there, since a cron has no localStorage.
+  const [autoOn, setAutoOn] = useState(false);
+  const [autoCap, setAutoCap] = useState("50000");
+  const [autoSaved, setAutoSaved] = useState(false);
 
   useEffect(() => {
     setMounted(true);
     setWithKd(getMetricsWithKd());
     // The tag list is already assembled for the digest picker; reused rather than recomputed.
     fetch("/api/digest").then(r => r.json()).then(d => setTags(d.tags || [])).catch(() => {});
+    try {
+      const raw = JSON.parse(localStorage.getItem("seoWarmupSchedule") || "{}");
+      setAutoOn(!!raw.enabled);
+      setAutoCap(String(raw.cap ?? 50000));
+    } catch { /* first run */ }
   }, []);
 
   const creds = mounted ? getMetricsCreds() : { provider: "ahrefs" as const, apiKey: "", baseUrl: "", cap: 0 };
@@ -91,6 +101,15 @@ export default function MetricsWarmup() {
       else setNotice(t("warmupDone").replace("{n}", String(d.fetched ?? 0)));
     } catch { setNotice(t("warmupErrGeneric")); }
     setRunning(false);
+  }
+
+  function saveAuto(enabled: boolean, cap: string) {
+    const payload = { enabled, cap: Number(cap) || 50000, withDifficulty: withKd, lastRunAt: null };
+    // Written to localStorage only. `SeoKeysSync` mirrors this key to the server on its own —
+    // hand-rolling a second write here would race with it and, since that endpoint takes a whole
+    // snapshot rather than a patch, could overwrite everything else with a one-key object.
+    localStorage.setItem("seoWarmupSchedule", JSON.stringify(payload));
+    setAutoSaved(true); setTimeout(() => setAutoSaved(false), 1500);
   }
 
   function errorText(code: string, wouldSpend?: number): string {
@@ -199,6 +218,29 @@ export default function MetricsWarmup() {
           </div>
         </div>
       )}
+
+      {/* Scheduled warm-up. Off by default and capped separately: this is the one thing in the
+          app that can spend credits with nobody watching, so it asks for its own budget rather
+          than quietly sharing the one a human is standing in front of. */}
+      <div style={{ borderTop: "1px solid var(--color-border)", marginTop: "14px", paddingTop: "12px" }}>
+        <span className="tool-section-label">{t("warmupAutoTitle")}</span>
+        <div style={{ display: "flex", gap: "16px", alignItems: "flex-end", flexWrap: "wrap" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: "7px", fontSize: "12px", color: "var(--color-text-secondary)", paddingBottom: "9px", cursor: "pointer" }}>
+            <input type="checkbox" checked={autoOn} onChange={e => { setAutoOn(e.target.checked); saveAuto(e.target.checked, autoCap); }} />
+            {t("warmupAutoEnable")}
+          </label>
+          <div style={{ maxWidth: "180px" }}>
+            <span className="tool-field-label">{t("warmupAutoCap")}</span>
+            <input className="tool-input" value={autoCap} inputMode="numeric"
+              onChange={e => setAutoCap(e.target.value.replace(/[^0-9]/g, ""))}
+              onBlur={() => saveAuto(autoOn, autoCap)} />
+          </div>
+          {autoSaved && <span style={{ fontSize: "11px", color: "#10B981", paddingBottom: "9px" }}>✓</span>}
+        </div>
+        <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "6px", lineHeight: 1.55, maxWidth: "620px" }}>
+          {t("warmupAutoHint")}
+        </div>
+      </div>
 
       {notice && (
         <div style={{ marginTop: "10px", fontSize: "12px", color: "var(--color-text-secondary)" }}>{notice}</div>

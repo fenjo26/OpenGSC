@@ -177,7 +177,9 @@ Search Console tells you how you are performing. It cannot tell you how much dem
 
 When you do use an API key, every button prices itself before you press it, Keyword Difficulty is an opt-in checkbox (it roughly doubles the cost per keyword), and a monthly unit cap is enforced server-side. Nothing ever fetches on page load.
 
-Setup and cost details: **[docs/METRICS-SETUP.md](docs/METRICS-SETUP.md)**.
+Setup and cost details: **[docs/METRICS-SETUP.md](docs/METRICS-SETUP.md)**. How the layer works
+internally — provider routing, the price model, caching and where it is wired:
+**[docs/METRICS.md](docs/METRICS.md)**.
 
 ### Demand — Keyword Research & Domain Overview
 
@@ -708,6 +710,7 @@ docs/
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — how the app is built: the background job system, the multi-pass SEO generation pipeline, the multi-provider LLM abstraction, the MCP server, the audit crawler, the indexer's cloaking/verification mechanism, and the full data model.
 - **[docs/GA4-SETUP.md](docs/GA4-SETUP.md)** — connecting Google Analytics 4, step by step.
 - **[docs/METRICS-SETUP.md](docs/METRICS-SETUP.md)** — keyword weights, backlink profiles and the competitor gap: importing exports for free, configuring an Ahrefs/Semrush key, and what each action costs.
+- **[docs/METRICS.md](docs/METRICS.md)** — the metrics layer from the inside: three-layer routing (cache → reseller API → live), the unit price model, the two caches and how conflicts are resolved, and where it is wired in the UI.
 - **[docs/MCP-SETUP.md](docs/MCP-SETUP.md)** — connecting AI agents (Claude Code, Claude Desktop, Cursor, Codex) to your instance.
 - **[docs/SEARCH-ENGINES-SETUP.md](docs/SEARCH-ENGINES-SETUP.md)** — Bing Webmaster, Yandex.Webmaster and IndexNow: getting the keys/tokens and what data each engine provides (site + portfolio dashboards, digests, and the site-search badge).
 - **[docs/GOOGLEBOT-VIEW-SPEC.md](docs/GOOGLEBOT-VIEW-SPEC.md)** — the Googlebot View cloaking/PBN inspector: how the multi-UA fetch, redirect-chain walk, and cloaking diff work.

@@ -337,6 +337,135 @@ export async function recordUsage(userId: string, provider: string, units: numbe
   } catch { /* accounting is best-effort; the cap check below still reads what was written */ }
 }
 
+/**
+ * Give back the difference between what was reserved and what the provider actually billed.
+ *
+ * Every paid path here charges the ceiling before the call — a cap that only notices an overspend
+ * afterwards is not a cap. But Ahrefs bills the rows it *returns*, and a thin seed returns far
+ * fewer than the limit: one live request reserved 3 300 units for a keyword expansion that came
+ * back with three rows. Left uncorrected the monthly budget burns tens of times faster than the
+ * money does, and the cap starts refusing work that was never paid for.
+ *
+ * So the reservation stays, and this releases the unused part once the real count is known.
+ * `requests` is untouched — one call happened, and that remains true.
+ *
+ * Clamped at the month's own total: a correction must never drive the counter below zero, which
+ * would turn a refund into free budget.
+ */
+export async function releaseUnusedUnits(
+  userId: string, provider: string, reserved: number, actual: number,
+): Promise<void> {
+  const refund = Math.floor(reserved - Math.max(0, actual));
+  if (refund <= 0) return;
+  try {
+    const { units: spent } = await readUsage(userId, provider);
+    const safe = Math.min(refund, Math.max(0, spent));
+    if (safe <= 0) return;
+    await runUpsert({
+      table: "ApiUsage",
+      conflict: ["userId", "provider", "month"],
+      values: { userId, provider, month: monthKey(), units: -safe, requests: 0, updatedAt: nowIso() },
+      update: { units: "add", requests: "add", updatedAt: "set" },
+    });
+  } catch { /* accounting is best-effort, exactly as recordUsage is */ }
+}
+
+// ─── Gateway field support ─────────────────────────────────────────────────────
+//
+// A reseller gateway speaks the official protocol but does not necessarily proxy every column of
+// every endpoint. The live instance proved it: `keyword_difficulty` arrives on
+// `keywords-explorer/overview` and never on `site-explorer/organic-keywords` — 200 of 200 rows
+// came back null on a pull that had been priced *with* the KD surcharge, 23 units a row instead
+// of 13. The user paid ten units a row for a column the gateway does not forward.
+//
+// Rather than hard-code a list of gateway quirks that will be wrong next month, this learns:
+// a column requested and returned empty on every single row is recorded as unsupported for that
+// host, and afterwards it is neither offered nor charged for. One wasted pull, then never again.
+//
+// Stored in the same `ApiUsage`-style best-effort way as everything else here: if the table is
+// missing the feature degrades to today's behaviour rather than breaking.
+
+const FIELD_SUPPORT_TABLE = "GatewayFieldSupport";
+
+/** Host + endpoint + field → does this gateway actually return it. */
+export async function markFieldUnsupported(
+  host: string, endpoint: string, field: string,
+): Promise<void> {
+  try {
+    await runUpsert({
+      table: FIELD_SUPPORT_TABLE,
+      conflict: ["host", "endpoint", "field"],
+      values: { host, endpoint, field, supported: 0, checkedAt: nowIso() },
+      update: { supported: "set", checkedAt: "set" },
+    });
+  } catch { /* table missing until prisma db push — behave as before */ }
+}
+
+export async function markFieldSupported(
+  host: string, endpoint: string, field: string,
+): Promise<void> {
+  try {
+    await runUpsert({
+      table: FIELD_SUPPORT_TABLE,
+      conflict: ["host", "endpoint", "field"],
+      values: { host, endpoint, field, supported: 1, checkedAt: nowIso() },
+      update: { supported: "set", checkedAt: "set" },
+    });
+  } catch { /* as above */ }
+}
+
+/**
+ * Fields this gateway is known NOT to return for an endpoint.
+ *
+ * Returns an empty set on any failure, which means "assume everything works" — the same default
+ * the app had before this existed. A wrong empty set costs one pull; a wrong non-empty set would
+ * silently withhold data the user is entitled to, so the bias is deliberate.
+ */
+export async function unsupportedFields(host: string, endpoint: string): Promise<Set<string>> {
+  try {
+    const rows: any[] = await rawQuery(
+      `SELECT field FROM "${FIELD_SUPPORT_TABLE}" WHERE host = ? AND endpoint = ? AND supported = 0`,
+      host, endpoint,
+    );
+    return new Set(rows.map(r => String(r.field)));
+  } catch { return new Set(); }
+}
+
+/**
+ * Learn from a response: which requested optional fields came back empty on every row.
+ *
+ * Only called with fields the caller paid extra for, and only trusted when there were rows to
+ * judge by — an empty result set says nothing about which columns a gateway forwards.
+ */
+export async function learnFieldSupport(
+  host: string, endpoint: string, optionalFields: string[], rows: Record<string, any>[],
+  opts: { witnessField?: string; minRows?: number } = {},
+): Promise<void> {
+  const minRows = opts.minRows ?? 20;
+  if (rows.length < minRows || !optionalFields.length) return;
+
+  // `witnessField` guards against the obvious false positive.
+  //
+  // "Every row has a null KD" has two possible causes: the gateway drops the column, or the
+  // provider genuinely has no difficulty for these keywords — which is exactly what Ahrefs does
+  // for zero-volume terms, and a brand-heavy pull is entirely zero-volume. Concluding
+  // "unsupported" from the second case would permanently withhold a column the user is paying
+  // for and entitled to.
+  //
+  // So the verdict is only drawn from rows where the provider demonstrably had data at all: rows
+  // whose witness field (volume) came back populated. If none did, the response says nothing
+  // about the gateway and nothing is recorded.
+  const witness = opts.witnessField ?? "volume";
+  const informative = rows.filter(r => r[witness] != null && r[witness] !== 0);
+  if (informative.length < minRows) return;
+
+  for (const field of optionalFields) {
+    const anyPresent = informative.some(r => r[field] != null);
+    if (anyPresent) await markFieldSupported(host, endpoint, field);
+    else await markFieldUnsupported(host, endpoint, field);
+  }
+}
+
 /** Whether `units` more can be spent this month. `cap <= 0` means no cap configured. */
 export async function withinCap(userId: string, provider: string, units: number, cap: number): Promise<boolean> {
   if (!cap || cap <= 0) return true;

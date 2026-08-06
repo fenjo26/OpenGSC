@@ -115,6 +115,38 @@ export default function RewritePage() {
   // One query per line — a comma-separated blob would split on commas inside phrases ("buy shoes,
   // red, size 42"). The rewriter treats these as strings it must keep; their volume is decorative.
   const [targetKeywords, setTargetKeywords] = useState("");
+  const [gscBusy, setGscBusy] = useState(false);
+  const [gscNote, setGscNote] = useState("");
+
+  /**
+   * Fill the target list from Search Console.
+   *
+   * Deliberately the first thing offered rather than an external keyword tool: a provider sells
+   * market volume, while GSC knows what THIS page is already shown for. Losing a phrase the page
+   * currently earns from is a worse failure than missing one it never had, and this source is
+   * both free and exact. Appends rather than replaces, so a hand-written target is never wiped.
+   */
+  async function pullFromGsc() {
+    if (gscBusy || !url.trim()) return;
+    setGscBusy(true); setGscNote("");
+    try {
+      const res = await fetch(`/api/gsc/page-queries?url=${encodeURIComponent(url.trim())}&limit=30`);
+      const d = await res.json().catch(() => ({}));
+      const found: string[] = (d.queries ?? []).map((q: any) => String(q.keyword)).filter(Boolean);
+      if (!res.ok || !found.length) {
+        setGscNote(d.error === "not_your_site" ? t("rwGscNotYours") : t("rwGscEmpty"));
+      } else {
+        setTargetKeywords(prev => {
+          const have = new Set(prev.split("\n").map(x => x.trim().toLowerCase()).filter(Boolean));
+          const merged = prev.split("\n").map(x => x.trim()).filter(Boolean);
+          for (const k of found) if (!have.has(k.toLowerCase())) { merged.push(k); have.add(k.toLowerCase()); }
+          return merged.join("\n");
+        });
+        setGscNote(t("rwGscAdded").replace("{n}", String(found.length)));
+      }
+    } catch { setGscNote(t("rwGscEmpty")); }
+    setGscBusy(false);
+  }
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [results, setResults] = useState<Variant[] | null>(null);
@@ -288,13 +320,29 @@ export default function RewritePage() {
             One per line; "how to" and "купить" split on whitespace into different intents, so the
             delimiter is the newline, not a space or comma. */}
         <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-          <label style={{ fontSize: "12px", fontWeight: 600, color: "var(--color-text-secondary)" }}>
-            {t("rwTargetKeywords")}
-          </label>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+            <label style={{ fontSize: "12px", fontWeight: 600, color: "var(--color-text-secondary)" }}>
+              {t("rwTargetKeywords")}
+            </label>
+            {/* Only in URL mode: without an address there is no page to look up. */}
+            {mode === "url" && (
+              <button type="button" onClick={pullFromGsc} disabled={gscBusy || !url.trim()}
+                title={t("rwGscHint")}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "11px",
+                  fontWeight: 600, padding: "3px 9px", borderRadius: "6px", cursor: url.trim() ? "pointer" : "not-allowed",
+                  border: "1px solid var(--color-border)", background: "transparent",
+                  color: url.trim() ? "var(--color-accent-blue)" : "var(--color-text-tertiary)",
+                }}>
+                {gscBusy ? <Loader2 size={11} className="spin" /> : <Search size={11} />} {t("rwGscPull")}
+              </button>
+            )}
+            {gscNote && <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>{gscNote}</span>}
+          </div>
           <textarea
             value={targetKeywords}
             onChange={e => setTargetKeywords(e.target.value)}
-            placeholder={t("rwTargetKeywords") + "…"}
+            placeholder={t("rwTargetKeywordsPh")}
             rows={3}
             style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }}
           />

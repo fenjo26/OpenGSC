@@ -861,8 +861,19 @@ async function ahrefsIdeas(
   }
 
   const rows: any[] = (await res.json())?.keywords ?? [];
+  // Billed on what came back, not on `limit`.
+  //
+  // `units` above is the ceiling the caller reserved against the cap — correct for that job, and
+  // wrong to report as the outcome. Ahrefs charges for the rows it returns, and a thin seed
+  // returns a handful of the two hundred asked for. Reporting the ceiling here made the refund in
+  // `releaseUnusedUnits` compute `ceiling - ceiling = 0` and hand nothing back, which quietly
+  // undid the whole reconciliation.
+  const billed = rows.length
+    ? estimateIdeaUnits(mode, rows.length, !!opts.withDifficulty)
+    : AHREFS_UNIT_FLOOR;
+
   return {
-    units,
+    units: billed,
     items: rows.map(r => ({
       keyword: String(r.keyword ?? "").trim().toLowerCase(),
       volume: num(r.volume),

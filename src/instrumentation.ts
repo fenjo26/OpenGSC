@@ -15,5 +15,9 @@ export async function register() {
     startDigestScheduler();
     const { startSyncScheduler } = await import('@/lib/syncScheduler');
     startSyncScheduler();
+    // The only scheduler here that can spend money, so it is also the only one that does nothing
+    // until a user turns it on and gives it a budget of its own.
+    const { startWarmupScheduler } = await import('@/lib/warmupScheduler');
+    startWarmupScheduler();
   }
 }

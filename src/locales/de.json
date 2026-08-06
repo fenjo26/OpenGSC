@@ -2730,5 +2730,15 @@
   "gapToOutlineHint": "Schickt die gefilterte Lücke an den Gliederungs-Generator: die oberste Anfrage wird zum Thema, der Rest zu zusätzlichen Keywords.",
   "gapToOutlineOne": "Gliederung für diese Anfrage erzeugen",
   "gapExport": "CSV exportieren",
-  "gapExportHint": "Lädt die aktuell sichtbaren Zeilen mit Verdikt, beiden Positionen und Markt — fertig für Contentplan oder Briefing."
+  "gapExportHint": "Lädt die aktuell sichtbaren Zeilen mit Verdikt, beiden Positionen und Markt — fertig für Contentplan oder Briefing.",
+  "rwGscPull": "Aus Search Console übernehmen",
+  "rwGscHint": "Füllt die Liste mit den Anfragen, für die diese Seite bereits ausgeliefert wird. Kostenlos — aus Ihren eigenen GSC-Daten.",
+  "rwGscAdded": "{n} Anfragen aus Search Console übernommen.",
+  "rwGscEmpty": "Search Console hat für diese URL in den letzten 90 Tagen keine Anfragen.",
+  "rwGscNotYours": "Diese URL gehört zu keiner Ihrer verbundenen Websites.",
+  "gapKdUnsupported": "Ihr Gateway liefert dieses Feld nicht",
+  "warmupAutoTitle": "Geplantes Vorwärmen",
+  "warmupAutoEnable": "Alle ~30 Tage automatisch auffrischen",
+  "warmupAutoCap": "Monatslimit für den Zeitplan",
+  "warmupAutoHint": "Der Cache läuft nach 30 Tagen ab, die Abdeckung zerfällt also von selbst. Dies füllt sie im Hintergrund auf — standardmäßig aus, mit eigenem Budget, damit ein automatischer Lauf nie das ausgibt, was Sie gerade von Hand ausgeben wollten. Gekauft wird nur, was fehlt."
 }

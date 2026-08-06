@@ -6,9 +6,9 @@ import {
   fetchOrganicCompetitors, fetchOrganicKeywords,
   estimateCompetitorUnits, estimateOrganicKeywordUnits,
   SEMRUSH_COMPETITOR_UNITS_PER_ROW, SEMRUSH_ORGANIC_KEYWORD_UNITS_PER_ROW,
-  MetricsProvider,
+  DEFAULT_BASE_URL, MetricsProvider,
 } from "@/lib/seo/metrics";
-import { readUsage, recordUsage, withinCap } from "@/lib/seo/metricsStore";
+import { readUsage, recordUsage, releaseUnusedUnits, withinCap, learnFieldSupport, unsupportedFields } from "@/lib/seo/metricsStore";
 import { runUpsert } from "@/lib/db/upsert";
 import { rawQuery, rawExec } from "@/lib/db/raw";
 
@@ -54,6 +54,10 @@ export async function POST(req: Request) {
   const apiKey = String(b.apiKey ?? "").trim();
   const baseUrl = String(b.baseUrl ?? "").trim() || undefined;
   const cap = Number(b.cap ?? 0);
+  // The host is what a field verdict belongs to: an official key and a reseller key are different
+  // gateways with different coverage, and one must not speak for the other.
+  const gatewayHost = (baseUrl || DEFAULT_BASE_URL[provider]).replace(/\/+$/, "");
+  const ORGANIC_ENDPOINT = "site-explorer/organic-keywords";
 
   // ── Read: the stored competitor keywords, joined against our own GSC performance ──
   const buildGap = async (): Promise<{ rows: GapRow[]; competitors: string[] }> => {
@@ -116,6 +120,9 @@ export async function POST(req: Request) {
     return NextResponse.json({
       target: norm(site.url), country, rows, competitors,
       usage: await readUsage(userId, provider),
+      // So the screen can stop offering — and stop charging for — a column this gateway does not
+      // forward. Empty means "nothing known against it", which is the assume-it-works default.
+      unsupported: [...await unsupportedFields(gatewayHost, ORGANIC_ENDPOINT)],
       ...extra,
     }, { status });
   };
@@ -141,6 +148,14 @@ export async function POST(req: Request) {
     try {
       const res = await fetchOrganicCompetitors({ provider, apiKey, baseUrl }, norm(site.url), { limit, country });
       if (res.error) return respond({ error: res.error }, 502);
+      // Reserved `limit` competitors, billed for the ones that came back. Ahrefs returns far
+      // fewer for a small domain, and the unused reservation must not eat the monthly cap.
+      // Priced with the same formula the reservation used, or the refund would be computed at
+      // Ahrefs rates against a Semrush charge and hand back the wrong amount.
+      const got = Math.max(1, res.items.length);
+      await releaseUnusedUnits(userId, provider, units, provider === "semrush"
+        ? SEMRUSH_COMPETITOR_UNITS_PER_ROW * got
+        : estimateCompetitorUnits(got));
       // Returned, not stored: this list is a menu the user picks from, and the expensive step is
       // the next one. Persisting it would suggest work has been done that has not.
       return respond({ units, found: res.items });
@@ -189,6 +204,22 @@ export async function POST(req: Request) {
     // competitor Ahrefs legitimately returns an empty organic list — but the pull was already
     // charged in full, so leaving the screen unchanged means the user pays, learns nothing, and
     // presses again. Said out loud instead, naming the two filters that usually explain it.
+    // Priced at `limit` rows, billed at what arrived. Done before the early return too: an empty
+    // answer is the case where the gap between reserved and actual is largest, and charging the
+    // full pull for zero rows is what made this screen feel like it was eating money.
+    // Learn what this gateway actually forwards. `difficulty` is the field that costs extra, so
+    // it is the one worth checking: 200 rows came back with it null on a pull priced *with* the
+    // surcharge, which is money spent on a column the host does not proxy.
+    if (withDifficulty) {
+      await learnFieldSupport(gatewayHost, ORGANIC_ENDPOINT, ["difficulty"], res.items as any[],
+        { witnessField: "volume", minRows: 20 });
+    }
+
+    const gotKw = Math.max(1, res.items.length);
+    await releaseUnusedUnits(userId, provider, units, provider === "semrush"
+      ? SEMRUSH_ORGANIC_KEYWORD_UNITS_PER_ROW * gotKw
+      : estimateOrganicKeywordUnits(gotKw, withDifficulty));
+
     if (!res.items.length) {
       return respond({ error: "no_competitor_keywords", competitor, maxPosition: 20 }, 200);
     }

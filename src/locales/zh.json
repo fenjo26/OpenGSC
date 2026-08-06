@@ -2730,5 +2730,15 @@
   "gapToOutlineHint": "将筛选后的内容缺口发送到大纲生成器：排在最前的查询作为主题，其余作为补充关键词。",
   "gapToOutlineOne": "为该查询生成大纲",
   "gapExport": "导出 CSV",
-  "gapExportHint": "下载当前视图中的行，含判定、双方排名与市场——可直接用于内容计划或写作简报。"
+  "gapExportHint": "下载当前视图中的行，含判定、双方排名与市场——可直接用于内容计划或写作简报。",
+  "rwGscPull": "从 Search Console 获取",
+  "rwGscHint": "用该页面已获得展示的查询填充列表。免费——读取你自己的 GSC 数据，而非第三方。",
+  "rwGscAdded": "已从 Search Console 添加 {n} 个查询。",
+  "rwGscEmpty": "最近 90 天内 Search Console 没有该 URL 的查询。",
+  "rwGscNotYours": "该 URL 不属于你已连接的任何站点。",
+  "gapKdUnsupported": "你的网关不转发该字段",
+  "warmupAutoTitle": "定时预热",
+  "warmupAutoEnable": "约每 30 天自动刷新一次",
+  "warmupAutoCap": "定时任务的月度上限",
+  "warmupAutoHint": "缓存 30 天过期，覆盖率会自行衰减。此功能在后台补齐——默认关闭，并使用独立预算，避免自动任务花掉你正准备手动花的额度。只购买缺失的关键词；已预热的站点组合不产生任何费用。"
 }

@@ -699,6 +699,27 @@ model Annotation {
 // removes the manual step. `source` and `checkedAt` are what let the UI say where a number came
 // from and how old it is, and what stops an old CSV from overwriting fresher API data.
 
+// Which columns a given API host actually forwards.
+//
+// A reseller gateway speaks the official protocol but may not proxy every field of every
+// endpoint — measured on a live instance, `keyword_difficulty` arrives on keywords-explorer and
+// never on site-explorer/organic-keywords. Since those columns carry a price surcharge, guessing
+// wrong means charging for data that will not come. Learned from the first response rather than
+// hard-coded, because a gateway's coverage is not ours to predict and changes without notice.
+//
+// `supported = 0` is the only actionable state: it suppresses the field and its surcharge.
+// A row is written per (host, endpoint, field) so an official key and a reseller key on the same
+// account keep separate verdicts.
+model GatewayFieldSupport {
+  host      String
+  endpoint  String
+  field     String
+  supported Int      @default(1)
+  checkedAt DateTime @default(now())
+
+  @@id([host, endpoint, field])
+}
+
 model KeywordMetricCache {
   keyword      String
   country      String   @default("us")

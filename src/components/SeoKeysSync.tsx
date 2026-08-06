@@ -17,6 +17,13 @@ const EXACT_KEYS = [
   "seoActivePolicy", "seoPolicies",
   "seoAutoFactcheck", "seoAutoImages", "seoHardRedact", "seoFactSources",
   "seoFactBearingOnly", "seoFactReuseCorpus",
+  // The scheduled warm-up is the only setting here a *server* process reads: the cron has no
+  // browser, so a value that lived only in localStorage would be invisible to the thing it
+  // configures. It rides the same mirror as everything else rather than getting its own endpoint.
+  "seoWarmupSchedule",
+  // The keyword-source selector and its behaviour flags — same reason the metrics layer is
+  // mirrored: restoring a browser without them silently reverts the content tools to "off".
+  "seoKwSource", "seoKwAuto", "seoKwLimit",
 ];
 // `seoMetrics` covers the whole metrics layer: mode, base URL, monthly cap, active provider.
 //

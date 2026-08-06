@@ -93,6 +93,14 @@ export function buildOutlinePrompt(args: {
   // frequencies — worse than an obvious gap, because a plausible number is indistinguishable from
   // a real one on screen. One flag now drives both.
   const hasKwData = !!args.keywordsData?.length;
+  // Whether the provider actually returned an intent for anything.
+  //
+  // Separate from `hasKwData` because the two fail independently: the live instance currently has
+  // 152 cached keywords and not one carries an intent, since Ahrefs does not compute it for
+  // zero-volume brand terms. Telling the model to "group keys by intent" when no key has one is
+  // the same defect as ranking headings by frequencies that were never fetched — it produces a
+  // confident structure built on a field nobody supplied.
+  const hasIntent = !!args.keywordsData?.some(k => k.intent && k.intent !== "unknown");
   const kwSource = args.keywordsSource || "внешний источник";
   // Each key carries its search intent (transactional/commercial/informational/navigational) and,
   // when the local volume is zero, a worldwide figure. The intent drives placement — a
@@ -175,8 +183,12 @@ export function buildOutlinePrompt(args: {
 - СУЩНОСТИ: ${args.lightSections ? "2-4 на секцию" : "для крупных секций 4-7 сущностей, для мелких H3 — 2-3"}. У КАЖДОЙ — weight И role: {"name":"","weight":10,"role":"primary — ядро секции"} или "secondary — регуляторная валидация/социальное доказательство/контекст рынка". РАЗНООБРАЗИЕ ОБЯЗАТЕЛЬНО: НЕ ставь во все секции один лишь главный бренд — добавляй регуляторов (лицензии), платёжные системы, типы игр/ставок/продуктов, лиги/турниры, провайдеров, площадки отзывов (Trustpilot) и т.п.
 - КЛЮЧИ: 3-6 ПОЛНЫХ поисковых фраз на секцию (реальные запросы, напр. "how far is pefkohori from thessaloniki airport"), а НЕ слова-обрывки ("distance, time"). ${hasKwData ? "Бери формулировки из блока с объёмами выше, остальное — реалистичный длинный хвост." : "Данных о частотности нет — формулируй реалистичные запросы сам."}
 ${hasKwData
-  ? `- ЧАСТОТНОСТЬ → УРОВЕНЬ ЗАГОЛОВКА (по методике Rush): распредели ключи по ОБЩЕМУ объёму из блока выше. ВЧ (самые объёмные, max(volume, globalVolume), 1-2 слова) → в H1 и крупные H2. СЧ (уточняющие, 2-3 слова) → в H2. НЧ/длинный хвост (4+ слов, конкретные вопросы) → в H3 (там ключи можно склонять). Не дублируй один ключ во многих заголовках — раскидывай.
-- ИНТЕНТ → ТИП СЕКЦИИ: группируй ключи по интенту. transactional/commercial → в продающие секции (услуга, цены, бронирование, CTA, сравнение). informational → в справочные/FAQ/guide. navigational → рядом с упоминанием бренда/продукта. Если интент неизвестен — определяй по формулировке ключа.`
+  ? `- ЧАСТОТНОСТЬ → УРОВЕНЬ ЗАГОЛОВКА (по методике Rush): распредели ключи по ОБЩЕМУ объёму из блока выше. ВЧ (самые объёмные, max(volume, globalVolume), 1-2 слова) → в H1 и крупные H2. СЧ (уточняющие, 2-3 слова) → в H2. НЧ/длинный хвост (4+ слов, конкретные вопросы) → в H3 (там ключи можно склонять). Не дублируй один ключ во многих заголовках — раскидывай.${
+  hasIntent
+    ? `
+- ИНТЕНТ → ТИП СЕКЦИИ: группируй ключи по интенту, указанному у каждого ключа выше. transactional/commercial → в продающие секции (услуга, цены, бронирование, CTA, сравнение). informational → в справочные/FAQ/guide. navigational → рядом с упоминанием бренда/продукта.`
+    : `
+- ИНТЕНТ: провайдер не вернул интент ни по одному ключу. НЕ помечай ключи как transactional/informational/navigational и не раскладывай секции по придуманному интенту — определяй тип секции по самой формулировке запроса и по структуре конкурентов.`}`
   : `- ЧАСТОТНОСТЬ: данных о частотности НЕТ. НЕ ранжируй заголовки по «ВЧ/СЧ/НЧ» и НЕ приписывай ключам объёмы поиска — выдуманная частотность хуже её отсутствия. Опирайся на структуру конкурентов и логику темы: общее — выше, частное — глубже.`}
 - H1 ≠ TITLE: H1 (заголовок на странице) и Title (тег для выдачи) — РАЗНЫЕ формулировки, обе с ключами. H1 — цепляющий, для читателя, с ВЧ-ключом; Title — под клик в выдаче. Заполни meta.h1 отдельным от title_options заголовком (с ТЕКУЩИМ годом, если год уместен).
 ${args.lightSections

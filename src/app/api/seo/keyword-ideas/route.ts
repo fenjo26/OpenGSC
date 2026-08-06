@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { expandKeywords, type KwSource } from "@/lib/seo/keywordSource";
 import { priceExpand, type IdeaMode } from "@/lib/seo/metrics";
-import { readUsage, recordUsage, withinCap } from "@/lib/seo/metricsStore";
+import { readUsage, recordUsage, withinCap, releaseUnusedUnits } from "@/lib/seo/metricsStore";
 
 // POST /api/seo/keyword-ideas
 //   { seed, country, language?, limit?, withDifficulty?, mode?,
@@ -82,6 +82,12 @@ export async function POST(req: Request) {
       usage: provider ? await readUsage(userId, provider) : null,
       error: `internal: ${String(e?.message ?? e).slice(0, 300)}`,
     }, { status: 500 });
+  }
+
+  // The reservation above priced `limit` rows; Ahrefs billed the rows it actually returned. Give
+  // the difference back before answering, so the month's counter tracks money rather than intent.
+  if (provider && price.units) {
+    await releaseUnusedUnits(userId, provider, price.units, res.units || 0);
   }
 
   if (res.error && !res.rows.length) {

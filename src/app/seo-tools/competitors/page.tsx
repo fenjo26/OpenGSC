@@ -64,6 +64,16 @@ export default function CompetitorsPage() {
   const [limit, setLimit] = useState(200);
   const [bucket, setBucket] = useState<Bucket | "all">("all");
   const [search, setSearch] = useState("");
+  /**
+   * Columns this gateway is known not to forward, learned server-side from a previous response.
+   *
+   * A reseller may speak the official protocol and still drop a field. `keyword_difficulty` is the
+   * measured case: it never arrives on this endpoint through the group-buy host, while the pull was
+   * priced with its 10-unit surcharge. Once known, the checkbox is disabled and the surcharge comes
+   * out of the quote — the tool stops selling a column it cannot deliver.
+   */
+  const [unsupported, setUnsupported] = useState<string[]>([]);
+  const kdBlocked = unsupported.includes("difficulty");
 
   useEffect(() => {
     setHasKey(getMetricsCreds().apiKey.length > 4);
@@ -91,6 +101,7 @@ export default function CompetitorsPage() {
     const d = await res.json().catch(() => ({}));
     if (Array.isArray(d.rows)) setRows(d.rows);
     if (Array.isArray(d.competitors)) setCompetitors(d.competitors);
+    if (Array.isArray(d.unsupported)) setUnsupported(d.unsupported);
     if (!res.ok) {
       setNotice(d.error === "cap_exceeded" ? t("kwCapExceeded")
         : d.error === "provider_unsupported" ? t("blpAhrefsOnly")
@@ -124,7 +135,7 @@ export default function CompetitorsPage() {
   async function pull(competitor: string) {
     if (busy || !competitor) return;
     setBusy("keywords");
-    await call("keywords", { competitor, limit, withDifficulty: withKd, maxPosition: 20 });
+    await call("keywords", { competitor, limit, withDifficulty: withKd && !kdBlocked, maxPosition: 20 });
     setBusy(null);
   }
 
@@ -182,7 +193,7 @@ export default function CompetitorsPage() {
 
   const creds = getMetricsCreds();
   const discoverCost = estimateCostUsd(estimateCompetitorUnits(20), creds.provider);
-  const pullUnits = estimateOrganicKeywordUnits(limit, withKd);
+  const pullUnits = estimateOrganicKeywordUnits(limit, withKd && !kdBlocked);
   const pullCost = estimateCostUsd(pullUnits, creds.provider);
 
   const counts = useMemo(() => {
@@ -248,7 +259,9 @@ export default function CompetitorsPage() {
           <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", marginBottom: "10px" }}>
             <span className="tool-section-label" style={{ marginBottom: 0 }}>{t("gapCompetitors")}</span>
             <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--color-text-secondary)", cursor: "pointer" }} title={t("kwWithKdHint")}>
-              <input type="checkbox" checked={withKd} onChange={e => setWithKd(e.target.checked)} /> {t("kwWithKd")}
+              <input type="checkbox" checked={withKd && !kdBlocked} disabled={kdBlocked}
+                onChange={e => setWithKd(e.target.checked)} /> {t("kwWithKd")}
+              {kdBlocked && <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>({t("gapKdUnsupported")})</span>}
             </label>
             <select className="tool-input inline" value={limit} onChange={e => setLimit(Number(e.target.value))}>
               {[100, 200, 500, 1000].map(n => <option key={n} value={n}>{n} {t("gapKeywords")}</option>)}

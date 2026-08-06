@@ -2730,5 +2730,15 @@
   "gapToOutlineHint": "Envía el hueco filtrado al generador de esquemas: la consulta principal será el tema y el resto, palabras clave adicionales.",
   "gapToOutlineOne": "Generar un esquema para esta consulta",
   "gapExport": "Exportar CSV",
-  "gapExportHint": "Descarga las filas visibles, con el veredicto, ambas posiciones y el mercado — listas para un plan de contenidos o un brief."
+  "gapExportHint": "Descarga las filas visibles, con el veredicto, ambas posiciones y el mercado — listas para un plan de contenidos o un brief.",
+  "rwGscPull": "Traer de Search Console",
+  "rwGscHint": "Rellena la lista con las consultas por las que ya se muestra esta página. Gratis: se lee de tus propios datos de GSC.",
+  "rwGscAdded": "{n} consultas añadidas desde Search Console.",
+  "rwGscEmpty": "Search Console no tiene consultas para esta URL en los últimos 90 días.",
+  "rwGscNotYours": "Esta URL no pertenece a ninguno de tus sitios conectados.",
+  "gapKdUnsupported": "tu gateway no reenvía este campo",
+  "warmupAutoTitle": "Precalentamiento programado",
+  "warmupAutoEnable": "Actualizar automáticamente cada ~30 días",
+  "warmupAutoCap": "Límite mensual de la programación",
+  "warmupAutoHint": "La caché caduca a los 30 días, así que la cobertura se degrada sola. Esto la rellena en segundo plano: desactivado por defecto y con un presupuesto aparte, para que una ejecución automática nunca gaste lo que ibas a gastar a mano. Solo se compran las palabras clave que faltan."
 }

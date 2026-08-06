@@ -2730,5 +2730,15 @@
   "gapToOutlineHint": "Envoie l'écart filtré au générateur de plan : la requête principale devient le sujet, les autres deviennent des mots-clés additionnels.",
   "gapToOutlineOne": "Générer un plan pour cette requête",
   "gapExport": "Exporter en CSV",
-  "gapExportHint": "Télécharge les lignes affichées, avec le verdict, les deux positions et le marché — prêtes pour un plan de contenu ou un brief."
+  "gapExportHint": "Télécharge les lignes affichées, avec le verdict, les deux positions et le marché — prêtes pour un plan de contenu ou un brief.",
+  "rwGscPull": "Prendre depuis Search Console",
+  "rwGscHint": "Remplit la liste avec les requêtes pour lesquelles cette page est déjà affichée. Gratuit — lu dans vos propres données GSC.",
+  "rwGscAdded": "{n} requêtes ajoutées depuis Search Console.",
+  "rwGscEmpty": "Search Console n'a aucune requête pour cette URL sur les 90 derniers jours.",
+  "rwGscNotYours": "Cette URL n'appartient à aucun de vos sites connectés.",
+  "gapKdUnsupported": "non transmis par votre passerelle",
+  "warmupAutoTitle": "Préchauffage planifié",
+  "warmupAutoEnable": "Rafraîchir automatiquement tous les ~30 jours",
+  "warmupAutoCap": "Plafond mensuel du planificateur",
+  "warmupAutoHint": "Le cache expire au bout de 30 jours : la couverture se dégrade toute seule. Ceci la complète en arrière-plan — désactivé par défaut, avec un budget distinct, pour qu'une exécution automatique ne dépense jamais ce que vous alliez dépenser à la main. Seuls les mots-clés manquants sont achetés."
 }

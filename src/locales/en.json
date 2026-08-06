@@ -2730,5 +2730,15 @@
   "gapToOutlineHint": "Sends the filtered gap to the outline writer: the top query becomes the topic, the rest become additional keywords.",
   "gapToOutlineOne": "Write an outline for this query",
   "gapExport": "Export CSV",
-  "gapExportHint": "Downloads the rows currently in view, with the verdict, both positions and the market — ready for a content plan or a writer's brief."
+  "gapExportHint": "Downloads the rows currently in view, with the verdict, both positions and the market — ready for a content plan or a writer's brief.",
+  "rwGscPull": "Take from Search Console",
+  "rwGscHint": "Fills the list with the queries this page is already shown for. Free — read from your own GSC data, not from a provider.",
+  "rwGscAdded": "{n} queries added from Search Console.",
+  "rwGscEmpty": "Search Console has no queries for this exact URL in the last 90 days.",
+  "rwGscNotYours": "This URL does not belong to any of your connected sites.",
+  "gapKdUnsupported": "not forwarded by your gateway",
+  "warmupAutoTitle": "Scheduled warm-up",
+  "warmupAutoEnable": "Refresh automatically every ~30 days",
+  "warmupAutoCap": "Monthly cap for the schedule",
+  "warmupAutoHint": "The cache expires after 30 days, so coverage decays on its own. This tops it up in the background — off by default, with a budget separate from the interactive one, so an automatic run can never spend what you were about to spend by hand. Only missing keywords are bought; an already-warm portfolio costs nothing."
 }
