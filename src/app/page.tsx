@@ -1843,7 +1843,10 @@ function PortfolioPageContent() {
                 aria-expanded={showArchive}
               >
                 <span className={showArchive ? "archive-caret open" : "archive-caret"}>▸</span>
-                <span>🗄 {t("archiveSection")} (<span style={{filter:blur?"blur(4px)":"none",transition:"filter 0.25s"}}>{archivedSites.length}</span>)</span>
+                <span>🗄 {t("archiveSection")}</span>
+                <span className="archive-count" style={{filter:blur?"blur(4px)":"none",transition:"filter 0.25s"}}>
+                  {archivedSites.length}
+                </span>
               </button>
               {showArchive && (
                 <>

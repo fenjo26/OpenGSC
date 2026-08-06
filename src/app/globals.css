@@ -504,21 +504,41 @@ input:-webkit-autofill {
 .archive-toggle {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
-  padding: 10px 0;
-  background: none;
-  border: none;
+  margin-top: 16px;
+  padding: 12px 14px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
   cursor: pointer;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--color-text-secondary);
-  opacity: 0.7;
-  transition: opacity 0.15s ease;
+  transition: border-color 0.15s ease, color 0.15s ease;
 }
-.archive-toggle:hover { opacity: 1; }
+.archive-toggle:hover {
+  border-color: var(--color-border-soft);
+  color: var(--color-text-primary);
+}
+
+/* Pill badge for the count — sits at the right edge so the number is impossible
+   to miss even when the section is collapsed and the rows are hidden. */
+.archive-count {
+  margin-left: auto;
+  min-width: 22px;
+  padding: 2px 8px;
+  border-radius: var(--color-pill, var(--radius-pill));
+  background: color-mix(in srgb, var(--color-text-tertiary) 24%, transparent);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  letter-spacing: 0;
+  text-transform: none;
+}
 
 .archive-caret {
   display: inline-block;
