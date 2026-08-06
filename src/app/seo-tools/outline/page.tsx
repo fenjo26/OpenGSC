@@ -75,7 +75,7 @@ export default function OutlinePage() {
   const [scraped, setScraped] = useState<Record<string, Scraped>>({});
   const [serpView, setSerpView] = useState<"clusters" | "list">("list");
   const [parsing, setParsing] = useState<Set<string>>(new Set());
-  const [keywordsData, setKeywordsData] = useState<{ keyword: string; volume: number; cpc: number; competition: number; difficulty?: number | null }[]>([]);
+  const [keywordsData, setKeywordsData] = useState<{ keyword: string; volume: number; globalVolume?: number | null; cpc: number; competition: number; difficulty?: number | null; intent?: string }[]>([]);
   const [kwLoading, setKwLoading] = useState(false);
   /** Which provider answered — shown in the UI and sent to the prompt so neither of them guesses. */
   const [kwSource, setKwSource] = useState("");
@@ -602,7 +602,12 @@ export default function OutlinePage() {
                     {keywordsData.slice(0, 40).map((k, i) => (
                       <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 70px 60px 80px", gap: "8px", fontSize: "12px", padding: "4px 0", color: "var(--color-text-secondary)" }}>
                         <span style={{ color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{k.keyword}</span>
-                        <span style={{ textAlign: "right", fontWeight: 600, color: "var(--color-text-primary)" }}>{k.volume.toLocaleString()}</span>
+                        {/* Local volume; when it is zero but a global volume exists, show it muted so a
+                            brand/niche term does not read as "dead" — it is just not searched here. */}
+                        <span style={{ textAlign: "right", fontWeight: 600, color: "var(--color-text-primary)" }}>
+                          {k.volume.toLocaleString()}
+                          {k.volume === 0 && k.globalVolume ? <span style={{ color: "var(--color-text-tertiary)", fontWeight: 400 }}> · 🌍{k.globalVolume.toLocaleString()}</span> : null}
+                        </span>
                         <span style={{ textAlign: "right" }}>{k.cpc ? `$${k.cpc.toFixed(2)}` : "—"}</span>
                         <span style={{ textAlign: "right" }}>{k.competition ? `${Math.round(k.competition * 100)}%` : "—"}</span>
                       </div>

@@ -77,6 +77,7 @@ function metricToRow(m: KeywordMetric): DemandRow {
   return {
     keyword: m.keyword,
     volume: m.volume,
+    globalVolume: m.globalVolume,
     difficulty: m.difficulty,
     cpc: m.cpc,
     competition: null,
@@ -103,6 +104,7 @@ function cachedToRow(c: CachedKeyword): DemandRow {
   return {
     keyword: c.keyword,
     volume: c.volume,
+    globalVolume: c.globalVolume,
     difficulty: c.difficulty,
     cpc: c.cpc,
     competition: null,
@@ -119,7 +121,7 @@ function rowsToCacheWrites(rows: DemandRow[]) {
     volume: r.volume,
     difficulty: r.difficulty,
     cpc: r.cpc,
-    globalVolume: null,
+    globalVolume: r.globalVolume,
     parentTopic: null,
     intents: r.intent === "unknown" ? null : JSON.stringify({ [r.intent]: true }),
     payload: null,

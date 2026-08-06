@@ -24,7 +24,7 @@ export interface RewriteBody {
    * does not, and nothing in the pipeline notices because the facts all check out. Supplying them
    * turns that from an accident into a checked constraint — see `keywordCoverage` below.
    */
-  targetKeywords?: { keyword: string; volume?: number | null }[];
+  targetKeywords?: { keyword: string; volume?: number | null; globalVolume?: number | null }[];
   temperature?: number;     // sampling temperature; undefined = provider default
   autoRepair?: boolean;     // run a scoped fix pass when the value audit fails (default true)
   snippet?: boolean;        // also propose a refreshed title + meta description
@@ -253,12 +253,18 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
   // worth an exact match when a phrasing has to give: a rewrite that loses the top query has
   // failed even if every fact survived.
   const targets = (b.targetKeywords || [])
-    .map(k => ({ keyword: String(k.keyword || "").trim(), volume: k.volume ?? null }))
+    .map(k => ({ keyword: String(k.keyword || "").trim(), volume: k.volume ?? null, globalVolume: k.globalVolume ?? null }))
     .filter(k => k.keyword)
-    .sort((a, z) => (z.volume ?? 0) - (a.volume ?? 0))
+    // Sort by the bigger of local/global — a phrase with zero local demand but worldwide demand is
+    // still worth keeping, and ordering by local-only would bury it.
+    .sort((a, z) => Math.max(z.volume ?? 0, z.globalVolume ?? 0) - Math.max(a.volume ?? 0, a.globalVolume ?? 0))
     .slice(0, 30);
   const targetLine = targets.length
-    ? `This page ranks for these searches and must keep ranking for them — preserve each phrase verbatim at least once, in natural context, and do not paraphrase them away: ${targets.map(k => k.volume ? `"${k.keyword}" (${k.volume}/mo)` : `"${k.keyword}"`).join(", ")}. `
+    ? `This page ranks for these searches and must keep ranking for them — preserve each phrase verbatim at least once, in natural context, and do not paraphrase them away: ${targets.map(k => {
+        const local = k.volume ? `${k.volume}/mo` : "0";
+        const global = k.globalVolume ? `, global ${k.globalVolume}/mo` : "";
+        return `"${k.keyword}" (${local}${global})`;
+      }).join(", ")}. `
     : "";
 
   const basePrompt = (i: number) =>

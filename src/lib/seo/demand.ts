@@ -148,6 +148,13 @@ export interface MonthlyPoint {
 export interface DemandRow {
   keyword: string;
   volume: number | null;
+  /**
+   * Worldwide volume, when the provider reports it separately from the local one. Ahrefs and
+   * Semrush do; DataForSEO does not (null there). Matters for brand and niche terms whose local
+   * volume is zero — a 0 next to "global 250" tells the writer the term is not dead, just not in
+   * this country, whereas a bare 0 reads as "ignore".
+   */
+  globalVolume: number | null;
   /** 0-100. Always null on Google-Ads-sourced rows — the endpoint does not return it. */
   difficulty: number | null;
   cpc: number | null;
@@ -282,6 +289,7 @@ function mapLabsRow(raw: any): DemandRow | null {
   return {
     keyword,
     volume: clickstream?.search_volume ?? info?.search_volume ?? null,
+    globalVolume: null,
     difficulty: props?.keyword_difficulty ?? info?.keyword_difficulty ?? null,
     cpc: info?.cpc ?? null,
     competition: info?.competition ?? null,
@@ -298,6 +306,7 @@ function mapAdsRow(raw: any): DemandRow | null {
   return {
     keyword,
     volume: raw?.search_volume ?? null,
+    globalVolume: null,
     difficulty: null,
     cpc: raw?.cpc ?? null,
     competition: raw?.competition_index == null ? null : Number(raw.competition_index) / 100,

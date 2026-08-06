@@ -68,7 +68,7 @@ export function buildOutlinePrompt(args: {
   lsiKeywords?: string;
   targetWordCount?: number;
   manualTexts?: { name: string; text: string }[];
-  keywordsData?: { keyword: string; volume: number }[];
+  keywordsData?: { keyword: string; volume: number; globalVolume?: number | null; intent?: string }[];
   /**
    * Which provider `keywordsData` came from — "Ahrefs", "Semrush", "DataForSEO".
    * Named in the prompt instead of hardcoded, because the model is being told to trust these
@@ -94,8 +94,12 @@ export function buildOutlinePrompt(args: {
   // a real one on screen. One flag now drives both.
   const hasKwData = !!args.keywordsData?.length;
   const kwSource = args.keywordsSource || "внешний источник";
+  // Each key carries its search intent (transactional/commercial/informational/navigational) and,
+  // when the local volume is zero, a worldwide figure. The intent drives placement — a
+  // transactional key belongs on a commercial section, not an FAQ — and the global figure keeps a
+  // zero-local brand/niche term from being dropped as worthless.
   const kwData = hasKwData
-    ? `\n- РЕАЛЬНЫЕ КЛЮЧИ С ОБЪЁМАМИ ПОИСКА (${kwSource} — используй ИМЕННО ЭТИ формулировки в section.keywords; приоритет ключам с бОльшим объёмом, распределяй по релевантным секциям): ${JSON.stringify(args.keywordsData!.slice(0, 50).map(k => `${k.keyword} (${k.volume}/мес)`))}`
+    ? `\n- РЕАЛЬНЫЕ КЛЮЧИ С ОБЪЁМАМИ И ИНТЕНТОМ (${kwSource} — используй ИМЕННО ЭТИ формулировки в section.keywords; приоритет ключам с бОльшим ОБЩИМ объёмом = max(volume, globalVolume); распределяй по релевантным секциям). Формат: "ключ (локальный объём/мес, 🌍глобальный, интент)". Где объём локальный = 0, но есть 🌍глобальный — ключ НЕ мёртв, это просто низкий местный спрос, используй его по интенту: ${JSON.stringify(args.keywordsData!.slice(0, 50).map(k => `${k.keyword} (${k.volume}/мес${k.globalVolume ? `, 🌍${k.globalVolume}` : ""}${k.intent && k.intent !== "unknown" ? `, ${k.intent}` : ""})`))}`
     : "";
   const relBlock = args.related?.length ? `\nСвязанные запросы: ${JSON.stringify(args.related)}` : "";
   const toneBlock = args.tone && !args.policy ? `\n- тон повествования: ${args.tone}` : "";
@@ -171,7 +175,8 @@ export function buildOutlinePrompt(args: {
 - СУЩНОСТИ: ${args.lightSections ? "2-4 на секцию" : "для крупных секций 4-7 сущностей, для мелких H3 — 2-3"}. У КАЖДОЙ — weight И role: {"name":"","weight":10,"role":"primary — ядро секции"} или "secondary — регуляторная валидация/социальное доказательство/контекст рынка". РАЗНООБРАЗИЕ ОБЯЗАТЕЛЬНО: НЕ ставь во все секции один лишь главный бренд — добавляй регуляторов (лицензии), платёжные системы, типы игр/ставок/продуктов, лиги/турниры, провайдеров, площадки отзывов (Trustpilot) и т.п.
 - КЛЮЧИ: 3-6 ПОЛНЫХ поисковых фраз на секцию (реальные запросы, напр. "how far is pefkohori from thessaloniki airport"), а НЕ слова-обрывки ("distance, time"). ${hasKwData ? "Бери формулировки из блока с объёмами выше, остальное — реалистичный длинный хвост." : "Данных о частотности нет — формулируй реалистичные запросы сам."}
 ${hasKwData
-  ? `- ЧАСТОТНОСТЬ → УРОВЕНЬ ЗАГОЛОВКА (по методике Rush): распредели ключи по частотности из блока с объёмами выше. ВЧ (самые объёмные, 1-2 слова) → в H1 и крупные H2. СЧ (уточняющие, 2-3 слова) → в H2. НЧ/длинный хвост (4+ слов, конкретные вопросы) → в H3 (там ключи можно склонять). Не дублируй один ключ во многих заголовках — раскидывай.`
+  ? `- ЧАСТОТНОСТЬ → УРОВЕНЬ ЗАГОЛОВКА (по методике Rush): распредели ключи по ОБЩЕМУ объёму из блока выше. ВЧ (самые объёмные, max(volume, globalVolume), 1-2 слова) → в H1 и крупные H2. СЧ (уточняющие, 2-3 слова) → в H2. НЧ/длинный хвост (4+ слов, конкретные вопросы) → в H3 (там ключи можно склонять). Не дублируй один ключ во многих заголовках — раскидывай.
+- ИНТЕНТ → ТИП СЕКЦИИ: группируй ключи по интенту. transactional/commercial → в продающие секции (услуга, цены, бронирование, CTA, сравнение). informational → в справочные/FAQ/guide. navigational → рядом с упоминанием бренда/продукта. Если интент неизвестен — определяй по формулировке ключа.`
   : `- ЧАСТОТНОСТЬ: данных о частотности НЕТ. НЕ ранжируй заголовки по «ВЧ/СЧ/НЧ» и НЕ приписывай ключам объёмы поиска — выдуманная частотность хуже её отсутствия. Опирайся на структуру конкурентов и логику темы: общее — выше, частное — глубже.`}
 - H1 ≠ TITLE: H1 (заголовок на странице) и Title (тег для выдачи) — РАЗНЫЕ формулировки, обе с ключами. H1 — цепляющий, для читателя, с ВЧ-ключом; Title — под клик в выдаче. Заполни meta.h1 отдельным от title_options заголовком (с ТЕКУЩИМ годом, если год уместен).
 ${args.lightSections
