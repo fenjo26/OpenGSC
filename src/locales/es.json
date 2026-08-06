@@ -2725,5 +2725,10 @@
   "rwCoverageKept": "{a}/{b} conservadas",
   "rwCoverageLost": "{n} perdidas",
   "rwCoverageHint": "Contado en el origen y en la reescritura, frase exacta, sin modelo.",
-  "gapNoCompetitorKeywords": "Ahrefs no devolvió ninguna palabra clave para {d} en este mercado dentro del top 20. La petición se cobró igualmente. Prueba con un competidor mayor u otro mercado: un dominio nuevo o pequeño puede no tener huella orgánica."
+  "gapNoCompetitorKeywords": "Ahrefs no devolvió ninguna palabra clave para {d} en este mercado dentro del top 20. La petición se cobró igualmente. Prueba con un competidor mayor u otro mercado: un dominio nuevo o pequeño puede no tener huella orgánica.",
+  "gapToOutlineBulk": "Generar esquema",
+  "gapToOutlineHint": "Envía el hueco filtrado al generador de esquemas: la consulta principal será el tema y el resto, palabras clave adicionales.",
+  "gapToOutlineOne": "Generar un esquema para esta consulta",
+  "gapExport": "Exportar CSV",
+  "gapExportHint": "Descarga las filas visibles, con el veredicto, ambas posiciones y el mercado — listas para un plan de contenidos o un brief."
 }

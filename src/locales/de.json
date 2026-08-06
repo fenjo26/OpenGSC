@@ -2725,5 +2725,10 @@
   "rwCoverageKept": "{a}/{b} erhalten",
   "rwCoverageLost": "{n} verloren",
   "rwCoverageHint": "In Quelle und Umschrift gezählt, exakte Phrase, ohne Modell.",
-  "gapNoCompetitorKeywords": "Ahrefs hat für {d} in diesem Markt keine Keywords in den Top 20 geliefert. Die Anfrage wurde trotzdem berechnet. Versuchen Sie einen größeren Wettbewerber oder einen anderen Markt — neue und kleine Domains haben oft keine organische Spur."
+  "gapNoCompetitorKeywords": "Ahrefs hat für {d} in diesem Markt keine Keywords in den Top 20 geliefert. Die Anfrage wurde trotzdem berechnet. Versuchen Sie einen größeren Wettbewerber oder einen anderen Markt — neue und kleine Domains haben oft keine organische Spur.",
+  "gapToOutlineBulk": "Gliederung erzeugen",
+  "gapToOutlineHint": "Schickt die gefilterte Lücke an den Gliederungs-Generator: die oberste Anfrage wird zum Thema, der Rest zu zusätzlichen Keywords.",
+  "gapToOutlineOne": "Gliederung für diese Anfrage erzeugen",
+  "gapExport": "CSV exportieren",
+  "gapExportHint": "Lädt die aktuell sichtbaren Zeilen mit Verdikt, beiden Positionen und Markt — fertig für Contentplan oder Briefing."
 }

@@ -2725,5 +2725,10 @@
   "rwCoverageKept": "{a}/{b} kept",
   "rwCoverageLost": "{n} lost",
   "rwCoverageHint": "Counted in the source and in the rewrite, exact phrase, no model involved.",
-  "gapNoCompetitorKeywords": "Ahrefs returned no keywords for {d} in this market within the top 20. The request was still charged. Try a bigger competitor, raise the market, or pick a domain with an established organic footprint."
+  "gapNoCompetitorKeywords": "Ahrefs returned no keywords for {d} in this market within the top 20. The request was still charged. Try a bigger competitor, raise the market, or pick a domain with an established organic footprint.",
+  "gapToOutlineBulk": "Write an outline",
+  "gapToOutlineHint": "Sends the filtered gap to the outline writer: the top query becomes the topic, the rest become additional keywords.",
+  "gapToOutlineOne": "Write an outline for this query",
+  "gapExport": "Export CSV",
+  "gapExportHint": "Downloads the rows currently in view, with the verdict, both positions and the market — ready for a content plan or a writer's brief."
 }

@@ -13,7 +13,8 @@
 // Sorted by the first group, because that is the work with the shortest path to traffic.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Users, Loader2, Download, ExternalLink, Search } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Users, Loader2, Download, ExternalLink, Search, PenLine, FileDown } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { COUNTRIES } from "@/lib/seo/regions";
 import {
@@ -46,6 +47,7 @@ const fmt = (n: number | null) => (n == null ? "—" : n >= 1000 ? `${(n / 1000)
 
 export default function CompetitorsPage() {
   const { t } = useLanguage();
+  const router = useRouter();
 
   const [sites, setSites] = useState<SiteOption[]>([]);
   const [siteId, setSiteId] = useState("");
@@ -124,6 +126,58 @@ export default function CompetitorsPage() {
     setBusy("keywords");
     await call("keywords", { competitor, limit, withDifficulty: withKd, maxPosition: 20 });
     setBusy(null);
+  }
+
+
+  /**
+   * Hand a gap straight to the outline writer.
+   *
+   * This is the step the tool was missing. It could tell you a competitor ranks for something you
+   * have nothing for, and then stopped — the verdict column said "write it" and there was nowhere
+   * to click. Reuses the `seoClusterSeed` contract the cluster detail view already writes, so the
+   * outline page needs no change and both entry points stay in step.
+   *
+   * `keyword` seeds the outline; the rest of the current selection rides along as additional
+   * keywords, because a gap is almost never one query — it is a page's worth of them.
+   */
+  function toOutline(seed: string, extra: string[] = []) {
+    sessionStorage.setItem("seoClusterSeed", JSON.stringify({
+      keyword: seed,
+      additional: extra.filter(k => k !== seed).join("\n"),
+      gl: country,
+    }));
+    router.push("/seo-tools/outline");
+  }
+
+
+  /**
+   * The current filter, as a file.
+   *
+   * A gap analysis is rarely acted on the same day: it goes into a content plan, a brief for a
+   * writer, or another tool entirely. Exporting the filtered view — not the whole table — keeps
+   * the decision the user just made ("show me only what I have no page for") in the file, which
+   * is the part worth carrying out of the app.
+   *
+   * BOM first, because Excel reads a UTF-8 CSV as Latin-1 without it and Greek, French and
+   * Cyrillic queries — most of this portfolio — arrive as mojibake.
+   */
+  function exportCsv() {
+    const head = ["keyword", "verdict", "competitor", "competitor_position", "competitor_url",
+                  "our_position", "our_url", "our_impressions", "volume", "difficulty", "market"];
+    const verdict = (r: GapRow) => bucketOf(r);
+    const rows = [head, ...visible.map(r => [
+      r.keyword, verdict(r), r.competitor,
+      r.competitorPosition ?? "", r.competitorUrl ?? "",
+      r.ourPosition ?? "", r.ourUrl ?? "", r.ourImpressions ?? 0,
+      r.volume ?? "", r.difficulty ?? "", country,
+    ])];
+    const csv = rows.map(r => r.map(x => `"${String(x).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const site = sites.find(x => x.id === siteId)?.url || "site";
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" }));
+    a.download = `gap-${site}-${country}-${bucket}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
   }
 
   const creds = getMetricsCreds();
@@ -248,8 +302,24 @@ export default function CompetitorsPage() {
             <button key={k} className={bucket === k ? "pill active" : "pill"}
               onClick={() => setBucket(k as Bucket | "all")} style={{ cursor: "pointer" }}>{label}</button>
           ))}
+          {/* Bulk hand-off: the highest-volume row of the current filter becomes the outline seed
+              and everything else visible becomes its additional keywords. Placed next to the
+              bucket filters on purpose — "Нет контента" filtered, then this button, is the whole
+              workflow this screen exists for. */}
+          {visible.length > 0 && (
+            <button className="metric-action" style={{ marginLeft: "auto" }}
+              title={t("gapToOutlineHint")}
+              onClick={() => toOutline(visible[0].keyword, visible.slice(0, 40).map(v => v.keyword))}>
+              <PenLine size={11} /> {t("gapToOutlineBulk")}
+            </button>
+          )}
+          {visible.length > 0 && (
+            <button className="metric-action" onClick={exportCsv} title={t("gapExportHint")}>
+              <FileDown size={11} /> {t("gapExport")}
+            </button>
+          )}
           <input className="tool-input inline" value={search} onChange={e => setSearch(e.target.value)}
-            placeholder={t("sdkSearch")} style={{ marginLeft: "auto", minWidth: "200px" }} />
+            placeholder={t("sdkSearch")} style={{ minWidth: "200px" }} />
         </div>
       )}
 
@@ -295,8 +365,20 @@ export default function CompetitorsPage() {
                     </td>
                     <td style={{ ...cell, textAlign: "right" }}>{fmt(r.volume)}</td>
                     <td style={{ ...cell, textAlign: "center", color: "var(--color-text-secondary)" }}>{r.difficulty ?? "—"}</td>
-                    <td style={{ ...cell, fontSize: "11px", color: BUCKET_COLOR[bk], fontWeight: 600 }}>
-                      {bk === "close" ? t("gapActClose") : bk === "weak" ? t("gapActWeak") : t("gapActMissing")}
+                    {/* The verdict is now the action. It read as advice and behaved as a label,
+                        which is the same dead end as a warning with no button under it. */}
+                    <td style={{ ...cell, fontSize: "11px", fontWeight: 600 }}>
+                      <button
+                        onClick={() => toOutline(r.keyword, visible.slice(0, 40).map(v => v.keyword))}
+                        title={t("gapToOutlineOne")}
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: "4px",
+                          background: "transparent", border: "none", padding: 0, cursor: "pointer",
+                          font: "inherit", color: BUCKET_COLOR[bk], textDecoration: "underline",
+                          textDecorationStyle: "dotted", textUnderlineOffset: "3px",
+                        }}>
+                        {bk === "close" ? t("gapActClose") : bk === "weak" ? t("gapActWeak") : t("gapActMissing")}
+                      </button>
                     </td>
                   </tr>
                 );

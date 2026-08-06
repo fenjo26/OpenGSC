@@ -2725,5 +2725,10 @@
   "rwCoverageKept": "保留 {a}/{b}",
   "rwCoverageLost": "丢失 {n}",
   "rwCoverageHint": "在原文与改写稿中按完整短语计数，不经过模型。",
-  "gapNoCompetitorKeywords": "Ahrefs 未返回 {d} 在该市场前 20 名内的任何关键词。该请求仍然计费。请尝试更大的竞争对手或其他市场——新站和小站可能没有自然搜索足迹。"
+  "gapNoCompetitorKeywords": "Ahrefs 未返回 {d} 在该市场前 20 名内的任何关键词。该请求仍然计费。请尝试更大的竞争对手或其他市场——新站和小站可能没有自然搜索足迹。",
+  "gapToOutlineBulk": "生成大纲",
+  "gapToOutlineHint": "将筛选后的内容缺口发送到大纲生成器：排在最前的查询作为主题，其余作为补充关键词。",
+  "gapToOutlineOne": "为该查询生成大纲",
+  "gapExport": "导出 CSV",
+  "gapExportHint": "下载当前视图中的行，含判定、双方排名与市场——可直接用于内容计划或写作简报。"
 }

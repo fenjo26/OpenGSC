@@ -2725,5 +2725,10 @@
   "rwCoverageKept": "{a}/{b} conservés",
   "rwCoverageLost": "{n} perdus",
   "rwCoverageHint": "Compté dans la source et dans la réécriture, expression exacte, sans modèle.",
-  "gapNoCompetitorKeywords": "Ahrefs n'a renvoyé aucun mot-clé pour {d} sur ce marché dans le top 20. La requête a tout de même été facturée. Essayez un concurrent plus important ou un autre marché — un domaine récent ou petit peut n'avoir aucune empreinte organique."
+  "gapNoCompetitorKeywords": "Ahrefs n'a renvoyé aucun mot-clé pour {d} sur ce marché dans le top 20. La requête a tout de même été facturée. Essayez un concurrent plus important ou un autre marché — un domaine récent ou petit peut n'avoir aucune empreinte organique.",
+  "gapToOutlineBulk": "Générer un plan",
+  "gapToOutlineHint": "Envoie l'écart filtré au générateur de plan : la requête principale devient le sujet, les autres deviennent des mots-clés additionnels.",
+  "gapToOutlineOne": "Générer un plan pour cette requête",
+  "gapExport": "Exporter en CSV",
+  "gapExportHint": "Télécharge les lignes affichées, avec le verdict, les deux positions et le marché — prêtes pour un plan de contenu ou un brief."
 }
