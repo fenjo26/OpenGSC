@@ -2694,6 +2694,8 @@
   "siteMarket": "Market",
   "siteMarketAuto": "From the domain",
   "siteMarketUnknown": "Market not set",
+  "siteMarketSet": "Set market",
+  "siteMarketEdit": "click to change",
   "siteMarketHint": "Keyword volumes are bought and cached per country. Without a market, this site is skipped by the cache warm-up instead of being researched against the wrong one.",
   "kwSrcTitle": "Keyword data source",
   "kwSrcSub": "Where the AI content tools get search volumes, difficulty and intent. Until this existed they only ever asked DataForSEO, so an Ahrefs subscriber writing an outline got no keyword data — and was not told.",

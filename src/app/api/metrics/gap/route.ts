@@ -138,11 +138,17 @@ export async function POST(req: Request) {
     }
     await recordUsage(userId, provider, units);
 
-    const res = await fetchOrganicCompetitors({ provider, apiKey, baseUrl }, norm(site.url), { limit, country });
-    if (res.error) return respond({ error: res.error }, 502);
-    // Returned, not stored: this list is a menu the user picks from, and the expensive step is
-    // the next one. Persisting it would suggest work has been done that has not.
-    return respond({ units, found: res.items });
+    try {
+      const res = await fetchOrganicCompetitors({ provider, apiKey, baseUrl }, norm(site.url), { limit, country });
+      if (res.error) return respond({ error: res.error }, 502);
+      // Returned, not stored: this list is a menu the user picks from, and the expensive step is
+      // the next one. Persisting it would suggest work has been done that has not.
+      return respond({ units, found: res.items });
+    } catch (e: any) {
+      // A thrown error is a bug or a provider change, not an empty result. Surfacing it as a
+      // message beats a silent 500 where the UI shows nothing and the user re-clicks to no effect.
+      return respond({ error: `internal: ${String(e?.message ?? e).slice(0, 300)}` }, 500);
+    }
   }
 
   // ── Pull one competitor's keywords ──
@@ -166,9 +172,16 @@ export async function POST(req: Request) {
     }
     await recordUsage(userId, provider, units);
 
-    const res = await fetchOrganicKeywords({ provider, apiKey, baseUrl }, competitor, {
-      limit, country, withDifficulty, maxPosition,
-    });
+    let res;
+    try {
+      res = await fetchOrganicKeywords({ provider, apiKey, baseUrl }, competitor, {
+        limit, country, withDifficulty, maxPosition,
+      });
+    } catch (e: any) {
+      // Same rationale as the competitors block: a throw here is a bug, and a silent 500 reads as
+      // "nothing happened" — exactly the symptom that sent this route here in the first place.
+      return respond({ error: `internal: ${String(e?.message ?? e).slice(0, 300)}` }, 500);
+    }
     if (res.error) return respond({ error: res.error }, 502);
 
     // Replace rather than merge: a keyword the competitor no longer ranks for should disappear

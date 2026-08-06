@@ -2694,6 +2694,8 @@
   "siteMarket": "Mercado",
   "siteMarketAuto": "Según el dominio",
   "siteMarketUnknown": "Mercado sin definir",
+  "siteMarketSet": "Definir mercado",
+  "siteMarketEdit": "clic para cambiar",
   "siteMarketHint": "Los volúmenes se compran y guardan por país. Sin mercado, este sitio se omite en el precalentamiento en lugar de analizarse con el país equivocado.",
   "kwSrcTitle": "Fuente de datos de palabras clave",
   "kwSrcSub": "De dónde sacan volúmenes, dificultad e intención las herramientas de contenido. Antes de este ajuste solo preguntaban a DataForSEO: quien pagaba Ahrefs obtenía un esquema sin ningún dato de palabras clave, y sin aviso.",

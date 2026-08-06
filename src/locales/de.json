@@ -2694,6 +2694,8 @@
   "siteMarket": "Markt",
   "siteMarketAuto": "Aus der Domain",
   "siteMarketUnknown": "Markt nicht gesetzt",
+  "siteMarketSet": "Markt festlegen",
+  "siteMarketEdit": "zum Ändern klicken",
   "siteMarketHint": "Suchvolumen werden pro Land gekauft und zwischengespeichert. Ohne Markt wird diese Website beim Vorwärmen übersprungen statt im falschen Land recherchiert.",
   "kwSrcTitle": "Quelle der Keyword-Daten",
   "kwSrcSub": "Woher die KI-Inhaltswerkzeuge Suchvolumen, Schwierigkeit und Intent beziehen. Vor dieser Einstellung fragten sie nur DataForSEO — wer Ahrefs bezahlte, bekam eine Gliederung ganz ohne Keyword-Daten, ohne Hinweis.",

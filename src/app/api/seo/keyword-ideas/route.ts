@@ -2,9 +2,8 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { expandKeywords, type KwSource } from "@/lib/seo/keywordSource";
-import { priceExpand } from "@/lib/seo/metricsClient";
+import { priceExpand, type IdeaMode } from "@/lib/seo/metrics";
 import { readUsage, recordUsage, withinCap } from "@/lib/seo/metricsStore";
-import type { IdeaMode } from "@/lib/seo/metrics";
 
 // POST /api/seo/keyword-ideas
 //   { seed, country, language?, limit?, withDifficulty?, mode?,
@@ -69,9 +68,21 @@ export async function POST(req: Request) {
     await recordUsage(userId, provider, price.units);
   }
 
-  const res = await expandKeywords({ source, apiKey, baseUrl }, seed, {
-    country, language, limit, withDifficulty, mode, fetch: true,
-  });
+  let res;
+  try {
+    res = await expandKeywords({ source, apiKey, baseUrl }, seed, {
+      country, language, limit, withDifficulty, mode, fetch: true,
+    });
+  } catch (e: any) {
+    // A thrown error here is a bug, not a provider refusal — providers return their errors inside
+    // the result. Surfacing it as JSON (rather than a bare 500) means the UI can show what broke
+    // instead of silently doing nothing.
+    return NextResponse.json({
+      items: [], source, units: 0, usd: 0,
+      usage: provider ? await readUsage(userId, provider) : null,
+      error: `internal: ${String(e?.message ?? e).slice(0, 300)}`,
+    }, { status: 500 });
+  }
 
   if (res.error && !res.rows.length) {
     return NextResponse.json({

@@ -176,6 +176,38 @@ export function estimateSemrushIdeaUnits(limit: number): number {
 export const SEMRUSH_COMPETITOR_UNITS_PER_ROW = 40;
 export const SEMRUSH_ORGANIC_KEYWORD_UNITS_PER_ROW = 10;
 
+/**
+ * Pricing for the keyword-source layer, so a button can quote itself before it is pressed.
+ *
+ * Lives here — not in `metricsClient.ts` — because the server route charges the cap before the
+ * call, and `metricsClient.ts` is `"use client"`: importing it from a server route fails the
+ * production bundle. `metrics.ts` is imported by both sides and touches no browser API, so it is
+ * the one place that stays safe for both. `metricsClient.ts` re-exports both for the browser
+ * callers, so existing imports keep working.
+ */
+export function priceExpand(
+  source: string, limit: number, withDifficulty: boolean, mode: IdeaMode = "matching",
+): { units: number; usd: number } {
+  if (source === "ahrefs") {
+    const units = estimateIdeaUnits(mode, limit, withDifficulty);
+    return { units, usd: estimateCostUsd(units, "ahrefs") };
+  }
+  if (source === "semrush") {
+    const units = estimateSemrushIdeaUnits(limit);
+    return { units, usd: estimateCostUsd(units, "semrush") };
+  }
+  return { units: 0, usd: 0 };
+}
+
+/** Cost of pricing N unknown keywords, so a button can quote itself before it is pressed. */
+export function priceEnrich(source: string, count: number, withDifficulty: boolean) {
+  if (source === "ahrefs" || source === "semrush") {
+    const units = estimateKeywordUnits(count, withDifficulty);
+    return { units, usd: estimateCostUsd(units, source as MetricsProvider) };
+  }
+  return { units: 0, usd: 0 };
+}
+
 // ─── Concurrency + retries ─────────────────────────────────────────────────────
 
 /**

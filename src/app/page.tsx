@@ -594,6 +594,9 @@ function PortfolioPageContent() {
   // Per-site market override, mirroring `editingTagSiteId`. The market drives which country the
   // keyword cache is filed under, so editing it is a correctness lever — not a preference.
   const [editingMarketId, setEditingMarketId] = useState<string | null>(null);
+  // Market filter chip — null = show all. Special value "__unknown__" matches sites whose market
+  // cannot be resolved, the same amber set the card highlights.
+  const [activeMarket, setActiveMarket] = useState<string | null>(null);
   const [period, setPeriod]     = useState("7d");
   // Search-engine portfolio tabs. Google = local DB; Bing/Yandex = live, fetched on tab
   // click and cached per engine+period so switching back is instant.
@@ -850,6 +853,8 @@ function PortfolioPageContent() {
   const activeFilterCount = [
     branded !== "all",
     filterDimension !== null && filterText.trim() !== "",
+    !!activeTag,
+    !!activeMarket,
   ].filter(Boolean).length;
 
   // Fetch Ahrefs DR for all dashboard domains (chunked; server caches 7 days).
@@ -900,21 +905,37 @@ function PortfolioPageContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sites.length]);
 
+  // Resolve a site's market the same way the card chip does: explicit override, then ccTLD, then
+  // null. Kept as a helper so the filter and the totals row answer the same question the card does.
+  const marketOf = (s: any) => marketFor({ url: s.url, siteId: s.siteId, market: s.market });
+  // `__unknown__` is the active-market value for the amber set — sites whose market cannot be
+  // resolved and which therefore file paid keyword data under the wrong country (or refuse it).
+  const marketMatch = (s: any) => {
+    if (!activeMarket) return true;
+    const m = marketOf(s);
+    return activeMarket === "__unknown__" ? m === null : m === activeMarket;
+  };
+
   const filtered = sitesWithData
     .filter(s => {
       const domain = getDomain(s.url).toLowerCase();
       const tagsStr = (siteTags[s.id] || []).join(" ").toLowerCase();
       const searchLower = search.toLowerCase();
-      
+
       if (!domain.includes(searchLower) && !tagsStr.includes(searchLower)) return false;
       if (branded === "branded"    && brandedRatio(s.url) <  0.45) return false;
       if (branded === "nonbranded" && brandedRatio(s.url) >= 0.45) return false;
+      if (activeTag && !(siteTags[s.id] || []).includes(activeTag)) return false;
+      if (activeMarket && !marketMatch(s)) return false;
       // Portfolio dimension filters work on domain/position, so they apply to every engine.
       if (filterText.trim() && filterText !== "__longtail__") {
         const txt = filterText.trim().toLowerCase();
         if (filterDimension === "country") {
+          // Match the resolved market (override + ccTLD), falling back to the TLD as a textual
+          // hint — so "gr" finds both a `.gr` domain and a `.com` site whose market is set to gr.
+          const m = marketOf(s);
           const tld = domain.split(".").pop() ?? "";
-          if (!tld.includes(txt)) return false;
+          if (!(m === txt || tld.includes(txt))) return false;
         } else if (filterDimension === "query" || filterDimension === "page") {
           if (!domain.includes(txt)) return false;
         }
@@ -981,10 +1002,11 @@ function PortfolioPageContent() {
   const restSites   = liveFiltered.filter(s => !favorites.has(s.id) && !hidden.has(s.id));
   const hiddenSites = liveFiltered.filter(s => hidden.has(s.id));
 
-  // ─── Totals from visible (filtered) sites — respects search/tag/branded filters ──
-  // When a tag is active, totals are computed only over sites carrying that tag
+  // ─── Totals from visible (filtered) sites — respects search/tag/market/branded filters ──
+  // When a tag or market is active, totals are computed only over sites matching it
   const visibleForTotals = [...favSites, ...restSites].filter(
-    s => !activeTag || (siteTags[s.id] || []).includes(activeTag)
+    s => (!activeTag || (siteTags[s.id] || []).includes(activeTag))
+      && (!activeMarket || marketMatch(s))
   );
   const totalClicks      = visibleForTotals.reduce((s, site) => s + (site.summary?.clicks?.value ?? 0), 0);
   const totalImpressions = visibleForTotals.reduce((s, site) => s + (site.summary?.impressions?.value ?? 0), 0);
@@ -1212,6 +1234,44 @@ function PortfolioPageContent() {
         );
       })()}
 
+      {/* Market filter — derived from the resolved market (override + ccTLD), so a `.com` site set
+          to `gr` appears under gr, not under "com". `__unknown__` groups the amber set: sites the
+          keyword cache cannot file correctly until a human picks a market. */}
+      {(() => {
+        const counts = new Map<string, number>();
+        for (const s of sites) {
+          const m = marketOf(s);
+          const key = m === null ? "__unknown__" : m;
+          counts.set(key, (counts.get(key) ?? 0) + 1);
+        }
+        if (counts.size <= 1) return null; // one bucket = nothing to filter between
+        const entries = [...counts.entries()].sort((a, b) =>
+          a[0] === "__unknown__" ? 1 : b[0] === "__unknown__" ? -1 : a[0].localeCompare(b[0]),
+        );
+        return (
+          <>
+            {md}{ms(t("siteMarket"))}
+            <div style={{ padding: "4px 14px 10px", display: "flex", gap: "6px", flexWrap: "wrap" }}>
+              {entries.map(([key, n]) => {
+                const unknown = key === "__unknown__";
+                const isActive = activeMarket === key;
+                return (
+                  <button key={key} onClick={() => setActiveMarket(isActive ? null : key)} style={{
+                    padding: "4px 10px", borderRadius: "20px", fontSize: "12px", fontWeight: 500, cursor: "pointer",
+                    border: `1px solid ${isActive ? "#ff9f0a" : "var(--color-border)"}`,
+                    background: isActive ? "rgba(255,159,10,0.16)" : "transparent",
+                    color: isActive ? "#ff9f0a" : "var(--color-text-secondary)",
+                  }}>
+                    {unknown ? t("siteMarketUnknown") : key.toUpperCase()} <span style={{ opacity: 0.6 }}>{n}</span>
+                    {isActive && <span style={{ marginLeft: "5px", fontWeight: 700 }}>✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        );
+      })()}
+
       {md}{ms(t("presetFilters"))}
       <button style={mi(filterDimension === "query" && filterText === "?")}
         onClick={() => { setFilterDimension("query"); setFilterText("?"); }}>
@@ -1226,7 +1286,7 @@ function PortfolioPageContent() {
       {activeFilterCount > 0 && (
         <>
           {md}
-          <button style={{ ...mi(), color: "#EF4444" }} onClick={() => { setBranded("all"); setFilterDimension(null); setFilterText(""); }}>
+          <button style={{ ...mi(), color: "#EF4444" }} onClick={() => { setBranded("all"); setFilterDimension(null); setFilterText(""); setActiveTag(null); setActiveMarket(null); }}>
             <X size={13}/> Reset filters
           </button>
         </>
@@ -1464,23 +1524,27 @@ function PortfolioPageContent() {
               {(() => {
                 // The market chip: a resolved gl code (from override or ccTLD) shows muted; an
                 // unknown market shows amber, because keyword data will be filed under the wrong
-                // country — or refused outright — until a human picks one.
+                // country — or refused outright — until a human picks one. Click opens the inline
+                // editor — the chip is the only entry point, so it must read as interactive.
                 const effective = marketFor({ url: site.url, siteId: site.siteId, market: site.market });
                 const unknown = effective === null;
+                const editing = editingMarketId === site.id;
                 return (
                   <span
-                    title={unknown ? t("siteMarketUnknown") : `${t("siteMarket")}: ${effective.toUpperCase()}`}
-                    onClick={e => { e.preventDefault(); e.stopPropagation(); setEditingMarketId(editingMarketId === site.id ? null : site.id); }}
+                    title={unknown ? t("siteMarketUnknown") : `${t("siteMarket")}: ${effective.toUpperCase()} — ${t("siteMarketEdit")}`}
+                    onClick={e => { e.preventDefault(); e.stopPropagation(); setEditingMarketId(editing ? null : site.id); }}
                     style={{
                       fontSize: "10px", fontWeight: 700, padding: "2px 6px", borderRadius: "4px",
-                      whiteSpace: "nowrap", cursor: "pointer", textTransform: "uppercase",
+                      whiteSpace: "nowrap", cursor: "pointer",
+                      textTransform: unknown ? "none" : "uppercase",
                       background: unknown ? "rgba(255,159,10,0.16)" : "rgba(139,92,246,0.12)",
                       color: unknown ? "#ff9f0a" : "#8B5CF6",
-                      outline: editingMarketId === site.id ? "1.5px solid #8B5CF6" : "none",
+                      border: unknown ? "1px dashed rgba(255,159,10,0.5)" : "1px solid transparent",
+                      outline: editing ? "1.5px solid #8B5CF6" : "none",
                       outlineOffset: "1px",
                     }}
                   >
-                    {unknown ? "·/?" : effective}
+                    {unknown ? `⚠ ${t("siteMarketSet")}` : effective}
                   </span>
                 );
               })()}

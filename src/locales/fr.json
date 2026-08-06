@@ -2694,6 +2694,8 @@
   "siteMarket": "Marché",
   "siteMarketAuto": "D'après le domaine",
   "siteMarketUnknown": "Marché non défini",
+  "siteMarketSet": "Définir le marché",
+  "siteMarketEdit": "cliquer pour modifier",
   "siteMarketHint": "Les volumes sont achetés et mis en cache par pays. Sans marché, ce site est ignoré par le préchauffage plutôt qu'analysé sur le mauvais pays.",
   "kwSrcTitle": "Source des données mots-clés",
   "kwSrcSub": "D'où les outils de contenu tirent volumes, difficulté et intention. Avant ce réglage ils n'interrogeaient que DataForSEO : un abonné Ahrefs obtenait donc un plan sans aucune donnée mot-clé, sans en être averti.",

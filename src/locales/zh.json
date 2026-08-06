@@ -2694,6 +2694,8 @@
   "siteMarket": "市场",
   "siteMarketAuto": "根据域名",
   "siteMarketUnknown": "未设置市场",
+  "siteMarketSet": "设置市场",
+  "siteMarketEdit": "点击修改",
   "siteMarketHint": "搜索量按国家购买并缓存。未设置市场时，该站点会在预热时被跳过，而不是按错误的国家调研。",
   "kwSrcTitle": "关键词数据来源",
   "kwSrcSub": "AI 内容工具从哪里获取搜索量、难度与意图。在此设置出现之前，它们只询问 DataForSEO——因此持有 Ahrefs 密钥的用户写大纲时完全拿不到关键词数据，而且不会收到任何提示。",
