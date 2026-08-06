@@ -3,6 +3,135 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
+## [1.2.3] — 2026-08-06
+
+### Added
+
+**Content tools now use whichever keyword source you actually pay for**
+
+Writing an outline with a Serper SERP key and an Ahrefs key used to produce no keyword data at
+all, because every content tool was hard-wired to DataForSEO and said nothing when that key was
+absent. Worse, the outline prompt kept its "split keywords by frequency: ВЧ → H1, СЧ → H2, НЧ →
+H3" instruction regardless, so the model applied it to an imaginary frequency breakdown — an
+outline that looked methodically correct built on numbers that did not exist.
+
+A new `keywordSource` layer routes a seed through Ahrefs → Semrush → DataForSEO by which key is
+configured, reading the shared cache first and for free. Outline, landing and cluster were
+moved onto it; the standalone `keywords.ts` (DataForSEO-only, uncached) and a fourth private
+DataForSEO client in `generate.ts` were deleted. When no source is configured, the outline and
+landing pages now show an explicit "keywords not loaded: source not configured" banner instead
+of staying silent, and the prompt drops the frequency rule rather than running it on nothing.
+
+A new selector in **Settings → SEO Metrics** lets you lock the source (`auto` / `ahrefs` /
+`semrush` / `dataforseo` / `off`) and shows which one `auto` resolved to. Every paid call quotes
+its own price in units and USD on the button before it is pressed.
+
+**Rewrite now keeps the ranking phrases it was asked to keep**
+
+`RewriteBody` gained an optional `targetKeywords` field, and a new deterministic
+`keywordCoverage` check (next to `uniquenessPct` and `factDrift`) reports, per target phrase,
+how many times it appeared in the source vs the rewrite. A phrase that quietly disappeared from a
+two-thousand-word text — the same class of invisible risk `factDrift` catches for numbers — is
+now surfaced explicitly. The UI has a target-keywords input and a coverage panel under each
+variant.
+
+**Portfolio cache warm-up**
+
+With 210 sites and 0.8% keyword-metric coverage, loading volumes page by page is not realistic.
+A new **warm-up** panel prices the whole striking-distance gap for a site, tag or market up front
+and fills it in one button — the 1 714 uncovered striking-distance terms on the live server cost
+≈ $0.56 in one click. Grouped by market, with the sites it skipped (unknown market) listed
+separately.
+
+**Per-site market selector**
+
+Keyword data is bought and cached per country, so the market a site targets is a correctness
+property, not a preference. A new amber chip on each site card shows the resolved market (from an
+override, then the ccTLD, then `unknown`), and an inline editor sets it. `Site.market` is a
+nullable column; a backfill script (`scripts/backfill-site-market.ts`) fills the ~170 inferable
+ones from the ccTLD and leaves the rest for a human. **Run `npx prisma db push` after updating,
+then `npx tsx scripts/backfill-site-market.ts --apply`.**
+
+**Semrush now works on the Competitors screen**
+
+`fetchOrganicCompetitors` and `fetchOrganicKeywords` no longer return `provider_unsupported` for
+Semrush — they call `domain_organic_organic` (40 units/line) and `domain_organic` (10 units/line,
+`Kd` included at no surcharge). The gap route's cap check now uses the provider's own rate, so a
+Semrush call is quoted honestly before it runs. Backlinks stay Ahrefs-only (Semrush 40 units/line
+against Ahrefs' 5) and the UI still says so.
+
+### Changed
+
+**Unknown country is now an error, not a silent default to the US**
+
+Three independent code paths (`demand.ts`, the deleted `keywords.ts`, `generate.ts`) turned an
+unknown country code into US location 2840 with no warning, so keyword research for the 18-site
+Bosnian cluster silently returned American volumes. The Balkans (`ba`, `me`, `mk`, `al`, `si`)
+are now in the location table, and every other unknown code returns `unsupported_country` rather
+than a wrong answer. `country` is a required argument in all five `metrics.ts` entry points
+(including the Semrush one, where the parameter is named `database`).
+
+**`readKeywordCacheAny` reads across all providers**
+
+A row bought from Ahrefs was invisible to a query configured for Semrush, and vice versa. The new
+cache reader spans providers and prefers a row with `difficulty` over a fresher one without it,
+so a cheap volume refresh cannot bury a KD that cost ten times as much.
+
+**MCP `research_keywords` can use Ahrefs**
+
+It was DataForSEO-only. It now routes through the same `keywordSource` layer, and the provider is
+folded into the `DemandSearch` cache key as a prefix (`ahrefs:seed|…`), reusing the namespace
+pattern `aeo/mentions` already established with `llm:` — no schema migration needed.
+
+## [Unreleased]
+
+### Added
+
+**Properties removed from Search Console now leave the dashboard**
+
+Delete a property in Search Console and it used to stay on the dashboard forever. Replacing
+nine banned domains left nine dead cards sitting among the live ones, dragging the portfolio
+totals down and showing a flat line nobody could act on.
+
+The cause was that site discovery only ever inserted. `GET /api/gsc/sites` upserted everything
+Google returned and did nothing at all about rows Google had stopped returning, and there was no
+way to remove a site by hand either — no endpoint, no button. Once a row was in the `Site` table
+it was there for good.
+
+Sites Google no longer lists are now moved to an **Archive** group, collapsed at the bottom of
+the dashboard. Archiving is soft on purpose: everything already collected for that domain —
+metrics, audits, tracked keywords, backlinks, Clarity snapshots — stays in the database and stays
+queryable, which matters when the domain was replaced rather than abandoned and you still want to
+compare the new one against it. Each row has **Restore**, and **Delete** for permanent removal
+once the history is genuinely not needed. New `Site.archivedAt` — **run `npx prisma db push`
+after updating**.
+
+Reconciliation runs in two places, so it does not depend on anyone opening a browser: in the
+dashboard's own site fetch, and in `runGscSync()`, which means a scheduled sync on a headless
+instance keeps the list honest by itself. It works in both directions — a property that comes
+back (re-verified, or the same domain added again) leaves the archive on the next pass.
+
+It will not archive on a partial read. Every linked account has to have answered without error
+and the list has to be non-empty, and in `runGscSync()` a failed `sites.list` disqualifies that
+user entirely rather than just the one account. The alternative is a dashboard that empties
+itself because a token expired overnight, which looks exactly like losing your data.
+
+### Changed
+
+**Archived sites are excluded from the background schedulers**
+
+A dead domain was still being checked on schedule. The rank scheduler spent paid SERP calls on
+it, the AEO scheduler spent AI calls, Clarity collection logged a daily failure against a project
+receiving no traffic, and the alert scheduler fired a traffic-drop alert on every run — because
+traffic going to zero is precisely what a removed property does.
+
+All four now skip archived sites, as does the per-site metric work in `/api/gsc/portfolio`, which
+returns a zeroed payload for them instead of running two queries and a sparkline calculation that
+can only ever draw a flat line. Archived rows are still sent to the client, because that is what
+the Archive group lists.
+
+`runGscSync()` itself never touched them — it walks Google's list, and they are not on it.
+
 ## [1.2.2] — 2026-08-05
 
 ### Added

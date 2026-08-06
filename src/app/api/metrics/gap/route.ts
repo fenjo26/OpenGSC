@@ -4,7 +4,9 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   fetchOrganicCompetitors, fetchOrganicKeywords,
-  estimateCompetitorUnits, estimateOrganicKeywordUnits, MetricsProvider,
+  estimateCompetitorUnits, estimateOrganicKeywordUnits,
+  SEMRUSH_COMPETITOR_UNITS_PER_ROW, SEMRUSH_ORGANIC_KEYWORD_UNITS_PER_ROW,
+  MetricsProvider,
 } from "@/lib/seo/metrics";
 import { readUsage, recordUsage, withinCap } from "@/lib/seo/metricsStore";
 import { runUpsert } from "@/lib/db/upsert";
@@ -125,7 +127,12 @@ export async function POST(req: Request) {
   // ── Discover competitors ──
   if (action === "competitors") {
     const limit = Math.max(5, Math.min(50, Number(b.limit ?? 20)));
-    const units = estimateCompetitorUnits(limit);
+    // Semrush prices `domain_organic_organic` at a flat 40 units/line regardless of columns —
+    // the Ahrefs per-field formula would under-quote it, and a cap that lets the cheaper price
+    // through is the one failure mode here (the call lands and the real bill breaches the cap).
+    const units = provider === "semrush"
+      ? SEMRUSH_COMPETITOR_UNITS_PER_ROW * limit
+      : estimateCompetitorUnits(limit);
     if (!(await withinCap(userId, provider, units, cap))) {
       return respond({ error: "cap_exceeded", wouldSpend: units }, 429);
     }
@@ -148,7 +155,12 @@ export async function POST(req: Request) {
     const withDifficulty = !!b.withDifficulty;
     const maxPosition = Math.max(1, Math.min(100, Number(b.maxPosition ?? 20)));
 
-    const units = estimateOrganicKeywordUnits(limit, withDifficulty);
+    // Semrush `domain_organic` is 10 units/line flat; Ahrefs' per-field formula matches that when
+    // KD is off and exceeds it when KD is on (10 extra). Using the provider's own rate keeps the
+    // cap check honest either way.
+    const units = provider === "semrush"
+      ? SEMRUSH_ORGANIC_KEYWORD_UNITS_PER_ROW * limit
+      : estimateOrganicKeywordUnits(limit, withDifficulty);
     if (!(await withinCap(userId, provider, units, cap))) {
       return respond({ error: "cap_exceeded", wouldSpend: units }, 429);
     }

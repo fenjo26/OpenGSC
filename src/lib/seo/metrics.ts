@@ -32,6 +32,23 @@ export const DEFAULT_BASE_URL: Record<MetricsProvider, string> = {
 
 // ─── Cost model ────────────────────────────────────────────────────────────────
 
+/**
+ * Published gateway rates, used only to turn a unit count into a number a human can judge.
+ *
+ * Lives here rather than in `metricsClient.ts` — where it started — because the server now prices
+ * requests too, and that file is `"use client"`. Importing a client module into a server one to
+ * get at two constants would drag the whole browser-storage surface across the boundary.
+ * `metricsClient` re-exports both, so every existing import keeps working unchanged.
+ */
+export const UNIT_PRICE_USD: Record<MetricsProvider, number> = {
+  ahrefs: 0.000025,
+  semrush: 0.00006,
+};
+
+export function estimateCostUsd(units: number, provider: MetricsProvider): number {
+  return units * (UNIT_PRICE_USD[provider] ?? 0);
+}
+
 /** Ahrefs charges a flat 50 units for anything cheaper, so tiny batches are pure waste. */
 export const AHREFS_UNIT_FLOOR = 50;
 
@@ -59,6 +76,17 @@ const AHREFS_PREMIUM_FIELDS: Record<string, Record<string, number>> = {
   "site-explorer/all-backlinks": {
     traffic: 10, traffic_domain: 10,
     class_c: 5, refdomains_source: 5, refdomains_source_domain: 5, refdomains_target_domain: 5,
+  },
+  // Keyword ideas. Same premium set as `overview` — the endpoint differs, the price of a column
+  // does not. `limit` is what makes these expensive: Ahrefs bills the rows it returns, so asking
+  // for 1000 ideas costs ten times what asking for 100 does.
+  "keywords-explorer/matching-terms": {
+    volume: 10, difficulty: 10, global_volume: 10, intents: 10,
+    traffic_potential: 10, volume_monthly: 10,
+  },
+  "keywords-explorer/related-terms": {
+    volume: 10, difficulty: 10, global_volume: 10, intents: 10,
+    traffic_potential: 10, volume_monthly: 10,
   },
   "site-explorer/refdomains": { traffic_domain: 10, dofollow_refdomains: 5 },
   "site-explorer/organic-competitors": {
@@ -99,6 +127,54 @@ export function estimateKeywordUnits(count: number, withDifficulty: boolean): nu
   const select = withDifficulty ? [...KEYWORD_FIELDS_BASE, ...KEYWORD_FIELDS_KD] : KEYWORD_FIELDS_BASE;
   return estimateUnits("keywords-explorer/overview", select, count);
 }
+
+/**
+ * Which flavour of "more keywords like this" to ask for.
+ *
+ * `matching` (matching-terms) returns the long tail that literally contains the seed — the shape
+ * the content tools expect, and the closest match to what DataForSEO's related_keywords returned
+ * before. `related` (related-terms) returns what top-ranking pages ALSO rank for, which finds
+ * neighbouring topics that share no words with the seed. They answer different questions and are
+ * billed separately, so this is a choice and never a merge.
+ */
+export type IdeaMode = "matching" | "related";
+
+/** Ideas carry the same columns as an overview row; KD stays optional for the same reason. */
+export const IDEA_FIELDS_BASE = ["keyword", "volume", "cpc", "parent_topic"];
+
+export function ideaEndpoint(mode: IdeaMode): string {
+  return mode === "related" ? "keywords-explorer/related-terms" : "keywords-explorer/matching-terms";
+}
+
+/**
+ * Price of one ideas request.
+ *
+ * `limit` is the row count Ahrefs will bill, so this is a ceiling rather than an estimate: a thin
+ * seed returns fewer rows and costs less. Quoting the ceiling is deliberate — a button that
+ * under-promises the price is the one that gets pressed by accident.
+ */
+export function estimateIdeaUnits(mode: IdeaMode, limit: number, withDifficulty: boolean): number {
+  const select = withDifficulty ? [...IDEA_FIELDS_BASE, ...KEYWORD_FIELDS_KD] : IDEA_FIELDS_BASE;
+  return estimateUnits(ideaEndpoint(mode), select, limit);
+}
+
+/**
+ * Semrush prices a whole report per line, not per column, so its ideas cost is a flat rate.
+ * `phrase_fullsearch` (broad match) is 20 units/line against `phrase_related`'s 40 and returns
+ * `Kd` in the same report — which makes it the only sensible choice here.
+ */
+export const SEMRUSH_IDEA_UNITS_PER_ROW = 20;
+
+export function estimateSemrushIdeaUnits(limit: number): number {
+  return SEMRUSH_IDEA_UNITS_PER_ROW * Math.max(1, limit);
+}
+
+// Domain reports: per-line flat rates, same column-agnostic pricing as ideas. `domain_organic`
+// (the keywords a domain ranks for) is 10 units/line; `domain_organic_organic` (organic
+// competitors) is 40. KD is part of the `domain_organic` report at no surcharge — the same
+// structural fact that makes it free in `phrase_these`.
+export const SEMRUSH_COMPETITOR_UNITS_PER_ROW = 40;
+export const SEMRUSH_ORGANIC_KEYWORD_UNITS_PER_ROW = 10;
 
 // ─── Concurrency + retries ─────────────────────────────────────────────────────
 
@@ -195,6 +271,20 @@ const num = (v: any): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
+/**
+ * The market is a required argument, not a defaulted one.
+ *
+ * Every call here used to read `opts.country || "us"`. The cache is keyed on
+ * `(keyword, country, provider)`, so a missing market did not merely query the wrong country —
+ * it wrote the answer into a cell nothing would ever read again. A Greek keyword bought as `us`
+ * stays invisible to the Greek view that paid for it, forever, and the screen shows an em dash
+ * beside a row that is already on the invoice.
+ *
+ * Required in the type so the compiler catches static callers, and re-checked here because the
+ * API routes build these options from parsed JSON, where the type guarantees nothing.
+ */
+const normCountry = (c: string): string => (c || "").trim().toLowerCase();
+
 // ─── Ahrefs ────────────────────────────────────────────────────────────────────
 
 /**
@@ -207,7 +297,7 @@ const num = (v: any): number | null => {
 async function ahrefsKeywords(
   creds: MetricsCreds,
   keywords: string[],
-  opts: { country?: string; withDifficulty?: boolean },
+  opts: { country: string; withDifficulty?: boolean },
 ): Promise<MetricsResult<KeywordMetric>> {
   const usable = keywords.filter(k => k && !k.includes(","));
   if (!usable.length) return { items: [], units: 0 };
@@ -220,7 +310,7 @@ async function ahrefsKeywords(
   const base = (creds.baseUrl || DEFAULT_BASE_URL.ahrefs).replace(/\/+$/, "");
   const params = new URLSearchParams({
     select: select.join(","),
-    country: (opts.country || "us").toLowerCase(),
+    country: normCountry(opts.country),
     keywords: usable.join(","),
   });
 
@@ -447,16 +537,22 @@ export function estimateCompetitorUnits(limit: number): number {
 export async function fetchOrganicCompetitors(
   creds: MetricsCreds,
   domain: string,
-  opts: { limit?: number; country?: string } = {},
+  opts: { limit?: number; country: string },
 ): Promise<MetricsResult<CompetitorItem>> {
   if (!creds.apiKey) return { items: [], units: 0, error: "no_key" };
-  if (creds.provider === "semrush") return { items: [], units: 0, error: "provider_unsupported" };
+  if (!normCountry(opts.country)) return { items: [], units: 0, error: "no_country" };
+  if (creds.provider === "semrush") return semrushCompetitors(creds, domain, opts);
+  return ahrefsCompetitors(creds, domain, opts);
+}
 
+async function ahrefsCompetitors(
+  creds: MetricsCreds, domain: string, opts: { limit?: number; country: string },
+): Promise<MetricsResult<CompetitorItem>> {
   const limit = Math.max(5, Math.min(100, opts.limit ?? 20));
   const base = (creds.baseUrl || DEFAULT_BASE_URL.ahrefs).replace(/\/+$/, "");
   const params = new URLSearchParams({
     target: domain, mode: "domain",
-    country: (opts.country || "us").toLowerCase(),
+    country: normCountry(opts.country),
     date: new Date().toISOString().slice(0, 10),
     select: COMPETITOR_FIELDS.join(","),
     limit: String(limit),
@@ -484,6 +580,50 @@ export async function fetchOrganicCompetitors(
   }
 }
 
+/**
+ * Semrush organic competitors — `domain_organic_organic`.
+ *
+ * 40 units/line against Ahrefs' ≈3, so this is the more expensive source for the same question.
+ * Offered anyway rather than stubbed: a Semrush-only subscriber previously got nothing from this
+ * screen, and 40 units (≈$0.0024) for a competitor that actually competes is a price worth quoting.
+ * `Np` (common keywords) orders the list the same way Ahrefs' `keywords_common` does.
+ */
+async function semrushCompetitors(
+  creds: MetricsCreds, domain: string, opts: { limit?: number; country: string },
+): Promise<MetricsResult<CompetitorItem>> {
+  const limit = Math.max(5, Math.min(100, opts.limit ?? 20));
+  const base = (creds.baseUrl || DEFAULT_BASE_URL.semrush).replace(/\/+$/, "");
+  const params = new URLSearchParams({
+    type: "domain_organic_organic",
+    key: creds.apiKey,
+    domain,
+    database: normCountry(opts.country),
+    export_columns: "Dn,Np,Ot",
+    display_limit: String(limit),
+    display_sort: "np_desc",
+  });
+
+  try {
+    const res = await requestWithRetry(`${base}/?${params}`, { headers: { Accept: "text/plain" } }, creds.apiKey);
+    const text = await res.text();
+    if (!res.ok || /^ERROR/i.test(text)) {
+      return { items: [], units: 0, error: `semrush ${res.status}: ${text.slice(0, 300)}` };
+    }
+    const rows = parseSemrushCsv(text);
+    return {
+      // Billed per line actually returned, like every Semrush report in this module.
+      units: SEMRUSH_COMPETITOR_UNITS_PER_ROW * rows.length,
+      items: rows.map(r => ({
+        domain: String(r["Domain"] ?? "").toLowerCase().replace(/^www\./, ""),
+        sharedKeywords: num(r["Common Keywords"]),
+        traffic: num(r["Organic Traffic"]),
+      })).filter(c => c.domain.includes(".")),
+    };
+  } catch (e: any) {
+    return { items: [], units: 0, error: String(e?.message ?? e) };
+  }
+}
+
 // `volume` and `keyword_difficulty` are 10 units each. KD is optional for the same reason it is
 // optional everywhere else: it roughly doubles the bill for a column you may not sort by.
 const ORGANIC_KEYWORD_FIELDS = ["keyword", "best_position", "best_position_url", "volume"];
@@ -499,11 +639,17 @@ export function estimateOrganicKeywordUnits(limit: number, withDifficulty: boole
 export async function fetchOrganicKeywords(
   creds: MetricsCreds,
   domain: string,
-  opts: { limit?: number; country?: string; withDifficulty?: boolean; maxPosition?: number } = {},
+  opts: { limit?: number; country: string; withDifficulty?: boolean; maxPosition?: number },
 ): Promise<MetricsResult<OrganicKeywordItem>> {
   if (!creds.apiKey) return { items: [], units: 0, error: "no_key" };
-  if (creds.provider === "semrush") return { items: [], units: 0, error: "provider_unsupported" };
+  if (!normCountry(opts.country)) return { items: [], units: 0, error: "no_country" };
+  if (creds.provider === "semrush") return semrushOrganicKeywords(creds, domain, opts);
+  return ahrefsOrganicKeywords(creds, domain, opts);
+}
 
+async function ahrefsOrganicKeywords(
+  creds: MetricsCreds, domain: string, opts: { limit?: number; country: string; withDifficulty?: boolean; maxPosition?: number },
+): Promise<MetricsResult<OrganicKeywordItem>> {
   const limit = Math.max(10, Math.min(1000, opts.limit ?? 200));
   const select = opts.withDifficulty
     ? [...ORGANIC_KEYWORD_FIELDS, "keyword_difficulty"]
@@ -512,7 +658,7 @@ export async function fetchOrganicKeywords(
   const base = (creds.baseUrl || DEFAULT_BASE_URL.ahrefs).replace(/\/+$/, "");
   const params = new URLSearchParams({
     target: domain, mode: "domain",
-    country: (opts.country || "us").toLowerCase(),
+    country: normCountry(opts.country),
     date: new Date().toISOString().slice(0, 10),
     select: select.join(","),
     limit: String(limit),
@@ -546,6 +692,201 @@ export async function fetchOrganicKeywords(
   }
 }
 
+/**
+ * Semrush organic keywords — `domain_organic`.
+ *
+ * 10 units/line, the same rate Ahrefs charges, and `Kd` is in the report at no surcharge — so
+ * unlike the Ahrefs path the `withDifficulty` flag does not change this price. Semrush has no
+ * native "best position" filter; the `maxPosition` cap is applied client-side after the call.
+ */
+async function semrushOrganicKeywords(
+  creds: MetricsCreds, domain: string, opts: { limit?: number; country: string; withDifficulty?: boolean; maxPosition?: number },
+): Promise<MetricsResult<OrganicKeywordItem>> {
+  const limit = Math.max(10, Math.min(1000, opts.limit ?? 200));
+  const base = (creds.baseUrl || DEFAULT_BASE_URL.semrush).replace(/\/+$/, "");
+  const params = new URLSearchParams({
+    type: "domain_organic",
+    key: creds.apiKey,
+    domain,
+    database: normCountry(opts.country),
+    export_columns: "Ph,Po,Nq,Ur,Kd",
+    display_limit: String(limit),
+    display_sort: "nq_desc",
+  });
+
+  try {
+    const res = await requestWithRetry(`${base}/?${params}`, { headers: { Accept: "text/plain" } }, creds.apiKey);
+    const text = await res.text();
+    if (!res.ok || /^ERROR/i.test(text)) {
+      return { items: [], units: 0, error: `semrush ${res.status}: ${text.slice(0, 300)}` };
+    }
+    const rows = parseSemrushCsv(text);
+    const seen = rows.map(r => ({
+      keyword: (r["Keyword"] ?? "").trim().toLowerCase(),
+      position: num(r["Position"]),
+      volume: num(r["Search Volume"]),
+      difficulty: num(r["Keyword Difficulty Index"] ?? r["Keyword Difficulty"]),
+      url: String(r["Url"] ?? ""),
+    })).filter(k => k.keyword);
+    // Applied after the fetch: Semrush bills the rows it returns, so the cap cannot lower the cost,
+    // but it can stop a 1000-row pull of top-3-only keywords from flooding the gap table. `position`
+    // can be null when Semrush omits it; such rows are dropped under a cap, since a gap analysis
+    // keyed on "top N" cannot place them anyway.
+    const cap = opts.maxPosition;
+    const capped = cap ? seen.filter(k => k.position != null && k.position > 0 && k.position <= cap) : seen;
+    return {
+      units: SEMRUSH_ORGANIC_KEYWORD_UNITS_PER_ROW * rows.length,
+      items: capped,
+    };
+  } catch (e: any) {
+    return { items: [], units: 0, error: String(e?.message ?? e) };
+  }
+}
+
+// ─── Keyword ideas (expanding a seed) ──────────────────────────────────────────
+
+/**
+ * Expanding one seed into a list of real keywords with real volumes.
+ *
+ * This is the half of the picture the metrics module never had: `fetchKeywordMetrics` prices a
+ * list you already own, while this one produces the list. Until it existed, the content tools
+ * could only get a list from DataForSEO, which is why an Ahrefs subscriber writing an outline got
+ * no keyword data at all.
+ *
+ * Returns the same {@link KeywordMetric} shape as an overview row, so callers cannot tell — and
+ * should not care — whether a keyword arrived from a seed expansion or from a priced list.
+ */
+export interface IdeaOptions {
+  country: string;
+  limit?: number;
+  withDifficulty?: boolean;
+  mode?: IdeaMode;
+  /** Ahrefs only: restrict matching-terms to question phrasings. */
+  questionsOnly?: boolean;
+  /** Ahrefs related-terms only: judge by the top 10 or the top 100 ranking pages. */
+  viewFor?: "top_10" | "top_100";
+}
+
+const IDEA_LIMIT_MAX = 200;
+const clampIdeaLimit = (n: number | undefined) => Math.max(10, Math.min(IDEA_LIMIT_MAX, n ?? 100));
+
+async function ahrefsIdeas(
+  creds: MetricsCreds, seed: string, opts: IdeaOptions,
+): Promise<MetricsResult<KeywordMetric>> {
+  const mode: IdeaMode = opts.mode === "related" ? "related" : "matching";
+  const limit = clampIdeaLimit(opts.limit);
+  const select = opts.withDifficulty ? [...IDEA_FIELDS_BASE, ...KEYWORD_FIELDS_KD] : [...IDEA_FIELDS_BASE];
+  const units = estimateIdeaUnits(mode, limit, !!opts.withDifficulty);
+
+  const base = (creds.baseUrl || DEFAULT_BASE_URL.ahrefs).replace(/\/+$/, "");
+  const params = new URLSearchParams({
+    select: select.join(","),
+    country: normCountry(opts.country),
+    keywords: seed,
+    limit: String(limit),
+    // `volume` is already selected, so ordering by it adds nothing to the bill — and without it
+    // the API returns an arbitrary slice of the tail, which for a capped limit is the difference
+    // between the 100 best ideas and 100 random ones.
+    order_by: "volume:desc",
+  });
+
+  if (mode === "related") {
+    params.set("terms", "all");
+    params.set("view_for", opts.viewFor === "top_100" ? "top_100" : "top_10");
+  } else {
+    params.set("terms", opts.questionsOnly ? "questions" : "all");
+    params.set("match_mode", "terms");
+  }
+
+  const res = await requestWithRetry(
+    `${base}/v3/${mode === "related" ? "keywords-explorer/related-terms" : "keywords-explorer/matching-terms"}?${params}`,
+    { headers: { Authorization: `Bearer ${creds.apiKey}`, Accept: "application/json" } },
+    creds.apiKey,
+  );
+  if (!res.ok) {
+    return { items: [], units: 0, error: `ahrefs ${res.status}: ${(await res.text()).slice(0, 300)}` };
+  }
+
+  const rows: any[] = (await res.json())?.keywords ?? [];
+  return {
+    units,
+    items: rows.map(r => ({
+      keyword: String(r.keyword ?? "").trim().toLowerCase(),
+      volume: num(r.volume),
+      difficulty: num(r.difficulty),
+      // Ahrefs returns CPC in USD cents here, unlike the overview endpoint. Normalized so a
+      // caller mixing both sources does not silently show one of them a hundred times too big.
+      cpc: r.cpc == null ? null : (num(r.cpc) ?? 0) / 100,
+      globalVolume: num(r.global_volume),
+      parentTopic: r.parent_topic ? String(r.parent_topic) : null,
+      intents: r.intents ? JSON.stringify(r.intents) : null,
+      payload: r,
+    })).filter(k => k.keyword),
+  };
+}
+
+/**
+ * Semrush broad match. One flat rate per returned line covers every column the report has,
+ * including `Kd` — so unlike Ahrefs there is no cheaper variant to offer, and the KD toggle does
+ * not change this price.
+ */
+async function semrushIdeas(
+  creds: MetricsCreds, seed: string, opts: IdeaOptions,
+): Promise<MetricsResult<KeywordMetric>> {
+  const limit = clampIdeaLimit(opts.limit);
+  const base = (creds.baseUrl || DEFAULT_BASE_URL.semrush).replace(/\/+$/, "");
+  const params = new URLSearchParams({
+    type: "phrase_fullsearch",
+    key: creds.apiKey,
+    phrase: seed,
+    database: normCountry(opts.country),
+    export_columns: "Ph,Nq,Cp,Co,Nr,Kd",
+    display_limit: String(limit),
+    display_sort: "nq_desc",
+  });
+
+  const res = await requestWithRetry(`${base}/?${params}`, { headers: { Accept: "text/plain" } }, creds.apiKey);
+  const text = await res.text();
+  if (!res.ok || /^ERROR/i.test(text)) {
+    return { items: [], units: 0, error: `semrush ${res.status}: ${text.slice(0, 300)}` };
+  }
+
+  const rows = parseSemrushCsv(text);
+  return {
+    // Billed per line actually returned, so this is the real figure rather than the ceiling.
+    units: SEMRUSH_IDEA_UNITS_PER_ROW * rows.length,
+    items: rows.map(r => ({
+      keyword: (r["Keyword"] ?? "").trim().toLowerCase(),
+      volume: num(r["Search Volume"]),
+      difficulty: num(r["Keyword Difficulty Index"] ?? r["Keyword Difficulty"]),
+      cpc: num(r["CPC"]),
+      globalVolume: null,
+      parentTopic: null,
+      intents: null,
+      payload: r,
+    })).filter(k => k.keyword),
+  };
+}
+
+export async function fetchKeywordIdeas(
+  creds: MetricsCreds, seed: string, opts: IdeaOptions,
+): Promise<MetricsResult<KeywordMetric>> {
+  if (!creds.apiKey) return { items: [], units: 0, error: "no_key" };
+  if (!normCountry(opts.country)) return { items: [], units: 0, error: "no_country" };
+  const s = seed.trim();
+  if (!s) return { items: [], units: 0, error: "no_seed" };
+  // Ahrefs takes the seed through a comma-separated parameter, so a comma cannot be expressed.
+  if (creds.provider === "ahrefs" && s.includes(",")) return { items: [], units: 0, error: "bad_seed" };
+
+  try {
+    return creds.provider === "semrush"
+      ? await semrushIdeas(creds, s, opts)
+      : await ahrefsIdeas(creds, s, opts);
+  } catch (e: any) {
+    return { items: [], units: 0, error: String(e?.message ?? e) };
+  }
+}
+
 // ─── Demand history ────────────────────────────────────────────────────────────
 
 export interface VolumePoint { date: string; volume: number }
@@ -557,16 +898,17 @@ export interface VolumePoint { date: string; volume: number }
 export async function fetchVolumeHistory(
   creds: MetricsCreds,
   keyword: string,
-  opts: { country?: string } = {},
+  opts: { country: string },
 ): Promise<MetricsResult<VolumePoint>> {
   if (!creds.apiKey) return { items: [], units: 0, error: "no_key" };
+  if (!normCountry(opts.country)) return { items: [], units: 0, error: "no_country" };
   if (creds.provider === "semrush") return { items: [], units: 0, error: "provider_unsupported" };
 
   const base = (creds.baseUrl || DEFAULT_BASE_URL.ahrefs).replace(/\/+$/, "");
   // No `select`: this endpoint always returns date + volume and rejects nothing else.
   const params = new URLSearchParams({
     keyword,
-    country: (opts.country || "us").toLowerCase(),
+    country: normCountry(opts.country),
   });
 
   try {
@@ -610,7 +952,7 @@ function parseSemrushCsv(text: string): Record<string, string>[] {
 async function semrushKeywords(
   creds: MetricsCreds,
   keywords: string[],
-  opts: { country?: string },
+  opts: { country: string },
 ): Promise<MetricsResult<KeywordMetric>> {
   const usable = keywords.filter(Boolean);
   if (!usable.length) return { items: [], units: 0 };
@@ -620,7 +962,7 @@ async function semrushKeywords(
     type: "phrase_these",
     key: creds.apiKey,
     phrase: usable.join(";"),
-    database: (opts.country || "us").toLowerCase(),
+    database: normCountry(opts.country),
     export_columns: "Ph,Nq,Cp,Co,Nr",
   });
 
@@ -682,9 +1024,10 @@ async function semrushDomain(creds: MetricsCreds, domain: string): Promise<Metri
 export async function fetchKeywordMetrics(
   creds: MetricsCreds,
   keywords: string[],
-  opts: { country?: string; withDifficulty?: boolean } = {},
+  opts: { country: string; withDifficulty?: boolean },
 ): Promise<MetricsResult<KeywordMetric>> {
   if (!creds.apiKey) return { items: [], units: 0, error: "no_key" };
+  if (!normCountry(opts.country)) return { items: [], units: 0, error: "no_country" };
   try {
     return creds.provider === "semrush"
       ? await semrushKeywords(creds, keywords, opts)

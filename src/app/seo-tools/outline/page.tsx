@@ -12,7 +12,8 @@ import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { OutlineView } from "@/components/SeoRenderers";
 import SeoJobProgress from "@/components/SeoJobProgress";
 import SeoRecentList from "@/components/SeoRecentList";
-import { getSeoGenCreds, getTaskCreds, getSerpCreds, getFirecrawlKey, getDataForSeoKey, loadPolicies, getActivePolicyName } from "@/lib/seo/keys";
+import { getSeoGenCreds, getTaskCreds, getSerpCreds, getFirecrawlKey, loadPolicies, getActivePolicyName, getKeywordSource, getKwAuto, getKwLimit } from "@/lib/seo/keys";
+import { getMetricsWithKd, formatUsd, priceExpand } from "@/lib/seo/metricsClient";
 import { COUNTRIES, LANGUAGES } from "@/lib/seo/regions";
 import { TONES, toneToPrompt } from "@/lib/seo/tones";
 import { OUTLINE_TEMPLATES, TEMPLATE_GROUPS } from "@/lib/seo/templates";
@@ -74,8 +75,11 @@ export default function OutlinePage() {
   const [scraped, setScraped] = useState<Record<string, Scraped>>({});
   const [serpView, setSerpView] = useState<"clusters" | "list">("list");
   const [parsing, setParsing] = useState<Set<string>>(new Set());
-  const [keywordsData, setKeywordsData] = useState<{ keyword: string; volume: number; cpc: number; competition: number }[]>([]);
+  const [keywordsData, setKeywordsData] = useState<{ keyword: string; volume: number; cpc: number; competition: number; difficulty?: number | null }[]>([]);
   const [kwLoading, setKwLoading] = useState(false);
+  /** Which provider answered — shown in the UI and sent to the prompt so neither of them guesses. */
+  const [kwSource, setKwSource] = useState("");
+  const [kwNotice, setKwNotice] = useState("");
 
   // step-2 config
   const [tone, setTone] = useState("");        // "" = default from policy
@@ -101,6 +105,11 @@ export default function OutlinePage() {
   // (React #418 hydration mismatch) — read them only after mount.
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
+
+  // Read after mount only — localStorage during render would make the first client pass disagree
+  // with the server-rendered HTML.
+  const kwSrc = mounted ? getKeywordSource() : { source: "off" as const, apiKey: "", baseUrl: undefined };
+  const kwPrice = mounted ? priceExpand(kwSrc.source, getKwLimit(), getMetricsWithKd()) : { units: 0, usd: 0 };
   const ai = mounted ? getSeoGenCreds() : { provider: "", apiKey: "", model: "" };
   const serpCreds = mounted ? getSerpCreds() : { provider: "", apiKey: "" };
   const activePolicy = mounted ? (loadPolicies().find(p => p.name === getActivePolicyName()) || loadPolicies()[0]) : null;
@@ -165,18 +174,31 @@ export default function OutlinePage() {
     }
   }
 
+  // Keyword grounding, from whichever provider the user actually configured.
+  //
+  // This used to be DataForSEO or nothing. `getKeywordSource()` now resolves Ahrefs → Semrush →
+  // DataForSEO by which key exists, and the source that answered travels back with the data so
+  // the prompt can name it instead of claiming "DataForSEO" regardless of the truth.
   async function fetchKeywords() {
-    const dfsKey = getDataForSeoKey();
-    if (!dfsKey || !keyword.trim()) { setKeywordsData([]); return; }
+    const src = getKeywordSource();
+    if (src.source === "off" || !src.apiKey || !keyword.trim()) { setKeywordsData([]); setKwSource(""); return; }
     setKwLoading(true);
     try {
-      const res = await fetch("/api/seo/keywords", {
+      const res = await fetch("/api/seo/keyword-ideas", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ keyword, dfsKey, gl: country, hl: language, limit: 60 }),
+        body: JSON.stringify({
+          seed: keyword, country, language,
+          limit: getKwLimit(), withDifficulty: getMetricsWithKd(),
+          source: src.source, apiKey: src.apiKey, baseUrl: src.baseUrl,
+          cap: Number(localStorage.getItem(`seoMetricsCap_${src.source}`) || 0) || 0,
+          fetch: true,
+        }),
       });
       const data = await res.json();
       setKeywordsData(res.ok ? (data.items || []) : []);
-    } catch { setKeywordsData([]); }
+      setKwSource(res.ok && (data.items || []).length ? String(data.source || "") : "");
+      setKwNotice(res.ok ? "" : String(data.error || ""));
+    } catch { setKeywordsData([]); setKwSource(""); }
     setKwLoading(false);
   }
 
@@ -197,7 +219,9 @@ export default function OutlinePage() {
       setPaa(data.peopleAlsoAsk || []);
       setRelated(data.relatedSearches || []);
       setSelected(new Set((data.results || []).map((r: SerpItem) => r.url)));
-      fetchKeywords(); // grounding keywords with real volumes (DataForSEO), if key present
+      // Only when the user opted in. Off by default: a SERP scrape must not be able to spend
+      // Ahrefs credits as a side effect of pressing a different button.
+      if (getKwAuto()) fetchKeywords();
       // Kick off background scraping of ALL results so per-row word counts appear
       // immediately (competitor-style "Парсинг…" → count). Best-effort, non-blocking.
       ensureScraped((data.results || []).map((r: SerpItem) => r.url), {}).catch(() => {});
@@ -271,7 +295,7 @@ export default function OutlinePage() {
         tone: resolvedTone, persona: resolvedPersona,
         additionalKeywords: addKeywords.split(/[\n,]+/).map(s => s.trim()).filter(Boolean).join(", "),
         targetWordCount: targetWords ? Number(targetWords) : undefined,
-        keywordsData, pageGoal,
+        keywordsData, keywordsSource: kwSource || undefined, pageGoal,
         narration: narration || undefined,
         customTemplate: customTemplate.trim() || undefined,
         structureRules: structureRules.trim() || undefined,
@@ -530,9 +554,42 @@ export default function OutlinePage() {
             </div>
           )}
 
+          {/* The gap is stated, not left to be inferred from an absent block. Until this
+              existed, an outline built with no volume data was indistinguishable from one built
+              with it — and the prompt happily ranked headings by frequencies it had invented. */}
+          {!kwLoading && keywordsData.length === 0 && serp.length > 0 && (
+            <div style={{ marginTop: "14px", padding: "10px 12px", borderRadius: "9px", border: "1px solid rgba(245,158,11,0.28)", background: "rgba(245,158,11,0.08)", display: "flex", gap: "9px", alignItems: "flex-start" }}>
+              <AlertTriangle size={14} color="#f59e0b" style={{ flexShrink: 0, marginTop: "2px" }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: "12px", fontWeight: 700, color: "var(--color-text-primary)", marginBottom: "3px" }}>{t("seoKwNoSourceTitle")}</div>
+                <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>{t("seoKwNoSourceBody")}</div>
+                {kwNotice && <div style={{ fontSize: "11px", color: "var(--color-accent-orange)", marginTop: "4px" }}>{kwNotice}</div>}
+                {/* With a source configured this is one press away, priced up front. Without one
+                    the only useful action is the settings link. */}
+                {kwSrc.apiKey ? (
+                  <button
+                    onClick={fetchKeywords}
+                    style={{ marginTop: "7px", display: "inline-flex", alignItems: "center", gap: "6px", padding: "7px 13px", borderRadius: "8px", border: "none", background: "var(--color-accent-purple)", color: "#fff", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
+                  >
+                    <TrendingUp size={12} /> {t("seoKwLoadBtn")}
+                    <span style={{ opacity: 0.8, fontWeight: 400 }}>
+                      · {kwPrice.units ? `${kwPrice.units.toLocaleString()} ${t("metricsUnits")} ≈ ${formatUsd(kwPrice.usd)}` : t("seoKwPriceAfter")}
+                    </span>
+                  </button>
+                ) : (
+                  <Link href="/seo-tools/settings" style={{ fontSize: "11px", color: "var(--color-accent-blue)", textDecoration: "none", display: "inline-block", marginTop: "5px" }}>{t("seoKwNoSourceCta")} →</Link>
+                )}
+              </div>
+            </div>
+          )}
+
           {(kwLoading || keywordsData.length > 0) && (
             <div style={{ marginTop: "14px", paddingTop: "12px", borderTop: "1px solid var(--color-border)" }}>
-              <div className="tool-section-label">{t("seoKwBlockTitle")}</div>
+              {/* Names the provider that actually answered, rather than the one that used to be
+                  the only option. The old label read "(DataForSEO)" no matter what. */}
+              <div className="tool-section-label">
+                {t("seoKwBlockTitleGeneric")}{kwSource ? ` (${kwSource === "dataforseo" ? "DataForSEO" : kwSource === "ahrefs" ? "Ahrefs" : "Semrush"})` : ""}
+              </div>
               {kwLoading ? (
                 <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", display: "flex", alignItems: "center", gap: "7px" }}><Loader2 size={13} className="spin" /> {t("seoKwLoading")}</div>
               ) : (

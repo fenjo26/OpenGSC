@@ -70,6 +70,65 @@ export async function readKeywordCache(
   return out;
 }
 
+/**
+ * The same read, but across every provider at once.
+ *
+ * `readKeywordCache` above filters on `provider` because a paid refresh has to know which
+ * provider's rows are stale. Displaying is a different question: a volume bought from Ahrefs is
+ * still a volume when the user later switches to Semrush, and hiding it means showing an em dash
+ * next to a row that is already on an invoice. Nothing here fetches, so the widest possible read
+ * is also the cheapest one.
+ *
+ * Ordering, when two providers hold the same keyword: **a row that has KD wins over a row that
+ * does not, and only then does recency decide.** Freshness alone would let a cheap
+ * volume-only refresh bury a difficulty score that cost ten times as much to buy — the newer row
+ * is not the better one when it knows strictly less.
+ */
+export async function readKeywordCacheAny(
+  keywords: string[],
+  country: string,
+): Promise<Record<string, CachedKeyword>> {
+  const keys = [...new Set(keywords.map(normalizeKeyword).filter(Boolean))];
+  if (!keys.length) return {};
+
+  const out: Record<string, CachedKeyword> = {};
+  for (let i = 0; i < keys.length; i += 400) {
+    const chunk = keys.slice(i, i + 400);
+    try {
+      const rows: any[] = await rawQuery(
+        `SELECT keyword, country, provider, volume, difficulty, cpc, globalVolume, parentTopic,
+                intents, source, checkedAt
+           FROM "KeywordMetricCache"
+          WHERE country = ? AND keyword IN (${chunk.map(() => "?").join(",")})`,
+        country, ...chunk,
+      );
+      for (const r of rows) {
+        const row: CachedKeyword = {
+          ...r,
+          volume: r.volume == null ? null : Number(r.volume),
+          difficulty: r.difficulty == null ? null : Number(r.difficulty),
+          cpc: r.cpc == null ? null : Number(r.cpc),
+          globalVolume: r.globalVolume == null ? null : Number(r.globalVolume),
+          checkedAt: new Date(r.checkedAt).toISOString(),
+        };
+        // Resolved in JS rather than in SQL: the rule is two-level and the dialects differ
+        // (SQLite and MySQL disagree on ordering NULLs), and a chunk is small enough that the
+        // comparison is free.
+        const held = out[r.keyword];
+        if (!held || betterRow(row, held)) out[r.keyword] = row;
+      }
+    } catch { /* table missing until prisma db push */ }
+  }
+  return out;
+}
+
+/** True when `a` should be preferred over `b`: KD-bearing first, then newer. */
+function betterRow(a: CachedKeyword, b: CachedKeyword): boolean {
+  const aKd = a.difficulty != null, bKd = b.difficulty != null;
+  if (aKd !== bKd) return aKd;
+  return a.checkedAt > b.checkedAt;
+}
+
 export interface KeywordWrite {
   keyword: string;
   volume?: number | null;

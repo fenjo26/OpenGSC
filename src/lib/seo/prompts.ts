@@ -69,6 +69,12 @@ export function buildOutlinePrompt(args: {
   targetWordCount?: number;
   manualTexts?: { name: string; text: string }[];
   keywordsData?: { keyword: string; volume: number }[];
+  /**
+   * Which provider `keywordsData` came from — "Ahrefs", "Semrush", "DataForSEO".
+   * Named in the prompt instead of hardcoded, because the model is being told to trust these
+   * numbers and the label should match what was actually bought.
+   */
+  keywordsSource?: string;
   pageGoal?: "informational" | "commercial" | "mixed";
   narration?: "first" | "third";
   customTemplate?: string;
@@ -81,8 +87,15 @@ export function buildOutlinePrompt(args: {
   // otherwise as a standalone line. Never both → no conflicting tone signals.
   const policyBlock = args.policy ? renderPolicy(args.policy, args.tone) + "\n\n" : "";
   const paaBlock = args.paa?.length ? `\nPeople-Also-Ask из выдачи: ${JSON.stringify(args.paa)}` : "";
-  const kwData = args.keywordsData?.length
-    ? `\n- РЕАЛЬНЫЕ КЛЮЧИ С ОБЪЁМАМИ ПОИСКА (DataForSEO — используй ИМЕННО ЭТИ формулировки в section.keywords; приоритет ключам с бОльшим объёмом, распределяй по релевантным секциям): ${JSON.stringify(args.keywordsData.slice(0, 50).map(k => `${k.keyword} (${k.volume}/мес)`))}`
+  // Whether real demand data reached this call. Two blocks below depend on it, and they used to
+  // disagree: the data block vanished when the list was empty while the rule telling the model to
+  // sort headings BY that data stayed. The result looked methodical and was built on invented
+  // frequencies — worse than an obvious gap, because a plausible number is indistinguishable from
+  // a real one on screen. One flag now drives both.
+  const hasKwData = !!args.keywordsData?.length;
+  const kwSource = args.keywordsSource || "внешний источник";
+  const kwData = hasKwData
+    ? `\n- РЕАЛЬНЫЕ КЛЮЧИ С ОБЪЁМАМИ ПОИСКА (${kwSource} — используй ИМЕННО ЭТИ формулировки в section.keywords; приоритет ключам с бОльшим объёмом, распределяй по релевантным секциям): ${JSON.stringify(args.keywordsData!.slice(0, 50).map(k => `${k.keyword} (${k.volume}/мес)`))}`
     : "";
   const relBlock = args.related?.length ? `\nСвязанные запросы: ${JSON.stringify(args.related)}` : "";
   const toneBlock = args.tone && !args.policy ? `\n- тон повествования: ${args.tone}` : "";
@@ -156,8 +169,10 @@ export function buildOutlinePrompt(args: {
 - ПЛОТНОСТЬ ЗАГОЛОВКОВ (ПРИВЯЗАНА К ОБЪЁМУ): одна секция ≈ 100 слов итогового текста. Число секций (H2+H3 суммарно) = целевой объём / 100${args.targetWordCount ? ` — для цели ~${args.targetWordCount} слов это ≈${Math.max(10, Math.min(32, Math.round(args.targetWordCount / 100)))} секций` : " (не задан объём — 18-24 секции)"}. БОЛЬШЕ секций = каждая станет тощим огрызком, МЕНЬШЕ = потеря полноты. Почти каждый содержательный H2 имеет 2-4 вложенных H3; покрывай реальные sub-intents, не плоди пустые.
 - БЮДЖЕТ ОБЪЁМА (КРИТИЧНО): word_count_total КАЖДОЙ секции РАССЧИТАЙ САМ по её важности — числа в схеме ниже ([0,0]) это НЕ значения по умолчанию, их обязательно заменить. СУММА word_count_total по ВСЕМ секциям = целевой объём статьи (±10%); если целевой объём не задан — считай ~2000 слов. Крупные содержательные H2 — 200-400 слов (через свои H3), H3 — 80-160, вводные/мелкие — меньше. НЕ ставь всем секциям одинаковый маленький бюджет.
 - СУЩНОСТИ: ${args.lightSections ? "2-4 на секцию" : "для крупных секций 4-7 сущностей, для мелких H3 — 2-3"}. У КАЖДОЙ — weight И role: {"name":"","weight":10,"role":"primary — ядро секции"} или "secondary — регуляторная валидация/социальное доказательство/контекст рынка". РАЗНООБРАЗИЕ ОБЯЗАТЕЛЬНО: НЕ ставь во все секции один лишь главный бренд — добавляй регуляторов (лицензии), платёжные системы, типы игр/ставок/продуктов, лиги/турниры, провайдеров, площадки отзывов (Trustpilot) и т.п.
-- КЛЮЧИ: 3-6 ПОЛНЫХ поисковых фраз на секцию (реальные запросы, напр. "how far is pefkohori from thessaloniki airport"), а НЕ слова-обрывки ("distance, time"). Бери формулировки из keywordsData (если есть), остальное — реалистичный длинный хвост.
-- ЧАСТОТНОСТЬ → УРОВЕНЬ ЗАГОЛОВКА (по методике Rush): распредели ключи по частотности из keywordsData. ВЧ (самые объёмные, 1-2 слова) → в H1 и крупные H2. СЧ (уточняющие, 2-3 слова) → в H2. НЧ/длинный хвост (4+ слов, конкретные вопросы) → в H3 (там ключи можно склонять). Не дублируй один ключ во многих заголовках — раскидывай.
+- КЛЮЧИ: 3-6 ПОЛНЫХ поисковых фраз на секцию (реальные запросы, напр. "how far is pefkohori from thessaloniki airport"), а НЕ слова-обрывки ("distance, time"). ${hasKwData ? "Бери формулировки из блока с объёмами выше, остальное — реалистичный длинный хвост." : "Данных о частотности нет — формулируй реалистичные запросы сам."}
+${hasKwData
+  ? `- ЧАСТОТНОСТЬ → УРОВЕНЬ ЗАГОЛОВКА (по методике Rush): распредели ключи по частотности из блока с объёмами выше. ВЧ (самые объёмные, 1-2 слова) → в H1 и крупные H2. СЧ (уточняющие, 2-3 слова) → в H2. НЧ/длинный хвост (4+ слов, конкретные вопросы) → в H3 (там ключи можно склонять). Не дублируй один ключ во многих заголовках — раскидывай.`
+  : `- ЧАСТОТНОСТЬ: данных о частотности НЕТ. НЕ ранжируй заголовки по «ВЧ/СЧ/НЧ» и НЕ приписывай ключам объёмы поиска — выдуманная частотность хуже её отсутствия. Опирайся на структуру конкурентов и логику темы: общее — выше, частное — глубже.`}
 - H1 ≠ TITLE: H1 (заголовок на странице) и Title (тег для выдачи) — РАЗНЫЕ формулировки, обе с ключами. H1 — цепляющий, для читателя, с ВЧ-ключом; Title — под клик в выдаче. Заполни meta.h1 отдельным от title_options заголовком (с ТЕКУЩИМ годом, если год уместен).
 ${args.lightSections
   ? `- SUMMARY: 1-2 предложения — суть секции с 1-2 конкретными ориентирами (детализация будет углублена отдельным проходом — сейчас важнее ПОЛНОТА СТРУКТУРЫ, а не длина полей).

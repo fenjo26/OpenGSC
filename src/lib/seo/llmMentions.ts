@@ -18,7 +18,7 @@
 // Coverage is narrower than the live tracker: DataForSEO indexes ChatGPT and Google AI Overview.
 // Claude and Grok exist only in the live tracker, which is another reason not to merge them.
 
-import { locationCode } from "./demand";
+import { locationCode, isSupportedCountry } from "./demand";
 
 const DFS_BASE = "https://api.dataforseo.com";
 const DFS_TIMEOUT_MS = 60_000;
@@ -159,11 +159,14 @@ export async function brandMentions(
   if (!credential) return { ...blank, error: "no_key" };
   if (!opts.value.trim()) return { ...blank, error: "no_target" };
 
+  const gl = opts.gl || "us";
+  if (!isSupportedCountry(gl)) return { ...blank, error: `unsupported_country:${gl}` };
+
   const target = targetFor(opts.kind, opts.value.trim());
   const base = {
     target,
     platform: opts.platform,
-    location_code: locationCode(opts.gl || "us"),
+    location_code: locationCode(gl),
     language_code: opts.hl || "en",
   };
 
@@ -264,13 +267,16 @@ export async function shareOfVoice(
   if (values.length < 2) return { rows: [], cost: 0, error: "need_two" };
   if (values.length > 10) return { rows: [], cost: 0, error: "too_many" };
 
+  const gl = opts.gl || "us";
+  if (!isSupportedCountry(gl)) return { rows: [], cost: 0, error: `unsupported_country:${gl}` };
+
   const res = await post(
     credential,
     "/v3/ai_optimization/llm_mentions/cross_aggregated_metrics/live",
     [{
       targets: values.map(v => ({ aggregation_key: v, target: targetFor(opts.kind, v) })),
       platform: opts.platform,
-      location_code: locationCode(opts.gl || "us"),
+      location_code: locationCode(gl),
       language_code: opts.hl || "en",
       internal_list_limit: 5,
     }],

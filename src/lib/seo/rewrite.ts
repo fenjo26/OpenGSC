@@ -6,7 +6,7 @@
 import { fetchLLM } from "@/lib/llm";
 import { scrapeMany } from "@/lib/seo/scrape";
 import { factDrift, criticalValues, type FactDrift } from "@/lib/seo/factDrift";
-import { uniquenessPct, wordCount } from "@/lib/seo/textMetrics";
+import { uniquenessPct, wordCount, keywordCoverage, type KeywordCoverage } from "@/lib/seo/textMetrics";
 
 export interface RewriteBody {
   text?: string;
@@ -16,6 +16,15 @@ export interface RewriteBody {
   tone?: string;            // optional tone hint
   maskAI?: boolean;         // strip common AI patterns (default true)
   bannedWords?: string[];   // domain vocabulary to avoid AT GENERATION TIME (see note below)
+  /**
+   * The queries this page is meant to rank for, with volumes where known.
+   *
+   * The tool had none of this. Rewriting a decaying page without knowing what it ranks for is how
+   * a refresh loses the phrase that was earning the traffic: the meaning survives, the exact query
+   * does not, and nothing in the pipeline notices because the facts all check out. Supplying them
+   * turns that from an accident into a checked constraint — see `keywordCoverage` below.
+   */
+  targetKeywords?: { keyword: string; volume?: number | null }[];
   temperature?: number;     // sampling temperature; undefined = provider default
   autoRepair?: boolean;     // run a scoped fix pass when the value audit fails (default true)
   snippet?: boolean;        // also propose a refreshed title + meta description
@@ -34,6 +43,11 @@ export interface RewriteVariant {
   structure?: StructureCheck;
   /** a scoped repair pass ran and measurably reduced the defect count */
   repaired?: boolean;
+  /**
+   * Which target queries the rewrite kept. Absent when the caller supplied no targets — an empty
+   * report and "nothing to check" are different states and must not render the same.
+   */
+  coverage?: KeywordCoverage;
 }
 
 /** Refreshed search snippet alongside the current one, so the change is judged by comparison. */
@@ -235,11 +249,23 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
     ? `These exact values MUST all appear in your output — every price, duration, percentage, phone number and brand name: ${mustKeep.join(", ")}. Do not drop, round, convert or re-unit any of them, and do not introduce values that are not in the source. `
     : "";
 
+  // The queries the page is supposed to keep. Ordered by volume so the model knows which ones are
+  // worth an exact match when a phrasing has to give: a rewrite that loses the top query has
+  // failed even if every fact survived.
+  const targets = (b.targetKeywords || [])
+    .map(k => ({ keyword: String(k.keyword || "").trim(), volume: k.volume ?? null }))
+    .filter(k => k.keyword)
+    .sort((a, z) => (z.volume ?? 0) - (a.volume ?? 0))
+    .slice(0, 30);
+  const targetLine = targets.length
+    ? `This page ranks for these searches and must keep ranking for them — preserve each phrase verbatim at least once, in natural context, and do not paraphrase them away: ${targets.map(k => k.volume ? `"${k.keyword}" (${k.volume}/mo)` : `"${k.keyword}"`).join(", ")}. `
+    : "";
+
   const basePrompt = (i: number) =>
     `You are an expert SEO copywriter. Rewrite the content below so it is UNIQUE and original, ` +
     `while preserving the exact meaning, all facts, numbers, named entities, and links. ` +
     `Keep the same format as the input (HTML stays HTML, Markdown stays Markdown, plain stays plain). ` +
-    `${structureLine}${currencyLine}${keepLine}${langLine} ${toneLine} ${bannedLine}` +
+    `${structureLine}${currencyLine}${keepLine}${targetLine}${langLine} ${toneLine} ${bannedLine}` +
     (variants > 1 ? `This is variant #${i + 1} — make it clearly different from the other variants. ` : "") +
     `Output ONLY the rewritten content, with no preamble, notes, or explanations.\n\n` +
     `CONTENT:\n${source}`;
@@ -295,7 +321,10 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
     }
 
     if (b.maskAI !== false) content = maskAIPatterns(content);
-    return { content, uniqueness: uniquenessPct(source, content), words: wordCount(content), drift, structure, repaired };
+    // Computed after masking, because masking rewrites phrasing and could itself drop a target
+    // phrase. Measuring before it would report a coverage the shipped text does not have.
+    const coverage = targets.length ? keywordCoverage(source, content, targets) : undefined;
+    return { content, uniqueness: uniquenessPct(source, content), words: wordCount(content), drift, structure, repaired, coverage };
   });
 
   const variantsOut = results.filter((r): r is RewriteVariant => !!r);

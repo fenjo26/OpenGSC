@@ -7,6 +7,9 @@ let isSyncing = false;
 export interface SyncResult {
   completedAt: Date | null;
   sitesSynced: number;
+  // Properties this run moved into or out of the archive because Google's site list changed.
+  sitesArchived: number;
+  sitesRestored: number;
   accountErrors: { accountId: string; error: string; needsReauth: boolean }[];
   siteErrors: { site: string; error: string }[];
 }
@@ -14,6 +17,8 @@ export interface SyncResult {
 let lastSyncResult: SyncResult = {
   completedAt: null,
   sitesSynced: 0,
+  sitesArchived: 0,
+  sitesRestored: 0,
   accountErrors: [],
   siteErrors: [],
 };
@@ -103,6 +108,8 @@ export async function runGscSync() {
   const result: SyncResult = {
     completedAt: null,
     sitesSynced: 0,
+    sitesArchived: 0,
+    sitesRestored: 0,
     accountErrors: [],
     siteErrors: [],
   };
@@ -112,6 +119,13 @@ export async function runGscSync() {
   // dashboard ended up claiming the last sync was two days ago while the settings page, reading
   // from the database, showed one from that morning.
   const syncedUserIds: string[] = [];
+
+  // Every property Google returned for a user, pooled across all of their linked accounts, plus
+  // the users whose site list failed to load at all. The archive is reconciled from these once
+  // the account loop is done — a user with two accounts must not have the sites from one of them
+  // archived just because the other account was processed first.
+  const liveSiteIdsByUser = new Map<string, Set<string>>();
+  const listingFailedUsers = new Set<string>();
 
   try {
     console.log('[GSC Sync] Starting…');
@@ -183,6 +197,9 @@ export async function runGscSync() {
         const res = await wm.sites.list();
         siteList = res.data.siteEntry ?? [];
         console.log(`[GSC Sync]   Found ${siteList.length} sites in GSC`);
+        const live = liveSiteIdsByUser.get(userId) ?? new Set<string>();
+        for (const entry of siteList) if (entry.siteUrl) live.add(entry.siteUrl);
+        liveSiteIdsByUser.set(userId, live);
       } catch (err: any) {
         console.error(`[GSC Sync]   Failed to list sites: ${err.message}`);
         const needsReauth = /invalid_grant|token.*expired|unauthorized|invalid.*token/i.test(err.message);
@@ -191,6 +208,9 @@ export async function runGscSync() {
           error: err.message,
           needsReauth,
         });
+        // Marks the whole user, not just this account: with an incomplete picture of what they
+        // own, anything "missing" might simply be behind the token that just failed.
+        listingFailedUsers.add(userId);
         continue;
       }
 
@@ -243,12 +263,16 @@ export async function runGscSync() {
               return;
             }
           }
-        } else if (dbSite.siteId !== gscUrl) {
-          // Fix siteId if it was stored differently
-          await prisma.site.update({
-            where: { id: dbSite.id },
-            data:  { siteId: gscUrl },
-          }).catch(() => {});
+        } else {
+          // Anything Google still hands us is live by definition, so a row that was archived
+          // (property removed, or verification briefly lapsed) comes back out of the archive
+          // here. Patching siteId in the same write keeps it to one round trip.
+          const patch: { siteId?: string; archivedAt?: null } = {};
+          if (dbSite.siteId !== gscUrl) patch.siteId = gscUrl;
+          if (dbSite.archivedAt) patch.archivedAt = null;
+          if (Object.keys(patch).length > 0) {
+            await prisma.site.update({ where: { id: dbSite.id }, data: patch }).catch(() => {});
+          }
         }
 
         // ── Step 2: sync daily metrics (recent first, then history) ─────────
@@ -411,6 +435,48 @@ export async function runGscSync() {
 
       await pooled(siteList, SITE_CONCURRENCY, syncOneSite);
     }
+
+    // ── Reconcile the archive ────────────────────────────────────────────────
+    // A property dropped from Search Console (removed, unverified, or the domain was
+    // replaced) stops appearing in sites.list, but its row used to stay on the dashboard
+    // forever because nothing ever pruned it. It is flagged rather than deleted, so the
+    // metrics, audits and keywords already collected remain available.
+    //
+    // Runs on the scheduled sync as well as the dashboard's own site fetch, so a headless
+    // instance nobody has opened in a week still keeps the list honest.
+    for (const [userId, liveSiteIds] of liveSiteIdsByUser) {
+      // Skipping a user whose listing failed is the whole point of tracking it: archiving on
+      // a partial read would empty a dashboard because a token expired, not because anything
+      // was actually removed. An empty list is treated the same way — a user really owning
+      // zero properties has nothing to archive anyway.
+      if (listingFailedUsers.has(userId) || liveSiteIds.size === 0) continue;
+
+      try {
+        const known = await prisma.site.findMany({
+          where: { userId },
+          select: { id: true, siteId: true, archivedAt: true },
+        });
+        const toArchive = known.filter(s => !s.archivedAt && !liveSiteIds.has(s.siteId)).map(s => s.id);
+        const toRestore = known.filter(s =>  s.archivedAt &&  liveSiteIds.has(s.siteId)).map(s => s.id);
+
+        if (toArchive.length > 0) {
+          result.sitesArchived += (await prisma.site.updateMany({
+            where: { id: { in: toArchive } },
+            data: { archivedAt: new Date() },
+          })).count;
+        }
+        if (toRestore.length > 0) {
+          result.sitesRestored += (await prisma.site.updateMany({
+            where: { id: { in: toRestore } },
+            data: { archivedAt: null },
+          })).count;
+        }
+      } catch (err) {
+        // Never fails the run: the metrics above are the job, this is bookkeeping.
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[GSC Sync]   Archive reconcile failed for user ${userId}: ${msg}`);
+      }
+    }
   } catch (e) {
     console.error('[GSC Sync] Fatal error:', e);
   } finally {
@@ -422,7 +488,7 @@ export async function runGscSync() {
     const elapsedMs = syncStartedAt ? result.completedAt.getTime() - syncStartedAt.getTime() : 0;
     const elapsed = `${Math.floor(elapsedMs / 60000)}m${String(Math.floor((elapsedMs % 60000) / 1000)).padStart(2, '0')}s`;
     syncStartedAt = null;
-    console.log(`[GSC Sync] Done in ${elapsed}. sites=${result.sitesSynced} accountErrors=${result.accountErrors.length} siteErrors=${result.siteErrors.length}`);
+    console.log(`[GSC Sync] Done in ${elapsed}. sites=${result.sitesSynced} archived=${result.sitesArchived} restored=${result.sitesRestored} accountErrors=${result.accountErrors.length} siteErrors=${result.siteErrors.length}`);
 
     // Persist the completion time. Deliberately after the log line and outside anything that can
     // abort the run: this is a nicety for the UI, not part of the sync.

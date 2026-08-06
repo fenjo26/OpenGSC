@@ -61,8 +61,23 @@ export async function GET(req: Request) {
 
   const sites = await prisma.site.findMany({ where: { userId }, orderBy: { createdAt: 'asc' } });
 
+  // Zeroed payload for archived properties. They still ship to the client — the dashboard
+  // lists them in its Archive group — but the two metric reads and the sparkline maths are
+  // skipped. A removed property has no new data by definition, so the work could only ever
+  // produce a flat line, and on a large account this is two queries per dead domain per load.
+  const emptySummary = {
+    clicks:      { value: 0, change: 0 },
+    impressions: { value: 0, change: 0 },
+    ctr:         { value: 0, change: 0 },
+    position:    { value: 0, change: 0 },
+  };
+
   const result = await Promise.all(
     sites.map(async (site) => {
+      if (site.archivedAt) {
+        return { ...site, data: [], summary: emptySummary, hasData: false };
+      }
+
       const [currRows, prevRows] = await Promise.all([
         prisma.dailyMetric.findMany({
           where: { siteId: site.id, date: { gte: startDate, lte: endDate }, url: '', query: '' },

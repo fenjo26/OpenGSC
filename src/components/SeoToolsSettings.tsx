@@ -441,17 +441,6 @@ export default function SeoToolsSettings() {
         </div>
       </div>
 
-      <a href="/settings?tab=api-keys" style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px",
-        padding: "14px 16px", borderRadius: "10px", border: "1px solid var(--color-border)",
-        background: "var(--color-card)", textDecoration: "none", marginBottom: "8px",
-      }}>
-        <div>
-          <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--color-text-primary)" }}>{t("seoKeysMovedTitle")}</div>
-          <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginTop: "2px" }}>{t("seoKeysMovedDesc")}</div>
-        </div>
-        <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--color-accent-blue)", whiteSpace: "nowrap" }}>{t("seoKeysMovedLink")} →</span>
-      </a>
     </div>
   );
 }

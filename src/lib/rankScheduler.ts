@@ -19,9 +19,12 @@ async function tick() {
   running = true;
   try {
     const staleBefore = new Date(Date.now() - RANK_STALE_MS);
-    // Sites that have at least one stale tracked keyword
+    // Sites that have at least one stale tracked keyword.
+    // Archived properties are skipped: the domain is usually gone or replaced, so every
+    // check would burn a paid SERP call to record a rank for a site nobody looks at.
     const sites = await prisma.site.findMany({
       where: {
+        archivedAt: null,
         trackedKeywords: {
           some: { OR: [{ lastCheckedAt: null }, { lastCheckedAt: { lt: staleBefore } }] },
         },

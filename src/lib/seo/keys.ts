@@ -93,6 +93,91 @@ export function getDataForSeoKey(): string {
   return localStorage.getItem("seoKey_dataforseo") || "";
 }
 
+// ─── Keyword data source ────────────────────────────────────────────────────────
+//
+// The setting the app was missing. There was a selector for who scrapes the SERP
+// (`seoSerpProvider`) and one for whose metrics feed the analytics screens
+// (`seoMetricsProvider`), but none for where the content tools get volumes and difficulty — they
+// simply used DataForSEO if a key happened to exist. Scraping with Serper and holding an Ahrefs
+// key therefore meant no keyword data anywhere, silently.
+
+export type KwSourceSetting = "auto" | "ahrefs" | "semrush" | "dataforseo" | "off";
+
+export function getKwSourceSetting(): KwSourceSetting {
+  if (typeof window === "undefined") return "auto";
+  const v = localStorage.getItem("seoKwSource");
+  return v === "ahrefs" || v === "semrush" || v === "dataforseo" || v === "off" ? v : "auto";
+}
+
+export function setKwSourceSetting(v: KwSourceSetting) {
+  localStorage.setItem("seoKwSource", v);
+}
+
+/** Pull keyword data automatically after a SERP, or only when the user presses the button. */
+export function getKwAuto(): boolean {
+  if (typeof window === "undefined") return false;
+  return localStorage.getItem("seoKwAuto") === "1";
+}
+export function setKwAuto(on: boolean) { localStorage.setItem("seoKwAuto", on ? "1" : "0"); }
+
+/** How many ideas to request. This is the ceiling on what a single expansion can cost. */
+export function getKwLimit(): number {
+  if (typeof window === "undefined") return 100;
+  const n = parseInt(localStorage.getItem("seoKwLimit") ?? "100", 10);
+  return Number.isFinite(n) ? Math.max(50, Math.min(200, n)) : 100;
+}
+export function setKwLimit(n: number) {
+  localStorage.setItem("seoKwLimit", String(Math.max(50, Math.min(200, n))));
+}
+
+/**
+ * Resolved source, key and host for the content tools.
+ *
+ * `auto` walks Ahrefs → Semrush → DataForSEO by which key actually exists, then gives up as
+ * `off`. It reads the metrics module's own storage rather than duplicating it, so switching
+ * between an official and a reseller key in Settings → SEO Metrics moves this too, and there is
+ * no second place where a stale host can hide.
+ */
+/**
+ * The resolved source is never `"auto"` — that is a preference, not a provider. Typed as the
+ * narrower union so callers that price a request cannot be handed a value there is no price for.
+ */
+export type KwResolvedSource = Exclude<KwSourceSetting, "auto">;
+
+export function getKeywordSource(): { source: KwResolvedSource; apiKey: string; baseUrl?: string } {
+  if (typeof window === "undefined") return { source: "off", apiKey: "" };
+
+  const metricsKey = (p: "ahrefs" | "semrush") => {
+    const mode = localStorage.getItem(`seoMetricsMode_${p}`);
+    const suffixed = mode === "reseller" || mode === "custom" ? `seoKey_${p}__${mode}` : `seoKey_${p}`;
+    return (localStorage.getItem(suffixed) || localStorage.getItem(`seoKey_${p}`) || "").trim();
+  };
+  const metricsHost = (p: "ahrefs" | "semrush") =>
+    (localStorage.getItem(`seoMetricsBaseUrl_${p}`) || "").trim() || undefined;
+
+  const setting = getKwSourceSetting();
+  if (setting === "off") return { source: "off", apiKey: "" };
+
+  const candidates: KwSourceSetting[] = setting === "auto"
+    ? ["ahrefs", "semrush", "dataforseo"]
+    : [setting];
+
+  for (const c of candidates) {
+    if (c === "dataforseo") {
+      const k = getDataForSeoKey().trim();
+      if (k) return { source: "dataforseo", apiKey: k };
+      continue;
+    }
+    const p = c as "ahrefs" | "semrush";
+    const k = metricsKey(p);
+    if (k.length > 4) return { source: p, apiKey: k, baseUrl: metricsHost(p) };
+  }
+
+  // An explicit choice with no key is reported as that choice with an empty key, so the UI can
+  // say "Ahrefs is selected but not configured" instead of silently behaving like `off`.
+  return { source: setting === "auto" ? "off" : setting, apiKey: "" };
+}
+
 // ─── Fact-check / enrichment preferences ────────────────────────────────────────
 export function getAutoFactcheck(): boolean {
   if (typeof window === "undefined") return false;

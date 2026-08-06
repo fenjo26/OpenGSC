@@ -16,6 +16,8 @@ import { BarChart3, ExternalLink, FileUp } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { SeoKeyCard, METRICS_PROVIDER_CARDS, METRICS_GATEWAY_URL } from "@/components/SeoToolsSettings";
 import MetricsImport from "@/components/MetricsImport";
+import MetricsWarmup from "@/components/MetricsWarmup";
+import KeywordSourceSettings from "@/components/KeywordSourceSettings";
 import {
   getMetricsMode, setMetricsMode, metricsKeyStorage, RESELLER_BASE_URL,
   type MetricsMode,
@@ -215,6 +217,8 @@ export default function MetricsSettingsSection() {
         </div>
       </div>
 
+      <KeywordSourceSettings />
+      <MetricsWarmup />
       <MetricsImport />
     </div>
   );

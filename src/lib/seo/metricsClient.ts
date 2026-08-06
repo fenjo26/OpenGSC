@@ -4,15 +4,42 @@
 // Same convention as every other key in this app: it lives in localStorage, is mirrored to
 // User.seoSettings by SeoKeysSync, and travels with the request.
 
-import { MetricsProvider, estimateKeywordUnits } from "./metrics";
+import { MetricsProvider, estimateKeywordUnits, UNIT_PRICE_USD, estimateCostUsd, estimateIdeaUnits, estimateSemrushIdeaUnits, type IdeaMode } from "./metrics";
 
 export const METRICS_PROVIDERS: MetricsProvider[] = ["ahrefs", "semrush"];
 
-/** Published gateway rates, used only to show the user what a click will cost. */
-export const UNIT_PRICE_USD: Record<MetricsProvider, number> = {
-  ahrefs: 0.000025,
-  semrush: 0.00006,
-};
+// Keyword-source pricing. These live here — not in `keywordSource.ts` — because the content-tool
+// pages call them from the browser to quote a button before it is pressed, and `keywordSource.ts`
+// pulls the Prisma-backed `metricsStore`, which cannot ship to the browser. The two functions are
+// pure: they depend only on the unit arithmetic in `metrics.ts`, which is browser-safe. The
+// authoritative `KwSource` type lives in `keywordSource.ts`; here `source` is a plain string so no
+// cross-module type import is needed in either direction.
+export function priceExpand(
+  source: string, limit: number, withDifficulty: boolean, mode: IdeaMode = "matching",
+): { units: number; usd: number } {
+  if (source === "ahrefs") {
+    const units = estimateIdeaUnits(mode, limit, withDifficulty);
+    return { units, usd: estimateCostUsd(units, "ahrefs") };
+  }
+  if (source === "semrush") {
+    const units = estimateSemrushIdeaUnits(limit);
+    return { units, usd: estimateCostUsd(units, "semrush") };
+  }
+  return { units: 0, usd: 0 };
+}
+
+/** Cost of pricing N unknown keywords, so a button can quote itself before it is pressed. */
+export function priceEnrich(source: string, count: number, withDifficulty: boolean) {
+  if (source === "ahrefs" || source === "semrush") {
+    const units = estimateKeywordUnits(count, withDifficulty);
+    return { units, usd: estimateCostUsd(units, source as MetricsProvider) };
+  }
+  return { units: 0, usd: 0 };
+}
+
+// Both moved to `metrics.ts` so the server can price a request without importing this
+// `"use client"` module. Re-exported unchanged: every existing import still resolves here.
+export { UNIT_PRICE_USD, estimateCostUsd };
 
 /**
  * Where the key came from. This exists because "custom base URL" was a field that told the user
@@ -115,10 +142,6 @@ export function getMetricsWithKd(): boolean {
 
 export function setMetricsWithKd(on: boolean) {
   localStorage.setItem("seoMetricsWithKd", on ? "1" : "0");
-}
-
-export function estimateCostUsd(units: number, provider: MetricsProvider): number {
-  return units * (UNIT_PRICE_USD[provider] ?? 0);
 }
 
 /** "1 200 units · ≈ $0.03" — the numbers a button needs to be honest about what it spends. */

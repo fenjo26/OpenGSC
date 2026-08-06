@@ -2,7 +2,8 @@
 // the synchronous routes and the background-job runner. No HTTP / auth here — pure work.
 
 import { fetchLLM, fetchLLMDetailed } from "@/lib/llm";
-import { runSerp, heuristicIntent, heuristicSiteType, DFS_LOC } from "@/lib/seo/serp";
+import { runSerp, heuristicIntent, heuristicSiteType } from "@/lib/seo/serp";
+import { enrichKeywords, type KwSource } from "@/lib/seo/keywordSource";
 import { scrapeMany } from "@/lib/seo/scrape";
 import {
   buildOutlinePrompt, buildTextPrompt, buildAnalysisPrompt, buildFactScrubPrompt, buildSourceExtractPrompt,
@@ -353,6 +354,7 @@ export async function genOutline(b: any): Promise<GenResult> {
     targetWordCount: b.targetWordCount ? Number(b.targetWordCount) : undefined,
     manualTexts: Array.isArray(b.manualTexts) ? b.manualTexts : undefined,
     keywordsData: Array.isArray(b.keywordsData) ? b.keywordsData : undefined,
+    keywordsSource: b.keywordsSource ? String(b.keywordsSource) : undefined,
     pageGoal: b.pageGoal === "commercial" || b.pageGoal === "informational" ? b.pageGoal : "mixed",
     narration: b.narration === "first" || b.narration === "third" ? b.narration : undefined,
     customTemplate: b.customTemplate ? String(b.customTemplate) : undefined,
@@ -1201,26 +1203,37 @@ const normUrl = (u: string) => {
   catch { return u.toLowerCase(); }
 };
 
-async function fetchDfsVolumes(dfsKey: string, keywords: string[], gl: string, hl: string): Promise<Record<string, number>> {
+/**
+ * Volumes for a cluster run, through the shared keyword source.
+ *
+ * This replaces a fourth private DataForSEO client that lived here with its own location table
+ * and its own `?? 2840` fallback — the one that silently ordered a Bosnian keyword set by
+ * American demand. Going through `enrichKeywords` buys three things at once: the market is
+ * validated instead of guessed, whatever is already in the shared cache costs nothing, and a
+ * user on Ahrefs finally gets volumes here at all.
+ *
+ * Still optional and still non-fatal: clusters without volumes are ordered by member count
+ * instead, which is a visibly weaker answer rather than a confidently wrong one.
+ */
+async function fetchClusterVolumes(
+  creds: { source: KwSource; apiKey: string; baseUrl?: string },
+  keywords: string[], gl: string, hl: string,
+): Promise<{ volumes: Record<string, number>; error?: string }> {
+  const country = (gl || "").trim().toLowerCase();
+  if (!country) return { volumes: {}, error: "no_country" };
+
   const out: Record<string, number> = {};
-  const cred = dfsKey.trim();
-  const auth = cred.includes(":") ? Buffer.from(cred).toString("base64") : cred;
-  for (let i = 0; i < keywords.length; i += 700) {
-    try {
-      const res = await fetch("https://api.dataforseo.com/v3/keywords_data/google_ads/search_volume/live", {
-        method: "POST",
-        headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
-        body: JSON.stringify([{ keywords: keywords.slice(i, i + 700), location_code: DFS_LOC[gl.toLowerCase()] ?? 2840, language_code: hl || "en" }]),
-        signal: AbortSignal.timeout(60_000),
-      });
-      if (!res.ok) continue;
-      const d = await res.json();
-      for (const r of (d?.tasks?.[0]?.result ?? [])) {
-        if (r?.keyword != null) out[String(r.keyword).toLowerCase()] = Number(r.search_volume) || 0;
-      }
-    } catch { /* volumes are optional */ }
+  try {
+    const res = await enrichKeywords(creds, keywords, {
+      country, language: hl || "en", fetch: true,
+    });
+    for (const r of res.rows) {
+      if (r.volume != null) out[r.keyword] = r.volume;
+    }
+    return { volumes: out, error: res.error };
+  } catch (e: any) {
+    return { volumes: out, error: String(e?.message ?? e) };
   }
-  return out;
 }
 
 export async function genCluster(b: any): Promise<GenResult> {
@@ -1233,8 +1246,18 @@ export async function genCluster(b: any): Promise<GenResult> {
   const gl = String(b.gl ?? "us"), hl = String(b.hl ?? "en");
   const threshold = Math.max(2, Math.min(6, Number(b.threshold ?? 3)));
 
-  // 1) volumes (optional, DataForSEO)
-  const volumes = b.dfsKey ? await fetchDfsVolumes(String(b.dfsKey), keywords, gl, hl) : {};
+  // 1) volumes (optional) — through the shared source, so Ahrefs and Semrush work here too.
+  //    `kwSource`/`kwKey` are the new fields; `dfsKey` is still honoured so a job queued before
+  //    this change, or a caller not yet updated, keeps working exactly as it did.
+  const kwSource: KwSource = ["ahrefs", "semrush", "dataforseo"].includes(String(b.kwSource))
+    ? String(b.kwSource) as KwSource
+    : b.dfsKey ? "dataforseo" : "off";
+  const kwKey = String(b.kwKey ?? b.dfsKey ?? "");
+
+  const vres = kwSource !== "off" && kwKey
+    ? await fetchClusterVolumes({ source: kwSource, apiKey: kwKey, baseUrl: b.kwBaseUrl ? String(b.kwBaseUrl) : undefined }, keywords, gl, hl)
+    : { volumes: {} as Record<string, number>, error: undefined as string | undefined };
+  const volumes = vres.volumes;
 
   // 2) TOP-10 per keyword (bounded concurrency)
   const serps: Record<string, { urls: string[]; titles: string[] }> = {};
@@ -1275,7 +1298,12 @@ export async function genCluster(b: any): Promise<GenResult> {
   return {
     ok: true,
     data: {
-      params: { gl, hl, threshold, total_keywords: keywords.length, clustered: usable.length, failed },
+      params: {
+        gl, hl, threshold, total_keywords: keywords.length, clustered: usable.length, failed,
+        // Travels with the result so the UI can say "clusters are ordered by keyword count, not
+        // by demand" instead of showing a column of zeroes that looks like real data.
+        ...(vres.error ? { volumes_error: vres.error } : {}),
+      },
       clusters,
       generated_at: new Date().toISOString(),
     },

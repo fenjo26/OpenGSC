@@ -201,7 +201,13 @@ function DecayingPagesTable({ rows }: { rows: DecayRow[] }) {
             <div style={{ textAlign: "right", fontSize: "12px" }}>
               {isGuestView() ? <span style={{ color: "var(--color-text-secondary)" }}>—</span>
                 : demand[row.url] ? (
-                  demand[row.url].err ? <span style={{ color: "var(--color-text-secondary)" }}>—</span>
+                  // Volume history is Ahrefs-only. Saying so beats an em dash: on Semrush the dash
+                  // is indistinguishable from "we checked and demand is flat", which is the
+                  // opposite of what happened. The other three Ahrefs-only screens already say
+                  // this; this was the one that stayed quiet.
+                  demand[row.url].err === "provider_unsupported"
+                    ? <span title={t("blpAhrefsOnly")} style={{ color: "var(--color-text-tertiary)", fontSize: "11px" }}>Ahrefs</span>
+                  : demand[row.url].err ? <span style={{ color: "var(--color-text-secondary)" }}>—</span>
                   : demand[row.url].trendPct == null ? <span style={{ color: "var(--color-text-secondary)" }}>—</span>
                   : (
                     <span title={demand[row.url].keyword}

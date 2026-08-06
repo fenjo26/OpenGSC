@@ -112,6 +112,18 @@ model Site {
   brandedKeywords  String?  // JSON array e.g. ["ikea","ikea chair"]
   createdAt        DateTime @default(now())
 
+  // Which search market this site targets, as a 2-letter gl code.
+  //
+  // Nullable on purpose, and null does NOT mean "United States". Every keyword figure in the app
+  // is priced and cached per country, so guessing the market silently writes paid data into a
+  // cell nothing will read again. A ccTLD fills this in by itself; a .com/.org/.vip cannot be
+  // guessed from anything the app knows, so it stays empty and is asked for in the UI instead.
+  market           String?
+
+  // Set when the property is no longer returned by Google's sites.list.
+  // Archived sites keep all their history but are hidden from the main dashboard.
+  archivedAt       DateTime?
+
   // Sitemap indexing
   sitemapUrl       String?   // custom sitemap URL (defaults to url + /sitemap.xml)
   crawlInterval    String?   // "disabled" | "daily" | "weekly" | "monthly"
@@ -147,6 +159,7 @@ model Site {
   shareToken            String?   @unique
 
   @@unique([userId, siteId])
+  @@index([userId, archivedAt])
 }
 
 model SitemapUrl {

@@ -1710,24 +1710,6 @@ function IndexApiSection() {
         </div>
       </SectionCard>
 
-      {/* Ahrefs used to be typed here as well, for Link Monitor. It moved to Settings → SEO
-          Metrics, where the key sits next to the access mode, host and spending cap it belongs
-          with — one integration, one screen. A pointer, not a second input. */}
-      <SectionCard>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <div style={{ width: 28, height: 28, borderRadius: "6px", background: "rgba(139,92,246,0.12)", border: "1px solid rgba(139,92,246,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: 800, color: "#8B5CF6" }}>AH</div>
-            <div>
-              <span style={{ fontSize: "15px", fontWeight: 700, color: "var(--color-text-primary)" }}>Ahrefs / Semrush</span>
-              <p style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginTop: "2px" }}>{t("ahrefsMovedDesc")}</p>
-            </div>
-          </div>
-          <a className="pill" href="/settings?tab=metrics" style={{ textDecoration: "none" }}>
-            {t("navMetrics")} →
-          </a>
-        </div>
-      </SectionCard>
-
       {/* ── IndexNow key ── */}
       <SectionCard>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>

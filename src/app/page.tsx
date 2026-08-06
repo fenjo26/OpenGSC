@@ -15,6 +15,7 @@ import { usePrivacy } from "@/lib/PrivacyContext";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { useHealthStatus } from "@/components/SiteHealthPanel";
 import { loadSyncedAt, rememberSyncedAt, fetchSyncState, watchSync, type SyncState } from "@/lib/syncedAt";
+import { marketFor } from "@/lib/seo/market";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Metric = "clicks" | "impressions" | "ctr" | "position";
@@ -350,6 +351,48 @@ function MultiMetricChart({ data, activeMetrics, prevTrend = true }: { data: Pt[
   );
 }
 
+// ─── MarketInput — two-letter market editor, mirrors TagInput's isolation ───
+function MarketInput({ initialValue, onSave, onCancel, placeholder }: {
+  initialValue: string;
+  onSave: (v: string) => void;
+  onCancel: () => void;
+  placeholder?: string;
+}) {
+  const { t } = useLanguage();
+  const [value, setValue] = useState(initialValue);
+  const valid = /^[a-z]{2}$/.test(value.trim()) || value.trim() === "";
+  return (
+    <div style={{ display: "flex", gap: "5px", alignItems: "center" }} onClick={e => e.stopPropagation()}>
+      <input
+        autoFocus
+        value={value}
+        maxLength={2}
+        onChange={e => setValue(e.target.value.toLowerCase())}
+        onKeyDown={e => {
+          if (e.key === "Enter" && valid) { e.preventDefault(); onSave(value.trim()); }
+          if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+        }}
+        placeholder={placeholder || t("siteMarketAuto")}
+        style={{
+          flex: 1, minWidth: 0, width: "80px", padding: "5px 9px",
+          borderRadius: "7px", border: `1.5px solid ${valid ? "var(--color-accent-blue)" : "#ff9f0a"}`,
+          background: "var(--color-bg)", color: "var(--color-text-primary)",
+          fontSize: "13px", outline: "none", textTransform: "lowercase",
+        }}
+      />
+      <button
+        disabled={!valid}
+        onClick={e => { e.stopPropagation(); onSave(value.trim()); }}
+        style={{ padding: "5px 10px", borderRadius: "7px", border: "none", background: valid ? "var(--color-accent-blue)" : "var(--color-border)", color: "#fff", fontSize: "13px", fontWeight: 600, cursor: valid ? "pointer" : "default", flexShrink: 0 }}
+      >✓</button>
+      <button
+        onClick={e => { e.stopPropagation(); onCancel(); }}
+        style={{ padding: "5px 8px", borderRadius: "7px", border: "1px solid var(--color-border)", background: "transparent", color: "var(--color-text-secondary)", fontSize: "13px", cursor: "pointer", flexShrink: 0 }}
+      >✕</button>
+    </div>
+  );
+}
+
 // ─── TagInput — isolated component so typing doesn't re-render parent ────────
 function TagInput({ initialValue, onSave, onCancel, placeholder }: {
   initialValue: string;
@@ -526,6 +569,9 @@ function PortfolioPageContent() {
   const { blur } = usePrivacy();
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [hidden, setHidden] = useState<Set<string>>(new Set());
+  // Archive of properties removed from Search Console — collapsed by default.
+  const [showArchive, setShowArchive] = useState(false);
+  const [archiveBusy, setArchiveBusy] = useState<string | null>(null);
   // Ahrefs Domain Rating per domain (free public API, server-cached). License requires
   // visible "Domain Rating by Ahrefs" attribution wherever DR is shown.
   const [drMap, setDrMap] = useState<Record<string, number>>({});
@@ -545,6 +591,9 @@ function PortfolioPageContent() {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [editingTagSiteId, setEditingTagSiteId] = useState<string | null>(null);
+  // Per-site market override, mirroring `editingTagSiteId`. The market drives which country the
+  // keyword cache is filed under, so editing it is a correctness lever — not a preference.
+  const [editingMarketId, setEditingMarketId] = useState<string | null>(null);
   const [period, setPeriod]     = useState("7d");
   // Search-engine portfolio tabs. Google = local DB; Bing/Yandex = live, fetched on tab
   // click and cached per engine+period so switching back is instant.
@@ -923,9 +972,14 @@ function PortfolioPageContent() {
           return 0;
       }
     });
-  const favSites    = filtered.filter(s => favorites.has(s.id) && !hidden.has(s.id));
-  const restSites   = filtered.filter(s => !favorites.has(s.id) && !hidden.has(s.id));
-  const hiddenSites = filtered.filter(s => hidden.has(s.id));
+  // Properties that Google no longer returns are archived, not deleted. They are
+  // pulled out of every live group so they stop skewing the portfolio totals.
+  const isArchived  = (s: { archivedAt?: string | null }) => Boolean(s.archivedAt);
+  const archivedSites = filtered.filter(isArchived);
+  const liveFiltered  = filtered.filter(s => !isArchived(s));
+  const favSites    = liveFiltered.filter(s => favorites.has(s.id) && !hidden.has(s.id));
+  const restSites   = liveFiltered.filter(s => !favorites.has(s.id) && !hidden.has(s.id));
+  const hiddenSites = liveFiltered.filter(s => hidden.has(s.id));
 
   // ─── Totals from visible (filtered) sites — respects search/tag/branded filters ──
   // When a tag is active, totals are computed only over sites carrying that tag
@@ -938,6 +992,33 @@ function PortfolioPageContent() {
   const avgCtr  = withCtr.length > 0 ? +(withCtr.reduce((s, site) => s + site.summary.ctr.value, 0) / withCtr.length).toFixed(2) : 0;
   const withPos = visibleForTotals.filter(s => (s.summary?.position?.value ?? 0) > 0);
   const avgPos  = withPos.length > 0 ? +(withPos.reduce((s, site) => s + site.summary.position.value, 0) / withPos.length).toFixed(1) : 0;
+
+  // Bring an archived property back into the live list. Useful when a domain was
+  // only temporarily unverified in GSC — the next sync would restore it anyway.
+  const restoreSite = async (id: string) => {
+    setArchiveBusy(id);
+    try {
+      const res = await fetch("/api/gsc/sites", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, archived: false }),
+      });
+      if (res.ok) setSites(prev => prev.map(s => s.id === id ? { ...s, archivedAt: null } : s));
+    } catch { /* leave the row as-is; the next sync will reconcile */ }
+    finally { setArchiveBusy(null); }
+  };
+
+  // Permanent removal. Cascades to metrics, audits, keywords and backlinks,
+  // so it is gated behind an explicit confirm.
+  const deleteSite = async (id: string, domain: string) => {
+    if (!window.confirm(`${t("archiveDeleteConfirm")}\n\n${domain}`)) return;
+    setArchiveBusy(id);
+    try {
+      const res = await fetch(`/api/gsc/sites?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (res.ok) setSites(prev => prev.filter(s => s.id !== id));
+    } catch { /* no-op: the row stays, user can retry */ }
+    finally { setArchiveBusy(null); }
+  };
 
   const toggleMetric = (m: Metric) => setActiveMetrics(p => { const n = new Set(p); n.has(m) ? n.delete(m) : n.add(m); return n; });
   const toggleFav    = (id: string) => setFavorites(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -1356,9 +1437,53 @@ function PortfolioPageContent() {
             />
           )}
 
+          {/* Inline market editor — two-letter ISO code, or empty to fall back to the ccTLD. */}
+          {editingMarketId === site.id && (
+            <MarketInput
+              initialValue={site.market || ""}
+              onSave={v => {
+                setEditingMarketId(null);
+                fetch("/api/gsc/market", {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ siteId: site.id, market: v }),
+                }).then(r => r.json()).then(d => {
+                  // Optimistic local update so the chip reflects the resolved market immediately,
+                  // without a full portfolio refetch. The server echoes back the effective value.
+                  if (d?.ok) setSites(prev => prev.map(s => s.id === site.id ? { ...s, market: d.market } : s));
+                }).catch(() => {});
+              }}
+              onCancel={() => setEditingMarketId(null)}
+              placeholder={t("siteMarketAuto")}
+            />
+          )}
+
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             {/* Tags display */}
-            <div style={{display:"flex",gap:"4px",flexWrap:"wrap",flex:1,minWidth:0,marginRight:"8px"}}>
+            <div style={{display:"flex",gap:"4px",flexWrap:"wrap",flex:1,minWidth:0,marginRight:"8px",alignItems:"center"}}>
+              {(() => {
+                // The market chip: a resolved gl code (from override or ccTLD) shows muted; an
+                // unknown market shows amber, because keyword data will be filed under the wrong
+                // country — or refused outright — until a human picks one.
+                const effective = marketFor({ url: site.url, siteId: site.siteId, market: site.market });
+                const unknown = effective === null;
+                return (
+                  <span
+                    title={unknown ? t("siteMarketUnknown") : `${t("siteMarket")}: ${effective.toUpperCase()}`}
+                    onClick={e => { e.preventDefault(); e.stopPropagation(); setEditingMarketId(editingMarketId === site.id ? null : site.id); }}
+                    style={{
+                      fontSize: "10px", fontWeight: 700, padding: "2px 6px", borderRadius: "4px",
+                      whiteSpace: "nowrap", cursor: "pointer", textTransform: "uppercase",
+                      background: unknown ? "rgba(255,159,10,0.16)" : "rgba(139,92,246,0.12)",
+                      color: unknown ? "#ff9f0a" : "#8B5CF6",
+                      outline: editingMarketId === site.id ? "1.5px solid #8B5CF6" : "none",
+                      outlineOffset: "1px",
+                    }}
+                  >
+                    {unknown ? "·/?" : effective}
+                  </span>
+                );
+              })()}
               {(siteTags[site.id] || []).map(tag => {
                 const isActive = activeTag === tag;
                 return (
@@ -1704,6 +1829,51 @@ function PortfolioPageContent() {
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(340px,1fr))",gap:"12px",opacity:0.5}}>
                 {hiddenSites.map((s,i)=><SiteCard key={s.id||i} site={s}/>)}
               </div>
+            </section>
+          )}
+
+          {/* Archive — properties no longer returned by Search Console. Collapsed by
+              default so replaced domains stop cluttering the dashboard, but their
+              history stays in the database until deleted by hand. */}
+          {archivedSites.length>0 && (
+            <section style={{marginTop:"8px"}}>
+              <button
+                className="archive-toggle"
+                onClick={()=>setShowArchive(v=>!v)}
+                aria-expanded={showArchive}
+              >
+                <span className={showArchive ? "archive-caret open" : "archive-caret"}>▸</span>
+                <span>🗄 {t("archiveSection")} (<span style={{filter:blur?"blur(4px)":"none",transition:"filter 0.25s"}}>{archivedSites.length}</span>)</span>
+              </button>
+              {showArchive && (
+                <>
+                  <div className="archive-hint">{t("archiveHint")}</div>
+                  <div className="archive-list">
+                    {archivedSites.map((s,i)=>(
+                      <div key={s.id||i} className={archiveBusy===s.id ? "archive-row busy" : "archive-row"}>
+                        <span className="archive-domain" style={{filter:blur?"blur(4px)":"none",transition:"filter 0.25s"}}>
+                          {getDomain(s.url)}
+                        </span>
+                        {s.archivedAt && (
+                          <span className="archive-date">
+                            {new Date(s.archivedAt).toLocaleDateString()}
+                          </span>
+                        )}
+                        <button
+                          className="archive-btn"
+                          onClick={()=>restoreSite(s.id)}
+                          disabled={archiveBusy===s.id}
+                        >{t("archiveRestore")}</button>
+                        <button
+                          className="archive-btn danger"
+                          onClick={()=>deleteSite(s.id, getDomain(s.url))}
+                          disabled={archiveBusy===s.id}
+                        >{t("archiveDelete")}</button>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </section>
           )}
         </>

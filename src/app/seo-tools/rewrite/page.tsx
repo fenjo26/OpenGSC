@@ -12,10 +12,10 @@ import { getActiveModel, effectiveBannedWords, type StoredModel } from "@/lib/se
 import { factDrift, type FactDrift } from "@/lib/seo/factDrift";
 import FactDriftPanel from "@/components/FactDriftPanel";
 import { slugFromSource, renderAs, downloadFile, extensionFor, EXPORT_FORMATS, type ExportFormat } from "@/lib/seo/exportFormats";
-import { uniquenessPct, wordCount } from "@/lib/seo/textMetrics";
+import { uniquenessPct, wordCount, type KeywordCoverage } from "@/lib/seo/textMetrics";
 
 type StructureCheck = { expected: number[]; got: number[]; ok: boolean };
-type Variant = { content: string; uniqueness: number; words: number; aiScore?: number; drift?: FactDrift; structure?: StructureCheck; repaired?: boolean };
+type Variant = { content: string; uniqueness: number; words: number; aiScore?: number; drift?: FactDrift; structure?: StructureCheck; repaired?: boolean; coverage?: KeywordCoverage };
 type Snippet = { sourceTitle: string; sourceDescription: string; title: string; description: string };
 
 // Google truncates around these lengths; the counter turns red past them.
@@ -38,6 +38,55 @@ const ghostSmall: React.CSSProperties = { display: "inline-flex", alignItems: "c
 
 function uColor(u: number) { return u >= 80 ? "#34c759" : u >= 60 ? "#ff9f0a" : "#ff375f"; }
 function aColor(s: number) { return s < 15 ? "#34c759" : s < 40 ? "#ff9f0a" : "#ff375f"; }
+
+// Which target queries the rewrite kept vs dropped — the same class of invisible risk `factDrift`
+// catches for numbers. A ranking phrase is silent: nothing flags that "купить решетки на окна"
+// disappeared from a 2000-word text, and the rewrite reads fine without it.
+function KeywordCoveragePanel({ coverage }: { coverage: KeywordCoverage }) {
+  const { t } = useLanguage();
+  const { rows, covered, lost, total } = coverage;
+  const color = lost > 0 ? "#ff9f0a" : "#34c759";
+  const lostRows = rows.filter(r => r.lost);
+  const keptRows = rows.filter(r => !r.lost && r.after > 0);
+  const chip: React.CSSProperties = { fontSize: "11px", fontWeight: 600, padding: "2px 8px", borderRadius: "20px" };
+  return (
+    <div style={{ border: `1px solid ${color}55`, background: `${color}0d`, borderRadius: "10px", padding: "12px 14px", display: "flex", flexDirection: "column", gap: "10px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px", fontWeight: 700, color }}>
+        <Search size={15} /> {t("rwCoverage")}
+        <span style={{ fontWeight: 500, color: "var(--color-text-secondary)", fontSize: "12px" }}>
+          · {t("rwCoverageKept")}: {covered}/{total}
+          {lost > 0 && <> · {t("rwCoverageLost")}: {lost}</>}
+        </span>
+      </div>
+      {lostRows.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+          <div style={{ fontSize: "12px", fontWeight: 600, color: "#ff9f0a" }}>{t("rwCoverageLost")}</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+            {lostRows.map((r, i) => (
+              <span key={i} style={{ ...chip, color: "#ff9f0a", background: "rgba(255,159,10,0.14)" }}>
+                {r.keyword} <span style={{ opacity: 0.7 }}>{r.before}→0</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {keptRows.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+          <div style={{ fontSize: "12px", fontWeight: 600, color: "#34c759" }}>{t("rwCoverageKept")}</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+            {keptRows.slice(0, 20).map((r, i) => (
+              <span key={i} style={{ ...chip, color: "#34c759", background: "rgba(52,199,89,0.12)" }}>
+                {r.keyword} <span style={{ opacity: 0.7 }}>{r.before}→{r.after}</span>
+              </span>
+            ))}
+            {keptRows.length > 20 && <span style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>+{keptRows.length - 20}</span>}
+          </div>
+        </div>
+      )}
+      <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>{t("rwCoverageHint")}</div>
+    </div>
+  );
+}
 
 export default function RewritePage() {
   const { t } = useLanguage();
@@ -63,6 +112,9 @@ export default function RewritePage() {
   // Off by default: both options change the request in ways an existing user did not ask for.
   const [useBanned, setUseBanned] = useState(false);
   const [temp, setTemp] = useState("");
+  // One query per line — a comma-separated blob would split on commas inside phrases ("buy shoes,
+  // red, size 42"). The rewriter treats these as strings it must keep; their volume is decorative.
+  const [targetKeywords, setTargetKeywords] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [results, setResults] = useState<Variant[] | null>(null);
@@ -117,6 +169,9 @@ export default function RewritePage() {
           // unlike a vague "write more naturally" directive.
           bannedWords: useBanned && fp ? effectiveBannedWords(fp) : undefined,
           temperature: temp.trim() === "" ? undefined : Number(temp),
+          targetKeywords: targetKeywords.trim()
+            ? targetKeywords.split("\n").map(s => s.trim()).filter(Boolean).map(k => ({ keyword: k }))
+            : undefined,
           snippet: wantSnippet && mode === "url",
           aiProvider: creds.provider, aiApiKey: creds.apiKey, model: creds.model || undefined, aiBaseUrl: creds.baseUrl || undefined,
           firecrawlKey: getFirecrawlKey() || undefined,
@@ -229,6 +284,22 @@ export default function RewritePage() {
           </label>
         </div>
 
+        {/* Target keywords — the phrases the page already ranks for, that the rewrite must keep.
+            One per line; "how to" and "купить" split on whitespace into different intents, so the
+            delimiter is the newline, not a space or comma. */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+          <label style={{ fontSize: "12px", fontWeight: 600, color: "var(--color-text-secondary)" }}>
+            {t("rwTargetKeywords")}
+          </label>
+          <textarea
+            value={targetKeywords}
+            onChange={e => setTargetKeywords(e.target.value)}
+            placeholder={t("rwTargetKeywords") + "…"}
+            rows={3}
+            style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }}
+          />
+        </div>
+
         {err && <div style={{ fontSize: "12px", color: "#f87171", display: "flex", alignItems: "center", gap: "6px" }}><AlertTriangle size={14} /> {err}</div>}
 
         <button onClick={run} disabled={loading} style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "11px 18px", borderRadius: "10px", border: "none", background: "#34c759", color: "#fff", fontSize: "14px", fontWeight: 700, cursor: loading ? "default" : "pointer", opacity: loading ? 0.6 : 1, width: "fit-content" }}>
@@ -321,6 +392,9 @@ export default function RewritePage() {
             </span>
           </div>
           {v.drift && <FactDriftPanel drift={v.drift} />}
+          {v.coverage && v.coverage.total > 0 && (
+            <KeywordCoveragePanel coverage={v.coverage} />
+          )}
           {editing === i ? (
             // Same box, same typography as the read view — the text must not reflow when the mode
             // changes, or the user loses their place mid-edit.

@@ -21,9 +21,10 @@
 import { prisma } from "@/lib/prisma";
 import { McpTool, Json, lim, resolveSite, siteArg, normDomain, getUserSettings } from "./shared";
 import {
-  discoverKeywords, estimateDemandCost, providerFor,
+  estimateDemandCost, providerFor,
   type DemandMode, type DemandRow,
 } from "@/lib/seo/demand";
+import { expandKeywords, type KwSource } from "@/lib/seo/keywordSource";
 import { writeKeywordCache, normalizeKeyword, recordUsage } from "@/lib/seo/metricsStore";
 import { runUpsert } from "@/lib/db/upsert";
 import { rawQuery } from "@/lib/db/raw";
@@ -50,6 +51,47 @@ async function resolveDfsKey(userId: string, args: Json = {}): Promise<string> {
   if (explicit) return explicit;
   const s = await getUserSettings(userId);
   return String(s.seoKey_dataforseo ?? s.dataforseoKey ?? "").trim();
+}
+
+/**
+ * Which provider answers `research_keywords`, resolved from the same mirrored settings the web UI
+ * writes.
+ *
+ * The tool used to be DataForSEO or nothing, which meant an instance paying for Ahrefs could not
+ * research a keyword through an agent at all. The order matches `getKeywordSource()` in the
+ * browser — Ahrefs, then Semrush, then DataForSEO — so the agent and the UI never disagree about
+ * whose credits are being spent.
+ *
+ * `args.source` lets a caller pin one deliberately; anything else falls through the chain.
+ */
+async function resolveKwSource(
+  userId: string, args: Json = {},
+): Promise<{ source: KwSource; apiKey: string; baseUrl?: string }> {
+  const s = await getUserSettings(userId);
+
+  const metricsKey = (p: "ahrefs" | "semrush") => {
+    const mode = String(s[`seoMetricsMode_${p}`] ?? "");
+    const suffixed = mode === "reseller" || mode === "custom" ? `seoKey_${p}__${mode}` : `seoKey_${p}`;
+    return String(s[suffixed] ?? s[`seoKey_${p}`] ?? "").trim();
+  };
+  const metricsHost = (p: "ahrefs" | "semrush") =>
+    String(s[`seoMetricsBaseUrl_${p}`] ?? "").trim() || undefined;
+
+  const pinned = String(args.source ?? "").trim().toLowerCase();
+  const chain: KwSource[] = pinned === "ahrefs" || pinned === "semrush" || pinned === "dataforseo"
+    ? [pinned as KwSource]
+    : ["ahrefs", "semrush", "dataforseo"];
+
+  for (const c of chain) {
+    if (c === "dataforseo") {
+      const k = await resolveDfsKey(userId, args);
+      if (k) return { source: "dataforseo", apiKey: k };
+      continue;
+    }
+    const k = metricsKey(c as "ahrefs" | "semrush");
+    if (k.length > 4) return { source: c, apiKey: k, baseUrl: metricsHost(c as "ahrefs" | "semrush") };
+  }
+  return { source: "off", apiKey: "" };
 }
 
 /**
@@ -136,8 +178,12 @@ const VERDICT_LEGEND = {
   none: "Search Console has never shown you for this query. Net-new content.",
 };
 
-const cacheKeyFor = (seed: string, country: string, language: string, mode: string, limit: number, clickstream: boolean) =>
-  `${normalizeKeyword(seed)}|${country}|${language}|${mode}|${limit}|${clickstream ? 1 : 0}`;
+// Provider goes in as a KEY PREFIX rather than a column, following the `llm:` convention
+// `api/aeo/mentions` already established in this same table. Two providers answering the same seed
+// are different purchases with different numbers, and a shared key would let one overwrite the
+// other. A prefix needs no migration; a column would.
+const cacheKeyFor = (seed: string, country: string, language: string, mode: string, limit: number, clickstream: boolean, source = "dataforseo") =>
+  `${source}:${normalizeKeyword(seed)}|${country}|${language}|${mode}|${limit}|${clickstream ? 1 : 0}`;
 
 export const DEMAND_TOOLS: McpTool[] = [
   {
@@ -274,11 +320,12 @@ export const DEMAND_TOOLS: McpTool[] = [
       const limit = lim(args.limit, 150, 1000);
       const clickstream = args.clickstream === true;
 
-      const apiKey = await resolveDfsKey(userId, args);
-      if (!apiKey) {
+      const kw = await resolveKwSource(userId, args);
+      if (kw.source === "off" || !kw.apiKey) {
         throw new Error(
-          "No DataForSEO key is configured on this instance. The owner adds one under Settings → SEO Tools; " +
-          "until then, get_keyword_demand and get_striking_distance are the free sources of keyword data.",
+          "No keyword data source is configured on this instance. The owner adds an Ahrefs, Semrush or " +
+          "DataForSEO key under Settings → SEO Metrics; until then, get_keyword_demand and " +
+          "get_striking_distance are the free sources of keyword data.",
         );
       }
 
@@ -286,7 +333,7 @@ export const DEMAND_TOOLS: McpTool[] = [
 
       // Cache check before spending, even though the caller was told to do it. An agent that
       // skipped the free tool should not be billed for the omission.
-      const key = cacheKeyFor(seed, country, language, mode, limit, clickstream);
+      const key = cacheKeyFor(seed, country, language, mode, limit, clickstream, kw.source);
       try {
         const cached: any[] = await rawQuery(
           `SELECT rows, source, createdAt FROM "DemandSearch" WHERE userId = ? AND cacheKey = ?`,
@@ -309,19 +356,28 @@ export const DEMAND_TOOLS: McpTool[] = [
         }
       } catch { /* table missing until prisma db push; fall through and fetch */ }
 
+      // Through the shared source, so Ahrefs and Semrush answer here exactly as they do in the UI.
+      // `mode` and `clickstream` are DataForSEO-only concepts and are simply ignored elsewhere —
+      // reported back in the response so the caller can see what was actually honoured.
       const provider = providerFor(country);
-      const res = await discoverKeywords(apiKey, seed, { gl: country, hl: language, limit, mode, clickstream });
+      const res = await expandKeywords(kw, seed, {
+        country, language, limit, withDifficulty: args.withDifficulty === true, fetch: true,
+      });
 
       if (res.error && !res.rows.length) throw new Error(`Keyword research failed: ${res.error}`);
 
       // Charged, stored, and mirrored into the shared metric cache — in that order, and all
       // before returning, so an abandoned call still leaves the instance better off.
-      const units = Math.max(1, Math.round((res.cost || estimateDemandCost(provider, limit, clickstream)) * UNITS_PER_USD));
+      // DataForSEO bills dollars and is converted at a fixed rate; Ahrefs and Semrush bill units
+      // directly, so those are recorded as-is rather than round-tripped through a currency.
+      const units = kw.source === "dataforseo"
+        ? Math.max(1, Math.round((res.usd || estimateDemandCost(provider, limit, clickstream)) * UNITS_PER_USD))
+        : Math.max(1, res.units);
       try {
         // Through the shared recorder rather than its own copy of the statement: the web route
         // and this tool spend from the same monthly budget, and two hand-written versions of
         // "add to this month's total" is how they drift apart.
-        await recordUsage(userId, PROVIDER, units);
+        await recordUsage(userId, kw.source, units);
         await runUpsert({
           table: "DemandSearch",
           conflict: ["userId", "cacheKey"],
@@ -334,16 +390,9 @@ export const DEMAND_TOOLS: McpTool[] = [
         });
       } catch { /* pre-migration instance: the result is still returned, just not remembered */ }
 
-      await writeKeywordCache(
-        res.rows.map(r => ({
-          keyword: r.keyword,
-          volume: r.volume,
-          difficulty: r.difficulty,
-          cpc: r.cpc,
-          intents: r.intent === "unknown" ? null : JSON.stringify([r.intent]),
-        })),
-        country, PROVIDER, "api",
-      );
+      // The shared metric cache is written by `expandKeywords` itself, under whichever provider
+      // actually answered. Repeating it here would file the same rows a second time under a
+      // hardcoded "dataforseo" and make an Ahrefs purchase look like a DataForSEO one.
 
       const rows = decorate(res.rows, site ? await ourQueries(site.id) : new Map());
 
@@ -351,8 +400,8 @@ export const DEMAND_TOOLS: McpTool[] = [
         seed, country, language, mode,
         target: site ? normDomain(site.url) : null,
         source: res.source,
-        usedFallback: res.usedFallback,
-        spentUsd: Math.round(res.cost * 10000) / 10000,
+        spentUsd: Math.round(res.usd * 10000) / 10000,
+        units: res.units,
         fromCache: false,
         counts: countVerdicts(rows),
         legend: VERDICT_LEGEND,

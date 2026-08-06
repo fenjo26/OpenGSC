@@ -494,3 +494,102 @@ input:-webkit-autofill {
   color: var(--color-text-tertiary);
   white-space: nowrap;
 }
+
+/* Archive — properties Search Console no longer returns.
+ *
+ * Deliberately not rendered as .card like a live site: these are rows, not dashboards.
+ * A dead domain has no sparkline worth drawing, and giving it the same visual weight as
+ * a working site is what made replaced domains feel like they were "still there".
+ * Muted by default, full contrast on hover, so the group reads as inert until touched. */
+.archive-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  opacity: 0.7;
+  transition: opacity 0.15s ease;
+}
+.archive-toggle:hover { opacity: 1; }
+
+.archive-caret {
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+.archive-caret.open { transform: rotate(90deg); }
+
+.archive-hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  opacity: 0.75;
+}
+
+.archive-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.archive-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-bg-secondary);
+  transition: opacity 0.15s ease, border-color 0.15s ease;
+}
+.archive-row:hover { border-color: var(--color-border-soft); }
+.archive-row.busy { opacity: 0.5; pointer-events: none; }
+
+.archive-domain {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.archive-date {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+.archive-btn {
+  padding: 5px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.archive-btn:hover:not(:disabled) {
+  border-color: var(--color-accent-blue);
+  background-color: color-mix(in srgb, var(--color-accent-blue) 10%, transparent);
+}
+.archive-btn:disabled { cursor: not-allowed; opacity: 0.6; }
+
+/* Destructive and irreversible — cascades to metrics, audits, keywords, backlinks.
+   Red only on hover so the row does not read as an error at rest. */
+.archive-btn.danger { color: var(--color-danger); }
+.archive-btn.danger:hover:not(:disabled) {
+  border-color: var(--color-danger);
+  background-color: color-mix(in srgb, var(--color-danger) 10%, transparent);
+}

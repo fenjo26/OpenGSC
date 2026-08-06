@@ -27,6 +27,8 @@ export async function GET() {
     // question the label asks is "when", not "how many".
     lastResult: completedAt ? {
       sitesSynced: result.sitesSynced,
+      sitesArchived: result.sitesArchived,
+      sitesRestored: result.sitesRestored,
       needsReauth: result.accountErrors.some(e => e.needsReauth),
       accountErrors: result.accountErrors.length,
       siteErrors: result.siteErrors.length,

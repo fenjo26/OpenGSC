@@ -116,6 +116,10 @@ export const DFS_LOC: Record<string, number> = {
   kr: 2410, il: 2376, ae: 2784, sa: 2682, in: 2356, id: 2360, my: 2458, th: 2764,
   vn: 2704, ph: 2608, br: 2076, mx: 2484, ar: 2032, cl: 2152, co: 2170, za: 2710,
   eg: 2818, ma: 2504, ng: 2566, ge: 2268, kz: 2398, az: 2031, am: 2051,
+  // Western Balkans — kept in step with DEMAND_LOC in `demand.ts`, which is the table that
+  // decides whether a market can be researched at all. A country present there and absent here
+  // would mean "we can price this keyword but not see its SERP", which is never intended.
+  ba: 2070, me: 2499, mk: 2807, al: 2008, si: 2705,
 };
 
 // Docs: https://docs.dataforseo.com — SERP API (Live Advanced). Auth: HTTP Basic.

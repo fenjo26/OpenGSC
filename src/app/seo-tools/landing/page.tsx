@@ -9,7 +9,8 @@ import {
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import SeoJobProgress from "@/components/SeoJobProgress";
 import SeoRecentList from "@/components/SeoRecentList";
-import { getSeoGenCreds, getTaskCreds, getSerpCreds, getFirecrawlKey, getDataForSeoKey, loadPolicies, getActivePolicyName } from "@/lib/seo/keys";
+import { getSeoGenCreds, getTaskCreds, getSerpCreds, getFirecrawlKey, loadPolicies, getActivePolicyName, getKeywordSource, getKwAuto, getKwLimit } from "@/lib/seo/keys";
+import { getMetricsWithKd } from "@/lib/seo/metricsClient";
 import { COUNTRIES, LANGUAGES } from "@/lib/seo/regions";
 import { TONES, toneToPrompt } from "@/lib/seo/tones";
 import { startJob, importJob } from "@/lib/seo/jobs";
@@ -67,6 +68,10 @@ export default function LandingPage() {
   const [scraped, setScraped] = useState<Record<string, Scraped>>({});
   const [keywordsData, setKeywordsData] = useState<{ keyword: string; volume: number; cpc: number; competition: number }[]>([]);
   const [kwLoading, setKwLoading] = useState(false);
+  /** Which provider answered, so the prompt names it instead of assuming DataForSEO. */
+  const [kwSource, setKwSource] = useState("");
+  const [kwHasSource, setKwHasSource] = useState(false);
+  useEffect(() => { setKwHasSource(getKeywordSource().apiKey.length > 4); }, []);
   const [manualUrl, setManualUrl] = useState("");
 
   // Step 2 — generation config.
@@ -118,18 +123,28 @@ export default function LandingPage() {
     return next;
   }
 
+  // Same routing as the outline tool — see the note there. Kept as a near-copy rather than a
+  // shared hook because the two pages differ in what they do with the result, and the four lines
+  // they share are not worth an abstraction that would hide the request from either.
   async function fetchKeywords() {
-    const dfsKey = getDataForSeoKey();
-    if (!dfsKey || !keyword.trim()) { setKeywordsData([]); return; }
+    const src = getKeywordSource();
+    if (src.source === "off" || !src.apiKey || !keyword.trim()) { setKeywordsData([]); setKwSource(""); return; }
     setKwLoading(true);
     try {
-      const res = await fetch("/api/seo/keywords", {
+      const res = await fetch("/api/seo/keyword-ideas", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ keyword, dfsKey, gl: country, hl: language, limit: 60 }),
+        body: JSON.stringify({
+          seed: keyword, country, language,
+          limit: getKwLimit(), withDifficulty: getMetricsWithKd(),
+          source: src.source, apiKey: src.apiKey, baseUrl: src.baseUrl,
+          cap: Number(localStorage.getItem(`seoMetricsCap_${src.source}`) || 0) || 0,
+          fetch: true,
+        }),
       });
       const data = await res.json();
       setKeywordsData(res.ok ? (data.items || []) : []);
-    } catch { setKeywordsData([]); }
+      setKwSource(res.ok && (data.items || []).length ? String(data.source || "") : "");
+    } catch { setKeywordsData([]); setKwSource(""); }
     setKwLoading(false);
   }
 
@@ -150,7 +165,8 @@ export default function LandingPage() {
       setPaa(data.peopleAlsoAsk || []);
       setRelated(data.relatedSearches || []);
       setSelected(new Set((data.results || []).map((r: SerpItem) => r.url)));
-      fetchKeywords();
+      // Opt-in only: scraping a SERP must not spend keyword credits as a side effect.
+      if (getKwAuto()) fetchKeywords();
     } catch (e: any) { setErr(String(e?.message ?? e)); }
     setLoading("");
   }
@@ -272,7 +288,7 @@ export default function LandingPage() {
         additionalKeywords: addKeywords.split(/[\n,]+/).map(s => s.trim()).filter(Boolean).join(", "),
         lsiKeywords: lsiPhrases.split(/[\n,]+/).map(s => s.trim()).filter(Boolean).join(", "),
         targetWordCount: targetWords ? Number(targetWords) : undefined,
-        keywordsData, pageGoal: "commercial",
+        keywordsData, keywordsSource: kwSource || undefined, pageGoal: "commercial",
         narration: narration || undefined,
         generate: genMode,
         structureMode: effStructureMode,
@@ -365,6 +381,21 @@ export default function LandingPage() {
               {t("seoCompetitors")} ({selected.size}/{serp.length} {t("seoSelectedWord")})
             </h3>
           </div>
+
+          {/* Same warning as the outline tool, for the same reason: this page also feeds
+              `keywordsData` into generation and also said nothing when the list came back empty. */}
+          {!kwLoading && keywordsData.length === 0 && (
+            <div style={{ marginBottom: "12px", padding: "10px 12px", borderRadius: "9px", border: "1px solid rgba(245,158,11,0.28)", background: "rgba(245,158,11,0.08)", display: "flex", gap: "9px", alignItems: "flex-start" }}>
+              <AlertTriangle size={14} color="#f59e0b" style={{ flexShrink: 0, marginTop: "2px" }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: "12px", fontWeight: 700, color: "var(--color-text-primary)", marginBottom: "3px" }}>{t("seoKwNoSourceTitle")}</div>
+                <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>{t("seoKwNoSourceBody")}</div>
+                {kwHasSource
+                  ? <button onClick={fetchKeywords} style={{ marginTop: "7px", padding: "7px 13px", borderRadius: "8px", border: "none", background: "var(--color-accent-purple)", color: "#fff", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>{t("seoKwLoadBtn")}</button>
+                  : <Link href="/seo-tools/settings" style={{ fontSize: "11px", color: "var(--color-accent-blue)", textDecoration: "none", display: "inline-block", marginTop: "5px" }}>{t("seoKwNoSourceCta")} →</Link>}
+              </div>
+            </div>
+          )}
           <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
             {serp.map(s => {
               const on = selected.has(s.url);

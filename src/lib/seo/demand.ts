@@ -34,6 +34,9 @@ const DFS_TIMEOUT_MS = 60_000;
 /**
  * Country (gl) → DataForSEO location_code. Superset of the table in `keywords.ts`, kept here
  * because this module also needs to know which of them Labs actually supports.
+ *
+ * Every code is ISO 3166-1 numeric + 2000, which is how DataForSEO derives country locations.
+ * That rule is what makes this table auditable — a wrong entry is visible without a lookup.
  */
 export const DEMAND_LOC: Record<string, number> = {
   us: 2840, gb: 2826, ca: 2124, au: 2036, de: 2276, fr: 2250, nl: 2528, it: 2380,
@@ -43,6 +46,10 @@ export const DEMAND_LOC: Record<string, number> = {
   kz: 2398, by: 2112, rs: 2688, hr: 2191, sk: 2703, hu: 2348, lt: 2440, lv: 2428,
   ee: 2233, is: 2352, il: 2376, za: 2710, nz: 2554, kr: 2410, th: 2764, vn: 2704,
   id: 2360, ph: 2608, my: 2458, ar: 2032, cl: 2152, co: 2170, pe: 2604, eg: 2818,
+  // Western Balkans. Added because they were the concrete case that exposed the silent
+  // fallback below: a portfolio of Bosnian sites was being researched against US demand,
+  // and nothing anywhere said so.
+  ba: 2070, me: 2499, mk: 2807, al: 2008, si: 2705,
 };
 
 /**
@@ -61,8 +68,30 @@ export function providerFor(gl: string): DemandProvider {
   return GOOGLE_ADS_ONLY.has((gl || "us").toLowerCase()) ? "google_ads" : "labs";
 }
 
+/** Whether a market can be researched at all. Callers guard with this before spending money. */
+export function isSupportedCountry(gl: string): boolean {
+  return !!DEMAND_LOC[(gl || "").trim().toLowerCase()];
+}
+
+/**
+ * Thrown instead of silently substituting the United States.
+ *
+ * The old behaviour — `?? 2840` — meant an unrecognised market returned US volumes with no
+ * signal of any kind: no error, no flag, no differently-shaped response. Numbers for the wrong
+ * country are indistinguishable from correct ones on screen, and they get acted upon. Every
+ * exported entry point below now refuses such a request before it is billed.
+ */
+export class UnknownCountryError extends Error {
+  constructor(public readonly gl: string) {
+    super(`unsupported_country:${gl}`);
+    this.name = "UnknownCountryError";
+  }
+}
+
 export function locationCode(gl: string): number {
-  return DEMAND_LOC[(gl || "us").toLowerCase()] ?? 2840;
+  const code = DEMAND_LOC[(gl || "").trim().toLowerCase()];
+  if (!code) throw new UnknownCountryError(gl);
+  return code;
 }
 
 // ─── Cost model ────────────────────────────────────────────────────────────────
@@ -410,6 +439,9 @@ export async function discoverKeywords(
   if (!seed.trim()) return { ...empty, error: "no_seed" };
 
   const gl = (opts.gl || "us").toLowerCase();
+  // Checked before anything is billed: a request for an unmapped market cannot be answered, and
+  // answering it with US data would be worse than answering it at all.
+  if (!isSupportedCountry(gl)) return { ...empty, error: `unsupported_country:${gl}` };
   const limit = Math.max(10, Math.min(1000, opts.limit ?? 150));
   const provider = providerFor(gl);
 
@@ -580,6 +612,7 @@ export async function domainOverview(
   if (!domain.includes(".")) return { ...blank, error: "bad_domain" };
 
   const gl = (opts.gl || "us").toLowerCase();
+  if (!isSupportedCountry(gl)) return { ...blank, error: `unsupported_country:${gl}` };
   if (providerFor(gl) === "google_ads") return { ...blank, error: "labs_only" };
 
   const hl = opts.hl || "en";
@@ -679,6 +712,7 @@ export async function keywordOverview(
   if (!unique.length) return { rows: [], cost: 0 };
 
   const gl = (opts.gl || "us").toLowerCase();
+  if (!isSupportedCountry(gl)) return { rows: [], cost: 0, error: `unsupported_country:${gl}` };
 
   // Google-Ads-only countries answer this question through `search_volume` instead, which returns
   // volume and CPC but neither difficulty nor intent.

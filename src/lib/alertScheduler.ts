@@ -69,7 +69,9 @@ const isoWeek = () => {
 async function checkUser(userId: string, s: AlertSettings): Promise<Pending[]> {
   const L = NOTIFY_L[normalizeLang(s.lang)];
   const out: Pending[] = [];
-  const sites = await prisma.site.findMany({ where: { userId }, select: { id: true, url: true } });
+  // Archived properties are excluded: a removed domain's traffic goes to zero by definition,
+  // which would fire a traffic-drop alert every single run.
+  const sites = await prisma.site.findMany({ where: { userId, archivedAt: null }, select: { id: true, url: true } });
   const siteName = new Map(sites.map(x => [x.id, x.url.replace(/^https?:\/\//, "").replace(/^sc-domain:/, "")]));
   const siteIds = sites.map(x => x.id);
   if (!siteIds.length) return out;

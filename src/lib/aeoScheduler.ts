@@ -20,8 +20,11 @@ async function tick() {
   running = true;
   try {
     const staleBefore = new Date(Date.now() - AEO_STALE_MS);
+    // Archived properties are skipped — an AEO check on a dead domain costs an AI call
+    // and can only ever come back empty.
     const sites = await prisma.site.findMany({
       where: {
+        archivedAt: null,
         trackedQuestions: {
           some: { OR: [{ lastCheckedAt: null }, { lastCheckedAt: { lt: staleBefore } }] },
         },

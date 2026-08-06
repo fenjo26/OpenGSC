@@ -20,7 +20,9 @@ async function tick() {
   running = true;
   try {
     const sites = await prisma.site.findMany({
-      where: { clarityInterval: 'daily', clarityToken: { not: null } },
+      // Archived properties are skipped — the Clarity project for a replaced domain
+      // stops receiving traffic, so daily collection just logs failures.
+      where: { archivedAt: null, clarityInterval: 'daily', clarityToken: { not: null } },
       select: { id: true, url: true },
     });
     for (const site of sites) {
