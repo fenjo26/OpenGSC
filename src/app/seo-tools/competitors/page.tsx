@@ -178,8 +178,11 @@ export default function CompetitorsPage() {
         {notice && <span style={{ fontSize: "12px", color: "var(--color-danger)" }}>{notice}</span>}
       </div>
 
-      {/* Discovered competitors — a menu, not a result. Nothing is stored until one is pulled. */}
-      {(found.length > 0 || competitors.length > 0) && (
+      {/* Competitor input — always available once a site is picked. Auto-discovered suggestions
+          appear at the top when Ahrefs knows them, but for a small/new domain Ahrefs returns
+          nothing, and hiding the manual entry behind "found something" made the tool look broken
+          exactly there. The pull button works for any domain the user types. */}
+      {siteId && (
         <div className="panel">
           <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", marginBottom: "10px" }}>
             <span className="tool-section-label" style={{ marginBottom: 0 }}>{t("gapCompetitors")}</span>
@@ -192,32 +195,40 @@ export default function CompetitorsPage() {
             <span className="metric-cost">{pullUnits.toLocaleString()} {t("metricsUnits")} · ≈ {formatUsd(pullCost)}</span>
           </div>
 
-          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-            {found.map(f => (
-              /* Green outline = already pulled. Deliberately not .pill.active: that means
-                 "currently selected filter" everywhere else in the app and would read as a
-                 mode here rather than as a state. */
-              <button key={f.domain} className="pill" onClick={() => pull(f.domain)} disabled={!!busy}
-                style={{
-                  cursor: busy ? "not-allowed" : "pointer",
-                  borderColor: competitors.includes(f.domain) ? "var(--color-accent-green)" : "transparent",
-                }}>
-                {busy === "keywords" ? <Loader2 size={11} className="spin" /> : <Download size={11} />}
-                {f.domain}
-                {f.sharedKeywords != null && (
-                  <span style={{ color: "var(--color-text-secondary)" }}>· {fmt(f.sharedKeywords)}</span>
-                )}
-              </button>
-            ))}
-          </div>
+          {found.length > 0 && (
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "10px" }}>
+              {found.map(f => (
+                /* Green outline = already pulled. Deliberately not .pill.active: that means
+                   "currently selected filter" everywhere else in the app and would read as a
+                   mode here rather than as a state. */
+                <button key={f.domain} className="pill" onClick={() => pull(f.domain)} disabled={!!busy}
+                  style={{
+                    cursor: busy ? "not-allowed" : "pointer",
+                    borderColor: competitors.includes(f.domain) ? "var(--color-accent-green)" : "transparent",
+                  }}>
+                  {busy === "keywords" ? <Loader2 size={11} className="spin" /> : <Download size={11} />}
+                  {f.domain}
+                  {f.sharedKeywords != null && (
+                    <span style={{ color: "var(--color-text-secondary)" }}>· {fmt(f.sharedKeywords)}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
 
-          <div style={{ display: "flex", gap: "8px", marginTop: "10px", flexWrap: "wrap" }}>
+          {/* Manual entry — the only path for a domain Ahrefs has no organic-keyword footprint for.
+              Shown whether or not discovery returned anything, with a hint explaining why a small
+              site may need it. */}
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
             <input className="tool-input inline" value={manual} onChange={e => setManual(e.target.value)}
               placeholder={t("gapManualPh")} onKeyDown={e => { if (e.key === "Enter") pull(manual); }}
               style={{ minWidth: "220px", fontFamily: "monospace" }} />
-            <button className="metric-action" onClick={() => pull(manual)} disabled={!!busy || !manual.trim() || !hasKey}>
+            <button className="metric-action" onClick={() => pull(manual)} disabled={!!busy || !manual.trim() || !hasKey}
+              title={!hasKey ? t("gapNoKey") : undefined}>
+              {busy === "keywords" && manual.trim() ? <Loader2 size={11} className="spin" /> : <Download size={11} />}
               {t("gapPull")}
             </button>
+            <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>{t("gapManualHint")}</span>
           </div>
         </div>
       )}

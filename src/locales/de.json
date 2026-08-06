@@ -2505,6 +2505,7 @@
   "gapKeywords": "Keywords",
   "gapPull": "Keywords laden",
   "gapManualPh": "competitor.com",
+  "gapManualHint": "Keine Vorschläge? Gib einen dir bekannten Konkurrenten ein — funktioniert für neue/kleine Seiten, die Ahrefs noch nicht kennt.",
   "gapNoKey": "Benötigt einen Ahrefs-Key — dieses Modul hat noch keinen Import-Pfad",
   "gapFailed": "Mitbewerber-Daten konnten nicht geladen werden",
   "gapNotMigrated": "Führe prisma db push aus — die Mitbewerber-Tabellen fehlen",

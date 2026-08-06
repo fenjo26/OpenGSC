@@ -2505,6 +2505,7 @@
   "gapKeywords": "mots-clés",
   "gapPull": "Charger les mots-clés",
   "gapManualPh": "concurrent.com",
+  "gapManualHint": "Pas de suggestions ? Saisissez un concurrent à la main — utile pour les sites nouveaux/petits qu'Ahrefs ne connaît pas encore.",
   "gapNoKey": "Nécessite une clé Ahrefs — ce module n’a pas encore de chemin d’import",
   "gapFailed": "Impossible de charger les données concurrentes",
   "gapNotMigrated": "Exécutez prisma db push — les tables concurrents sont manquantes",

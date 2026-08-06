@@ -2505,6 +2505,7 @@
   "gapKeywords": "个关键词",
   "gapPull": "加载关键词",
   "gapManualPh": "competitor.com",
+  "gapManualHint": "没有建议？手动输入一个已知的竞争对手——适用于 Ahrefs 尚未收录的新/小网站。",
   "gapNoKey": "需要 Ahrefs 密钥——此模块暂无导入途径",
   "gapFailed": "无法加载竞争对手数据",
   "gapNotMigrated": "请运行 prisma db push——竞争对手表缺失",

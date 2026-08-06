@@ -2505,6 +2505,7 @@
   "gapKeywords": "palabras clave",
   "gapPull": "Cargar palabras clave",
   "gapManualPh": "competitor.com",
+  "gapManualHint": "¿Sin sugerencias? Escribe un competidor conocido — funciona para sitios nuevos/pequeños que Ahrefs aún no mapea.",
   "gapNoKey": "Necesita una clave de Ahrefs — este módulo aún no tiene ruta de importación",
   "gapFailed": "No se pudieron cargar los datos del competidor",
   "gapNotMigrated": "Ejecuta prisma db push — faltan las tablas de competidores",
