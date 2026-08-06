@@ -19,6 +19,16 @@ export type SyncSchedule = {
   timeZone: string;
   /** ISO timestamp of the last run this schedule triggered, or null. */
   lastRunAt: string | null;
+  /**
+   * ISO timestamp of the last completed sync of any kind, scheduled or pressed by hand.
+   *
+   * Kept here rather than only in the scheduler's own `lastRunAt` because it answers a different
+   * question: not "has today's schedule fired" but "how old is the data on screen". The server
+   * used to answer that from a module-level variable, which every restart wiped — leaving the
+   * dashboard showing a sync from days ago while the settings page, reading this row, showed one
+   * from this morning. Two screens disagreeing about the same event.
+   */
+  lastCompletedAt?: string | null;
 };
 
 export const DEFAULT_SYNC_SCHEDULE: SyncSchedule = {
@@ -26,6 +36,7 @@ export const DEFAULT_SYNC_SCHEDULE: SyncSchedule = {
   hour: 9,
   timeZone: "UTC",
   lastRunAt: null,
+  lastCompletedAt: null,
 };
 
 export async function getSyncSchedule(userId: string): Promise<SyncSchedule> {
@@ -50,8 +61,28 @@ export function normalise(input: Partial<SyncSchedule>, current: SyncSchedule): 
     enabled: input.enabled ?? current.enabled,
     hour: Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : current.hour,
     timeZone: isValidZone(input.timeZone) ? input.timeZone! : current.timeZone,
+    // Both timestamps are the server's to write. Carried over explicitly rather than spread from
+    // `current`, so that saving the form cannot erase them by omission.
     lastRunAt: current.lastRunAt,
+    lastCompletedAt: current.lastCompletedAt ?? null,
   };
+}
+
+/**
+ * Remember that a sync finished, for every user whose account it covered.
+ *
+ * A run is instance-wide, so there is no single owner to attribute it to; writing it to each
+ * synced user's row keeps the answer available to whoever asks. Failures are ignored on purpose:
+ * a timestamp that did not save is not a reason to treat a completed sync as failed.
+ */
+export async function recordSyncCompleted(userIds: string[], when: Date): Promise<void> {
+  const stamp = when.toISOString();
+  for (const userId of new Set(userIds)) {
+    try {
+      const current = await getSyncSchedule(userId);
+      await saveSyncSchedule(userId, { ...current, lastCompletedAt: stamp });
+    } catch { /* column missing, or the row went away mid-run */ }
+  }
 }
 
 export function isValidZone(tz?: string | null): boolean {

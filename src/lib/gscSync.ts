@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { google } from 'googleapis';
+import { recordSyncCompleted } from '@/lib/syncSchedule';
 
 let isSyncing = false;
 
@@ -106,6 +107,12 @@ export async function runGscSync() {
     siteErrors: [],
   };
 
+  // Whose data this run touched, so the completion time can be written somewhere that survives a
+  // restart. `lastSyncResult` below is a module variable and a deploy wipes it, which is how the
+  // dashboard ended up claiming the last sync was two days ago while the settings page, reading
+  // from the database, showed one from that morning.
+  const syncedUserIds: string[] = [];
+
   try {
     console.log('[GSC Sync] Starting…');
 
@@ -144,6 +151,7 @@ export async function runGscSync() {
 
     for (const account of accounts) {
       const userId = account.user.id;
+      syncedUserIds.push(userId);
       console.log(`[GSC Sync] Account: ${account.providerAccountId} (user: ${userId})`);
 
       const oauth2 = new google.auth.OAuth2(
@@ -415,5 +423,9 @@ export async function runGscSync() {
     const elapsed = `${Math.floor(elapsedMs / 60000)}m${String(Math.floor((elapsedMs % 60000) / 1000)).padStart(2, '0')}s`;
     syncStartedAt = null;
     console.log(`[GSC Sync] Done in ${elapsed}. sites=${result.sitesSynced} accountErrors=${result.accountErrors.length} siteErrors=${result.siteErrors.length}`);
+
+    // Persist the completion time. Deliberately after the log line and outside anything that can
+    // abort the run: this is a nicety for the UI, not part of the sync.
+    await recordSyncCompleted(syncedUserIds, result.completedAt).catch(() => {});
   }
 }

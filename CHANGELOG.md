@@ -81,6 +81,18 @@ reloading a page mid-run picks the spinner back up rather than showing an idle b
 
 ### Fixed
 
+**"Last synced" survives a restart**
+
+The dashboard read the timestamp from a module-level variable, so any deploy or `pm2 restart`
+forgot a sync that had really happened. The effect was two screens disagreeing about the same
+event: Settings showed the scheduled run from that morning, read from the database, while the
+button on the dashboard still showed a manual sync from two days earlier.
+
+`runGscSync` now writes its completion time into `User.syncSettings` for every account it
+covered, and the sync endpoint falls back to that when its own memory is empty. A restored
+timestamp comes back with zero counts, because those genuinely are not known any more, and the
+label only ever asked "when".
+
 **Installs and updates now check that the install is usable, not just that npm exited 0**
 
 npm 12 blocks a dependency's lifecycle scripts unless the root package lists that exact version
