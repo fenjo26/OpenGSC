@@ -97,6 +97,13 @@ export default function CompetitorsPage() {
         : t("gapFailed"));
       return null;
     }
+    // A 200 that carries an error is the "we asked and the answer was nothing" case. It is not a
+    // failure — the request worked — but it must still say so, because the panel below renders
+    // identically whether nobody has pressed anything or the provider came back empty.
+    if (d.error === "no_competitor_keywords") {
+      setNotice(t("gapNoCompetitorKeywords").replace("{d}", String(d.competitor ?? "")));
+      return d;
+    }
     setNotice("");
     return d;
   }, [siteId, country, t]);

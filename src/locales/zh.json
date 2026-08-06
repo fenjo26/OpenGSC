@@ -2724,5 +2724,6 @@
   "rwCoverage": "关键词覆盖",
   "rwCoverageKept": "保留 {a}/{b}",
   "rwCoverageLost": "丢失 {n}",
-  "rwCoverageHint": "在原文与改写稿中按完整短语计数，不经过模型。"
+  "rwCoverageHint": "在原文与改写稿中按完整短语计数，不经过模型。",
+  "gapNoCompetitorKeywords": "Ahrefs 未返回 {d} 在该市场前 20 名内的任何关键词。该请求仍然计费。请尝试更大的竞争对手或其他市场——新站和小站可能没有自然搜索足迹。"
 }

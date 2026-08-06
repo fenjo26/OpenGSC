@@ -2724,5 +2724,6 @@
   "rwCoverage": "Keyword-Abdeckung",
   "rwCoverageKept": "{a}/{b} erhalten",
   "rwCoverageLost": "{n} verloren",
-  "rwCoverageHint": "In Quelle und Umschrift gezählt, exakte Phrase, ohne Modell."
+  "rwCoverageHint": "In Quelle und Umschrift gezählt, exakte Phrase, ohne Modell.",
+  "gapNoCompetitorKeywords": "Ahrefs hat für {d} in diesem Markt keine Keywords in den Top 20 geliefert. Die Anfrage wurde trotzdem berechnet. Versuchen Sie einen größeren Wettbewerber oder einen anderen Markt — neue und kleine Domains haben oft keine organische Spur."
 }

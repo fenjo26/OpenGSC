@@ -2724,5 +2724,6 @@
   "rwCoverage": "Keyword coverage",
   "rwCoverageKept": "{a}/{b} kept",
   "rwCoverageLost": "{n} lost",
-  "rwCoverageHint": "Counted in the source and in the rewrite, exact phrase, no model involved."
+  "rwCoverageHint": "Counted in the source and in the rewrite, exact phrase, no model involved.",
+  "gapNoCompetitorKeywords": "Ahrefs returned no keywords for {d} in this market within the top 20. The request was still charged. Try a bigger competitor, raise the market, or pick a domain with an established organic footprint."
 }

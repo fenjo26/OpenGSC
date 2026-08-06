@@ -2724,5 +2724,6 @@
   "rwCoverage": "Cobertura de palabras clave",
   "rwCoverageKept": "{a}/{b} conservadas",
   "rwCoverageLost": "{n} perdidas",
-  "rwCoverageHint": "Contado en el origen y en la reescritura, frase exacta, sin modelo."
+  "rwCoverageHint": "Contado en el origen y en la reescritura, frase exacta, sin modelo.",
+  "gapNoCompetitorKeywords": "Ahrefs no devolvió ninguna palabra clave para {d} en este mercado dentro del top 20. La petición se cobró igualmente. Prueba con un competidor mayor u otro mercado: un dominio nuevo o pequeño puede no tener huella orgánica."
 }

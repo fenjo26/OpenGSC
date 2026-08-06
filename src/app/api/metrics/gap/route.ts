@@ -184,6 +184,15 @@ export async function POST(req: Request) {
     }
     if (res.error) return respond({ error: res.error }, 502);
 
+    // A provider that answers "no keywords" is not the same thing as a tool nobody has used yet,
+    // and until now both rendered as the same neutral "nothing loaded" panel. For a small or new
+    // competitor Ahrefs legitimately returns an empty organic list — but the pull was already
+    // charged in full, so leaving the screen unchanged means the user pays, learns nothing, and
+    // presses again. Said out loud instead, naming the two filters that usually explain it.
+    if (!res.items.length) {
+      return respond({ error: "no_competitor_keywords", competitor, maxPosition: 20 }, 200);
+    }
+
     // Replace rather than merge: a keyword the competitor no longer ranks for should disappear
     // from the gap, and an upsert alone would keep it forever.
     try {

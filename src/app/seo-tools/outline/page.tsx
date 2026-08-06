@@ -106,8 +106,12 @@ export default function OutlinePage() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
 
-  // Append keyword(s) to the "additional keywords" field without duplicating entries. Splitting on
-  // comma keeps the field's own format consistent — it is later parsed the same way at line ~296.
+  // Append keyword(s) to the "additional keywords" field without duplicating entries.
+  //
+  // Joined with newlines, not commas, because the field's own placeholder says "one keyword per
+  // line". The parser accepts both, so a comma-joined list worked — but a button that fills a box
+  // in a format the box tells you not to use leaves the user unsure whether it took effect, which
+  // is a real cost even when the behaviour is correct.
   const addKw = (kw: string | string[]) => {
     const incoming = (Array.isArray(kw) ? kw : [kw])
       .flatMap(s => s.split(/[\n,]+/)).map(s => s.trim().toLowerCase()).filter(Boolean);
@@ -116,7 +120,7 @@ export default function OutlinePage() {
       const existing = new Set(prev.split(/[\n,]+/).map(s => s.trim().toLowerCase()).filter(Boolean));
       const merged = [...prev.split(/[\n,]+/).map(s => s.trim()).filter(Boolean)];
       for (const k of incoming) if (!existing.has(k)) { merged.push(k); existing.add(k); }
-      return merged.join(", ");
+      return merged.join("\n");
     });
   };
 

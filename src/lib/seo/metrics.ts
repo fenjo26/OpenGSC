@@ -306,7 +306,20 @@ export interface MetricsResult<T> {
   error?: string;
 }
 
+/**
+ * A provider's number, or null when it did not give one.
+ *
+ * The explicit null/empty guard is the whole point. `Number(null)` is `0` and `0` is finite, so
+ * without it every field the API answered as JSON `null` — "we have no data for this keyword in
+ * this country" — was stored as a hard zero, which reads as "nobody searches for this". The two
+ * are opposite conclusions and the cache could not tell them apart.
+ *
+ * The live instance shows exactly this: of 124 cached Ahrefs rows, 65 carry `volume = 0` and not
+ * one carries `volume = NULL`, while 88 carry `cpc = NULL` — because `cpc` was the single field
+ * guarded by hand at its call site and the others were not. The asymmetry is the proof.
+ */
 const num = (v: any): number | null => {
+  if (v == null || v === "") return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 };
