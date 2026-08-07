@@ -644,7 +644,7 @@ const CORE_TOOLS: McpTool[] = [
     name: "execute_sql_query",
     cost: "local",
     description:
-      "Run a custom read-only SELECT (or WITH…SELECT) query over the local SQLite database — for cohorts, cross-table joins, and aggregations the standard tools don't cover. Available tables: Site, DailyMetric, TrackedKeyword, RankCheck, TrackedQuestion, AeoCheck, Backlink, SitemapUrl, PageInspection, PageInspectionHistory, SiteHealth, SiteAudit, SiteAuditPage, LinkWatchBrand, LinkMention, DrCache, AlertEvent, Digest, ContentGroup, TopicCluster; sqlite_master for schema discovery. Credential tables (User, Account, Session) are blocked, the connection is opened read-only at the engine level, and results are capped at 500 rows.",
+      "Run a custom read-only SELECT (or WITH…SELECT) query over the local database — for cohorts, cross-table joins, and aggregations the standard tools don't cover. Available tables: Site, DailyMetric, TrackedKeyword, RankCheck, TrackedQuestion, AeoCheck, Backlink, SitemapUrl, PageInspection, PageInspectionHistory, SiteHealth, SiteAudit, SiteAuditPage, LinkWatchBrand, LinkMention, DrCache, AlertEvent, Digest, ContentGroup, TopicCluster; sqlite_master (SQLite) or information_schema (MySQL) for schema discovery. Credential tables (User, Account, Session) are blocked, the connection is read-only, and results are capped at 500 rows.",
     inputSchema: {
       type: "object",
       properties: {
@@ -665,40 +665,54 @@ const CORE_TOOLS: McpTool[] = [
         throw new Error(`Blocked keyword/table: "${banned[0]}". Credential tables (User/Account/Session) and write operations are not accessible through this tool.`);
       }
 
-      // True read-only enforcement: a separate SQLite connection opened with the
-      // readonly flag — the engine itself refuses any write no matter how the query
-      // text is disguised. prepare() also throws on multi-statement input, and
-      // stmt.reader confirms the statement returns rows.
-      //
-      // Three `turbopackIgnore` markers, and the one that matters is on `process.cwd()`.
-      //
-      // Turbopack reports "Encountered unexpected file in NFT list" when it decides a route may
-      // read arbitrary files at runtime, and then traces the entire project into the build. What
-      // triggers that here is not the dynamic imports — it is `path.resolve(process.cwd(), …)`,
-      // a filesystem path rooted at the project directory, which the bundler cannot narrow. The
-      // warning names this case explicitly and gives the fix in its own text; marking only the
-      // imports leaves the warning exactly as it was.
-      //
-      // The imports keep their markers because neither needs bundling anyway: `path` is built in,
-      // and better-sqlite3 is a native addon that has to be resolved from node_modules at
-      // runtime.
-      const dbUrl = process.env.DATABASE_URL || "";
-      const rawPath = dbUrl.replace(/^file:/, "").split("?")[0];
-      const path = await import(/* turbopackIgnore: true */ "path");
-      const dbPath = path.isAbsolute(rawPath)
-        ? rawPath
-        : path.resolve(/* turbopackIgnore: true */ process.cwd(), rawPath);
-      // better-sqlite3 ships no bundled types (@types not installed).
-      // @ts-ignore -- no declaration file for better-sqlite3
-      const { default: Database } = (await import(/* turbopackIgnore: true */ "better-sqlite3")) as any;
-      const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+      const url = process.env.DATABASE_URL || "";
+      const isMysql = /^(mysql|mariadb):/i.test(url);
       let rows: any[];
-      try {
-        const stmt = db.prepare(sql);
-        if (!stmt.reader) throw new Error("Query does not return rows — only SELECT queries are allowed.");
-        rows = stmt.all() as any[];
-      } finally {
-        db.close();
+
+      if (isMysql) {
+        // On MySQL there is no local file to open read-only, so the SQLite path below does not
+        // apply. The query runs through the same `rawQuery` the rest of the app uses, which means
+        // portableSql rewrites `"identifier"` to backticks — so an agent writing the SQLite-style
+        // `FROM "User"` it sees everywhere else in this tool's output still works, and a query
+        // already using backticks is left untouched (portableSql only touches double quotes).
+        // The keyword screen above is the only write-guard on this branch: a MySQL account separate
+        // from the app's (e.g. a SELECT-only grant) would be a stronger one, but that is a
+        // deployment choice, not something the code can enforce on a connection it did not open.
+        rows = await rawQuery(sql);
+      } else {
+        // True read-only enforcement on SQLite: a separate connection opened with the
+        // readonly flag — the engine itself refuses any write no matter how the query
+        // text is disguised. prepare() also throws on multi-statement input, and
+        // stmt.reader confirms the statement returns rows.
+        //
+        // Three `turbopackIgnore` markers, and the one that matters is on `process.cwd()`.
+        //
+        // Turbopack reports "Encountered unexpected file in NFT list" when it decides a route may
+        // read arbitrary files at runtime, and then traces the entire project into the build. What
+        // triggers that here is not the dynamic imports — it is `path.resolve(process.cwd(), …)`,
+        // a filesystem path rooted at the project directory, which the bundler cannot narrow. The
+        // warning names this case explicitly and gives the fix in its own text; marking only the
+        // imports leaves the warning exactly as it was.
+        //
+        // The imports keep their markers because neither needs bundling anyway: `path` is built in,
+        // and better-sqlite3 is a native addon that has to be resolved from node_modules at
+        // runtime.
+        const rawPath = url.replace(/^file:/, "").split("?")[0];
+        const path = await import(/* turbopackIgnore: true */ "path");
+        const dbPath = path.isAbsolute(rawPath)
+          ? rawPath
+          : path.resolve(/* turbopackIgnore: true */ process.cwd(), rawPath);
+        // better-sqlite3 ships no bundled types (@types not installed).
+        // @ts-ignore -- no declaration file for better-sqlite3
+        const { default: Database } = (await import(/* turbopackIgnore: true */ "better-sqlite3")) as any;
+        const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+        try {
+          const stmt = db.prepare(sql);
+          if (!stmt.reader) throw new Error("Query does not return rows — only SELECT queries are allowed.");
+          rows = stmt.all() as any[];
+        } finally {
+          db.close();
+        }
       }
 
       // Best-effort tenant scoping on top (an instance is normally single-operator,

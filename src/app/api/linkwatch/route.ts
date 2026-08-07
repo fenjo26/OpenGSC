@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { rawQuery, rawExec } from "@/lib/db/raw";
+import { rawQuery, rawExec, currentDialect } from "@/lib/db/raw";
 
 // Link Monitor brands + aggregated report (detailed.com/ai-backlinks-api workflow).
 // GET    /api/linkwatch                → { brands, mentions, topDomains }
@@ -40,10 +40,16 @@ export async function POST(req: Request) {
   const domains: string[] = ([...new Set((Array.isArray(b.domains) ? b.domains : []).map((d: any) => norm(String(d))).filter((d: string) => d.includes(".")))] as string[]).slice(0, 200);
   if (!domains.length) return NextResponse.json({ error: "no_domains" }, { status: 400 });
   let added = 0;
+  // `INSERT OR IGNORE` is SQLite's "skip the duplicate" spelling; MySQL writes it `INSERT IGNORE`.
+  // The rest of the codebase routes conflict-skips through runUpsert, but this insert carries a
+  // generated id and wants to do nothing on conflict, which is exactly what both spellings mean.
+  // portableSql rewrites the double-quoted table name to backticks on MySQL; the OR IGNORE / IGNORE
+  // keyword is chosen here because it sits outside any quoted identifier.
+  const ignore = currentDialect() === "mysql" ? "IGNORE" : "OR IGNORE";
   for (const d of domains) {
     try {
       await rawExec(
-        `INSERT OR IGNORE INTO "LinkWatchBrand" (id, userId, domain, createdAt) VALUES (?, ?, ?, ?)`,
+        `INSERT ${ignore} INTO "LinkWatchBrand" (id, userId, domain, createdAt) VALUES (?, ?, ?, ?)`,
         rid(), userId, d, new Date().toISOString());
       added++;
     } catch { /* skip */ }
