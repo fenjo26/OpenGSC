@@ -9,10 +9,18 @@
 //   npx tsx scripts/check-upsert-sql.ts
 //
 // Only `buildUpsert` is called, so nothing is written and no query runs. It does construct a
-// Prisma client, because the builder shares a module with the function that executes — which is
-// why the run prints one line of client debug output before the first case. Harmless, and worth
-// knowing before someone reads it as a failure.
+// Prisma client — an incidental side effect of importing the builder, which shares a module with
+// the function that runs the statement — but no query is ever sent, so on SQLite the construction
+// is free and the run prints one line of client debug output before the first case.
+//
+// On MySQL that side effect bites if the environment is not loaded. `tsx` does not read .env the
+// way Next.js does, so without the import below DATABASE_URL is unseen, the client defaults to the
+// SQLite adapter, and the generated client (built for the mysql provider by prisma.config.ts)
+// rejects it: "Driver Adapter ... is not compatible with the provider 'mysql'". Loading dotenv
+// makes the adapter match the client, and since no query runs nothing connects. Same reason
+// verify-upsert-live.ts loads it first, and the same fix for the same trap.
 
+import "dotenv/config";
 import { buildUpsert, type SqlDialect, type UpsertSpec } from "../src/lib/db/upsert";
 
 const CASES: { name: string; spec: UpsertSpec }[] = [
