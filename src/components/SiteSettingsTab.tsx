@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Settings, Sparkles, Plus, X, Copy, Check, Trash2 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import MetricsImport from "@/components/MetricsImport";
+import { getTaskCreds } from "@/lib/seo/keys";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface Cluster { id: string; name: string; rules: string; }
@@ -91,8 +92,8 @@ function BrandedSection({ siteDbId, domain }: { siteDbId: string; domain: string
   const oneClick = async () => {
     setAiStatus('loading');
     try {
-      const provider = localStorage.getItem('aiProvider') || 'anthropic';
-      const apiKey   = localStorage.getItem(`aiKey_${provider}`) || localStorage.getItem('aiApiKey') || '';
+      // `utility` task — a short mechanical pass, resolved the same way as everywhere else.
+      const { provider, apiKey, model, baseUrl } = getTaskCreds('utility');
 
       if (!apiKey) {
         // No AI key: just add domain brand term
@@ -102,7 +103,10 @@ function BrandedSection({ siteDbId, domain }: { siteDbId: string; domain: string
         return;
       }
 
-      const res = await fetch(`/api/gsc/branded?siteId=${siteDbId}&aiProvider=${provider}&aiApiKey=${encodeURIComponent(apiKey)}`);
+      const qs = new URLSearchParams({ siteId: siteDbId, aiProvider: provider, aiApiKey: apiKey });
+      if (model) qs.set('aiModel', model);
+      if (baseUrl) qs.set('aiBaseUrl', baseUrl);
+      const res = await fetch(`/api/gsc/branded?${qs.toString()}`);
       if (!res.ok) throw new Error('API error');
       const data = await res.json();
       persist([...new Set([...kws, ...(data.branded ?? [])])]);
@@ -232,15 +236,18 @@ function ClustersSection({ siteDbId }: { siteDbId: string }) {
   const oneClick = async () => {
     setAiStatus('loading');
     try {
-      const provider = localStorage.getItem('aiProvider') || 'anthropic';
-      const apiKey   = localStorage.getItem(`aiKey_${provider}`) || localStorage.getItem('aiApiKey') || '';
+      // `utility` task — a short mechanical pass, resolved the same way as everywhere else.
+      const { provider, apiKey, model, baseUrl } = getTaskCreds('utility');
 
       if (!apiKey) { setAiStatus('nokey'); return; }
 
       const res = await fetch('/api/gsc/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteId: siteDbId, aiProvider: provider, aiApiKey: apiKey }),
+        body: JSON.stringify({
+          siteId: siteDbId, aiProvider: provider, aiApiKey: apiKey,
+          aiModel: model || undefined, aiBaseUrl: baseUrl || undefined,
+        }),
       });
       if (!res.ok) throw new Error('Setup error');
       const data = await res.json();
@@ -394,15 +401,18 @@ function GroupsSection({ siteDbId }: { siteDbId: string }) {
   const oneClick = async () => {
     setAiStatus('loading');
     try {
-      const provider = localStorage.getItem('aiProvider') || 'anthropic';
-      const apiKey   = localStorage.getItem(`aiKey_${provider}`) || localStorage.getItem('aiApiKey') || '';
+      // `utility` task — a short mechanical pass, resolved the same way as everywhere else.
+      const { provider, apiKey, model, baseUrl } = getTaskCreds('utility');
 
       if (!apiKey) { setAiStatus('nokey'); return; }
 
       const res = await fetch('/api/gsc/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteId: siteDbId, aiProvider: provider, aiApiKey: apiKey }),
+        body: JSON.stringify({
+          siteId: siteDbId, aiProvider: provider, aiApiKey: apiKey,
+          aiModel: model || undefined, aiBaseUrl: baseUrl || undefined,
+        }),
       });
       if (!res.ok) throw new Error('Setup error');
       const data = await res.json();

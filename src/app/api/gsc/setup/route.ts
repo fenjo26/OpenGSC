@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { google } from 'googleapis';
+import { fetchLLM } from '@/lib/llm';
 
 const LANG = new Set(['el','de','fr','ru','en','es','it','pl','nl','pt','tr','ar','zh','bg','ro','cs','sk','hr','sr','uk','hu']);
 
@@ -39,67 +40,32 @@ async function queryGSC(
 }
 
 // ─── AI clustering via LLMs ───────────────────────────────────────────────
-async function fetchLLM(prompt: string, provider?: string, apiKey?: string) {
-  const p = provider || 'anthropic';
-  const k = apiKey || process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY;
-  console.log(`[Setup/LLM] provider=${p} keyLen=${k?.length ?? 0} keyPrefix=${k?.slice(0,12) ?? 'none'}`);
-  if (!k) { console.log('[Setup/LLM] No API key — using algorithmic fallback'); return null; }
+//
+// This route used to carry its own copy of the multi-provider LLM client. It had drifted to
+// `gpt-4o-mini`, `gemini-1.5-flash`, `claude-3.5-haiku` and `glm-4.5-air` — ids that still
+// resolve, so nothing ever failed loudly — and it knew four providers where lib/llm.ts knows
+// nine, with no retry: a routine 429 turned into "AI clustering unavailable, using the
+// algorithmic fallback", silently and on the user's paid key.
+//
+// `askJson` is what is actually specific to this route: an env-key fallback for unattended
+// setup, and pulling the first JSON object out of the reply.
+type AiCreds = { provider?: string; apiKey?: string; model?: string; baseUrl?: string };
 
-  try {
-    let text = '';
-    if (p === 'anthropic' || p === 'zai' || (!provider && k.startsWith('sk-ant'))) {
-      const baseUrl = p === 'zai' ? 'https://api.z.ai/api/anthropic' : 'https://api.anthropic.com';
-      const model   = p === 'zai' ? 'glm-4.5-air' : 'claude-haiku-4-5-20251001';
-      const res = await fetch(`${baseUrl}/v1/messages`, {
-        method: 'POST',
-        headers: { 'x-api-key': k, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-        body: JSON.stringify({ model, max_tokens: 2048, messages: [{ role: 'user', content: prompt }] }),
-      });
-      if (!res.ok) {
-        const err = await res.text();
-        console.log(`[Setup/LLM] ${p} error ${res.status}: ${err}`);
-        return null;
-      }
-      const data = await res.json();
-      text = data.content?.[0]?.text ?? '';
-    } else if (p === 'openai' || (!provider && k.startsWith('sk-'))) {
-      const res = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${k}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: prompt }] }),
-      });
-      if (!res.ok) return null;
-      const data = await res.json();
-      text = data.choices?.[0]?.message?.content ?? '';
-    } else if (p === 'gemini' || (!provider && k.startsWith('AIza'))) {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${k}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-      });
-      if (!res.ok) return null;
-      const data = await res.json();
-      text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-    } else if (p === 'openrouter') {
-      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${k}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'anthropic/claude-3.5-haiku', messages: [{ role: 'user', content: prompt }] }),
-      });
-      if (!res.ok) return null;
-      const data = await res.json();
-      text = data.choices?.[0]?.message?.content ?? '';
-    }
+async function askJson(prompt: string, ai: AiCreds, maxTokens = 2048): Promise<any> {
+  const provider = ai.provider || 'anthropic';
+  // One-Click Setup can run before any key is stored in the browser, so a server-side env key is
+  // still an accepted source here — unlike the SEO tools, which are strictly bring-your-own.
+  const apiKey = ai.apiKey || process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY;
+  if (!apiKey) { console.log('[Setup/LLM] No API key — using algorithmic fallback'); return null; }
 
-    const match = text.match(/\{[\s\S]*\}/);
-    if (!match) return null;
-    return JSON.parse(match[0]);
-  } catch {
-    return null;
-  }
+  const text = await fetchLLM(prompt, provider, apiKey, maxTokens, ai.model || undefined, ai.baseUrl || undefined);
+  if (!text) return null;
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) return null;
+  try { return JSON.parse(match[0]); } catch { return null; }
 }
 
-async function aiClusterQueries(queries: { label: string; impr: number }[], provider?: string, apiKey?: string) {
+async function aiClusterQueries(queries: { label: string; impr: number }[], ai: AiCreds) {
   if (queries.length === 0) return null;
 
   // Take top 200 by impressions for the prompt
@@ -128,7 +94,7 @@ Rules:
 - Cover all major query groups, merge very small ones
 - Respond with JSON only`;
 
-  const parsed = await fetchLLM(prompt, provider, apiKey);
+  const parsed = await askJson(prompt, ai);
   if (!parsed) return null;
 
   return (parsed.clusters ?? []).map((c: any) => ({
@@ -138,7 +104,7 @@ Rules:
   }));
 }
 
-async function aiGroupPages(pages: { label: string; impr: number }[], domain: string, provider?: string, apiKey?: string) {
+async function aiGroupPages(pages: { label: string; impr: number }[], domain: string, ai: AiCreds) {
   if (pages.length === 0) return null;
 
   const top = pages.sort((a, b) => b.impr - a.impr).slice(0, 150);
@@ -168,7 +134,7 @@ Rules:
 - Group by service type, destination, content category etc.
 - Respond with JSON only`;
 
-  const parsed = await fetchLLM(prompt, provider, apiKey);
+  const parsed = await askJson(prompt, ai);
   if (!parsed) return null;
 
   return (parsed.groups ?? []).map((g: any) => ({
@@ -254,13 +220,19 @@ export async function POST(req: Request) {
   const pages   = pageRows.map(r =>  ({ label: r.keys?.[0] ?? '', impr: r.impressions ?? 0 }));
 
   // Try AI first, fall back to algorithmic
-  const aiProvider = body.aiProvider as string | undefined;
-  const aiApiKey = body.aiApiKey as string | undefined;
-  const hasApiKey = !!aiApiKey || !!process.env.ANTHROPIC_API_KEY || !!process.env.OPENAI_API_KEY;
-  
+  // model/baseUrl come from the caller's `utility` task setting (lib/seo/aiTasks.ts); absent
+  // means "provider default", which lib/providerDefaults.ts answers in one place.
+  const ai = {
+    provider: body.aiProvider as string | undefined,
+    apiKey: body.aiApiKey as string | undefined,
+    model: body.aiModel as string | undefined,
+    baseUrl: body.aiBaseUrl as string | undefined,
+  };
+  const hasApiKey = !!ai.apiKey || !!process.env.ANTHROPIC_API_KEY || !!process.env.OPENAI_API_KEY;
+
   const [aiClusters, aiGroups] = await Promise.all([
-    aiClusterQueries(queries, aiProvider, aiApiKey),
-    aiGroupPages(pages, site.url, aiProvider, aiApiKey),
+    aiClusterQueries(queries, ai),
+    aiGroupPages(pages, site.url, ai),
   ]);
 
   const clusterDefs = aiClusters ?? algorithmicCluster(queries);

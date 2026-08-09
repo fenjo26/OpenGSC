@@ -9,6 +9,8 @@ import { useEffect, useState } from "react";
 import { Globe, RefreshCw, CheckCircle, Eye, X, Sparkles } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { getConfiguredProviders, AI_PROVIDER_NAMES } from "@/lib/seo/keys";
+import { rankModels, type ModelOpt } from "@/lib/seo/models";
+import { AI_TASKS, pathsForTask } from "@/lib/seo/aiTasks";
 
 interface KeyCardProvider {
   id: string; storageKey: string; name: string; roleKey: string; placeholder: string;
@@ -287,25 +289,46 @@ function CustomProviderCard() {
 }
 
 // Per-task default provider/model — set once, applied on every generation of that task type.
+// Rows come from the AI_TASKS registry rather than being listed here, because the two used to
+// drift: this table offered four tasks while getTaskCreds read five, so `seoTaskModel_landing`
+// could be read but never written and the Landing tool silently ignored what the user thought
+// they had configured. See lib/seo/aiTasks.ts.
 function PerTaskProviders() {
   const { t } = useLanguage();
-  const tasks: { id: string; label: string }[] = [
-    { id: "outline", label: t("seoTaskOutline") },
-    { id: "text", label: t("seoTaskText") },
-    { id: "analysis", label: t("seoTaskAnalysis") },
-    { id: "policy", label: t("seoTaskPolicy") },
-  ];
   const [vals, setVals] = useState<Record<string, { provider: string; model: string }>>({});
   const [opts, setOpts] = useState<string[]>([]);
+  // provider id → its live model list, so the model column can be a picker instead of a
+  // free-text box. Typing a model id by hand is how you end up pinned to a model the provider
+  // retired: the call keeps succeeding against a stale alias, or fails with a 404 that surfaces
+  // as "the tool is broken".
+  const [modelsBy, setModelsBy] = useState<Record<string, ModelOpt[]>>({});
+  const [globalProvider, setGlobalProvider] = useState("");
+  const [globalModel, setGlobalModel] = useState("");
+
   useEffect(() => {
-    const configured = getConfiguredProviders().map(p => p.id);
+    const configuredProviders = getConfiguredProviders();
+    const configured = configuredProviders.map(p => p.id);
     const custom = (localStorage.getItem("aiKey_custom") || "") && (localStorage.getItem("aiBaseUrl_custom") || "");
     setOpts([...configured, ...(custom ? ["custom"] : [])].filter((v, i, a) => a.indexOf(v) === i));
+    setGlobalProvider(localStorage.getItem("seoProvider") || localStorage.getItem("aiProvider") || "");
+    setGlobalModel(localStorage.getItem("seoModel") || "");
     const v: Record<string, { provider: string; model: string }> = {};
-    for (const tk of ["outline", "text", "analysis", "policy"]) {
-      v[tk] = { provider: localStorage.getItem(`seoTaskProvider_${tk}`) || "", model: localStorage.getItem(`seoTaskModel_${tk}`) || "" };
+    for (const { id } of AI_TASKS) {
+      v[id] = { provider: localStorage.getItem(`seoTaskProvider_${id}`) || "", model: localStorage.getItem(`seoTaskModel_${id}`) || "" };
     }
     setVals(v);
+
+    Promise.all(configuredProviders.map(async p => {
+      try {
+        const res = await fetch("/api/seo/models", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ provider: p.id, apiKey: p.key }),
+        });
+        const d = await res.json();
+        const list: ModelOpt[] = Array.isArray(d?.models) ? d.models : [];
+        return [p.id, p.id === "openai" ? rankModels(list) : list] as const;
+      } catch { return [p.id, [] as ModelOpt[]] as const; }
+    })).then(pairs => setModelsBy(Object.fromEntries(pairs.filter(([, l]) => l.length))));
   }, []);
   const setTask = (id: string, patch: Partial<{ provider: string; model: string }>) => {
     setVals(prev => {
@@ -316,24 +339,93 @@ function PerTaskProviders() {
       return next;
     });
   };
-  const sel: React.CSSProperties = { padding: "7px 9px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-primary)", fontSize: "12px", outline: "none" };
+  const sel: React.CSSProperties = { padding: "7px 9px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-primary)", fontSize: "12px", outline: "none", width: "100%", boxSizing: "border-box" };
+
   return (
     <div style={{ marginBottom: "18px", paddingBottom: "16px", borderBottom: "1px solid var(--color-border)" }}>
       <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--color-text-primary)", marginBottom: "4px" }}>🎛 {t("seoPerTaskTitle")}</div>
-      <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", margin: "0 0 10px" }}>{t("seoPerTaskSub")}</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-        {tasks.map(tk => (
-          <div key={tk.id} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", alignItems: "center" }}>
-            <span style={{ fontSize: "12px", color: "var(--color-text-primary)", fontWeight: 600 }}>{tk.label}</span>
-            <select style={sel} value={vals[tk.id]?.provider || ""} onChange={e => setTask(tk.id, { provider: e.target.value })}>
-              <option value="">{t("seoTaskDefaultProvider")}</option>
-              {opts.map(o => <option key={o} value={o}>{AI_PROVIDER_NAMES[o] || o}</option>)}
-            </select>
-            <input style={{ ...sel, fontFamily: "monospace" }} placeholder={t("seoTaskModelPh")} value={vals[tk.id]?.model || ""} onChange={e => setTask(tk.id, { model: e.target.value })} />
-          </div>
-        ))}
+      <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", margin: "0 0 12px" }}>{t("seoPerTaskSub")}</div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+        {AI_TASKS.map(task => {
+          const cur = vals[task.id] ?? { provider: "", model: "" };
+          const effectiveProvider = cur.provider || globalProvider;
+          // Exactly the chain resolveTaskCreds() walks, restated so the row can show its own
+          // outcome — a per-task provider with no per-task model still inherits the global
+          // model, and that surprises people until it is written down.
+          const effectiveModel = cur.model || globalModel;
+          return (
+            <div key={task.id} style={{ display: "grid", gridTemplateColumns: "1.15fr 1fr 1fr", gap: "8px", alignItems: "start" }}>
+              <div style={{ paddingRight: "6px" }}>
+                <div style={{ fontSize: "12px", color: "var(--color-text-primary)", fontWeight: 600 }}>{t(task.labelKey as never)}</div>
+                <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.45, marginTop: "2px" }}>
+                  {t(task.descKey as never)}
+                </div>
+                <div style={{ fontSize: "10.5px", color: "var(--color-text-tertiary)", marginTop: "3px" }}>
+                  {t("seoTaskUsedBy")}: {pathsForTask(task.id).map(p => p.replace("/seo-tools/", "")).join(", ") || "—"}
+                </div>
+              </div>
+
+              <select style={sel} value={cur.provider} onChange={e => setTask(task.id, { provider: e.target.value, model: "" })}>
+                <option value="">
+                  {globalProvider
+                    ? `${t("seoTaskDefaultProvider")} — ${AI_PROVIDER_NAMES[globalProvider] || globalProvider}`
+                    : t("seoTaskDefaultProvider")}
+                </option>
+                {opts.map(o => <option key={o} value={o}>{AI_PROVIDER_NAMES[o] || o}</option>)}
+              </select>
+
+              <div>
+                <TaskModelField
+                  value={cur.model}
+                  models={modelsBy[effectiveProvider] ?? []}
+                  onChange={m => setTask(task.id, { model: m })}
+                />
+                <div style={{ fontSize: "10.5px", color: "var(--color-text-tertiary)", marginTop: "4px", lineHeight: 1.4, wordBreak: "break-word" }}>
+                  {effectiveProvider
+                    ? `→ ${AI_PROVIDER_NAMES[effectiveProvider] || effectiveProvider} · ${effectiveModel || t("seoModelBadgeProviderDefault")}`
+                    : t("seoTaskNoProvider")}
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
+  );
+}
+
+// Model cell for one task row: a picker when we could list the provider's models, a free-text
+// box when we could not (no key for that provider yet, or an OpenAI-compatible endpoint with no
+// /models listing). A value the list does not contain is kept and shown rather than dropped —
+// silently discarding a saved setting because the list came back short is worse than showing an
+// id we cannot vouch for.
+function TaskModelField({ value, models, onChange }: { value: string; models: ModelOpt[]; onChange: (m: string) => void }) {
+  const { t } = useLanguage();
+  const [free, setFree] = useState(false);
+  const sel: React.CSSProperties = { padding: "7px 9px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-primary)", fontSize: "12px", outline: "none", width: "100%", boxSizing: "border-box" };
+
+  if (!models.length || free) {
+    return (
+      <input
+        style={{ ...sel, fontFamily: "monospace" }}
+        placeholder={t("seoTaskModelPh")}
+        value={value}
+        autoFocus={free}
+        onBlur={() => setFree(false)}
+        onChange={e => onChange(e.target.value)}
+      />
+    );
+  }
+
+  const known = models.some(m => m.id === value);
+  return (
+    <select style={sel} value={value} onChange={e => (e.target.value === "__custom__" ? setFree(true) : onChange(e.target.value))}>
+      <option value="">{t("seoTaskModelDefault")}</option>
+      {value && !known && <option value={value}>{value}</option>}
+      {models.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+      <option value="__custom__">{t("seoTaskModelCustom")}</option>
+    </select>
   );
 }
 

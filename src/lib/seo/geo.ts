@@ -13,6 +13,8 @@
 //   breakdown, leaderboard scores) is computed deterministically in code from the trace.
 
 import { extractJson } from "@/lib/seo/prompts";
+import { OPENAI_FALLBACK_MODELS, OPENAI_FALLBACK_CHEAP } from "@/lib/seo/models";
+import { defaultModelFor } from "@/lib/providerDefaults";
 
 export type GeoResult = { ok: true; data: GeoReport } | { ok: false; error: string };
 
@@ -298,19 +300,22 @@ Rules:
 - Keep every string short. Language of notes: ${language}.`;
 }
 
-async function runAnalysis(t: RawTrace, query: string, language: string, country: string, model: string, apiKey: string, engine: GeoEngine = "openai"): Promise<any> {
+async function runAnalysis(t: RawTrace, query: string, language: string, country: string, analysisModel: string, apiKey: string, engine: GeoEngine = "openai"): Promise<any> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 120_000);
   const prompt = buildAnalysisPrompt(t, query, language, country);
   try {
     if (engine === "kie") {
-      // kie.ai's chat catalog doesn't expose a cheap gpt-4o-mini equivalent; reuse the same
-      // Responses-API endpoint (no tools) with a lighter GPT model for the structured pass.
+      // kie.ai publishes no /models listing and exposes a single documented id, so there is
+      // nothing to pick from and nothing to rank — the shared provider default is the answer.
+      // (It used to send `gpt-5-2`, an undocumented lighter id chosen for cost; a private id no
+      // listing confirms is exactly the kind of guess that breaks silently.) Same Responses-API
+      // endpoint as stage 1, minus the tools, with reasoning dialled down for a structured pass.
       const res = await fetch("https://api.kie.ai/codex/v1/responses", {
         method: "POST", signal: ctrl.signal,
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "gpt-5-2", stream: false,
+          model: defaultModelFor("kie"), stream: false,
           input: [{ role: "user", content: [{ type: "input_text", text: prompt }] }],
           reasoning: { effort: "low" },
         }),
@@ -327,8 +332,6 @@ async function runAnalysis(t: RawTrace, query: string, language: string, country
       return extractJson(text);
     }
 
-    // Use a fast, cheap text model for the structured pass (independent of the search model).
-    const analysisModel = /^gpt-5/.test(model) ? "gpt-4o-mini" : (model || "gpt-4o-mini");
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST", signal: ctrl.signal,
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
@@ -572,6 +575,16 @@ export function assembleReport(opts: {
 // ─── Orchestrator ────────────────────────────────────────────────────────────────
 export async function runGeoAudit(params: {
   query: string; language?: string; country?: string; model?: string; apiKey: string; engine?: GeoEngine;
+  /**
+   * Model for stage 2 — the structured pass that turns the search trace into a report. Separate
+   * from the search model on purpose: stage 1 needs browsing depth, stage 2 needs to emit JSON
+   * cheaply, and paying flagship rates for the second is waste.
+   *
+   * Supplied by the caller from the `utility` task setting. It used to be `"gpt-4o-mini"`,
+   * written into this file, which meant the cheap pass was pinned to a model the user could not
+   * see, could not change, and which will eventually be retired out from under them.
+   */
+  analysisModel?: string;
 }): Promise<GeoResult> {
   const query = String(params.query ?? "").trim();
   if (!query) return { ok: false, error: "no_query" };
@@ -580,7 +593,7 @@ export async function runGeoAudit(params: {
   const language = String(params.language ?? "en");
   const country = String(params.country ?? "us");
   const engine: GeoEngine = params.engine === "kie" ? "kie" : "openai";
-  const model = String(params.model ?? "") || (engine === "kie" ? "gpt-5-5" : "gpt-5");
+  const model = String(params.model ?? "") || (engine === "kie" ? "gpt-5-5" : OPENAI_FALLBACK_MODELS[0]);
 
   const trace = await runWebSearch(query, language, country, model, apiKey, engine);
   if ("error" in trace) return { ok: false, error: trace.error };
@@ -588,7 +601,8 @@ export async function runGeoAudit(params: {
     return { ok: false, error: "empty_trace" };
   }
 
-  const analysis = await runAnalysis(trace, query, language, country, model, apiKey, engine);
+  const analysisModel = String(params.analysisModel ?? "") || OPENAI_FALLBACK_CHEAP;
+  const analysis = await runAnalysis(trace, query, language, country, analysisModel, apiKey, engine);
   const report = assembleReport({ query, language, country, model, trace, analysis });
   return { ok: true, data: report };
 }

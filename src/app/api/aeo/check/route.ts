@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getUserAeoCreds, hasAnyAeoCreds, parseBrandTerms, checkSiteQuestions } from "@/lib/aeoTracker";
+import { getUserAeoCreds, hasAnyAeoCreds, siteAeoConfig, checkSiteQuestions } from "@/lib/aeoTracker";
 
 // POST /api/aeo/check  { siteId, questionId?, force? }
 // Runs AEO citation checks now: one question (questionId), all stale (default), or all (force).
@@ -22,8 +22,7 @@ export async function POST(req: Request) {
   if (!hasAnyAeoCreds(creds)) return NextResponse.json({ error: "no_aeo_key" }, { status: 400 });
 
   const questionId = b.questionId ? String(b.questionId) : undefined;
-  const brandTerms = parseBrandTerms(site.brandedKeywords);
-  const result = await checkSiteQuestions(siteId, site.url, brandTerms, creds, {
+  const result = await checkSiteQuestions(siteId, siteAeoConfig(site), creds, {
     onlyIds: questionId ? [questionId] : undefined,
     force: !!b.force,
     limit: 5,

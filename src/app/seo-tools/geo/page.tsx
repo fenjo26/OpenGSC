@@ -11,13 +11,13 @@ import {
   getOpenAiKey, getKieKeyForGeo, getGeoEngine, setGeoEngine, getGeoApiKey, GeoEngineChoice,
   getGeoModel, setGeoModel, GeoAuditRec,
 } from "@/lib/seo/geoClient";
+import { rankModels, resolveModel, OPENAI_FALLBACK_MODELS, type ModelOpt } from "@/lib/seo/models";
+import { getTaskCreds } from "@/lib/seo/keys";
 
 // Fallback lists only — used until the live /api/seo/models call resolves (or if it fails).
 // The provider's actual current lineup is fetched live below, same as the global model picker.
-const OPENAI_MODELS_FALLBACK = ["gpt-5", "gpt-4.1", "gpt-4o", "gpt-4o-mini"];
+const OPENAI_MODELS_FALLBACK = OPENAI_FALLBACK_MODELS;
 const KIE_MODELS_FALLBACK = ["gpt-5-5", "gpt-5-4", "gpt-5-2"];
-
-type ModelOpt = { id: string; label: string };
 
 export default function GeoAuditPage() {
   const { t } = useLanguage();
@@ -25,7 +25,7 @@ export default function GeoAuditPage() {
   const [language, setLanguage] = useState("en");
   const [country, setCountry] = useState("us");
   const [engine, setEngine] = useState<GeoEngineChoice>("openai");
-  const [model, setModel] = useState("gpt-5");
+  const [model, setModel] = useState(OPENAI_FALLBACK_MODELS[0]);
   const [modelOpts, setModelOpts] = useState<ModelOpt[]>(OPENAI_MODELS_FALLBACK.map(id => ({ id, label: id })));
   const [modelsLoading, setModelsLoading] = useState(false);
 
@@ -44,9 +44,11 @@ export default function GeoAuditPage() {
     setHasKey(oa || kie);
     const eng = getGeoEngine();
     setEngine(eng);
+    // A stored choice is kept as-is even when it is absent from the fallback list — the fallback
+    // is a stopgap for "no key to list models with", not a whitelist of allowed models.
+    // loadModels() replaces it if the account no longer offers it.
     const fallback = eng === "kie" ? KIE_MODELS_FALLBACK : OPENAI_MODELS_FALLBACK;
-    const storedModel = getGeoModel();
-    setModel(fallback.includes(storedModel) ? storedModel : fallback[0]);
+    setModel(getGeoModel() || fallback[0]);
     loadModels(eng);
     refreshRecent();
   }, []);
@@ -63,10 +65,13 @@ export default function GeoAuditPage() {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider: eng, apiKey }),
       });
       const data = await res.json();
-      const live: ModelOpt[] = Array.isArray(data.models) ? data.models : [];
+      const live: ModelOpt[] = Array.isArray(data.models) ? rankModels(data.models) : [];
       if (live.length) {
         setModelOpts(live);
-        setModel(cur => (live.some(m => m.id === cur) ? cur : (live.find(m => m.id === "gpt-5")?.id || live[0].id)));
+        // A GEO audit is a deliberate one-off, so it takes the best model the account has
+        // rather than the everyday tier — and resolves it from the live list instead of
+        // looking for a model id hardcoded here months ago.
+        setModel(cur => resolveModel(cur, live, "quality"));
       } else {
         setModelOpts(fallback.map(id => ({ id, label: id })));
       }
@@ -99,7 +104,11 @@ export default function GeoAuditPage() {
     setReport(null);
     setStage(t("geoStageSearching"));
 
-    const { id, error } = await startGeoAudit({ query: q, language, country, model, apiKey, engine });
+    // Stage 1 (search) uses the model picked above; stage 2 (structured pass over the trace)
+    // runs on the `utility` task, so a user who has chosen a cheap model for mechanical work
+    // gets it here instead of an id frozen into the server.
+    const analysisModel = getTaskCreds("utility").model || undefined;
+    const { id, error } = await startGeoAudit({ query: q, language, country, model, apiKey, engine, analysisModel });
     if (error || !id) { setRunning(false); setErr(error || "audit_failed"); return; }
 
     // Poll until done.

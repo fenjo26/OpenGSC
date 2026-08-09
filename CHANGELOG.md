@@ -3,6 +3,118 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
+## [1.3.0] — 2026-08-09
+
+### Fixed
+
+**AI Visibility reported "not cited" for questions ChatGPT visibly cites you on**
+
+The check asked `gpt-4o-mini` with `tool_choice: "auto"`, which on a mini model usually means
+the search tool is never called: the answer comes from weights, carries no citations, and the
+tracker records an absence. It also asked from nowhere in particular, while the browser answer
+a user compares it against is geolocated — for a local-intent question the two were not looking
+at the same web at all. And because only a boolean was stored, a disagreement could not be
+investigated; the only available conclusion was that the tool was broken.
+
+The search is now forced rather than suggested, runs at `search_context_size: high`, carries a
+`user_location`, and uses a model you pick (default `gpt-5`, live list from your own key) with a
+fallback ladder so an older account degrades instead of erroring. Perplexity gained the same
+context/location options. Claude and Grok were not searching the live web at all and now do, via
+Anthropic's `web_search` tool and xAI Live Search respectively — so all four columns finally
+measure the same thing.
+
+### Added
+
+**AI Visibility shows its work**
+
+Every check now stores the full answer, each citation, which model produced it and whether a
+live search actually ran. Expanding a question shows the answer text, the cited domains with
+yours highlighted and your rank among them, so "not cited" is something you can read rather than
+a claim you have to take on faith. A row where the model never searched is flagged as such
+instead of being counted as an absence.
+
+A third verdict, **mentioned**, separates "the brand is named in the prose" from "the answer
+links to you" — previously both collapsed into the same grey dash, or, when brand terms happened
+to match, into a false green tick.
+
+**"Cited instead of you"** counts the domains the engines returned across all your tracked
+questions — the pages your answer has to displace.
+
+**Per-site check settings** (model, country, city, answer language) live on the tab. Country
+falls back to the site's search market and can be cleared back to "no location", which is a
+different question to ask an answer engine than "United States".
+
+### Changed
+
+**Model ids are resolved from your account, not hardcoded**
+
+`gpt-5` was written literally into the GEO audit page, its stored default and the server-side
+audit fallback; `gpt-4o-mini` into the audit's second pass. That kind of staleness is silent: the
+id keeps resolving, the call keeps succeeding, and the tool quietly runs a generation behind
+whatever you are comparing it against. A new `lib/seo/models.ts` ranks whatever `/v1/models`
+returns for your own key — newest generation first, then by size tier, previews last — and
+resolves an *intention* (`quality` / `balanced` / `cheap`) into an id from that ranking. A saved
+model the provider has since retired is replaced rather than 404-ing. Hardcoded ids survive only
+as the fallback for "no key, nothing to list".
+
+**You can see which model each tool runs, and where it is set**
+
+The SEO Tools header had an unlabelled "Settings" button. It now names the model that will
+actually run — e.g. `OpenAI · gpt-5.6-terra` — and expands into a panel listing every AI task the
+current page performs, what each one does, and **which settings level the value came from**
+("set for this task" / "from the SEO Tools model" / "no model sent — provider decides"). The
+fallback chain is three deep, and until now a user whose per-task model appeared not to take had
+no way to tell a failed save from an override.
+
+Some pages were running tasks nobody had been told about: **Links** runs the `analysis` task, and
+the **GEO audit's** second pass runs the new `utility` task. Both are now visible in the header
+and configurable like everything else.
+
+**Two routes had their own private copy of the LLM client — deleted**
+
+`/api/gsc/branded` (brand-term detection) and `/api/gsc/setup` (One-Click Setup clustering) each
+carried a hand-rolled multi-provider client, forked from `lib/llm.ts` and then left behind. They
+were still asking for `gpt-4o-mini`, `gemini-1.5-flash`, `claude-3.5-haiku` and `glm-4.5-air`,
+and nothing ever failed, because a stale model id keeps resolving. They also knew four providers
+where the shared client knows nine, and had no retry at all — so a routine `429` came back as
+"no brand terms found" or a silent fall back to algorithmic clustering, on your paid key.
+
+Both now call `fetchLLM`, which brings retries, the full provider list, and real error detail.
+The model comes from the new **Utility passes** task, so it is visible and configurable like
+everything else.
+
+**Default model ids live in one table**
+
+`lib/providerDefaults.ts` holds the per-provider default for chat and vision. They were
+previously written inline at every call site and aged separately — the drift above is what that
+looks like in practice. Anything you choose still wins outright; this table only answers
+"nothing was chosen and we still have to put a string in the request".
+
+One default was actively wrong: a **custom OpenAI-compatible endpoint** with no model configured
+was sent `gpt-4o-mini` — an OpenAI id to a gateway that may never have heard of OpenAI. The 404
+that came back looked like your server's fault. It now fails with "no model configured", which
+is the actual problem.
+
+**Per-task model is a picker, not a text box**
+
+Settings → SEO Tools let you type a model id by hand for each task, which is how you end up
+pinned to something the provider retired. It now lists the chosen provider's live models, keeps a
+free-text escape hatch for endpoints with no `/models` listing, and never discards a saved id it
+cannot find in the list. Each row explains what the task does, which tools use it, and what it
+resolves to. Two tasks were missing from that table entirely: **Landing page** (so
+`seoTaskModel_landing` could be read but never written) and the new **Utility passes**.
+
+The task list, the tool-to-task mapping and the settings table now come from one registry
+(`lib/seo/aiTasks.ts`), so they cannot drift apart again.
+
+**Background AEO checks are now opt-in per site**
+
+A check spends your own AI credits — four billed calls per question, each with live web search.
+On an instance with a large portfolio the scheduler was quietly doing that for every site with
+tracked questions. It now only visits sites where **Check automatically once a day** is switched
+on; everything else waits for the button. Adding questions no longer triggers a check either:
+pasting thirty questions and paying for a hundred and twenty API calls are separate decisions.
+
 ## [1.2.3] — 2026-08-06
 
 ### Added

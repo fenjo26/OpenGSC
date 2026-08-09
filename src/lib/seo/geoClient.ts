@@ -52,15 +52,17 @@ export function getGeoApiKey(engine: GeoEngineChoice): string {
 }
 
 const GEO_MODEL_KEY = "geoModel";
+// Returns "" when nothing has been chosen, so the caller resolves a default from the account's
+// live model list (lib/seo/models.ts) instead of inheriting a model id frozen into this file.
 export function getGeoModel(): string {
-  if (typeof window === "undefined") return "gpt-5";
-  return localStorage.getItem(GEO_MODEL_KEY) || "gpt-5";
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem(GEO_MODEL_KEY) || "";
 }
 export function setGeoModel(m: string) {
   if (typeof window !== "undefined") localStorage.setItem(GEO_MODEL_KEY, m);
 }
 
-export async function startGeoAudit(payload: { query: string; language: string; country: string; model: string; apiKey: string; engine?: GeoEngineChoice }): Promise<{ id?: string; error?: string }> {
+export async function startGeoAudit(payload: { query: string; language: string; country: string; model: string; apiKey: string; engine?: GeoEngineChoice; analysisModel?: string }): Promise<{ id?: string; error?: string }> {
   try {
     const res = await fetch("/api/seo/geo", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),

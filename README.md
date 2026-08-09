@@ -155,7 +155,11 @@ Track keyword rankings (country/language/device-aware) via your configured SERP 
 
 ### AEO Tracker — AI Answer Engine Visibility
 
-"Answer Engine Optimization": tracks whether **your site gets cited when real questions are asked to AI assistants** — ChatGPT and Perplexity via live web-search citation matching, Claude and Grok via brand-mention detection — building a per-engine, per-question cited/not-cited history over time. Needs the API key(s) of whichever engines you want to track.
+"Answer Engine Optimization": tracks whether **your site gets cited when real questions are asked to AI assistants**. All four engines — ChatGPT, Perplexity, Claude, Grok — are asked with **live web search on**, because an answer from a model's weights is not evidence about search visibility. Needs the API key(s) of whichever engines you want to track.
+
+The check **shows its work**, which matters because you can always open ChatGPT in another tab and disagree with it. Expanding a question gives you the full answer the engine produced, every domain it cited with yours highlighted, your rank among them, the model that ran and whether a live search actually happened — so "not cited" is something you can read rather than a claim to take on faith. Verdicts are three-state: **cited** (linked), **mentioned** (named in the prose, no link) and absent. **"Cited instead of you"** counts the domains that came back across all your tracked questions — the pages your answer has to displace.
+
+Per-site settings cover the model, country, city and answer language. Location is not decoration: answers to local questions are geolocated, so asking from the wrong country measures a market you don't sell in. Automatic daily checking is **off by default** — each question costs four billed calls on your own key, so a large portfolio never enrols itself.
 
 Underneath it sits a **second source** with a different job. The tracker asks *your* questions live on *your* keys today; **Brand visibility** reads DataForSEO's index of what models have actually been answering — including questions you never thought to track. It shows how often the brand comes up, in which questions, which of your pages get cited, and **share of voice against up to 9 competitors**, which the live tracker structurally cannot produce because it only ever asks on your own behalf. Matching by domain finds answers that linked to you; matching by brand name finds answers that named you without a link. The index covers ChatGPT and Google AI Overview and refreshes roughly monthly, so the two panels are kept side by side and labelled rather than merged — a zero here is not evidence of invisibility to Claude.
 
@@ -244,6 +248,8 @@ It also includes built-in free integrations:
 ## 🧠 AI SEO Content Suite (`/seo-tools`)
 
 A full competitor-research-to-published-article pipeline, plus AI-search-visibility auditing — all under one settings screen for your AI/SERP/scraping keys. Everything here is optional and needs **your own** API key (Anthropic, Z.AI, OpenAI, Gemini, OpenRouter, Kimi/Moonshot, kie.ai, or any custom OpenAI-compatible endpoint) — pay-per-use at cost, no markup. Each provider card in Settings lets you pick the exact model from a live list fetched from the provider's API.
+
+**Which model runs where is yours to decide, and visible while you decide it.** Every AI job in the suite is a named *task* — article structure, body text, landing copy, content analysis, editorial policy, and the short utility passes whose output is parsed rather than read. Each one can take its own provider and model, chosen from your account's live model list, or inherit the suite-wide default. The header of every tool names the model that will actually run and expands to show each task it performs, what that task does, and **which settings level the value came from** — so an override that appears not to have taken can be diagnosed from the screen instead of by reading the source. Nothing is pinned to a model id inside the code: defaults are expressed as an intention (best available / everyday / cheap) and resolved against what your account currently offers, so they don't quietly go a generation stale when a provider ships something new.
 
 <div align="center">
 <img src="screenshot/seo%20tools.png" alt="SEO Tools suite" width="80%" />

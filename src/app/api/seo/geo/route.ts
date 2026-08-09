@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { OPENAI_FALLBACK_MODELS } from "@/lib/seo/models";
 import { prisma } from "@/lib/prisma";
 import { runGeoAudit, type GeoEngine } from "@/lib/seo/geo";
 
@@ -10,7 +11,7 @@ const audits = () => (prisma as any).geoAudit;
 
 // Detached background run — not awaited by the request, so the result is persisted even
 // if the client navigates away. The API key lives only in memory for the run.
-function runAudit(id: string, params: { query: string; language: string; country: string; model: string; apiKey: string; engine: GeoEngine }) {
+function runAudit(id: string, params: { query: string; language: string; country: string; model: string; apiKey: string; engine: GeoEngine; analysisModel?: string }) {
   runGeoAudit(params)
     .then(async (r) => {
       if (r.ok) await audits().update({ where: { id }, data: { status: "completed", report: JSON.stringify(r.data) } });
@@ -35,7 +36,10 @@ export async function POST(req: Request) {
   const engine: GeoEngine = b.engine === "kie" ? "kie" : "openai";
   const language = String(b.language ?? "en");
   const country = String(b.country ?? "us");
-  const model = String(b.model ?? "") || (engine === "kie" ? "gpt-5-5" : "gpt-5");
+  const model = String(b.model ?? "") || (engine === "kie" ? "gpt-5-5" : OPENAI_FALLBACK_MODELS[0]);
+  // Stage-2 model, sent by the client from the `utility` task setting. Optional: an older
+  // client that does not send it falls back inside runGeoAudit rather than failing.
+  const analysisModel = String(b.analysisModel ?? "") || undefined;
 
   let rec: any;
   try {
@@ -44,7 +48,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: `db: ${String(e?.message ?? e)} (run: npx prisma db push)` }, { status: 500 });
   }
 
-  runAudit(rec.id, { query, language, country, model, apiKey, engine }); // fire-and-forget
+  runAudit(rec.id, { query, language, country, model, apiKey, engine, analysisModel }); // fire-and-forget
   return NextResponse.json({ id: rec.id });
 }
 

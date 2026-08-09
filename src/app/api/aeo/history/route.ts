@@ -24,12 +24,35 @@ export async function GET(req: Request) {
   const checks = await prisma.aeoCheck.findMany({
     where: { questionId, checkedAt: { gte: since } },
     orderBy: { checkedAt: "asc" },
-    select: { engine: true, checkedAt: true, cited: true, url: true, snippet: true, error: true },
+    select: {
+      id: true, engine: true, checkedAt: true, cited: true, status: true, url: true,
+      snippet: true, rank: true, model: true, searched: true, error: true,
+    },
   });
+
+  // The heavy columns (full answer, citation list) are fetched only for the newest check per
+  // engine. The history strip renders dozens of dots; shipping a 12k answer behind each one
+  // would make opening a row cost megabytes for data nobody scrolls to.
+  const latestIds = new Map<string, string>();
+  for (const c of checks) latestIds.set(c.engine, c.id);
+  const detail = latestIds.size
+    ? await prisma.aeoCheck.findMany({
+        where: { id: { in: [...latestIds.values()] } },
+        select: { id: true, engine: true, answerText: true, citations: true },
+      })
+    : [];
+
+  const latest: Record<string, { answerText: string | null; citations: unknown[] }> = {};
+  for (const d of detail) {
+    let citations: unknown[] = [];
+    try { citations = d.citations ? JSON.parse(d.citations) : []; } catch { citations = []; }
+    latest[d.engine] = { answerText: d.answerText, citations };
+  }
 
   return NextResponse.json({
     question: q.question,
     results: q.lastResults ? JSON.parse(q.lastResults) : {},
     checks,
+    latest,
   });
 }

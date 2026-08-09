@@ -23,6 +23,7 @@ import {
 import { useParams, useRouter } from "next/navigation";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import { getTaskCreds } from "@/lib/seo/keys";
 import BacklinkProfile from "@/components/BacklinkProfile";
 import {
   ArrowLeft, Sparkles, Eye, Percent, MoveUp,
@@ -879,10 +880,14 @@ function BrandedKeywordsModal({ siteDbId, domain, initial, onClose, onSaved }: {
 
   const suggestWithAI = async () => {
     setLoading(true);
-    const provider = localStorage.getItem('aiProvider') || 'anthropic';
-    const apiKey = localStorage.getItem(`aiKey_${provider}`) || localStorage.getItem('aiApiKey') || '';
+    // Brand detection is a short mechanical pass, so it runs on the `utility` task — the same
+    // resolution the SEO tools use, rather than a private reading of localStorage.
+    const { provider, apiKey, model, baseUrl } = getTaskCreds('utility');
     try {
-      const res = await fetch(`/api/gsc/branded?siteId=${siteDbId}&suggest=1&aiProvider=${encodeURIComponent(provider)}&aiApiKey=${encodeURIComponent(apiKey)}`);
+      const qs = new URLSearchParams({ siteId: siteDbId, suggest: '1', aiProvider: provider, aiApiKey: apiKey });
+      if (model) qs.set('aiModel', model);
+      if (baseUrl) qs.set('aiBaseUrl', baseUrl);
+      const res = await fetch(`/api/gsc/branded?${qs.toString()}`);
       const data = await res.json();
       if (data.branded?.length) {
         setKeywords(data.branded);
@@ -999,10 +1004,16 @@ function SetupModal({ domain, siteDbId, onClose, onApplied }: {
     setStep(2); setLoading(true); setError('');
     // Resolve the key: prefer per-provider key, fall back to legacy key
     const resolvedKey = localStorage.getItem(`aiKey_${aiProvider}`) || aiApiKey;
+    // Clustering is a mechanical pass: model comes from the `utility` task when one is set.
+    const util = getTaskCreds('utility');
     try {
       const res = await fetch('/api/gsc/setup', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteId: siteDbId, aiProvider, aiApiKey: resolvedKey }),
+        body: JSON.stringify({
+          siteId: siteDbId, aiProvider, aiApiKey: resolvedKey,
+          aiModel: util.provider === aiProvider ? util.model || undefined : undefined,
+          aiBaseUrl: util.provider === aiProvider ? util.baseUrl || undefined : undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? t("errFailed"));

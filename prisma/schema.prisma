@@ -124,6 +124,21 @@ model Site {
   // Archived sites keep all their history but are hidden from the main dashboard.
   archivedAt       DateTime?
 
+  // AI Visibility (AEO Tracker) settings.
+  //
+  // Country/city are not decoration: an AI answer to a local-intent question is geolocated, and
+  // checking "transfer from Thessaloniki airport" from a US datacentre measures a market the
+  // site does not sell in. Null means "ask without a location", which is a real choice and not
+  // the same as guessing one.
+  //
+  // aeoAuto is off by default. These checks spend the user's own AI credits, so the background
+  // scheduler only touches sites where somebody deliberately opted in.
+  aeoModel         String?
+  aeoCountry       String?   // ISO-3166 alpha-2, lowercase (same gl codes as SEO Tools)
+  aeoCity          String?
+  aeoLanguage      String?   // ISO-639-1, lowercase
+  aeoAuto          Boolean   @default(false)
+
   // Sitemap indexing
   sitemapUrl       String?   // custom sitemap URL (defaults to url + /sitemap.xml)
   crawlInterval    String?   // "disabled" | "daily" | "weekly" | "monthly"
@@ -401,6 +416,16 @@ model AeoCheck {
   url        String?
   snippet    String?
   error      String?
+
+  // A bare "cited: false" is unfalsifiable — when it disagrees with what the user sees in the
+  // browser there is nothing to inspect. So the whole answer is kept: the model that produced
+  // it, whether a live search actually ran, who got cited instead of us, and where we placed.
+  status     String?  // "cited" | "mentioned" | "absent"
+  rank       Int?     // 1-based position of our domain among the distinct cited domains
+  model      String?  // model id that produced this answer
+  searched   Boolean? // the engine ran a live web search rather than answering from weights
+  answerText String?  // full answer text
+  citations  String?  // JSON: [{ url, domain, title }]
 
   question TrackedQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
   @@index([questionId, checkedAt])

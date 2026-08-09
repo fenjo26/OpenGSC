@@ -41,21 +41,69 @@ export function getConfiguredProviders(): { id: string; key: string }[] {
 }
 
 // SEO task IDs that can each have their own default provider/model.
-export type SeoTask = "outline" | "text" | "analysis" | "policy" | "landing";
+// The user-facing description of each one lives in lib/seo/aiTasks.ts.
+export type SeoTask = "outline" | "text" | "analysis" | "policy" | "landing" | "utility";
+
+/**
+ * Where a resolved value came from.
+ *
+ * The fallback chain is three deep, and until the UI could name the winning level a user who had
+ * set a per-task model and still saw the wrong one had no way to tell whether their setting had
+ * failed to save or was being overridden. Returning the origin alongside the value is what lets
+ * the header badge and the settings table explain themselves instead of just asserting.
+ */
+export type CredOrigin = "task" | "seo" | "global" | "provider" | "default";
+
+export interface ResolvedTaskCreds {
+  provider: string;
+  apiKey: string;
+  model: string;
+  baseUrl?: string;
+  providerFrom: CredOrigin;
+  /** "default" here means no model was chosen at any level — the provider's own default runs. */
+  modelFrom: CredOrigin;
+}
 
 // Per-task resolved creds: a task-specific default (set once in SEO settings) overrides the global
 // SEO provider. For the custom provider, also returns baseUrl. Falls back gracefully at each level.
-export function getTaskCreds(task: SeoTask): { provider: string; apiKey: string; model: string; baseUrl?: string } {
-  if (typeof window === "undefined") return { provider: "anthropic", apiKey: "", model: "" };
-  const provider = localStorage.getItem(`seoTaskProvider_${task}`) || localStorage.getItem("seoProvider") || localStorage.getItem("aiProvider") || "anthropic";
+export function resolveTaskCreds(task: SeoTask): ResolvedTaskCreds {
+  if (typeof window === "undefined") {
+    return { provider: "anthropic", apiKey: "", model: "", providerFrom: "default", modelFrom: "default" };
+  }
+
+  const taskProvider = localStorage.getItem(`seoTaskProvider_${task}`);
+  const seoProvider = localStorage.getItem("seoProvider");
+  const globalProvider = localStorage.getItem("aiProvider");
+  const provider = taskProvider || seoProvider || globalProvider || "anthropic";
+  const providerFrom: CredOrigin =
+    taskProvider ? "task" : seoProvider ? "seo" : globalProvider ? "global" : "default";
+
+  const taskModel = localStorage.getItem(`seoTaskModel_${task}`);
+
   if (provider === "custom") {
     const c = getCustomProvider();
-    const model = localStorage.getItem(`seoTaskModel_${task}`) || c.model;
-    return { provider, apiKey: c.apiKey, model, baseUrl: c.baseUrl };
+    return {
+      provider, apiKey: c.apiKey, baseUrl: c.baseUrl,
+      model: taskModel || c.model,
+      providerFrom,
+      modelFrom: taskModel ? "task" : c.model ? "provider" : "default",
+    };
   }
+
   const apiKey = localStorage.getItem(`aiKey_${provider}`) || localStorage.getItem("aiApiKey") || "";
-  const model = localStorage.getItem(`seoTaskModel_${task}`) || localStorage.getItem("seoModel") || getProviderModel(provider);
-  return { provider, apiKey, model };
+  const seoModel = localStorage.getItem("seoModel");
+  const providerDefaultModel = getProviderModel(provider);
+  return {
+    provider, apiKey,
+    model: taskModel || seoModel || providerDefaultModel,
+    providerFrom,
+    modelFrom: taskModel ? "task" : seoModel ? "seo" : providerDefaultModel ? "provider" : "default",
+  };
+}
+
+export function getTaskCreds(task: SeoTask): { provider: string; apiKey: string; model: string; baseUrl?: string } {
+  const { provider, apiKey, model, baseUrl } = resolveTaskCreds(task);
+  return baseUrl === undefined ? { provider, apiKey, model } : { provider, apiKey, model, baseUrl };
 }
 
 // Resolved creds for SEO generation: a SEO-specific provider override (seoProvider)

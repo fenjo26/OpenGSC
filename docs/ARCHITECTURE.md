@@ -180,6 +180,46 @@ rejection (a real, fairly common occurrence for edgier niches like gambling/fina
 readably in History instead of a bare `generation_failed` that sends you spelunking through
 `pm2 logs`.
 
+### 3.3a Who picks the model (`src/lib/seo/aiTasks.ts`, `models.ts`, `keys.ts`)
+
+Three separate questions, deliberately answered in three places.
+
+**Which task is running?** `AI_TASKS` in `aiTasks.ts` is the registry — `outline`, `text`,
+`landing`, `analysis`, `policy`, `utility` — each with a description, a default *tier* (never a
+model id), and `PATH_TASKS` mapping tool routes to the tasks they run. Both surfaces render it:
+Settings → SEO Tools builds its per-task table from the list, and the SEO Tools header names the
+tasks the current page will run. They used to be written out separately and drifted — the
+settings table offered four tasks while `getTaskCreds` read five, so `seoTaskModel_landing` was
+readable but not writable and the Landing tool ignored a setting the user believed they had made.
+The Links tool ran on `analysis` without saying so anywhere.
+
+**Which provider and model win?** `resolveTaskCreds()` in `keys.ts` walks
+`seoTaskProvider_<task>` → `seoProvider` → `aiProvider` for the provider, and
+`seoTaskModel_<task>` → `seoModel` → `aiModel_<provider>` for the model, and returns the winning
+*level* alongside the value (`providerFrom` / `modelFrom`). That extra field is the point: a
+three-deep fallback chain that only reports its result cannot be debugged from the UI, and a user
+whose per-task model appeared not to take had no way to tell a failed save from an override.
+
+**Which model id when nothing was chosen?** `lib/providerDefaults.ts` — one table, chat and
+vision, for every provider. These ids used to be written inline at each call site and aged
+separately: `lib/llm.ts` had moved to `gpt-5.6-luna` / `gemini-3-flash` / `kimi-k3` while
+`/api/gsc/branded` and `/api/gsc/setup`, which had grown private forks of the same client, were
+still asking for `gpt-4o-mini`, `gemini-1.5-flash` and `claude-3.5-haiku`. Nothing failed — stale
+ids keep resolving — so the drift was invisible until all four implementations were read side by
+side. Both forks are now deleted in favour of `fetchLLM`, which also gains them retries, the full
+nine-provider list and real error detail. `custom` deliberately has **no** default: it is an
+arbitrary OpenAI-compatible gateway, and the old fallback sent it an OpenAI model id, producing a
+404 that read as the user's own server being broken.
+
+**Which model id, concretely?** `models.ts` never names one. It ranks whatever `/v1/models`
+returned for the user's own key — newest generation first, then by size tier, previews last — and
+`defaultModel(list, tier)` resolves a *tier* into an id from that ranking. `resolveModel()` keeps
+a stored choice if the account still offers it and replaces it if the provider retired it.
+Hardcoded ids are the fallback for "no key, nothing to list", and nothing depends on them being
+current. The reason for all this: a literal `"gpt-5"` (or `"gpt-4o-mini"`) goes stale *silently* —
+the id keeps resolving, the call keeps succeeding, and the tool quietly runs a generation behind
+whatever the user is comparing it against.
+
 ### 3.4 GEO Audit
 
 Unlike the rest of the suite, GEO Audit doesn't use a SERP+scrape pipeline at all. It sends the
@@ -188,6 +228,44 @@ enabled** (OpenAI's Responses API `web_search` tool, or kie.ai's equivalent) and
 search trace and citations out of the response — the "ground truth" is literally what the AI
 already searched and cited, which is the whole point: it's measuring AI-search visibility, not
 simulating it.
+
+The audit runs in two stages on two different models. Stage 1 (search) uses the model picked on
+the page — deep browsing is the whole job, so it defaults to the best the account offers. Stage 2
+turns the search trace into structured JSON and runs on the `utility` task (§3.3a), because
+paying flagship rates to emit JSON is waste. Stage 2 used to be pinned to a literal
+`"gpt-4o-mini"` inside `geo.ts`: invisible on the settings screen, unchangeable, and destined to
+break when the model is retired.
+
+### 3.4a AEO Tracker / AI Visibility (`src/lib/seo/aeo.ts`)
+
+The site-level counterpart to the GEO Audit: instead of profiling a niche, it asks tracked
+real-user questions and records whether *this* site is cited. All four engines are asked to
+search the live web — OpenAI Responses API with the hosted `web_search` tool, Perplexity `sonar`,
+Anthropic's `web_search` server tool, xAI Live Search — because an answer from weights is not
+evidence about search visibility.
+
+Three properties of the check matter more than the engine list:
+
+- **The search is forced, not suggested.** With `tool_choice: "auto"` a small model usually skips
+  the search entirely and answers from memory, producing zero citations — which the tracker then
+  recorded as "not cited" for sites that ChatGPT visibly cites in the browser. A four-step attempt
+  ladder drops `search_context_size`, then `user_location`, then `include`/`instructions` in turn,
+  so an account without the newest surface degrades instead of erroring; `401`/`403`/`429` abort
+  the ladder rather than burning four calls on a dead key.
+- **Location is part of the question.** Browser answers to local-intent queries are geolocated.
+  Asking from nowhere in particular and comparing the result to a geolocated browser answer
+  compares two different webs. Country falls back to `Site.market`, and clearing it back to "no
+  location" stays expressible — that is a different question to ask, not an unset value to guess.
+- **The evidence is kept.** `AeoCheck` stores the full answer, every citation, the model, whether
+  a search actually ran, and our rank among the cited domains. A bare boolean could not be argued
+  with: when it disagreed with the browser there was nothing to inspect, so the only available
+  conclusion was that the tool was broken.
+
+Verdicts are three-state — `cited` (a link to us), `mentioned` (named in the prose, no link),
+`absent` — and brand terms derived from the domain feed only the weaker verdict, never a claimed
+citation. Background checking is opt-in per site (`Site.aeoAuto`, default off): each question
+costs four billed calls with live search on the user's own key, so a large portfolio must not
+enrol itself.
 
 ### 3.5 Content Rewriter (`src/lib/seo/rewrite.ts`)
 

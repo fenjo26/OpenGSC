@@ -1,5 +1,11 @@
 // Shared multi-provider LLM caller. Mirrors the providers supported elsewhere
 // in the app (Anthropic, Z.AI, OpenAI, Gemini, OpenRouter, Kie.ai, Kimi/Moonshot).
+//
+// Default model ids are NOT written here — they live in lib/providerDefaults.ts, because they
+// used to be written in four places that then aged apart. Anything the user chose arrives as
+// `modelOverride` and wins outright.
+
+import { defaultModelFor } from '@/lib/providerDefaults';
 
 // Kie.ai's "Codex" endpoint (GPT-5.5) speaks the OpenAI *Responses* API shape, not classic
 // chat-completions: `input` is an array of {role, content:[...]} messages (content items are
@@ -117,7 +123,7 @@ async function fetchLLMOnce(
     let text = '';
     if (provider === 'anthropic' || provider === 'zai') {
       const baseUrl = provider === 'zai' ? 'https://api.z.ai/api/anthropic' : 'https://api.anthropic.com';
-      const model = modelOverride ?? (provider === 'zai' ? 'glm-5.2' : 'claude-haiku-4-5-20251001');
+      const model = modelOverride ?? defaultModelFor(provider);
       const res = await fetch(`${baseUrl}/v1/messages`, {
         method: 'POST', signal: sig,
         headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
@@ -137,8 +143,7 @@ async function fetchLLMOnce(
       if (provider === 'deepseek') url = 'https://api.deepseek.com/chat/completions';
       if (provider === 'qwen') url = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
 
-      const defaultModel = provider === 'deepseek' ? 'deepseek-v4-flash' : provider === 'qwen' ? 'qwen-max' : 'gpt-5.6-luna';
-      const model = modelOverride ?? defaultModel;
+      const model = modelOverride ?? defaultModelFor(provider);
       const tokenParam = (provider === 'deepseek' || provider === 'qwen') ? 'max_tokens' : 'max_completion_tokens';
 
       const res = await fetch(url, {
@@ -154,7 +159,7 @@ async function fetchLLMOnce(
       const data = await res.json();
       text = data.choices?.[0]?.message?.content ?? '';
     } else if (provider === 'gemini') {
-      const gModel = modelOverride ?? 'gemini-3-flash';
+      const gModel = modelOverride ?? defaultModelFor('gemini');
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${gModel}:generateContent?key=${apiKey}`, {
         method: 'POST', signal: sig,
         headers: { 'Content-Type': 'application/json' },
@@ -172,10 +177,11 @@ async function fetchLLMOnce(
       const data = await res.json();
       text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
     } else if (provider === 'openrouter') {
+      const orModel = modelOverride ?? defaultModelFor('openrouter');
       const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST', signal: sig,
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: modelOverride ?? 'anthropic/claude-haiku-4.5', max_tokens: maxTokens, messages: [{ role: 'user', content: prompt }], ...temp(temperature, modelOverride ?? 'anthropic/claude-haiku-4.5') }),
+        body: JSON.stringify({ model: orModel, max_tokens: maxTokens, messages: [{ role: 'user', content: prompt }], ...temp(temperature, orModel) }),
       });
       if (!res.ok) {
         const bodyText = await res.text().catch(() => '');
@@ -187,11 +193,12 @@ async function fetchLLMOnce(
     } else if (provider === 'kimi') {
       // Kimi (Moonshot AI) — OpenAI-compatible chat completions. Default: Kimi K3
       // (flagship, 1M context, vision). baseUrl override supported for the .cn endpoint.
+      const kimiModel = modelOverride ?? defaultModelFor('kimi');
       const root = (baseUrl || 'https://api.moonshot.ai/v1').replace(/\/+$/, '');
       const res = await fetch(`${root}/chat/completions`, {
         method: 'POST', signal: sig,
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: modelOverride ?? 'kimi-k3', max_tokens: maxTokens, messages: [{ role: 'user', content: prompt }], ...temp(temperature, modelOverride ?? 'kimi-k3') }),
+        body: JSON.stringify({ model: kimiModel, max_tokens: maxTokens, messages: [{ role: 'user', content: prompt }], ...temp(temperature, kimiModel) }),
       });
       if (!res.ok) {
         const bodyText = await res.text().catch(() => '');
@@ -207,7 +214,7 @@ async function fetchLLMOnce(
         method: 'POST', signal: sig,
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: modelOverride ?? 'gpt-5-5',
+          model: modelOverride ?? defaultModelFor('kie'),
           stream: false,
           input: [{ role: 'user', content: [{ type: 'input_text', text: prompt }] }],
           reasoning: { effort: 'medium' },
@@ -225,10 +232,19 @@ async function fetchLLMOnce(
       const root = (baseUrl || '').replace(/\/+$/, '');
       if (!root) { console.error('[LLM] custom: no baseUrl'); return { text: null, retryable: false, errorDetail: 'custom: no baseUrl configured' }; }
       const url = /\/chat\/completions$/.test(root) ? root : `${root}/chat/completions`;
+      // No invented default here. A custom endpoint is an arbitrary OpenAI-compatible server,
+      // and the previous fallback sent it `gpt-4o-mini` — an OpenAI model id to a gateway that
+      // may never have heard of OpenAI. The 404 that came back looked like the user's server
+      // was broken. Saying "no model configured" points at the actual missing setting.
+      const customModel = modelOverride ?? defaultModelFor('custom');
+      if (!customModel) {
+        console.error('[LLM] custom: no model configured');
+        return { text: null, retryable: false, errorDetail: 'custom: no model configured — set one in Settings' };
+      }
       const res = await fetch(url, {
         method: 'POST', signal: sig,
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: modelOverride ?? 'gpt-4o-mini', max_tokens: maxTokens, messages: [{ role: 'user', content: prompt }], ...temp(temperature, modelOverride ?? '') }),
+        body: JSON.stringify({ model: customModel, max_tokens: maxTokens, messages: [{ role: 'user', content: prompt }], ...temp(temperature, customModel) }),
       });
       if (!res.ok) {
         const bodyText = await res.text().catch(() => '');
@@ -269,7 +285,7 @@ export async function fetchLLMVision(
     let text = '';
     if (provider === 'anthropic' || provider === 'zai') {
       const base = provider === 'zai' ? 'https://api.z.ai/api/anthropic' : 'https://api.anthropic.com';
-      const model = modelOverride ?? (provider === 'zai' ? 'glm-4.5v' : 'claude-haiku-4-5-20251001');
+      const model = modelOverride ?? defaultModelFor(provider, 'vision');
       const res = await fetch(`${base}/v1/messages`, {
         method: 'POST', signal: sig,
         headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
@@ -285,7 +301,7 @@ export async function fetchLLMVision(
       const data = await res.json();
       text = data.content?.[0]?.text ?? '';
     } else if (provider === 'gemini') {
-      const gModel = modelOverride ?? 'gemini-3-flash';
+      const gModel = modelOverride ?? defaultModelFor('gemini', 'vision');
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${gModel}:generateContent?key=${apiKey}`, {
         method: 'POST', signal: sig,
         headers: { 'Content-Type': 'application/json' },
@@ -301,12 +317,12 @@ export async function fetchLLMVision(
         { type: 'image_url', image_url: { url: dataUrl } },
       ];
       let url = 'https://api.openai.com/v1/chat/completions';
-      let model = modelOverride ?? 'gpt-5.6-luna';
+      let model = modelOverride ?? defaultModelFor('openai', 'vision');
       let tokenParam = 'max_completion_tokens'; // GPT-5.x rejects legacy max_tokens
-      if (provider === 'deepseek') { url = 'https://api.deepseek.com/chat/completions'; model = modelOverride ?? 'deepseek-v4-flash'; tokenParam = 'max_tokens'; }
-      if (provider === 'qwen') { url = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions'; model = modelOverride ?? 'qwen-vl-plus'; tokenParam = 'max_tokens'; }
-      if (provider === 'openrouter') { url = 'https://openrouter.ai/api/v1/chat/completions'; model = modelOverride ?? 'anthropic/claude-haiku-4.5'; tokenParam = 'max_tokens'; }
-      if (provider === 'kimi') { url = `${(baseUrl || 'https://api.moonshot.ai/v1').replace(/\/+$/, '')}/chat/completions`; model = modelOverride ?? 'kimi-k3'; tokenParam = 'max_tokens'; }
+      if (provider === 'deepseek') { url = 'https://api.deepseek.com/chat/completions'; model = modelOverride ?? defaultModelFor('deepseek', 'vision'); tokenParam = 'max_tokens'; }
+      if (provider === 'qwen') { url = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions'; model = modelOverride ?? defaultModelFor('qwen', 'vision'); tokenParam = 'max_tokens'; }
+      if (provider === 'openrouter') { url = 'https://openrouter.ai/api/v1/chat/completions'; model = modelOverride ?? defaultModelFor('openrouter', 'vision'); tokenParam = 'max_tokens'; }
+      if (provider === 'kimi') { url = `${(baseUrl || 'https://api.moonshot.ai/v1').replace(/\/+$/, '')}/chat/completions`; model = modelOverride ?? defaultModelFor('kimi', 'vision'); tokenParam = 'max_tokens'; }
       if (provider === 'custom') {
         const root = (baseUrl || '').replace(/\/+$/, '');
         if (!root) { console.error('[LLM vision] custom: no baseUrl'); return null; }
@@ -332,7 +348,7 @@ export async function fetchLLMVision(
         method: 'POST', signal: sig,
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: modelOverride ?? 'gpt-5-5',
+          model: modelOverride ?? defaultModelFor('kie', 'vision'),
           stream: false,
           input: [{ role: 'user', content: [
             { type: 'input_text', text: prompt },

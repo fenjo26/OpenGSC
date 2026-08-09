@@ -3,59 +3,14 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { verifyAuthOrShare } from '@/lib/authShare';
+import { fetchLLM } from '@/lib/llm';
 
-async function fetchLLM(prompt: string, provider: string, apiKey: string): Promise<string | null> {
-  try {
-    let text = '';
-    if (provider === 'anthropic' || provider === 'zai') {
-      const baseUrl = provider === 'zai' ? 'https://api.z.ai/api/anthropic' : 'https://api.anthropic.com';
-      const model   = provider === 'zai' ? 'glm-4.5-air' : 'claude-haiku-4-5-20251001';
-      const res = await fetch(`${baseUrl}/v1/messages`, {
-        method: 'POST',
-        headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-        body: JSON.stringify({ model, max_tokens: 512, messages: [{ role: 'user', content: prompt }] }),
-      });
-      if (!res.ok) {
-        const err = await res.text();
-        console.error(`[Branded] ${provider} error:`, res.status, err);
-        return null;
-      }
-      const data = await res.json();
-      text = data.content?.[0]?.text ?? '';
-    } else if (provider === 'openai') {
-      const res = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: prompt }] }),
-      });
-      if (!res.ok) return null;
-      const data = await res.json();
-      text = data.choices?.[0]?.message?.content ?? '';
-    } else if (provider === 'gemini') {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-      });
-      if (!res.ok) return null;
-      const data = await res.json();
-      text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-    } else if (provider === 'openrouter') {
-      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'anthropic/claude-3.5-haiku', messages: [{ role: 'user', content: prompt }] }),
-      });
-      if (!res.ok) return null;
-      const data = await res.json();
-      text = data.choices?.[0]?.message?.content ?? '';
-    }
-    return text;
-  } catch (e) {
-    console.error('[Branded] fetchLLM error:', e);
-    return null;
-  }
-}
+// This route used to carry its own copy of the multi-provider LLM client — one of four in the
+// codebase. The copies aged apart: this one was still asking for `gpt-4o-mini`,
+// `gemini-1.5-flash`, `claude-3.5-haiku` and `glm-4.5-air` long after lib/llm.ts had moved on,
+// and nothing failed, because stale model ids keep resolving. It also knew four providers where
+// the shared client knows nine, and had no retry, so a routine 429 silently became "no brand
+// terms found". Deleting it in favour of `fetchLLM` fixes all of that at once.
 
 // GET /api/gsc/branded?siteId=  — returns saved keywords (+ AI suggest if ?suggest=1&aiProvider=&aiApiKey=)
 export async function GET(req: Request) {
@@ -64,6 +19,9 @@ export async function GET(req: Request) {
   const suggest  = searchParams.get('suggest') === '1';
   const provider = searchParams.get('aiProvider') ?? 'anthropic';
   const apiKey   = searchParams.get('aiApiKey') ?? '';
+  // Chosen by the caller from the `utility` task (lib/seo/aiTasks.ts). Absent = provider default.
+  const model    = searchParams.get('aiModel') ?? '';
+  const baseUrl  = searchParams.get('aiBaseUrl') ?? '';
 
   const auth = await verifyAuthOrShare(req, siteId, false);
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -128,7 +86,7 @@ Return ONLY a JSON array of brand terms (lowercase, max 10), no explanation:
 
 If no clear brand terms found, return: ["${domainBrand}"]`;
 
-      const text = await fetchLLM(prompt, provider, apiKey);
+      const text = await fetchLLM(prompt, provider, apiKey, 512, model || undefined, baseUrl || undefined);
       if (text) {
         const match = text.match(/\[[\s\S]*?\]/);
         if (match) {

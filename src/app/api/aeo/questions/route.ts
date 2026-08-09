@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getUserAeoCreds } from "@/lib/aeoTracker";
-import { AEO_ENGINES } from "@/lib/seo/aeo";
+import { AEO_ENGINES, hostOf } from "@/lib/seo/aeo";
 
 async function ownedSite(userId: string, siteId: string) {
   return prisma.site.findFirst({ where: { id: siteId, userId } });
@@ -32,6 +32,9 @@ export async function GET(req: Request) {
   return NextResponse.json({
     engines: configured,
     hasAnyKey: configured.length > 0,
+    // The client highlights our own domain inside the competitor lists, so it needs the
+    // normalized host rather than the raw GSC property string.
+    host: hostOf(site.url),
     questions: questions.map((q: any) => ({
       id: q.id,
       question: q.question,

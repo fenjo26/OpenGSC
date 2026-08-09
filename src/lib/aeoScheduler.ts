@@ -1,13 +1,17 @@
 import { prisma } from '@/lib/prisma';
-import { getUserAeoCreds, hasAnyAeoCreds, parseBrandTerms, checkSiteQuestions, AEO_STALE_MS } from '@/lib/aeoTracker';
+import { getUserAeoCreds, hasAnyAeoCreds, siteAeoConfig, checkSiteQuestions, AEO_STALE_MS } from '@/lib/aeoTracker';
 
 // Background AEO citation tracking. Runs inside the Next server process (started from
 // instrumentation) — same pattern as the Clarity/Rank schedulers, no system cron needed.
 //
-// Strategy: tick every few hours. For each site with tracked questions, check the ones whose
-// last check is older than ~24h (or never checked). AEO checks are 4x more expensive than a
-// rank check (one billed call per engine), so the batch per site and tick cadence are both
-// more conservative than the Rank Tracker scheduler.
+// Strategy: tick every few hours. For each *opted-in* site with tracked questions, check the
+// ones whose last check is older than ~24h (or never checked).
+//
+// Opt-in (Site.aeoAuto) is the important word. Unlike a rank check, an AEO check spends the
+// user's own AI credits — four billed calls per question with live web search on each. An
+// instance with a few hundred connected properties would quietly burn a real bill on questions
+// nobody was waiting for an answer to, so automatic checking is something a site has to be
+// enrolled in deliberately. Everything else is checked on demand from the UI.
 
 const TICK_MS = 4 * 60 * 60 * 1000; // 4 hours
 const PER_SITE_CAP = 10;            // max questions checked per site per tick
@@ -25,11 +29,15 @@ async function tick() {
     const sites = await prisma.site.findMany({
       where: {
         archivedAt: null,
+        aeoAuto: true,
         trackedQuestions: {
           some: { OR: [{ lastCheckedAt: null }, { lastCheckedAt: { lt: staleBefore } }] },
         },
       },
-      select: { id: true, url: true, userId: true, brandedKeywords: true },
+      select: {
+        id: true, url: true, userId: true, brandedKeywords: true, market: true,
+        aeoModel: true, aeoCountry: true, aeoCity: true, aeoLanguage: true,
+      },
     });
     if (!sites.length) return;
 
@@ -42,8 +50,7 @@ async function tick() {
         const creds = credsByUser.get(site.userId)!;
         if (!hasAnyAeoCreds(creds)) continue; // no AEO-capable key configured — nothing we can do
 
-        const brandTerms = parseBrandTerms(site.brandedKeywords);
-        const r = await checkSiteQuestions(site.id, site.url, brandTerms, creds, { limit: PER_SITE_CAP });
+        const r = await checkSiteQuestions(site.id, siteAeoConfig(site), creds, { limit: PER_SITE_CAP });
         if (r.checked > 0) console.log(`[aeo-cron] ${site.url}: checked ${r.checked}, remaining ${r.remaining}`);
       } catch (e) {
         console.warn(`[aeo-cron] site ${site.id} failed:`, e);

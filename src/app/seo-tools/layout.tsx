@@ -1,9 +1,10 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { Sparkles, SlidersHorizontal, LayoutGrid } from "lucide-react";
+import { Sparkles, LayoutGrid } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { SEO_TOOLS } from "@/lib/seo/toolsNav";
+import AiModelBadge from "@/components/AiModelBadge";
 
 // "All tools" first, then the shared list — see src/lib/seo/toolsNav.ts for why the list is
 // not written out here.
@@ -38,17 +39,10 @@ export default function SeoToolsLayout({ children }: { children: React.ReactNode
             </p>
           </div>
         </div>
-        {/* Keys/models/policies now live in project Settings — single place for all keys */}
-        <button
-          onClick={() => router.push("/settings?tab=seo-tools")}
-          style={{
-            display: "flex", alignItems: "center", gap: "6px", padding: "8px 14px", borderRadius: "8px",
-            border: "1px solid var(--color-border)", background: "var(--color-card)",
-            color: "var(--color-text-secondary)", fontSize: "12px", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
-          }}
-        >
-          <SlidersHorizontal size={13} /> {t("seoTabSettings")}
-        </button>
+        {/* Keys/models/policies live in project Settings — single place for all keys. The button
+            names the model the current tool will actually use, so the link reads as an answer
+            rather than a place to go looking. */}
+        <AiModelBadge pathname={pathname} />
       </div>
 
       {/* Sub-tabs */}
