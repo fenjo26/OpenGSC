@@ -30,7 +30,7 @@ import {
   SlidersHorizontal, ChevronDown, Smartphone, Monitor, Tablet,
   Users, Activity, Zap, DollarSign, Link2, Check,
   FileText, Globe, Search, ArrowLeftRight, BookmarkCheck, Calendar, X, Download,
-  ChevronLeft, ChevronRight, ExternalLink,
+  ChevronLeft, ChevronRight, ExternalLink, Pencil, Trash2,
 } from "lucide-react";
 import {
   ComposedChart, LineChart, AreaChart, Area, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -3358,12 +3358,17 @@ function AnnotationsFilterDd({ onSetupBranded }: { onSetupBranded?: () => void }
 }
 
 // ─── Add Note Modal ───────────────────────────────────────────────────────────
-function AddNoteModal({ onClose, onSave }: { onClose: () => void; onSave: (note: { date: string; title: string; desc: string; scope: string }) => void }) {
+function AddNoteModal({ onClose, onSave, editNote }: {
+  onClose: () => void;
+  onSave: (note: { id?: string; date: string; title: string; desc: string; scope: string }) => void;
+  /** When set, the modal opens in edit mode: fields are pre-filled and the label/button reflect editing. */
+  editNote?: { id: string; title: string; desc: string; date: string } | null;
+}) {
   const { t } = useLanguage();
   const today = new Date();
   const todayStr = today.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-  const [title, setTitle] = useState("");
-  const [desc, setDesc]   = useState("");
+  const [title, setTitle] = useState(editNote?.title ?? "");
+  const [desc, setDesc]   = useState(editNote?.desc ?? "");
   const [scope, setScope] = useState<"all" | "specific" | "group">("all");
 
   // l holds an i18n KEY. Both render (3238) and onSave (3246) translate it via t(), so the stored
@@ -3383,11 +3388,11 @@ function AddNoteModal({ onClose, onSave }: { onClose: () => void; onSave: (note:
         <button onClick={onClose} style={{ position: "absolute", top: "16px", right: "16px", background: "none", border: "none", cursor: "pointer", color: "#9ca3af" }}><X size={20} /></button>
 
         {/* Label */}
-        <p style={{ fontSize: "12px", color: "#9ca3af", fontWeight: 500, marginBottom: "4px" }}>Note</p>
+        <p style={{ fontSize: "12px", color: "#9ca3af", fontWeight: 500, marginBottom: "4px" }}>{editNote ? t("annEditNote") : "Note"}</p>
 
         {/* Date */}
         <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "24px" }}>
-          <span style={{ fontSize: "24px", fontWeight: 700 }}>{todayStr}</span>
+          <span style={{ fontSize: "24px", fontWeight: 700 }}>{editNote?.date ?? todayStr}</span>
           <Calendar size={18} color="#9ca3af" />
         </div>
 
@@ -3426,9 +3431,9 @@ function AddNoteModal({ onClose, onSave }: { onClose: () => void; onSave: (note:
         {/* Buttons */}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
           <button onClick={onClose} style={{ padding: "10px 22px", borderRadius: "8px", border: "none", background: "#f3f4f6", color: "#374151", fontSize: "14px", fontWeight: 500, cursor: "pointer" }}>{t("cancel")}</button>
-          <button onClick={() => { if (title.trim()) { onSave({ date: todayStr, title, desc, scope: t(scopeOptions.find(o => o.v === scope)!.l as never) }); onClose(); } }}
+          <button onClick={() => { if (title.trim()) { onSave({ id: editNote?.id, date: editNote?.date ?? todayStr, title, desc, scope: t(scopeOptions.find(o => o.v === scope)!.l as never) }); onClose(); } }}
             style={{ padding: "10px 22px", borderRadius: "8px", border: "none", background: title.trim() ? "#374151" : "#9ca3af", color: "#fff", fontSize: "14px", fontWeight: 600, cursor: title.trim() ? "pointer" : "not-allowed" }}>
-            Save
+            {editNote ? t("annSave") : "Save"}
           </button>
         </div>
       </div>
@@ -3559,16 +3564,19 @@ function AnnotationsTab({ period, setPeriod, periodOptions, onSetupBranded, site
   // table with a working "add note" button says the same thing without pretending to have data.
   const [onboarding, setOnboarding] = useState(false);
   const [showAddNote, setShowAddNote] = useState(false);
+  // When set, AddNoteModal opens in edit mode with this note's fields pre-filled.
+  const [editingNote, setEditingNote] = useState<{ id: string; title: string; desc: string; date: string } | null>(null);
   const [notes, setNotes] = useState<AnnotationNote[]>([]);
   const [loading, setLoading] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
   const [activeMetrics, setActiveMetrics] = useState<Set<Metric>>(new Set(["clicks", "impressions", "ctr", "position"]));
 
   const days = annotationWindow(period);
-  // The period also decides how far back the list itself reaches. Without this, switching from
-  // 28 days to 3 years returned the same rows and only widened the comparison — half a working
-  // selector, and the half nobody notices is missing until they go looking for an old update.
-  const lookback = PERIOD_DAYS[period] ?? 28;
+  // The list always reaches across the whole tracking history: hiding a note because it is older
+  // than the selected period is exactly the trap that made the onboarding panel appear over notes
+  // that were sitting there all along. The period now controls only the before/after comparison
+  // window (`days`), not which notes are visible.
+  const lookback = 1200;
 
   // Notes and their figures both come from the server: the note rows persist in the Annotation
   // table, the before/after numbers are derived from DailyMetric on every read. Re-fetching when
@@ -3724,7 +3732,7 @@ function AnnotationsTab({ period, setPeriod, periodOptions, onSetupBranded, site
           // study; updates are a timeline they want to read down. Eight charts on screen made the
           // page a scroll where the useful part — the date and the deltas — was the smallest thing
           // on it.
-          <div key={idx} style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: "0", borderBottom: "1px solid var(--color-border)", alignItems: "center", padding: "0 32px" }}>
+          <div key={idx} style={{ display: "grid", gridTemplateColumns: "320px 1fr auto", gap: "0", borderBottom: "1px solid var(--color-border)", alignItems: "center", padding: "0 32px" }}>
             {/* Left: date + title + scope */}
             <div style={{ padding: "18px 24px 18px 0" }}>
               <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--color-text-primary)", marginBottom: "4px" }}>{note.title}</div>
@@ -3767,6 +3775,30 @@ function AnnotationsTab({ period, setPeriod, periodOptions, onSetupBranded, site
                 );
               })}
             </div>
+
+            {/* Actions — only for the operator's own notes, never for Google updates. */}
+            {note.kind === "note" && note.id && (
+              <div style={{ display: "flex", gap: "4px", alignItems: "center", flexShrink: 0 }}>
+                <button
+                  title={t("annEditNote")}
+                  onClick={() => setEditingNote({ id: note.id!, title: note.title, desc: note.description ?? "", date: note.date })}
+                  style={{ width: "30px", height: "30px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-secondary)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+                >
+                  <Pencil size={13} />
+                </button>
+                <button
+                  title={t("annDeleteNote")}
+                  onClick={async () => {
+                    if (!confirm(t("annDeleteConfirm"))) return;
+                    await fetch(`/api/annotations?id=${encodeURIComponent(note.id!)}`, { method: "DELETE" }).catch(() => {});
+                    await loadNotes();
+                  }}
+                  style={{ width: "30px", height: "30px", borderRadius: "8px", border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.06)", color: "#EF4444", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -3813,6 +3845,22 @@ function AnnotationsTab({ period, setPeriod, periodOptions, onSetupBranded, site
             await fetch("/api/annotations", {
               method: "POST", headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ siteId: siteDbId, date: note.date, title: note.title, description: note.desc }),
+            }).catch(() => {});
+            await loadNotes();
+          }}
+        />
+      )}
+
+      {/* ── Edit Note Modal ── */}
+      {editingNote && (
+        <AddNoteModal
+          editNote={editingNote}
+          onClose={() => setEditingNote(null)}
+          onSave={async note => {
+            if (!note.id) return;
+            await fetch("/api/annotations", {
+              method: "PUT", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: note.id, date: note.date, title: note.title, description: note.desc }),
             }).catch(() => {});
             await loadNotes();
           }}

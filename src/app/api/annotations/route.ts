@@ -323,3 +323,31 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ error: "delete_failed" }, { status: 500 });
   }
 }
+
+export async function PUT(req: Request) {
+  const session = await getServerSession(authOptions);
+  const userId = (session?.user as any)?.id as string | undefined;
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const b = await req.json().catch(() => ({}));
+  const id = String(b.id || "");
+  const title = String(b.title || "").trim();
+  if (!id || !title) return NextResponse.json({ error: "missing_fields" }, { status: 400 });
+
+  const date = b.date ? new Date(b.date) : null;
+  if (date && isNaN(+date)) return NextResponse.json({ error: "bad_date" }, { status: 400 });
+
+  try {
+    // Same ownership guard as DELETE: the row can only be touched through a site the caller owns.
+    date?.setHours(0, 0, 0, 0);
+    await rawExec(
+      `UPDATE "Annotation" SET "title" = ?, "description" = ?, "date" = ?
+       WHERE "id" = ? AND "siteId" IN (SELECT "id" FROM "Site" WHERE "userId" = ?)`,
+      title, String(b.description || ""), date ?? null, id, userId,
+    );
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    console.error("[Annotations] update failed", e);
+    return NextResponse.json({ error: "update_failed" }, { status: 500 });
+  }
+}
