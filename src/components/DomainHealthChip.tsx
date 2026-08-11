@@ -43,7 +43,7 @@ export default function DomainHealthChip({ domain, compact = false }: { domain: 
     if (!clean.includes(".")) return;
     try {
       const [drRes, mRes] = await Promise.all([
-        fetch(`/api/dr?domains=${encodeURIComponent(clean)}`),
+        fetch(`/api/dr?domains=${encodeURIComponent(clean)}&cacheOnly=1`),
         fetch("/api/metrics/domain", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ domains: [clean], fetch: false }),

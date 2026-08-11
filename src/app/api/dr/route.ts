@@ -52,7 +52,8 @@ export async function GET(req: Request) {
     if (age < TTL_MS) { out[r.domain] = { dr: Number(r.dr), checkedAt: r.checkedAt }; fresh.add(r.domain); }
   }
 
-  const missing = domains.filter(d => !fresh.has(d)).slice(0, 60); // bounded per request
+  const cacheOnly = searchParams.get("cacheOnly") === "1";
+  const missing = cacheOnly ? [] : domains.filter(d => !fresh.has(d)).slice(0, 60); // bounded per request
   let i = 0;
   await Promise.all(Array.from({ length: 4 }, async () => {
     while (i < missing.length) {
