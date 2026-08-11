@@ -517,6 +517,7 @@ model IndexerDomain {
   
   user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   logs            IndexerLog[]
+  dailyStats      IndexerDailyStat[]
   queue           IndexerQueue[]
 
   @@unique([userId, domain])
@@ -535,6 +536,20 @@ model IndexerLog {
 
   domain    IndexerDomain @relation(fields: [domainId], references: [id], onDelete: Cascade)
   @@index([domainId, timestamp])
+}
+
+model IndexerDailyStat {
+  id         String        @id @default(cuid())
+  domainId   String
+  date       String        // "YYYY-MM-DD"
+  botType    String        // "google", "bing", "yandex", "mailru", "ai", "other", "redirect"
+  statusCode Int           @default(200)
+  count      Int           @default(0)
+
+  domain     IndexerDomain @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  @@unique([domainId, date, botType, statusCode])
+  @@index([domainId, date])
 }
 
 model IndexerQueue {

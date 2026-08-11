@@ -536,14 +536,15 @@ export const DATA_TOOLS: McpTool[] = [
       });
       if (!domains.length) return { domains: [], note: needle ? `No indexer domain matches "${needle}".` : "The Indexer module has no domains configured." };
 
-      const logs = await prisma.indexerLog.findMany({
-        where: { domainId: { in: domains.map(d => d.id) }, timestamp: { gte: since } },
-        select: { domainId: true, botType: true, statusCode: true },
+      const sinceStr = since.toISOString().split("T")[0];
+      const stats = await prisma.indexerDailyStat.findMany({
+        where: { domainId: { in: domains.map(d => d.id) }, date: { gte: sinceStr } },
+        select: { domainId: true, botType: true, statusCode: true, count: true },
       });
 
       const byDomain = domains.map(d => {
-        const mine = logs.filter(l => l.domainId === d.id);
-        const count = (t: string) => mine.filter(l => l.botType === t).length;
+        const mine = stats.filter(l => l.domainId === d.id);
+        const count = (t: string) => mine.filter(l => l.botType === t).reduce((sum, s) => sum + s.count, 0);
         const bots = { google: count("google"), bing: count("bing"), yandex: count("yandex"), mailru: count("mailru"), ai: count("ai"), other: count("other") };
         const totalBots = Object.values(bots).reduce((a, b) => a + b, 0);
         return {
@@ -557,7 +558,7 @@ export const DATA_TOOLS: McpTool[] = [
           botHits: bots,
           totalBotHits: totalBots,
           // A high 304 share means bots are re-validating cheaply rather than refetching.
-          notModified304: mine.filter(l => l.statusCode === 304).length,
+          notModified304: mine.filter(l => l.statusCode === 304).reduce((sum, s) => sum + s.count, 0),
           humanRedirects: count("redirect"),
           googleSharePercent: totalBots ? Math.round((bots.google / totalBots) * 100) : 0,
         };
