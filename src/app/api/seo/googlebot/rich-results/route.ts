@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { parseSeoSignals } from "@/lib/seo/googlebot";
 import { fetchAsGooglebotBrowser } from "@/lib/seo/richResults";
+import { assertSafeTarget, SafeFetchError } from "@/lib/security/safeFetch";
 
 // POST /api/seo/googlebot/rich-results
 // body: { url: string, html?: string }
@@ -62,9 +63,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, view: buildView(url, pasted) });
   }
 
+  // The automated path launches a browser on the server. Resolve and reject internal targets
+  // before Playwright sees the URL; the manual pasted-HTML path above performs no network access.
+  let pinnedAddress = "";
+  try {
+    const target = await assertSafeTarget(url);
+    pinnedAddress = target.addresses[0].address;
+  } catch (error) {
+    const code = error instanceof SafeFetchError && error.code === "private_address" ? "private_host" : "bad_url";
+    return NextResponse.json({ error: code }, { status: 400 });
+  }
+
   // Automated path — real headless browser hitting the target directly with Googlebot UA forced
   // at the CDP layer (persists through Cloudflare), optional residential proxy via GOOGLEBOT_PROXY.
-  const res = await fetchAsGooglebotBrowser(url, { mobile: true });
+  const res = await fetchAsGooglebotBrowser(url, { mobile: true, pinnedAddress });
   if (!res.ok || !res.html) {
     return NextResponse.json({ ok: false, error: res.error || "failed" }, { status: 200 });
   }

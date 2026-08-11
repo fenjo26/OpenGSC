@@ -12,6 +12,12 @@ export interface SeoJobRec {
   type: HistoryType;
   keyword: string;
   status: "processing" | "completed" | "error";
+  stage?: string;
+  progress?: number;
+  attempt?: number;
+  heartbeatAt?: string | null;
+  checkpoint?: string | null;
+  resumable?: boolean;
   result?: string | null;
   error?: string | null;
   meta?: string | null;

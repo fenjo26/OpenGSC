@@ -14,6 +14,11 @@ import MetricsSettingsSection from "@/components/MetricsSettingsSection";
 
 type NavItem = "accounts" | "bing" | "yandex" | "teams" | "api" | "api-keys" | "indexing-api" | "metrics" | "seo-tools" | "notifications" | "members" | "preferences" | "supersites";
 
+// These screens predate a real organization/member authorization model. Keep them available to
+// contributors who are working on that RFC, but do not present client-only mock state as a
+// production feature. Existing installations can opt back in without a database migration.
+const EXPERIMENTAL_TEAM_UI = process.env.NEXT_PUBLIC_EXPERIMENTAL_TEAM_UI === "1";
+
 interface ConnectedAccount {
   id: string; email: string; picture: string | null; connected: boolean; gscAccess: boolean; ga4Access?: boolean;
 }
@@ -732,7 +737,7 @@ function PreferencesSection({ user }: { user: any }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
       {/* Sharing */}
-      <SectionCard>
+      {EXPERIMENTAL_TEAM_UI && <SectionCard>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
           <h2 style={{ fontSize: "15px", fontWeight: 700, color: "var(--color-text-primary)" }}>{t("sharingTitle")}</h2>
         </div>
@@ -747,7 +752,13 @@ function PreferencesSection({ user }: { user: any }) {
             <ChevronDown size={13} color="var(--color-text-secondary)" />
           </button>
         </div>
-      </SectionCard>
+      </SectionCard>}
+
+      {!EXPERIMENTAL_TEAM_UI && (
+        <SectionCard>
+          <SectionTitle title={t("singleOperatorTitle")} sub={t("singleOperatorDesc")} />
+        </SectionCard>
+      )}
 
       {/* Language */}
       <SectionCard>
@@ -768,7 +779,7 @@ function PreferencesSection({ user }: { user: any }) {
       </SectionCard>
 
       {/* Team Preferences */}
-      <SectionCard>
+      {EXPERIMENTAL_TEAM_UI && <SectionCard>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
           <h2 style={{ fontSize: "15px", fontWeight: 700, color: "var(--color-text-primary)" }}>{t("teamPreferences")}</h2>
           <button style={{ fontSize: "13px", color: "var(--color-accent-blue)", background: "none", border: "none", cursor: "pointer", fontWeight: 500, display: "flex", alignItems: "center", gap: "4px" }}>
@@ -791,7 +802,7 @@ function PreferencesSection({ user }: { user: any }) {
             })}
           </div>
         </div>
-      </SectionCard>
+      </SectionCard>}
       {/* Automatic sync. Lives here rather than next to the Google accounts: it is a preference
           about how the instance behaves, not a property of any one connected account. */}
       <SyncScheduleSection />
@@ -2102,7 +2113,11 @@ export default function SettingsPage() {
   // render with no SSR/hydration mismatch and no Suspense-boundary requirement.
   useEffect(() => {
     const tab = new URLSearchParams(window.location.search).get("tab");
-    const valid: NavItem[] = ["accounts", "bing", "yandex", "teams", "api", "api-keys", "indexing-api", "metrics", "seo-tools", "notifications", "members", "preferences", "supersites"];
+    const valid: NavItem[] = [
+      "accounts", "bing", "yandex", "api", "api-keys", "indexing-api", "metrics",
+      "seo-tools", "notifications", "preferences",
+      ...(EXPERIMENTAL_TEAM_UI ? ["teams", "members", "supersites"] as NavItem[] : []),
+    ];
     if (tab && (valid as string[]).includes(tab)) setNav(tab as NavItem);
   }, []);
 
@@ -2163,7 +2178,7 @@ export default function SettingsPage() {
             <NavBtn id="accounts" icon={<GoogleIcon size={14} />} label={t("navMyGoogleAccounts")} />
             <NavBtn id="bing" icon={<BingIcon size={14} />} label="Bing Webmaster" />
             <NavBtn id="yandex" icon={<YandexIcon size={14} />} label="Яндекс.Вебмастер" />
-            <NavBtn id="teams" icon={<Users size={14} />} label={t("myTeams")} />
+            {EXPERIMENTAL_TEAM_UI && <NavBtn id="teams" icon={<Users size={14} />} label={t("myTeams")} />}
             <NavBtn id="api-keys" icon={<KeyRound size={14} />} label={t("navApiKeys")} />
             <NavBtn id="api" icon={<Key size={14} />} label={t("navApiMcpKeys")} />
             <NavBtn id="indexing-api" icon={<Globe size={14} />} label={t("navIndexingApi")} />
@@ -2174,8 +2189,10 @@ export default function SettingsPage() {
 
           {/* Team */}
           <div>
-            <div style={{ fontSize: "12px", fontWeight: 700, color: "var(--color-text-primary)", marginBottom: "2px" }}>{t("sidebarTeam")}</div>
-            <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "10px" }}>
+            <div style={{ fontSize: "12px", fontWeight: 700, color: "var(--color-text-primary)", marginBottom: "2px" }}>
+              {EXPERIMENTAL_TEAM_UI ? t("sidebarTeam") : t("sidebarInstance")}
+            </div>
+            {EXPERIMENTAL_TEAM_UI ? <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "10px" }}>
               {editingTeam ? (
                 <input
                   autoFocus value={teamName || defaultTeamName}
@@ -2188,10 +2205,14 @@ export default function SettingsPage() {
                 <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>{teamName || defaultTeamName}</span>
               )}
               <Edit2 size={11} style={{ color: "var(--color-text-secondary)", cursor: "pointer", flexShrink: 0 }} onClick={() => setEditingTeam(true)} />
-            </div>
-            <NavBtn id="members" icon={<Users size={14} />} label={t("navTeamMembers")} badge="1" />
+            </div> : (
+              <div style={{ fontSize: "11px", lineHeight: 1.45, color: "var(--color-text-secondary)", marginBottom: "10px" }}>
+                {t("singleOperatorTitle")}
+              </div>
+            )}
+            {EXPERIMENTAL_TEAM_UI && <NavBtn id="members" icon={<Users size={14} />} label={t("navTeamMembers")} badge="1" />}
             <NavBtn id="preferences" icon={<Settings size={14} />} label={t("navPreferences")} />
-            <NavBtn id="supersites" icon={<Star size={14} />} label={t("navSuperSites")} />
+            {EXPERIMENTAL_TEAM_UI && <NavBtn id="supersites" icon={<Star size={14} />} label={t("navSuperSites")} />}
           </div>
         </div>
 
@@ -2232,16 +2253,16 @@ export default function SettingsPage() {
               <YandexAccountsManager />
             </SectionCard>
           )}
-          {nav === "teams"        && <TeamsSection user={user} />}
+          {EXPERIMENTAL_TEAM_UI && nav === "teams" && <TeamsSection user={user} />}
           {nav === "api-keys"     && <ApiKeysSection />}
           {nav === "api"          && <ApiSection />}
           {nav === "indexing-api" && <IndexApiSection />}
           {nav === "metrics"      && <MetricsSettingsSection />}
           {nav === "seo-tools"    && <SeoToolsSettings />}
           {nav === "notifications" && <NotificationsSection />}
-          {nav === "members"      && <MembersSection user={user} />}
+          {EXPERIMENTAL_TEAM_UI && nav === "members" && <MembersSection user={user} />}
           {nav === "preferences"  && <PreferencesSection user={user} />}
-          {nav === "supersites"   && <SuperSitesSection />}
+          {EXPERIMENTAL_TEAM_UI && nav === "supersites" && <SuperSitesSection />}
         </div>
       </div>
 

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { safeFetch } from "@/lib/security/safeFetch";
 
 export async function GET(req: Request) {
   try {
@@ -34,11 +35,14 @@ export async function GET(req: Request) {
 }
 
 // ── Helper: fetch and parse sitemap.xml, returning all <loc> URLs ──
-async function parseSitemapUrls(sitemapUrl: string): Promise<string[]> {
+async function parseSitemapUrls(sitemapUrl: string, depth = 0, seen = new Set<string>()): Promise<string[]> {
+  if (depth > 3 || seen.has(sitemapUrl) || seen.size >= 200) return [];
+  seen.add(sitemapUrl);
   try {
-    const res = await fetch(sitemapUrl, {
+    const res = await safeFetch(sitemapUrl, {
       headers: { "User-Agent": "OpenGSC-Indexer/1.0" },
-      signal: AbortSignal.timeout(15000),
+      timeoutMs: 15_000,
+      maxBytes: 10 * 1024 * 1024,
     });
     if (!res.ok) return [];
     const xml = await res.text();
@@ -51,13 +55,14 @@ async function parseSitemapUrls(sitemapUrl: string): Promise<string[]> {
       if (!loc) continue;
       // If it's a nested sitemap (sitemap index), recursively parse it
       if (loc.endsWith(".xml") || loc.includes("sitemap")) {
-        const nested = await parseSitemapUrls(loc);
+        const nested = await parseSitemapUrls(loc, depth + 1, seen);
         urls.push(...nested);
+        if (urls.length >= 20_000) break;
       } else {
         urls.push(loc);
       }
     }
-    return urls;
+    return urls.slice(0, 20_000);
   } catch {
     return [];
   }

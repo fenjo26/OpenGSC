@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { MCP_TOOLS, findTool, type McpTool } from "@/lib/mcp/tools";
 import { rawQuery } from "@/lib/db/raw";
+import pkg from "../../../../package.json";
 
 // MCP (Model Context Protocol) endpoint — Streamable HTTP transport, stateless mode.
 // Lets AI agents (Claude Code, Cursor, Codex, any MCP client) query this instance's
@@ -16,7 +17,7 @@ import { rawQuery } from "@/lib/db/raw";
 // tools/call. Notifications get 202 Accepted.
 
 const PROTOCOL_VERSION = "2025-06-18";
-const SERVER_INFO = { name: "opengsc", version: "1.0.0" };
+const SERVER_INFO = { name: "opengsc", version: pkg.version };
 
 const INSTRUCTIONS =
   "OpenGSC — self-hosted Google Search Console dashboard with rank tracking, AI-answer-engine (AEO) visibility, content decay and CTR analysis, backlinks, a competitor Link Monitor, a built-in site-audit crawler, GEO audits, a private indexer network, and an AI SEO content suite. " +

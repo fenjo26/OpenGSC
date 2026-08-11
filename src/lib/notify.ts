@@ -103,6 +103,10 @@ export function telegramToSlackMarkdown(text: string): string {
 
 export async function sendSlack(webhookUrl: string, text: string): Promise<{ ok: boolean; error?: string }> {
   try {
+    const target = new URL(webhookUrl);
+    if (target.protocol !== "https:" || target.hostname.toLowerCase() !== "hooks.slack.com" || !target.pathname.startsWith("/services/")) {
+      return { ok: false, error: "invalid_webhook_format" };
+    }
     const slackText = telegramToSlackMarkdown(text);
     const res = await fetch(webhookUrl, {
       method: "POST",

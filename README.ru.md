@@ -8,7 +8,7 @@
 
 Развертывается на вашем собственном VPS. Никаких подписок, никаких лимитов на количество мест, третьи лица не имеют доступа к вашим данным.
 
-[![Version 1.2.3](https://img.shields.io/badge/version-1.2.3-brightgreen)](https://github.com/fenjo26/opengsc/releases)
+[![Version 1.3.0](https://img.shields.io/badge/version-1.3.0-brightgreen)](https://github.com/fenjo26/opengsc/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Next.js 16](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue?logo=typescript)](https://www.typescriptlang.org/)
@@ -72,6 +72,12 @@ curl -fsSL https://raw.githubusercontent.com/fenjo26/opengsc/main/install.sh | s
 | Время настройки | ~5 минут, одна команда | Мгновенная регистрация |
 
 **Честные компромиссы:** вам нужен VPS и домен (Google OAuth не работает на чистом IP-адресе), обновления вы ставите сами (`git pull && npm run build && pm2 restart`), и в системе нет встроенного разделения на команды или white-label. Если это приемлемый компромисс ради контроля над своими данными и отсутствия подписок — читайте дальше.
+
+**Контракт поддержки:** OpenGSC — приложение для одного оператора. Один владелец может подключить
+несколько Google-аккаунтов и сайтов, но модели команд, участников, ролей и общего биллинга пока нет.
+SQLite — единственная полностью поддерживаемая production-база. Документ про MySQL/MariaDB —
+экспериментальное руководство по портированию без обещания полного соответствия функций;
+см. [`docs/TESTING-MYSQL.md`](docs/TESTING-MYSQL.md).
 
 <br/>
 
@@ -303,7 +309,7 @@ npm run build
 pm2 restart opengsc
 ```
 
-Полная документация по архитектуре, GA4, Docker, MCP и индексатору доступна в папке [docs/](docs/). Как устроен слой метрик внутри — выбор провайдера, модель цены, кэширование и где всё подключено — описано в [docs/METRICS.md](docs/METRICS.md).
+Полная документация по архитектуре, GA4, Docker, MCP и индексатору доступна в папке [docs/](docs/). Как устроен слой метрик внутри — выбор провайдера, модель цены, кэширование и где всё подключено — описано в [docs/METRICS.md](docs/METRICS.md). Приоритеты дальнейшей разработки и разбор OSS-идей находятся в [docs/PRODUCT-ROADMAP.md](docs/PRODUCT-ROADMAP.md), риски Indexer и reseller API — в [docs/RESPONSIBLE-USE.md](docs/RESPONSIBLE-USE.md), а порядок выпуска версий — в [docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md).
 
 ---
 

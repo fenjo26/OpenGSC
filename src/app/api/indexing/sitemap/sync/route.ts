@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { safeFetch } from '@/lib/security/safeFetch';
 
 // Extract all <loc> URLs from a sitemap XML string (handles both sitemapindex and urlset)
 function extractUrls(xml: string): string[] {
@@ -20,8 +21,9 @@ function isSitemapIndex(xml: string): boolean {
 }
 
 async function fetchWithTimeout(url: string, ms = 15000): Promise<string> {
-  const res = await fetch(url, {
-    signal: AbortSignal.timeout(ms),
+  const res = await safeFetch(url, {
+    timeoutMs: ms,
+    maxBytes: 10 * 1024 * 1024,
     headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SEOGetsCrawler/1.0)' },
   });
   if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);

@@ -4,6 +4,7 @@
 // No third-party HTML-parsing deps — pure regex extraction.
 
 import { extractMainContent } from "./readability";
+import { safeFetch, type SafeFetchResponse } from "@/lib/security/safeFetch";
 
 export interface ScrapedPage {
   url: string;
@@ -155,12 +156,13 @@ export interface StructureResult {
 // per-section word count — used by the Landing-flow "under my page" import.
 export async function scrapeStructure(url: string, firecrawlKey?: string): Promise<StructureResult> {
   try {
-    const res = await fetch(url, {
+    const res = await safeFetch(url, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
         Accept: "text/html,application/xhtml+xml",
       },
-      signal: AbortSignal.timeout(15000),
+      timeoutMs: 15_000,
+      maxBytes: 5 * 1024 * 1024,
       redirect: "follow",
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -201,7 +203,7 @@ export async function scrapeStructure(url: string, firecrawlKey?: string): Promi
 // or wrong. That mangles pages declaring their encoding only in a <meta charset> tag — still common
 // on older regional sites (windows-1251 in RU/UA, ISO-8859-7 in GR). Mojibake here is invisible
 // downstream: the rewrite still "succeeds", it just produces garbled text.
-async function decodeResponse(res: Response): Promise<string> {
+async function decodeResponse(res: Pick<SafeFetchResponse, "arrayBuffer" | "headers">): Promise<string> {
   const buf = await res.arrayBuffer();
   const header = /charset=["']?([\w-]+)/i.exec(res.headers.get("content-type") || "")?.[1];
   // Sniff the first 2KB as Latin-1 to read the meta tag without knowing the final encoding yet.
@@ -218,13 +220,14 @@ async function decodeResponse(res: Response): Promise<string> {
 }
 
 async function directFetch(url: string): Promise<ScrapedPage> {
-  const res = await fetch(url, {
+  const res = await safeFetch(url, {
     headers: {
       "User-Agent":
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
       Accept: "text/html,application/xhtml+xml",
     },
-    signal: AbortSignal.timeout(15000),
+    timeoutMs: 15_000,
+    maxBytes: 5 * 1024 * 1024,
     redirect: "follow",
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);

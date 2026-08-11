@@ -47,7 +47,10 @@ function proxyFromEnv(): { server: string; username?: string; password?: string 
 //   3) optionally a residential proxy (GOOGLEBOT_PROXY) so the IP isn't a flagged datacenter one.
 // If the origin cloaks by User-Agent, this returns the doorway. If it cloaks strictly by Google IP,
 // this returns the user page (undetectable without Google's own crawler) — then use Rich Results.
-export async function fetchAsGooglebotBrowser(url: string, opts?: { mobile?: boolean; timeoutMs?: number }): Promise<RichResultsFetch> {
+export async function fetchAsGooglebotBrowser(
+  url: string,
+  opts: { pinnedAddress: string; mobile?: boolean; timeoutMs?: number },
+): Promise<RichResultsFetch> {
   let chromium: any;
   try {
     const spec = "playwright";
@@ -61,11 +64,36 @@ export async function fetchAsGooglebotBrowser(url: string, opts?: { mobile?: boo
   const ua = opts?.mobile === false ? GB_UA_DESKTOP : GB_UA_MOBILE;
   const timeout = opts?.timeoutMs ?? 60_000;
   const proxy = proxyFromEnv();
+  const target = new URL(url);
+  const targetHostname = target.hostname.toLowerCase().replace(/^\[|\]$/g, "");
   let browser: any;
   try {
-    browser = await chromium.launch({ headless: true, args: ["--no-sandbox", "--disable-blink-features=AutomationControlled"], ...(proxy ? { proxy } : {}) });
+    // Chrome keeps the original hostname for Host/TLS while opening the socket only to the IP
+    // already checked by safeFetch. This closes the DNS-rebinding window between route validation
+    // and page.goto. Cross-host requests are aborted below; direct Googlebot view needs the page's
+    // HTML, not third-party analytics, ads or fonts.
+    const resolverRule = `MAP ${targetHostname} ${opts.pinnedAddress},EXCLUDE localhost`;
+    browser = await chromium.launch({
+      headless: true,
+      args: ["--no-sandbox", "--disable-blink-features=AutomationControlled", `--host-resolver-rules=${resolverRule}`],
+      ...(proxy ? { proxy } : {}),
+    });
     const context = await browser.newContext({ userAgent: ua, locale: "en-US" });
     const page = await context.newPage();
+
+    await page.route("**/*", async (route: any) => {
+      try {
+        const requestUrl = new URL(route.request().url());
+        const hostname = requestUrl.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+        if ((requestUrl.protocol === "http:" || requestUrl.protocol === "https:") && hostname === targetHostname) {
+          await route.continue();
+        } else {
+          await route.abort("blockedbyclient");
+        }
+      } catch {
+        await route.abort("blockedbyclient");
+      }
+    });
 
     // Force the UA on EVERY request of the session (challenge + origin), via CDP.
     try { const cdp = await context.newCDPSession(page); await cdp.send("Network.setUserAgentOverride", { userAgent: ua }); } catch {}

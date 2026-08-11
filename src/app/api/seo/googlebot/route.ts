@@ -3,45 +3,21 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { analyzeUrl } from "@/lib/seo/googlebot";
-import dns from "dns/promises";
-import net from "net";
+import { assertSafeTarget, SafeFetchError } from "@/lib/security/safeFetch";
 
 // POST /api/seo/googlebot
 // body: { url: string, desktop?: boolean, referer?: boolean, firecrawlKey?: string, wayback?: boolean }
 // → { url, views, diff, renderedDiff?, wayback?: { available, url?, timestamp? } | null, gsc?: {...} | null, ownSite?: { id, url } | null }
 
-function isPrivateIp(ip: string): boolean {
-  if (net.isIPv4(ip)) {
-    const p = ip.split(".").map(Number);
-    if (p[0] === 10) return true;
-    if (p[0] === 127) return true;
-    if (p[0] === 0) return true;
-    if (p[0] === 169 && p[1] === 254) return true; // link-local + cloud metadata
-    if (p[0] === 172 && p[1] >= 16 && p[1] <= 31) return true;
-    if (p[0] === 192 && p[1] === 168) return true;
-    if (p[0] === 100 && p[1] >= 64 && p[1] <= 127) return true; // CGNAT
-    return false;
-  }
-  const l = ip.toLowerCase();
-  if (l === "::1" || l === "::") return true;
-  if (l.startsWith("fc") || l.startsWith("fd")) return true; // unique local
-  if (l.startsWith("fe80")) return true; // link-local
-  if (l.startsWith("::ffff:")) return isPrivateIp(l.slice(7)); // IPv4-mapped
-  return false;
-}
-
 async function assertPublicUrl(raw: string): Promise<{ ok: true } | { ok: false; error: string }> {
-  let u: URL;
-  try { u = new URL(raw); } catch { return { ok: false, error: "bad_url" }; }
-  if (u.protocol !== "http:" && u.protocol !== "https:") return { ok: false, error: "bad_url" };
-  const host = u.hostname.toLowerCase();
-  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".internal")) return { ok: false, error: "private_host" };
   try {
-    const records = await dns.lookup(host, { all: true });
-    if (!records.length) return { ok: false, error: "dns_fail" };
-    if (records.some(r => isPrivateIp(r.address))) return { ok: false, error: "private_host" };
-  } catch {
-    return { ok: false, error: "dns_fail" };
+    await assertSafeTarget(raw);
+  } catch (error) {
+    if (error instanceof SafeFetchError) {
+      if (error.code === "private_address") return { ok: false, error: "private_host" };
+      if (error.code === "dns_failed") return { ok: false, error: "dns_fail" };
+    }
+    return { ok: false, error: "bad_url" };
   }
   return { ok: true };
 }

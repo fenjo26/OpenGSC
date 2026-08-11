@@ -3,6 +3,27 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
+## Unreleased
+
+### Added
+
+- Audit Verification re-crawls the same scope and separates resolved findings, persistent
+  findings, regressions and inconclusive pages in the UI, API and MCP.
+- Shared audit rule registry, additive job lifecycle/heartbeat fields, and verified SQLite backup
+  before updater schema changes.
+- Localized Private Indexer risk acknowledgement and responsible-use documentation.
+- Release metadata and seven-locale consistency checks under `npm run check`.
+
+### Security
+
+- User-controlled HTTP fetches now resolve and pin public addresses, re-check redirects, reject
+  private/reserved IPv4 and IPv6 targets, and cap time, redirects and response bytes.
+
+### Changed
+
+- SQLite is documented as the supported database; MySQL/MariaDB remains experimental.
+- Team/Members/Super Sites mock UI is hidden unless `NEXT_PUBLIC_EXPERIMENTAL_TEAM_UI=1`.
+
 ## [1.3.0] — 2026-08-09
 
 ### Fixed

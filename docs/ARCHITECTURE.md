@@ -33,10 +33,18 @@ lightweight patterns instead:
   `clarity-cron`, `rank-cron`) run `setInterval`-based sync loops started once at process boot,
   living entirely inside the same PM2 process.
 
-This keeps the deployment story to "one process, one file database" at the cost of jobs not
-surviving a process restart mid-flight — which is why `GET /api/seo/jobs` auto-fails anything
-stuck in `processing` for more than 20 minutes (see `src/app/api/seo/jobs/route.ts`): a restart
-mid-job would otherwise leave a phantom row "processing" forever.
+This keeps the deployment story to "one process, one file database" at the cost of work in flight
+not surviving a process restart. A dedicated `heartbeatAt` now distinguishes a slow provider call
+from a lost task. Paid SEO work silent for 20 minutes is marked `interrupted/error` and is never
+replayed automatically, because an uncertain retry could bill the owner twice. Free Site Audit
+crawls follow a different policy: an owner list read claims a stale run and restarts it from a clean
+partial-page set with the stored crawl options.
+
+Every updater run now creates a consistent SQLite backup with `better-sqlite3` before `prisma db
+push` and verifies the copy with `PRAGMA integrity_check`. Backups are stored beside the active
+database under `backups/`; schema changes never start if this backup step fails. Background rows
+also carry additive lifecycle fields (`stage`, `progress`, `attempt`, `heartbeatAt`, `checkpoint`)
+while keeping the legacy `processing/completed/error` statuses and response fields intact.
 
 ## 2. Data model
 
@@ -497,9 +505,10 @@ Two ordering hazards around the staleness sweep, both fixed here:
 
 - **A long job is not a dead job.** The 20-minute sweep assumes silence means the process
   restarted, but nothing wrote to the row while a pipeline worked, so a large article could
-  pass the mark while perfectly healthy and be reported as failed. `withJobHeartbeat()` in
-  `toolsOptimize.ts` touches the row every 60 seconds, making silence mean what it was always
-  supposed to mean. The rewrite batch needs no heartbeat — its per-page writes are one.
+  pass the mark while perfectly healthy and be reported as failed. `withSeoJobHeartbeat()` in
+  `src/lib/jobs/lifecycle.ts` touches the dedicated heartbeat every 60 seconds, making silence mean
+  what it was always supposed to mean. The rewrite batch also advances heartbeat/progress whenever
+  it saves a page, so completed paid work remains retrievable even if the next page is interrupted.
 - **A rewrite job is not the browser's to collect.** The History page imports every completed
   `SeoJob` into `localStorage` and then *deletes the server row* (`importJob`,
   `src/lib/seo/jobs.ts`). A rewrite batch is owned by the agent that started it and polled
@@ -550,9 +559,10 @@ are site-wide rather than per-page:
   send a user to fix content that exists. The flag is informational (blue), not a fault.
 
 Runs as the same fire-and-forget job pattern as `SeoJob` (§1): `POST /api/audit` creates the
-row and calls `runAudit()` without awaiting; the client polls `GET /api/audit?siteId=`, and
-rows stuck `running` for >30 min are auto-failed on the next list read. One running audit per
-site is enforced at start.
+row and calls `runAudit()` without awaiting; the client polls `GET /api/audit?siteId=`. A run with
+no heartbeat for five minutes is atomically claimed and restarted on the next owner list read;
+partial pages are cleared first so duplicate rows cannot leak into the result. One running audit
+per site is enforced at start.
 
 ## 8. Notifications (alerts + digests)
 

@@ -403,7 +403,16 @@ const CORE_TOOLS: McpTool[] = [
           brokenLinks: p.brokenLinks ? JSON.parse(p.brokenLinks) : [],
         }));
       }
-      return { site: site.url, auditedAt: audit.finishedAt, pagesCrawled: audit.pagesCrawled, summary, ...(issue ? { issue, affectedPages } : {}) };
+      return {
+        site: site.url,
+        auditId: audit.id,
+        auditedAt: audit.finishedAt,
+        pagesCrawled: audit.pagesCrawled,
+        summary,
+        verification: audit.verification ? JSON.parse(audit.verification) : null,
+        baselineAuditId: audit.baselineAuditId,
+        ...(issue ? { issue, affectedPages } : {}),
+      };
     },
   },
   {

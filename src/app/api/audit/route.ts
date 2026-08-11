@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { runAudit } from "@/lib/audit/crawler";
+import { recoverStaleAudits, runAudit } from "@/lib/audit/crawler";
 
 // Site Audit — built-in crawler, no external APIs.
 // POST /api/audit { siteId, maxPages? }  → start an audit (fire-and-forget), returns { id }
@@ -15,7 +15,7 @@ export async function POST(req: Request) {
 
   const b = await req.json().catch(() => ({}));
   const siteId = String(b.siteId ?? "");
-  const maxPages = Math.min(500, Math.max(10, parseInt(String(b.maxPages ?? 200), 10) || 200));
+  let maxPages = Math.min(500, Math.max(10, parseInt(String(b.maxPages ?? 200), 10) || 200));
 
   const site = await prisma.site.findFirst({ where: { id: siteId, userId } });
   if (!site) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -24,17 +24,42 @@ export async function POST(req: Request) {
   const running = await prisma.siteAudit.findFirst({ where: { siteId, status: "running" } });
   if (running) return NextResponse.json({ error: "already_running", id: running.id }, { status: 409 });
 
-  // Ignore rules are passed straight into the run rather than stored on the row: they are a
-  // per-run choice, and keeping them out of the schema means this needs no migration.
-  const ignorePatterns = Array.isArray(b.ignorePatterns)
-    ? b.ignorePatterns.map(String)
-    : String(b.ignorePatterns ?? "").split(/[\n,]/);
-  const skipDefaultIgnores = b.skipDefaultIgnores === true;
+  const baselineAuditId = String(b.baselineAuditId ?? "").trim() || null;
+  let baselineOptions: { ignorePatterns?: string[]; skipDefaultIgnores?: boolean } | null = null;
+  if (baselineAuditId) {
+    const baseline = await prisma.siteAudit.findFirst({
+      where: { id: baselineAuditId, siteId, status: "completed" },
+      select: { id: true, maxPages: true, options: true },
+    });
+    if (!baseline) return NextResponse.json({ error: "baseline_not_found" }, { status: 400 });
+    if (b.maxPages == null) maxPages = baseline.maxPages;
+    if (b.ignorePatterns == null && b.skipDefaultIgnores == null && baseline.options) {
+      try { baselineOptions = JSON.parse(baseline.options); } catch { /* legacy row */ }
+    }
+  }
 
-  const audit = await prisma.siteAudit.create({ data: { siteId, maxPages } });
+  // A verification run repeats the baseline's crawl scope unless the caller explicitly changes
+  // it. That keeps a missing page from looking like a fix merely because exclusions changed.
+  const options = baselineOptions ?? {
+    ignorePatterns: Array.isArray(b.ignorePatterns)
+      ? b.ignorePatterns.map(String)
+      : String(b.ignorePatterns ?? "").split(/[\n,]/),
+    skipDefaultIgnores: b.skipDefaultIgnores === true,
+  };
+  const audit = await prisma.siteAudit.create({
+    data: {
+      siteId,
+      maxPages,
+      stage: "crawl",
+      progress: 0,
+      heartbeatAt: new Date(),
+      options: JSON.stringify(options),
+      baselineAuditId,
+    },
+  });
   // Fire-and-forget: the promise keeps running in-process after the response is sent
   // (same pattern as /api/seo/jobs — see docs/ARCHITECTURE.md §1).
-  runAudit(audit.id, { ignorePatterns, skipDefaultIgnores })
+  runAudit(audit.id, options)
     .catch(err => console.error("[audit] run failed:", err));
   return NextResponse.json({ id: audit.id });
 }
@@ -54,20 +79,25 @@ export async function GET(req: Request) {
       : null;
   if (!site) return NextResponse.json({ error: userId ? "Not found" : "Unauthorized" }, { status: userId ? 404 : 401 });
 
-  // A process restart mid-crawl would leave a phantom "running" row — auto-fail after 30 min.
-  const stale = new Date(Date.now() - 30 * 60_000);
-  await prisma.siteAudit.updateMany({
-    where: { siteId, status: "running", startedAt: { lt: stale } },
-    data: { status: "error", error: "timeout: audit did not finish (process restart?)", finishedAt: new Date() },
-  });
+  // Free audits are safe to restart after a process crash. This claims stale rows atomically and
+  // starts them again with their stored options; paid SEO jobs deliberately use a different policy.
+  if (userId) await recoverStaleAudits(siteId);
 
   const audits = await prisma.siteAudit.findMany({
     where: { siteId },
     orderBy: { startedAt: "desc" },
     take: 20,
-    select: { id: true, status: true, startedAt: true, finishedAt: true, pagesCrawled: true, maxPages: true, summary: true, error: true },
+    select: {
+      id: true, status: true, stage: true, progress: true, attempt: true, heartbeatAt: true,
+      baselineAuditId: true, verification: true, startedAt: true, finishedAt: true,
+      pagesCrawled: true, maxPages: true, summary: true, error: true,
+    },
   });
   return NextResponse.json({
-    audits: audits.map(a => ({ ...a, summary: a.summary ? JSON.parse(a.summary) : null })),
+    audits: audits.map(a => ({
+      ...a,
+      summary: a.summary ? JSON.parse(a.summary) : null,
+      verification: a.verification ? JSON.parse(a.verification) : null,
+    })),
   });
 }

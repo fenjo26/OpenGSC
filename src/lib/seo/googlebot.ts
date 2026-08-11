@@ -11,6 +11,7 @@
 // No third-party HTML deps — pure regex extraction, same convention as scrape.ts.
 
 import { createHash } from "crypto";
+import { safeFetch, type SafeFetchResponse } from "@/lib/security/safeFetch";
 
 // ─── User agents ──────────────────────────────────────────────────────────────
 export const UA = {
@@ -227,7 +228,7 @@ function canonicalFromLinkHeader(link?: string | null): string | undefined {
 export async function followChain(startUrl: string, ua: UaKey, opts?: { referer?: boolean }): Promise<ViewResult> {
   const hops: Hop[] = [];
   let current = startUrl;
-  let lastRes: Response | null = null;
+  let lastRes: SafeFetchResponse | null = null;
   let html = "";
 
   try {
@@ -239,10 +240,11 @@ export async function followChain(startUrl: string, ua: UaKey, opts?: { referer?
       };
       if (opts?.referer) headers["Referer"] = "https://www.google.com/";
 
-      const res = await fetch(current, {
+      const res = await safeFetch(current, {
         headers,
         redirect: "manual",
-        signal: AbortSignal.timeout(FETCH_TIMEOUT),
+        timeoutMs: FETCH_TIMEOUT,
+        maxBytes: 5 * 1024 * 1024,
       });
       lastRes = res;
       const setCookie = res.headers.has("set-cookie");
@@ -262,18 +264,8 @@ export async function followChain(startUrl: string, ua: UaKey, opts?: { referer?
 
       // Terminal response — read body (capped), look for client-side redirect
       const ct = res.headers.get("content-type") || "";
-      if (/text\/html|application\/xhtml/i.test(ct) && res.body) {
-        const reader = res.body.getReader();
-        const chunks: Uint8Array[] = [];
-        let size = 0;
-        // eslint-disable-next-line no-constant-condition
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          if (value) { chunks.push(value); size += value.length; }
-          if (size >= MAX_BODY) { try { await reader.cancel(); } catch {} break; }
-        }
-        html = Buffer.concat(chunks.map(c => Buffer.from(c))).toString("utf8");
+      if (/text\/html|application\/xhtml/i.test(ct)) {
+        html = (await res.text()).slice(0, MAX_BODY);
       } else {
         html = "";
       }

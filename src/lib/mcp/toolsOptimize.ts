@@ -28,30 +28,9 @@ import { runRewriteBatch } from "@/lib/seo/rewriteBatch";
 import { factDrift, driftSeverity } from "@/lib/seo/factDrift";
 import { uniquenessPct, wordCount } from "@/lib/seo/textMetrics";
 import { genByType } from "@/lib/seo/generate";
+import { failStaleSeoJobs, withSeoJobHeartbeat } from "@/lib/jobs/lifecycle";
 
 const jobs = () => (prisma as any).seoJob;
-
-/**
- * Touch a running job's `updatedAt` on a timer until its work settles.
- *
- * /api/seo/jobs and get_generation_job both fail any job left `processing` for more than
- * 20 minutes, on the reasoning that the process must have restarted mid-run. Nothing wrote
- * to the row while the pipeline worked, though, so a long article — competitor scrape,
- * MAP/REDUCE grounding, chunked writing, volume guard — could pass that mark while still
- * perfectly healthy and be reported to the user as failed. The heartbeat makes the sweep
- * mean what it was always meant to mean: silence for 20 minutes is a dead process, not a
- * slow one. `unref()` keeps the timer from holding the process open on its own.
- */
-function withJobHeartbeat<T>(jobId: string, work: Promise<T>, everyMs = 60_000): Promise<T> {
-  const beat = setInterval(() => {
-    // Rewrites `status` to the value it already holds: a no-op whose only purpose is to be
-    // an update, so Prisma's @updatedAt moves. Setting updatedAt directly would depend on
-    // whether this Prisma version lets an @updatedAt field be assigned explicitly.
-    jobs().update({ where: { id: jobId }, data: { status: "processing" } }).catch(() => { /* row gone */ });
-  }, everyMs);
-  (beat as any).unref?.();
-  return work.finally(() => clearInterval(beat));
-}
 
 // Match a stored URL against what the agent passed: full URL, path, or a fragment of one.
 const pathOf = (u: string) => u.replace(/^https?:\/\/[^/]+/, "") || "/";
@@ -350,6 +329,10 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
             type: "rewrite",
             keyword: urls.length ? `${urls.length} page${urls.length > 1 ? "s" : ""}` : "pasted text",
             status: "processing",
+            stage: "rewrite",
+            progress: 0,
+            heartbeatAt: new Date(),
+            resumable: false,
             meta: JSON.stringify({ urls, snippet: args.snippet === true, language: args.language ?? null }),
           },
         });
@@ -407,7 +390,12 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
       const keyword = String(args.keyword ?? (payload as any).keyword ?? "").slice(0, 300);
       let job: any;
       try {
-        job = await jobs().create({ data: { userId, type, keyword, status: "processing" } });
+        job = await jobs().create({
+          data: {
+            userId, type, keyword, status: "processing", stage: "generating", progress: 5,
+            heartbeatAt: new Date(), resumable: false,
+          },
+        });
       } catch (e: any) {
         throw new Error(`Could not create the job row: ${String(e?.message ?? e)} (run: npx prisma db push)`);
       }
@@ -415,15 +403,22 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
       // Fire-and-forget, matching /api/seo/jobs — the promise outlives the response and
       // writes its own terminal state. The heartbeat is what keeps a genuinely long run
       // from tripping the 20-minute staleness sweep while it is still working.
-      withJobHeartbeat(job.id, genByType(type, payload))
+      withSeoJobHeartbeat(job.id, genByType(type, payload))
         .then(async r => {
           await jobs().update({
             where: { id: job.id },
-            data: r.ok ? { status: "completed", result: JSON.stringify(r.data) } : { status: "error", error: r.error },
+            data: r.ok
+              ? { status: "completed", stage: "completed", progress: 100, heartbeatAt: new Date(), result: JSON.stringify(r.data) }
+              : { status: "error", stage: "error", heartbeatAt: new Date(), error: r.error },
           });
         })
         .catch(async (e: any) => {
-          try { await jobs().update({ where: { id: job.id }, data: { status: "error", error: String(e?.message ?? e) } }); } catch { /* row gone */ }
+          try {
+            await jobs().update({
+              where: { id: job.id },
+              data: { status: "error", stage: "error", heartbeatAt: new Date(), error: String(e?.message ?? e) },
+            });
+          } catch { /* row gone */ }
         });
 
       return {
@@ -452,10 +447,9 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
     handler: async (userId, args) => {
       const jobId = String(args.jobId ?? "").trim();
       try {
-        // Same staleness sweep the UI does on list — a job whose process died must not
-        // sit at "processing" forever and have an agent poll it in a loop.
-        const cutoff = new Date(Date.now() - 20 * 60 * 1000);
-        try { await jobs().updateMany({ where: { userId, status: "processing", updatedAt: { lt: cutoff } }, data: { status: "error", error: "stale_timeout" } }); } catch { /* not migrated */ }
+        // Same staleness sweep the UI does on list. A dedicated heartbeat avoids marking a
+        // healthy but slow provider call as dead just because its result is not ready yet.
+        await failStaleSeoJobs(userId);
 
         if (!jobId) {
           const list = await jobs().findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 20, select: { id: true, type: true, keyword: true, status: true, error: true, createdAt: true } });
@@ -466,6 +460,9 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
         const base = {
           jobId: job.id, type: job.type, keyword: job.keyword, status: job.status,
           createdAt: job.createdAt, updatedAt: job.updatedAt,
+          stage: job.stage ?? null, progressPercent: job.progress ?? null,
+          attempt: job.attempt ?? 1, heartbeatAt: job.heartbeatAt ?? null,
+          resumable: job.resumable ?? false,
           error: job.error === "stale_timeout" ? "The job produced nothing for 20 minutes — the server most likely restarted mid-run. Any pages it had already finished are still in the result below." : job.error,
         };
 

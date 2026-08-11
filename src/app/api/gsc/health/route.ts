@@ -2,27 +2,42 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { assertSafeTarget } from "@/lib/security/safeFetch";
 import * as tls from "tls";
-import * as https from "https";
 
 // ─── SSL check ────────────────────────────────────────────────────────────────
 async function checkSSL(hostname: string): Promise<{
   valid: boolean; daysLeft: number; issuer: string; subject: string;
   protocol: string; grade: string; error?: string;
 }> {
+  let address: { address: string; family: 4 | 6 };
+  try {
+    const target = await assertSafeTarget(`https://${hostname}`);
+    address = target.addresses[0];
+  } catch (error: any) {
+    return { valid: false, daysLeft: 0, issuer: "", subject: hostname, protocol: "", grade: "F", error: error?.code || "unsafe_target" };
+  }
+
   return new Promise(resolve => {
+    let settled = false;
+    let socket: tls.TLSSocket | null = null;
+    const finish = (result: { valid: boolean; daysLeft: number; issuer: string; subject: string; protocol: string; grade: string; error?: string }) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      socket?.destroy();
+      resolve(result);
+    };
     const timeout = setTimeout(() => {
-      resolve({ valid: false, daysLeft: 0, issuer: "", subject: "", protocol: "", grade: "F", error: "Timeout" });
+      finish({ valid: false, daysLeft: 0, issuer: "", subject: hostname, protocol: "", grade: "F", error: "Timeout" });
     }, 8000);
 
     try {
-      const socket = tls.connect(443, hostname, { servername: hostname, rejectUnauthorized: false }, () => {
-        clearTimeout(timeout);
-        const cert = socket.getPeerCertificate(true);
-        socket.destroy();
+      const connectedSocket = tls.connect(443, address.address, { servername: hostname, rejectUnauthorized: false }, () => {
+        const cert = connectedSocket.getPeerCertificate(true);
 
         if (!cert || !cert.valid_to) {
-          return resolve({ valid: false, daysLeft: 0, issuer: "", subject: hostname, protocol: "", grade: "F", error: "No certificate" });
+          return finish({ valid: false, daysLeft: 0, issuer: "", subject: hostname, protocol: "", grade: "F", error: "No certificate" });
         }
 
         const expiry   = new Date(cert.valid_to);
@@ -36,21 +51,20 @@ async function checkSSL(hostname: string): Promise<{
                       ?? (Array.isArray(rawIssuerCN) ? rawIssuerCN[0] : rawIssuerCN)
                       ?? "Unknown";
         const subject  = (Array.isArray(rawSubjectCN) ? rawSubjectCN[0] : rawSubjectCN) ?? hostname;
-        const protocol = socket.getProtocol() ?? "TLS";
+        const protocol = connectedSocket.getProtocol() ?? "TLS";
 
         // Simple grade: A+ = valid + 60+ days, A = valid + 14+ days, B = valid, F = expired
         const grade = !valid ? "F" : daysLeft >= 60 ? "A+" : daysLeft >= 14 ? "A" : "B";
 
-        resolve({ valid, daysLeft, issuer, subject, protocol, grade });
+        finish({ valid, daysLeft, issuer, subject, protocol, grade });
       });
+      socket = connectedSocket;
 
-      socket.on("error", (err) => {
-        clearTimeout(timeout);
-        resolve({ valid: false, daysLeft: 0, issuer: "", subject: hostname, protocol: "", grade: "F", error: err.message });
+      connectedSocket.on("error", (err) => {
+        finish({ valid: false, daysLeft: 0, issuer: "", subject: hostname, protocol: "", grade: "F", error: err.message });
       });
     } catch (err: any) {
-      clearTimeout(timeout);
-      resolve({ valid: false, daysLeft: 0, issuer: "", subject: hostname, protocol: "", grade: "F", error: err.message });
+      finish({ valid: false, daysLeft: 0, issuer: "", subject: hostname, protocol: "", grade: "F", error: err.message });
     }
   });
 }
@@ -147,12 +161,13 @@ async function checkVirusTotal(domain: string, apiKey: string): Promise<{
 // ─── Route ────────────────────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
+  const userId = (session?.user as any)?.id as string | undefined;
   const { searchParams } = new URL(req.url);
   const siteId = searchParams.get("siteId");
   if (!siteId) return NextResponse.json({ error: "siteId required" }, { status: 400 });
 
   // Session OR a valid share token for this exact site (read-only guest dashboards).
-  if (!session?.user?.email) {
+  if (!userId) {
     const shareToken = searchParams.get("shareToken") ?? "";
     const shared = shareToken
       ? await prisma.site.findFirst({ where: { id: siteId, shareToken, shareEnabled: true } })
@@ -160,7 +175,9 @@ export async function GET(req: NextRequest) {
     if (!shared) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const site = await (prisma as any).site.findUnique({ where: { id: siteId }, include: { siteHealth: true } });
+  const site = userId
+    ? await (prisma as any).site.findFirst({ where: { id: siteId, userId }, include: { siteHealth: true } })
+    : await (prisma as any).site.findUnique({ where: { id: siteId }, include: { siteHealth: true } });
   if (!site) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   // Return cached result if less than 24 h old
@@ -184,18 +201,20 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const userId = (session?.user as any)?.id as string | undefined;
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
   const { siteId, safeBrowsingKey = "", googleApiKey = "", virusTotalKey = "" } = body;
   if (!siteId) return NextResponse.json({ error: "siteId required" }, { status: 400 });
 
-  const site = await (prisma as any).site.findUnique({ where: { id: siteId } });
+  const site = await (prisma as any).site.findFirst({ where: { id: siteId, userId } });
   if (!site) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   // Extract clean hostname
-  let hostname = site.siteId as string;
-  hostname = hostname.replace(/^sc-domain:/, "").replace(/^https?:\/\//, "").replace(/\/$/, "");
+  const rawSiteId = String(site.siteId || site.url || "");
+  let hostname = rawSiteId.replace(/^sc-domain:/, "");
+  try { hostname = new URL(rawSiteId).hostname; } catch { hostname = hostname.split("/")[0]; }
 
   // Run all checks in parallel
   const [ssl, safeBrowsing, vitals, virusTotal] = await Promise.all([

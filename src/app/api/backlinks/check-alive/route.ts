@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { safeFetch } from '@/lib/security/safeFetch';
 
 // POST { siteDbId, ids?: string[] }  — checks if backlink pages return 2xx
 // If ids is empty/omitted, checks ALL unchecked links (or all if forceAll=true)
@@ -39,10 +40,11 @@ async function checkOnce(url: string): Promise<Outcome> {
   let status = 0;
   let headDenied = false;
   try {
-    const res = await fetch(url, {
+    const res = await safeFetch(url, {
       method: 'HEAD',
       redirect: 'follow',
-      signal: AbortSignal.timeout(8_000),
+      timeoutMs: 8_000,
+      maxBytes: 1,
       headers: { 'User-Agent': UA },
     });
     status = res.status;
@@ -62,8 +64,9 @@ async function checkOnce(url: string): Promise<Outcome> {
 
   // GET — needed either because HEAD was disallowed, or because the only verdict so far is a
   // retryable one and we re-fetch the body anyway to extract the title.
-  const gr = await fetch(url, {
-    signal: AbortSignal.timeout(8_000),
+  const gr = await safeFetch(url, {
+    timeoutMs: 8_000,
+    maxBytes: 1024 * 1024,
     redirect: 'follow',
     headers: { 'User-Agent': UA },
   });

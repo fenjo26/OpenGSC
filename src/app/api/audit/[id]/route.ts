@@ -32,6 +32,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   return NextResponse.json({
     audit: {
       id: audit.id, status: audit.status, startedAt: audit.startedAt, finishedAt: audit.finishedAt,
+      stage: audit.stage, progress: audit.progress, attempt: audit.attempt, heartbeatAt: audit.heartbeatAt,
+      baselineAuditId: audit.baselineAuditId,
+      verification: audit.verification ? JSON.parse(audit.verification) : null,
       pagesCrawled: audit.pagesCrawled, maxPages: audit.maxPages, error: audit.error,
       summary: audit.summary ? JSON.parse(audit.summary) : null, siteUrl: audit.site.url,
     },

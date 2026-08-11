@@ -329,6 +329,13 @@ model SiteAudit {
   id           String    @id @default(cuid())
   siteId       String
   status       String    @default("running") // "running" | "completed" | "error"
+  stage        String    @default("crawl")   // crawl | analyze | persist | completed | error
+  progress     Int       @default(0)          // 0..100, monotonic within an attempt
+  attempt      Int       @default(1)
+  heartbeatAt  DateTime?
+  options      String?   // JSON: ignore patterns and per-run crawler options
+  baselineAuditId String? // explicit audit this run verifies; no relation so old rows stay portable
+  verification String?   // JSON: resolved / stillPresent / regressions / inconclusive
   startedAt    DateTime  @default(now())
   finishedAt   DateTime?
   maxPages     Int       @default(200)
@@ -585,6 +592,12 @@ model SeoJob {
   type      String   // "outline" | "text" | "analysis" | "landing"
   keyword   String   @default("")
   status    String   @default("processing") // "processing" | "completed" | "error"
+  stage     String   @default("queued")
+  progress  Int      @default(0)
+  attempt   Int      @default(1)
+  heartbeatAt DateTime?
+  checkpoint String? // JSON; never contains provider credentials
+  resumable Boolean  @default(false)
   result    String?  // JSON string of the result (outline object / { text, ... } / report)
   error     String?
   meta      String?  // JSON string (tone, promptType, outlineId, factcheck/images flags…)

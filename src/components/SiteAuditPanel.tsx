@@ -5,37 +5,19 @@
 // page table. Same fire-and-forget/poll UX as the SEO Tools background jobs.
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Play, Trash2, AlertTriangle, CheckCircle, ExternalLink, Filter, Download } from "lucide-react";
+import { Loader2, Play, Trash2, AlertTriangle, CheckCircle, ExternalLink, Filter, Download, RefreshCw } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { withShare, isGuestView } from "@/lib/shareParam";
 import { buildAuditMarkdown } from "@/lib/audit/exportMd";
 import { downloadFile } from "@/lib/seo/exportFormats";
+import { AUDIT_RULES } from "@/lib/audit/rules";
 
-const ISSUE_LABEL_KEYS: Record<string, string> = {
-  http_error: "auditIssueHttpError",
-  fetch_failed: "auditIssueFetchFailed",
-  redirect: "auditIssueRedirect",
-  title_missing: "auditIssueTitleMissing",
-  title_too_long: "auditIssueTitleTooLong",
-  title_duplicate: "auditIssueTitleDuplicate",
-  description_missing: "auditIssueDescriptionMissing",
-  description_too_long: "auditIssueDescriptionTooLong",
-  h1_missing: "auditIssueH1Missing",
-  h1_multiple: "auditIssueH1Multiple",
-  noindex: "auditIssueNoindex",
-  canonical_mismatch: "auditIssueCanonicalMismatch",
-  thin_content: "auditIssueThinContent",
-  images_no_alt: "auditIssueImagesNoAlt",
-  broken_links: "auditIssueBrokenLinks",
-  slow_response: "auditIssueSlowResponse",
-  js_rendered: "auditIssueJsRendered",
-};
-
-const SEVERE = new Set(["http_error", "fetch_failed", "broken_links", "noindex"]);
+const ISSUE_LABEL_KEYS = Object.fromEntries(AUDIT_RULES.map(rule => [rule.id, rule.titleKey]));
+const SEVERE = new Set(AUDIT_RULES.filter(rule => rule.severity === "critical").map(rule => rule.id));
 // Info-level issues are not faults to fix but limits of this crawler — flagging them red/orange
 // alongside real problems would send a user to "repair" a JS-rendered page that isn't broken.
 // js_rendered is informational: "we can't audit the rendered DOM", not "your page is wrong".
-const INFO = new Set(["js_rendered"]);
+const INFO = new Set(AUDIT_RULES.filter(rule => rule.severity === "info").map(rule => rule.id));
 
 // ─── AI Crawlability card ─────────────────────────────────────────────────────
 // Site-wide (robots.txt + /llms.txt), so it is its own card rather than an entry in the per-page
@@ -173,16 +155,18 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
     return () => clearInterval(iv);
   }, [running?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const start = async () => {
+  const start = async (baselineAuditId?: string) => {
     setStarting(true); setErr("");
     try {
       const res = await fetch("/api/audit", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          siteId: siteDbId, maxPages,
-          ignorePatterns: ignoreExtra,
-          skipDefaultIgnores: !useDefaults,
-        }),
+        body: JSON.stringify(baselineAuditId
+          ? { siteId: siteDbId, baselineAuditId }
+          : {
+              siteId: siteDbId, maxPages,
+              ignorePatterns: ignoreExtra,
+              skipDefaultIgnores: !useDefaults,
+            }),
       });
       const d = await res.json();
       if (!res.ok) setErr(d.error === "already_running" ? t("auditAlreadyRunning") : String(d.error ?? "error"));
@@ -232,6 +216,11 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
   };
 
   const summary = current?.audit?.summary;
+  const verification = current?.audit?.verification;
+  const verificationOpen = verification ? [
+    ...(verification.regressions ?? []).map((finding: any) => ({ ...finding, kind: "regression" })),
+    ...(verification.stillPresent ?? []).map((finding: any) => ({ ...finding, kind: "still" })),
+  ].slice(0, 6) : [];
 
   return (
     // Padding and a max width to match the sibling tabs (Health, Clarity). Without them the audit
@@ -254,7 +243,13 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
               {exporting ? <Loader2 size={14} className="spin" /> : <Download size={14} />} {t("auditExportMd")}
             </button>
           )}
-          {!guest && <button onClick={start} disabled={starting || !!running}
+          {!guest && summary && current?.audit?.status === "completed" && (
+            <button onClick={() => start(current.audit.id)} disabled={starting || !!running} title={t("auditVerifyHint")}
+              style={{ display: "inline-flex", alignItems: "center", gap: "7px", padding: "10px 14px", borderRadius: "9px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-secondary)", fontSize: "13px", fontWeight: 600, cursor: starting || running ? "default" : "pointer" }}>
+              {starting || running ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />} {t("auditVerifyRun")}
+            </button>
+          )}
+          {!guest && <button onClick={() => start()} disabled={starting || !!running}
             style={{ display: "inline-flex", alignItems: "center", gap: "7px", padding: "10px 16px", borderRadius: "9px", border: "none", background: running ? "rgba(255,255,255,0.08)" : "var(--color-accent-blue)", color: running ? "var(--color-text-secondary)" : "#fff", fontSize: "13px", fontWeight: 600, cursor: running ? "default" : "pointer" }}>
             {running ? <><Loader2 size={14} className="spin" /> {t("auditRunning")} ({running.pagesCrawled}/{running.maxPages})</> : <><Play size={14} /> {t("auditStart")}</>}
           </button>}
@@ -288,6 +283,40 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
       {/* Summary */}
       {summary && (
         <>
+          {current?.audit?.verification && (
+            <div className="panel" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              <div>
+                <div style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)" }}>{t("auditVerifyTitle")}</div>
+                <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "3px" }}>{t("auditVerifyHint")}</div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "8px" }}>
+                {[
+                  ["resolved", "auditVerifyResolved", "#34c759"],
+                  ["stillPresent", "auditVerifyStill", "#ff9f0a"],
+                  ["regressions", "auditVerifyRegressions", "#ff375f"],
+                  ["inconclusive", "auditVerifyInconclusive", "#60a5fa"],
+                ].map(([field, label, color]) => (
+                  <div key={field} style={{ padding: "10px 12px", borderRadius: "var(--radius-md)", background: "var(--color-bg)", border: "1px solid var(--color-border)" }}>
+                    <div style={{ fontSize: "22px", fontWeight: 800, color }}>{current.audit.verification.counts?.[field] ?? 0}</div>
+                    <div style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>{t(label as any)}</div>
+                  </div>
+                ))}
+              </div>
+              {verificationOpen.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px", borderTop: "1px solid var(--color-border)", paddingTop: "10px" }}>
+                  {verificationOpen.map((finding: any) => (
+                    <div key={`${finding.kind}:${finding.url}:${finding.ruleId}`} style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0, fontSize: "11px" }}>
+                      <span style={{ flex: "0 0 auto", padding: "2px 6px", borderRadius: "5px", fontWeight: 700, color: finding.kind === "regression" ? "#ff375f" : "#ff9f0a", background: finding.kind === "regression" ? "rgba(255,55,95,0.12)" : "rgba(255,159,10,0.12)" }}>
+                        {t(finding.kind === "regression" ? "auditVerifyRegressions" : "auditVerifyStill")}
+                      </span>
+                      <span style={{ flex: "0 0 auto", color: "var(--color-text-primary)", fontWeight: 600 }}>{t((ISSUE_LABEL_KEYS[finding.ruleId] ?? finding.ruleId) as any)}</span>
+                      <a href={finding.url} target="_blank" rel="noreferrer" style={{ color: "var(--color-text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: "none" }}>{finding.url}</a>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: "10px" }}>
             <div className="panel" style={{ textAlign: "center" }}>
               <div style={{ fontSize: "26px", fontWeight: 800, color: summary.healthScore >= 80 ? "#34c759" : summary.healthScore >= 50 ? "#ff9f0a" : "#ff375f" }}>{summary.healthScore}</div>

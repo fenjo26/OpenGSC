@@ -18,6 +18,10 @@
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
+    "check:i18n": "node scripts/check-keys.js",
+    "check:release": "node scripts/check-release.js",
+    "test:unit": "tsx --test src/lib/security/safeFetch.test.ts src/lib/audit/verification.test.ts",
+    "check": "npm run check:i18n && npm run check:release && npm run test:unit",
     "postinstall": "prisma generate"
   },
   "dependencies": {

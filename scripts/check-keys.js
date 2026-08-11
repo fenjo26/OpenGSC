@@ -1,39 +1,31 @@
 const fs = require('fs');
 const path = require('path');
 
-const enPath = path.resolve(__dirname, '../src/locales/en.json');
-const ruPath = path.resolve(__dirname, '../src/locales/ru.json');
-const ukPath = path.resolve(__dirname, '../src/locales/uk.json');
+const locales = ['en', 'ru', 'uk', 'fr', 'es', 'de', 'zh'];
+const dictionaries = Object.fromEntries(locales.map(locale => {
+  const file = path.resolve(__dirname, `../src/locales/${locale}.json`);
+  return [locale, JSON.parse(fs.readFileSync(file, 'utf8'))];
+}));
 
-const en = JSON.parse(fs.readFileSync(enPath, 'utf8'));
-const ru = JSON.parse(fs.readFileSync(ruPath, 'utf8'));
-const uk = JSON.parse(fs.readFileSync(ukPath, 'utf8'));
-
-const enKeys = Object.keys(en);
-const ruKeys = Object.keys(ru);
-const ukKeys = Object.keys(uk);
-
-console.log(`en.json has ${enKeys.length} keys.`);
-console.log(`ru.json has ${ruKeys.length} keys.`);
-console.log(`uk.json has ${ukKeys.length} keys.`);
-
-const allKeys = new Set([...enKeys, ...ruKeys, ...ukKeys]);
-
+const keySets = Object.fromEntries(locales.map(locale => [locale, new Set(Object.keys(dictionaries[locale]))]));
+const allKeys = new Set(locales.flatMap(locale => Object.keys(dictionaries[locale])));
 let hasMismatch = false;
 
-allKeys.forEach(key => {
-  const inEn = enKeys.includes(key);
-  const inRu = ruKeys.includes(key);
-  const inUk = ukKeys.includes(key);
+for (const locale of locales) {
+  console.log(`${locale}.json has ${keySets[locale].size} keys.`);
+}
 
-  if (!inEn || !inRu || !inUk) {
+for (const key of allKeys) {
+  const missing = locales.filter(locale => !keySets[locale].has(key));
+  if (missing.length) {
     hasMismatch = true;
-    console.log(`Mismatch on key "${key}": EN=${inEn}, RU=${inRu}, UK=${inUk}`);
+    console.error(`Key "${key}" is missing from: ${missing.join(', ')}`);
   }
-});
+}
 
-if (!hasMismatch) {
-  console.log('All three files are perfectly synchronized with identical keys!');
+if (hasMismatch) {
+  console.error('Locale key sets are not synchronized.');
+  process.exitCode = 1;
 } else {
-  console.log('Mismatch detected between translation files.');
+  console.log(`All ${locales.length} locale files have identical key sets.`);
 }

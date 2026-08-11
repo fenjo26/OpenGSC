@@ -8,7 +8,7 @@
 
 Self-hosted on your own VPS. No subscriptions, no seat limits, no third party touching your data.
 
-[![Version 1.2.3](https://img.shields.io/badge/version-1.2.3-brightgreen)](https://github.com/fenjo26/opengsc/releases)
+[![Version 1.3.0](https://img.shields.io/badge/version-1.3.0-brightgreen)](https://github.com/fenjo26/opengsc/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Next.js 16](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue?logo=typescript)](https://www.typescriptlang.org/)
@@ -72,6 +72,11 @@ On top of that dashboard, OpenGSC ships two things most GSC tools don't: a full 
 | Setup time | ~5 minutes, one command | Instant sign-up |
 
 **Trade-offs, honestly:** you need a VPS and a domain (Google OAuth won't work against a bare IP), you run your own updates (`git pull && npm run build && pm2 restart`), and there's no built-in team/white-label layer. If that's an acceptable trade for owning your data and never paying a subscription, read on.
+
+**Support contract:** OpenGSC is a single-operator application. One owner can connect multiple
+Google accounts and sites, but the Team, Members, roles and shared billing model are not implemented.
+SQLite is the only fully supported production database. The MySQL/MariaDB notes are an experimental
+porting guide and do not promise feature parity; see [`docs/TESTING-MYSQL.md`](docs/TESTING-MYSQL.md).
 
 <br/>
 
@@ -720,6 +725,9 @@ docs/
 - **[docs/MCP-SETUP.md](docs/MCP-SETUP.md)** — connecting AI agents (Claude Code, Claude Desktop, Cursor, Codex) to your instance.
 - **[docs/SEARCH-ENGINES-SETUP.md](docs/SEARCH-ENGINES-SETUP.md)** — Bing Webmaster, Yandex.Webmaster and IndexNow: getting the keys/tokens and what data each engine provides (site + portfolio dashboards, digests, and the site-search badge).
 - **[docs/GOOGLEBOT-VIEW-SPEC.md](docs/GOOGLEBOT-VIEW-SPEC.md)** — the Googlebot View cloaking/PBN inspector: how the multi-UA fetch, redirect-chain walk, and cloaking diff work.
+- **[docs/PRODUCT-ROADMAP.md](docs/PRODUCT-ROADMAP.md)** — prioritized product and engineering plan: product truth, durable jobs, verified audits and the OSS ideas worth adapting.
+- **[docs/RESPONSIBLE-USE.md](docs/RESPONSIBLE-USE.md)** — Private Indexer and reseller API risks, in English and Russian.
+- **[docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md)** — the version, migration, tag and GitHub Release gate.
 - **[docs/DOCKER-SETUP.md](docs/DOCKER-SETUP.md)** — running OpenGSC with Docker instead of the VPS installer.
 - **[docs/INDEXER-SETUP.md](docs/INDEXER-SETUP.md)** — deploying and operating the private indexer network.
 

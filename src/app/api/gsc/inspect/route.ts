@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { google } from 'googleapis';
+import { safeFetch } from '@/lib/security/safeFetch';
 
 function makeOAuth2(account: {
   id: string;
@@ -58,8 +59,9 @@ async function getSitemapUrlsFallback(siteId: string, siteUrl: string, customSit
 
     // 2. Try fetching sitemap.xml directly
     const targetSitemap = customSitemapUrl || `${siteUrl.replace(/\/$/, '')}/sitemap.xml`;
-    const res = await fetch(targetSitemap, {
-      signal: AbortSignal.timeout(10000),
+    const res = await safeFetch(targetSitemap, {
+      timeoutMs: 10_000,
+      maxBytes: 10 * 1024 * 1024,
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; OpenGSCCrawler/1.0)' },
     });
     if (res.ok) {

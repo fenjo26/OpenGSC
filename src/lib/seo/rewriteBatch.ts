@@ -94,10 +94,20 @@ export async function runRewriteBatch(
 
   const persist = async (status?: "completed" | "error", error?: string) => {
     try {
+      const finished = state.completed + state.failed;
+      const progress = state.total > 0 ? Math.round((finished / state.total) * 100) : 100;
       await jobs().update({
         where: { id: jobId },
         data: {
           result: JSON.stringify(state),
+          heartbeatAt: new Date(),
+          stage: status === "completed" ? "completed" : status === "error" ? "error" : "rewrite",
+          progress: status ? 100 : progress,
+          checkpoint: JSON.stringify({
+            completed: state.completed,
+            failed: state.failed,
+            lastFinished: state.pages.at(-1)?.url ?? null,
+          }),
           ...(status ? { status } : {}),
           ...(error ? { error } : {}),
         },

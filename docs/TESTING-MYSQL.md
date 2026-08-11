@@ -1,5 +1,11 @@
 # Verifying an OpenGSC install on MySQL / MariaDB
 
+> **Experimental and unsupported.** SQLite is the only fully supported production database for
+> OpenGSC. This document helps contributors investigate a future MySQL/MariaDB port; passing these
+> checks does not imply feature parity. Raw MCP SQL, timestamp coercion, composite-key limits and
+> several hand-written SQL paths still need dialect-specific work. Do not migrate a production
+> instance away from SQLite without a tested backup and rollback plan.
+
 Everything else in the app is a plain read or a plain overwrite: if a statement runs at all on your
 server, it is right. Three writes are not, and those three are the whole reason a MySQL port needs
 a human. They are the ones that fail *quietly* — no error, no red banner, just a number that is

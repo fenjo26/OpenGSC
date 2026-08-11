@@ -14,6 +14,8 @@
 // expansion / order-specificity) — that is a different problem, almost never how AI bots are gated,
 // and pretending to solve it would report false confidence on edge cases we can't actually resolve.
 
+import { safeFetch } from "@/lib/security/safeFetch";
+
 const UA = "Mozilla/5.0 (compatible; OpenGSC-AiCheck/1.0; +https://opengsc.org)";
 const FETCH_TIMEOUT_MS = 10_000;
 
@@ -48,10 +50,11 @@ export interface AiCrawlReport {
 
 async function fetchRobots(root: URL): Promise<{ status: "ok" | "missing" | "failed"; text: string | null }> {
   try {
-    const res = await fetch(new URL("/robots.txt", root).href, {
+    const res = await safeFetch(new URL("/robots.txt", root), {
       headers: { "User-Agent": UA, Accept: "text/plain" },
       redirect: "follow",
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      timeoutMs: FETCH_TIMEOUT_MS,
+      maxBytes: 256_000,
     });
     // Per the robots spec, a 404/410 means "no restrictions" — everything is allowed. That is a
     // clean verdict, not a failure, so we surface it as "missing" (all bots allowed) rather than
@@ -149,10 +152,11 @@ export function botStatus(groups: Map<string, RobotGroup>, token: string): BotSt
 
 async function fetchLlmsTxt(root: URL): Promise<{ status: "ok" | "missing" | "failed"; chars: number | null }> {
   try {
-    const res = await fetch(new URL("/llms.txt", root).href, {
+    const res = await safeFetch(new URL("/llms.txt", root), {
       headers: { "User-Agent": UA, Accept: "text/plain" },
       redirect: "follow",
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      timeoutMs: FETCH_TIMEOUT_MS,
+      maxBytes: 512_000,
     });
     if (res.status === 404 || res.status === 410) return { status: "missing", chars: null };
     if (!res.ok) return { status: "failed", chars: null };

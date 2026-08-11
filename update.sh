@@ -35,6 +35,9 @@ npm i --include=dev || { echo "[update] npm i FAILED"; echo "___OPENGSC_UPDATE_F
 # the cause, instead of the build or the first request doing it much less clearly.
 node scripts/check-native-deps.mjs || { echo "[update] dependency check FAILED"; echo "___OPENGSC_UPDATE_FAIL___"; exit 1; }
 
+echo "[update] backing up SQLite..."
+node scripts/backup-sqlite.mjs || { echo "[update] database backup FAILED — schema was not changed"; echo "___OPENGSC_UPDATE_FAIL___"; exit 1; }
+
 echo "[update] prisma db push..."
 npx prisma db push --skip-generate || npx prisma db push || { echo "[update] prisma db push FAILED"; echo "___OPENGSC_UPDATE_FAIL___"; exit 1; }
 

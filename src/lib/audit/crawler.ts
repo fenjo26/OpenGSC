@@ -6,6 +6,9 @@
 
 import { prisma } from "@/lib/prisma";
 import { checkAiCrawlability } from "@/lib/audit/aiCrawl";
+import { safeFetch } from "@/lib/security/safeFetch";
+import { AUDIT_RULE_IDS } from "@/lib/audit/rules";
+import { compareAuditFindings } from "@/lib/audit/verification";
 
 const UA = "Mozilla/5.0 (compatible; OpenGSC-Audit/1.0; +https://opengsc.org)";
 const PAGE_TIMEOUT_MS = 20_000;
@@ -92,10 +95,11 @@ async function fetchPage(url: string): Promise<PageResult> {
   const started = Date.now();
   try {
     // manual redirect handling so 301→ chains are visible as issues
-    const res = await fetch(url, {
+    const res = await safeFetch(url, {
       headers: { "User-Agent": UA, Accept: "text/html,application/xhtml+xml" },
       redirect: "manual",
-      signal: AbortSignal.timeout(PAGE_TIMEOUT_MS),
+      timeoutMs: PAGE_TIMEOUT_MS,
+      maxBytes: 2 * 1024 * 1024,
     });
     const loadMs = Date.now() - started;
     const contentType = res.headers.get("content-type") ?? "";
@@ -112,12 +116,7 @@ async function fetchPage(url: string): Promise<PageResult> {
 
 // ─── issue detection ────────────────────────────────────────────────────────────
 
-export const ISSUE_CODES = [
-  "http_error", "fetch_failed", "redirect", "title_missing", "title_too_long", "title_duplicate",
-  "description_missing", "description_too_long", "h1_missing", "h1_multiple", "noindex",
-  "canonical_mismatch", "thin_content", "images_no_alt", "broken_links", "slow_response",
-  "js_rendered",
-] as const;
+export const ISSUE_CODES = AUDIT_RULE_IDS;
 
 // ─── main runner ────────────────────────────────────────────────────────────────
 
@@ -148,6 +147,57 @@ export interface AuditOptions {
   skipDefaultIgnores?: boolean;
 }
 
+const activeAudits = new Set<string>();
+const AUDIT_STALE_MS = 5 * 60_000;
+
+function storedOptions(value?: string | null): AuditOptions | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(value);
+    return {
+      ignorePatterns: Array.isArray(parsed?.ignorePatterns) ? parsed.ignorePatterns.map(String) : undefined,
+      skipDefaultIgnores: parsed?.skipDefaultIgnores === true,
+    };
+  } catch { return undefined; }
+}
+
+/**
+ * Claim and restart free crawler jobs whose heartbeat stopped. The updateMany predicate is the
+ * cross-request lock: only one poller can move heartbeatAt out of the stale window. Paid SEO jobs
+ * are never resumed automatically because repeating an uncertain provider call could double bill.
+ */
+export async function recoverStaleAudits(siteId?: string): Promise<number> {
+  const store = (prisma as any).siteAudit;
+  const cutoff = new Date(Date.now() - AUDIT_STALE_MS);
+  let stale: any[] = [];
+  try {
+    stale = await store.findMany({
+      where: {
+        ...(siteId ? { siteId } : {}),
+        status: "running",
+        OR: [{ heartbeatAt: { lt: cutoff } }, { heartbeatAt: null, startedAt: { lt: cutoff } }],
+      },
+      take: 10,
+    });
+  } catch { return 0; }
+
+  let claimed = 0;
+  for (const audit of stale) {
+    const result = await store.updateMany({
+      where: {
+        id: audit.id,
+        status: "running",
+        OR: [{ heartbeatAt: { lt: cutoff } }, { heartbeatAt: null, startedAt: { lt: cutoff } }],
+      },
+      data: { heartbeatAt: new Date(), stage: "recovering", attempt: { increment: 1 }, error: null },
+    }).catch(() => ({ count: 0 }));
+    if (!result.count) continue;
+    claimed++;
+    runAudit(audit.id, storedOptions(audit.options)).catch(error => console.error("[audit] recovery failed:", error));
+  }
+  return claimed;
+}
+
 function buildIgnoreList(opts?: AuditOptions): string[] {
   const custom = (opts?.ignorePatterns ?? [])
     .flatMap(p => String(p).split(/[\n,]/))
@@ -157,9 +207,16 @@ function buildIgnoreList(opts?: AuditOptions): string[] {
 }
 
 export async function runAudit(auditId: string, opts?: AuditOptions): Promise<void> {
-  const audit = await prisma.siteAudit.findUnique({ where: { id: auditId }, include: { site: true } });
-  if (!audit) return;
+  if (activeAudits.has(auditId)) return;
+  activeAudits.add(auditId);
   try {
+    const audit = await prisma.siteAudit.findUnique({ where: { id: auditId }, include: { site: true } });
+    if (!audit) return;
+    await prisma.siteAuditPage.deleteMany({ where: { auditId } });
+    await (prisma as any).siteAudit.update({
+      where: { id: auditId },
+      data: { status: "running", stage: "crawl", progress: 0, pagesCrawled: 0, heartbeatAt: new Date(), finishedAt: null, error: null },
+    });
     const rootUrl = audit.site.url.startsWith("http") ? audit.site.url : `https://${audit.site.url.replace(/^sc-domain:/, "")}`;
     const root = new URL(rootUrl);
     const maxPages = Math.min(500, Math.max(10, audit.maxPages));
@@ -216,12 +273,17 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
         }
         results.set(item.url, entry);
         if (crawled % 10 === 0) {
-          await prisma.siteAudit.update({ where: { id: auditId }, data: { pagesCrawled: crawled } }).catch(() => {});
+          await (prisma as any).siteAudit.update({
+            where: { id: auditId },
+            data: { pagesCrawled: crawled, progress: Math.min(74, Math.round((crawled / maxPages) * 75)), heartbeatAt: new Date() },
+          }).catch(() => {});
         }
         await new Promise(r => setTimeout(r, POLITENESS_DELAY_MS));
       }
     });
     await Promise.all(workers);
+
+    await (prisma as any).siteAudit.update({ where: { id: auditId }, data: { stage: "analyze", progress: 78, heartbeatAt: new Date() } }).catch(() => {});
 
     // ── second pass: issues (needs the full crawl map for broken links & duplicate titles)
     const statusOf = new Map<string, number>();
@@ -305,6 +367,8 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
       });
     }
 
+    await (prisma as any).siteAudit.update({ where: { id: auditId }, data: { stage: "persist", progress: 90, heartbeatAt: new Date() } }).catch(() => {});
+
     // createMany is not supported for SQLite pre-Prisma5-style in all setups — chunked create is fine here.
     for (let i = 0; i < rows.length; i += 50) {
       await prisma.siteAuditPage.createMany({ data: rows.slice(i, i + 50) });
@@ -315,10 +379,28 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
     // its course, so a slow robots/llms fetch (or one that already resolved) costs no extra latency.
     // The catch above already nulls a failed check, so a network error here never fails the audit.
     const aiCrawlability = await aiCrawlPromise;
+    let verification = null;
+    if ((audit as any).baselineAuditId) {
+      const baseline = await prisma.siteAudit.findFirst({
+        where: { id: (audit as any).baselineAuditId, siteId: audit.siteId, status: "completed" },
+        select: { id: true },
+      });
+      if (baseline) {
+        const baselinePages = await prisma.siteAuditPage.findMany({ where: { auditId: baseline.id } });
+        verification = compareAuditFindings(
+          baseline.id,
+          baselinePages.map(page => ({ url: page.url, httpStatus: page.httpStatus, issues: page.issues ? JSON.parse(page.issues) : [] })),
+          rows.map(row => ({ url: row.url, httpStatus: row.httpStatus, issues: row.issues ? JSON.parse(row.issues) : [] })),
+        );
+      }
+    }
     await prisma.siteAudit.update({
       where: { id: auditId },
       data: {
         status: "completed",
+        stage: "completed",
+        progress: 100,
+        heartbeatAt: new Date(),
         finishedAt: new Date(),
         pagesCrawled: rows.length,
         summary: JSON.stringify({
@@ -331,12 +413,15 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
           // audits predating this field simply have no key, and the UI renders nothing for them.
           ...(aiCrawlability ? { aiCrawlability } : {}),
         }),
+        verification: verification ? JSON.stringify(verification) : null,
       },
     });
   } catch (e: any) {
     await prisma.siteAudit.update({
       where: { id: auditId },
-      data: { status: "error", finishedAt: new Date(), error: String(e?.message ?? e).slice(0, 500) },
+      data: { status: "error", stage: "error", heartbeatAt: new Date(), finishedAt: new Date(), error: String(e?.message ?? e).slice(0, 500) },
     }).catch(() => {});
+  } finally {
+    activeAudits.delete(auditId);
   }
 }
