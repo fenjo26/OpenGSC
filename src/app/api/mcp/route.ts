@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { MCP_TOOLS, findTool, type McpTool } from "@/lib/mcp/tools";
 import { rawQuery } from "@/lib/db/raw";
+import { isCurrentMcpToken } from "@/lib/mcpToken";
 
 // MCP (Model Context Protocol) endpoint — Streamable HTTP transport, stateless mode.
 // Lets AI agents (Claude Code, Cursor, Codex, any MCP client) query this instance's
@@ -54,7 +55,7 @@ async function authUserId(req: Request): Promise<string | null> {
       token = (qs.get("token") || qs.get("key") || qs.get("api_key") || "").trim();
     } catch { /* unparseable URL — treat as no token */ }
   }
-  if (!token || !token.startsWith("ogsc_")) return null;
+  if (!isCurrentMcpToken(token)) return null;
   try {
     const rows: any[] = await rawQuery(`SELECT id FROM "User" WHERE mcpToken = ?`, token);
     return rows?.[0]?.id ?? null;

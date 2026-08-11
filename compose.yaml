@@ -1,5 +1,5 @@
 # OpenGSC — Docker Compose deployment.
-# 1) cp .env.template .env  and fill in NEXTAUTH_SECRET, NEXTAUTH_URL, GOOGLE_CLIENT_ID/SECRET
+# 1) cp .env.template .env and fill in the auth and owner settings
 #    (DATABASE_URL is set by the container — leave it out or it will be overridden below)
 # 2) docker compose up -d
 # 3) open http://localhost:3000  (or your domain behind a reverse proxy)

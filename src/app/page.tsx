@@ -1673,9 +1673,6 @@ function PortfolioPageContent() {
               <span style={{color:"var(--color-text-secondary)",maxWidth:"200px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",filter:blur?"blur(5px)":"none",transition:"filter 0.25s"}}>{acc.email}</span>
             </div>
           ))}
-          <a href="/settings" style={{display:"flex",alignItems:"center",gap:"4px",padding:"4px 10px",borderRadius:"20px",fontSize:"12px",fontWeight:500,color:"#3B82F6",border:"1px solid rgba(59,130,246,0.25)",background:"transparent",textDecoration:"none",whiteSpace:"nowrap",cursor:"pointer"}}>
-            {t("addGoogleAccount")}
-          </a>
         </div>
       )) : (
         <div style={{marginBottom:"10px",padding:"10px 14px",borderRadius:"12px",background:"var(--color-card)",border:"1px solid var(--color-border)",display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
@@ -1860,7 +1857,7 @@ function PortfolioPageContent() {
       ) : (engine === "google" ? sites.length === 0 : activeSites.length === 0) ? (
         <div style={{textAlign:"center",color:"var(--color-text-secondary)",padding:"80px 0",fontSize:"14px"}}>
           {engine === "google"
-            ? <>{t("noSitesYet")} <a href="/settings" style={{color:"var(--color-accent-purple)"}}>{t("connectGoogleAccount")}</a></>
+            ? t("noSitesYet")
             : t("seEngineNoData")}
         </div>
       ) : (

@@ -178,6 +178,10 @@ else
   echo ""
   ask        GOOGLE_CLIENT_ID     "Google Client ID: " ""
   ask_secret GOOGLE_CLIENT_SECRET "Google Client Secret: "
+  ask        OPENGSC_EXPECTED_OWNER_EMAIL "Owner Google email (only allowed login): " ""
+  if [[ ! "$OPENGSC_EXPECTED_OWNER_EMAIL" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]]; then
+    error "Owner Google email is invalid."
+  fi
 
   DB_PATH="$(pwd)/data/prod.db"
   mkdir -p "$(pwd)/data"
@@ -188,6 +192,7 @@ DATABASE_URL="file:${DB_PATH}"
 # NextAuth
 NEXTAUTH_SECRET="${SECRET}"
 NEXTAUTH_URL="${NEXTAUTH_URL}"
+OPENGSC_EXPECTED_OWNER_EMAIL="${OPENGSC_EXPECTED_OWNER_EMAIL}"
 
 # Google OAuth
 # Redirect URI: ${NEXTAUTH_URL}/api/auth/callback/google
@@ -196,6 +201,10 @@ GOOGLE_CLIENT_SECRET="${GOOGLE_CLIENT_SECRET}"
 EOF
 
   success ".env created (NEXTAUTH_URL=${NEXTAUTH_URL})"
+fi
+
+if ! node -e 'const fs=require("node:fs"); const v=require("dotenv").parse(fs.readFileSync(".env")).OPENGSC_EXPECTED_OWNER_EMAIL; if (typeof v!=="string" || v.length>254 || v.trim()!==v || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) process.exit(1)'; then
+  error "Set a valid OPENGSC_EXPECTED_OWNER_EMAIL in .env before installation."
 fi
 
 # ─── Build ────────────────────────────────────────────────────────────────────
@@ -309,9 +318,8 @@ else
 fi
 
 echo ""
-echo -e "  Sign in with your Google account on first visit."
-echo -e "  The first account becomes the owner of the dashboard."
-echo -e "  Add more Google accounts via Settings to pull GSC data from all of them."
+echo -e "  Sign in as ${CYAN}${OPENGSC_EXPECTED_OWNER_EMAIL}${NC} on first visit."
+echo -e "  Only this verified Google identity can access the dashboard."
 echo ""
 echo -e "  PM2 commands:"
 echo -e "    ${CYAN}pm2 logs opengsc${NC}     — view logs"

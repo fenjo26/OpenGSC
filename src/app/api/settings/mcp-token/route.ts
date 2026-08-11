@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { randomBytes } from "crypto";
 import { rawQuery, rawExec } from "@/lib/db/raw";
+import { isCurrentMcpToken, MCP_TOKEN_PREFIX } from "@/lib/mcpToken";
 
 // MCP access token management (Settings → API & MCP).
 // GET    → { token: string | null }
@@ -21,7 +22,8 @@ export async function GET() {
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const rows: any[] = await rawQuery(`SELECT mcpToken FROM "User" WHERE id = ?`, userId);
-    return NextResponse.json({ token: rows?.[0]?.mcpToken ?? null });
+    const token = rows?.[0]?.mcpToken ?? "";
+    return NextResponse.json({ token: isCurrentMcpToken(token) ? token : null });
   } catch {
     return NextResponse.json({ token: null, notMigrated: true });
   }
@@ -30,7 +32,7 @@ export async function GET() {
 export async function POST() {
   const userId = await uid();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const token = "ogsc_" + randomBytes(24).toString("hex");
+  const token = MCP_TOKEN_PREFIX + randomBytes(24).toString("hex");
   try {
     await rawExec(`UPDATE "User" SET mcpToken = ? WHERE id = ?`, token, userId);
     return NextResponse.json({ token });

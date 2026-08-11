@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { MCP_TOOLS } from "@/lib/mcp/tools";
 import { rawQuery } from "@/lib/db/raw";
+import { isCurrentMcpToken } from "@/lib/mcpToken";
 
 // GET /api/mcp/tools — the tool registry as plain JSON.
 //
@@ -33,7 +34,7 @@ async function authUserId(req: Request): Promise<string | null> {
       token = (qs.get("token") || qs.get("key") || qs.get("api_key") || "").trim();
     } catch { /* unparseable URL */ }
   }
-  if (token.startsWith("ogsc_")) {
+  if (isCurrentMcpToken(token)) {
     try {
       const rows: any[] = await rawQuery(`SELECT id FROM "User" WHERE mcpToken = ?`, token);
       if (rows?.[0]?.id) return rows[0].id;

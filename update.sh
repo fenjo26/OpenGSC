@@ -29,6 +29,12 @@ echo "[update] npm install..."
 # That difference is what made this look like a Windows problem rather than an env one.
 npm i --include=dev || { echo "[update] npm i FAILED"; echo "___OPENGSC_UPDATE_FAIL___"; exit 1; }
 
+if ! node -e 'const fs=require("node:fs"); const v=require("dotenv").parse(fs.readFileSync(".env")).OPENGSC_EXPECTED_OWNER_EMAIL; if (typeof v!=="string" || v.length>254 || v.trim()!==v || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) process.exit(1)'; then
+  echo "[update] Set a valid OPENGSC_EXPECTED_OWNER_EMAIL in .env before updating"
+  echo "___OPENGSC_UPDATE_FAIL___"
+  exit 1
+fi
+
 # npm can finish successfully and still leave an install the app cannot run: under npm 12 a
 # dependency's build script is skipped unless the exact version is listed in allowScripts, and a
 # better-sqlite3 that never built is only discovered at boot. Checked here so the message names

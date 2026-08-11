@@ -9,6 +9,7 @@
 
 import { withAuth } from "next-auth/middleware";
 import { NextResponse } from "next/server";
+import { isAuthorizedOwnerSessionToken } from "@/lib/singleOwnerAuth";
 
 export default withAuth(
   function proxy() {
@@ -41,7 +42,10 @@ export default withAuth(
         if (pathname.startsWith("/.well-known/")) return true;
         if (pathname.startsWith("/share/")) return true;
         if (pathname.startsWith("/api/") && searchParams.has("shareToken")) return true;
-        return !!token;
+        return isAuthorizedOwnerSessionToken(
+          token,
+          process.env.OPENGSC_EXPECTED_OWNER_EMAIL,
+        );
       },
     },
   }

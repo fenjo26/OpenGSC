@@ -21,6 +21,8 @@ declare module "next-auth" {
 
 declare module "next-auth/jwt" {
   interface JWT {
-    sub: string;
+    sub?: string;
+    opengscGoogleSubject?: string;
+    opengscOwnerSessionVersion?: number;
   }
 }

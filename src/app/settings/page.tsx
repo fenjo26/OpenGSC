@@ -277,12 +277,11 @@ function YandexIcon({ size = 16 }: { size?: number }) {
 }
 
 // ─── Section: My Google Accounts ──────────────────────────────────────────────
-function AccountsSection({ user, accounts, loadingAccounts, removing, onAdd, onRemove, onReauth }: {
+function AccountsSection({ user, accounts, loadingAccounts, onReauth }: {
   user: any; accounts: ConnectedAccount[]; loadingAccounts: boolean;
-  removing: string | null; onAdd: () => void; onRemove: (id: string) => void; onReauth: (email: string) => void;
+  onReauth: (email: string) => void;
 }) {
   const { t } = useLanguage();
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: "20px", alignItems: "flex-start" }}>
       <SectionCard>
@@ -325,12 +324,7 @@ function AccountsSection({ user, accounts, loadingAccounts, removing, onAdd, onR
           {/* Title row */}
           <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
             <GoogleIcon size={15} />
-            <h2 style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)", margin: 0 }}>{t("linkedAccounts")}</h2>
-            {!loadingAccounts && (
-              <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)", background: "rgba(255,255,255,0.06)", borderRadius: "20px", padding: "2px 8px" }}>
-                {accounts.length} {accounts.length !== 1 ? t("accounts") : t("account")}
-              </span>
-            )}
+            <h2 style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)", margin: 0 }}>{t("sidebarAccount")}</h2>
           </div>
           {/* Action buttons row */}
           <div style={{ display: "flex", gap: "8px" }}>
@@ -341,30 +335,22 @@ function AccountsSection({ user, accounts, loadingAccounts, removing, onAdd, onR
               onMouseOver={e => e.currentTarget.style.background = "rgba(16,185,129,0.2)"} onMouseOut={e => e.currentTarget.style.background = "rgba(16,185,129,0.12)"}
             ><Globe size={13} /> {t("syncNow")}</button>
 
-            <button onClick={onAdd} style={{ display: "flex", alignItems: "center", gap: "5px", padding: "7px 14px", borderRadius: "8px", fontSize: "12px", fontWeight: 600, background: "rgba(59,130,246,0.12)", color: "#3B82F6", border: "1px solid rgba(59,130,246,0.25)", cursor: "pointer" }}
-              onMouseOver={e => e.currentTarget.style.background = "rgba(59,130,246,0.2)"} onMouseOut={e => e.currentTarget.style.background = "rgba(59,130,246,0.12)"}
-            ><Plus size={13} /> {t("addAccount")}</button>
           </div>
         </div>
 
-        {/* OAuth Test Users warning */}
-        <div style={{ padding: "12px 14px", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)", borderRadius: "8px", marginBottom: "16px" }}>
-          <div style={{ fontSize: "13px", fontWeight: 700, color: "#F59E0B", marginBottom: "4px" }}>{t("oauthTestModeTitle")}</div>
-          <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>{t("oauthTestModeDesc")}</div>
-        </div>
         {loadingAccounts ? (
           <div style={{ color: "var(--color-text-secondary)", fontSize: "13px", padding: "12px 0" }}>{t("loadingAccounts")}</div>
         ) : accounts.length === 0 ? (
           <div style={{ textAlign: "center", padding: "28px 0" }}>
             <Globe size={28} style={{ color: "var(--color-text-secondary)", marginBottom: "10px", opacity: 0.4 }} />
             <p style={{ fontSize: "13px", color: "var(--color-text-secondary)" }}>
-              {t("noAccountsLinked")}<br />{t("noAccountsLinkedHint")}
+              {t("scNotConnected")}
             </p>
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
             {accounts.map(acc => (
-              <div key={acc.id} style={{ borderRadius: "8px", border: confirmDeleteId === acc.id ? "1px solid rgba(239,68,68,0.4)" : acc.gscAccess ? "1px solid transparent" : "1px solid rgba(239,68,68,0.2)", background: confirmDeleteId === acc.id ? "rgba(239,68,68,0.07)" : acc.gscAccess ? "transparent" : "rgba(239,68,68,0.04)", transition: "all 0.15s" }}>
+              <div key={acc.id} style={{ borderRadius: "8px", border: acc.gscAccess ? "1px solid transparent" : "1px solid rgba(239,68,68,0.2)", background: acc.gscAccess ? "transparent" : "rgba(239,68,68,0.04)" }}>
 
                 {/* Main account row */}
                 <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 8px" }}>
@@ -379,48 +365,10 @@ function AccountsSection({ user, accounts, loadingAccounts, removing, onAdd, onR
                   <span style={{ fontSize: "11px", display: "flex", alignItems: "center", gap: "3px", color: acc.ga4Access ? "#10B981" : "var(--color-text-secondary)", flexShrink: 0 }}>
                     GA4 {acc.ga4Access ? <CheckCircle size={11} color="#10B981" /> : <AlertCircle size={11} color="#94a3b8" />}
                   </span>
-                  {/* Delete button */}
-                  {confirmDeleteId !== acc.id && (
-                    <button
-                      onClick={() => setConfirmDeleteId(acc.id)}
-                      disabled={removing === acc.id}
-                      style={{ display: "flex", alignItems: "center", gap: "4px", padding: "4px 9px", borderRadius: "6px", fontSize: "11px", fontWeight: 500, background: "rgba(255,255,255,0.04)", color: "var(--color-text-secondary)", border: "1px solid rgba(255,255,255,0.08)", cursor: "pointer", flexShrink: 0, opacity: removing === acc.id ? 0.4 : 1 }}
-                      onMouseOver={e => { e.currentTarget.style.background = "rgba(239,68,68,0.1)"; e.currentTarget.style.color = "#f87171"; e.currentTarget.style.borderColor = "rgba(239,68,68,0.25)"; }}
-                      onMouseOut={e => { e.currentTarget.style.background = "rgba(255,255,255,0.04)"; e.currentTarget.style.color = "var(--color-text-secondary)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; }}
-                    >
-                      <X size={11} /> {t("remove")}
-                    </button>
-                  )}
                 </div>
 
-                {/* Inline delete confirmation */}
-                {confirmDeleteId === acc.id && (
-                  <div style={{ padding: "0 8px 10px 50px", display: "flex", alignItems: "center", gap: "8px" }}>
-                    <span style={{ fontSize: "12px", color: "#f87171", flex: 1 }}>
-                      {t("setRemoveAccountQ1")} <strong>{acc.email}</strong>{t("setRemoveAccountQ2")}
-                    </span>
-                    <button
-                      onClick={() => setConfirmDeleteId(null)}
-                      style={{ padding: "4px 10px", borderRadius: "6px", fontSize: "11px", fontWeight: 600, background: "rgba(255,255,255,0.06)", color: "var(--color-text-secondary)", border: "1px solid rgba(255,255,255,0.1)", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}
-                      onMouseOver={e => e.currentTarget.style.background = "rgba(255,255,255,0.1)"}
-                      onMouseOut={e => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
-                    >
-                      {t("cancel")}
-                    </button>
-                    <button
-                      onClick={() => { setConfirmDeleteId(null); onRemove(acc.id); }}
-                      disabled={removing === acc.id}
-                      style={{ display: "flex", alignItems: "center", gap: "4px", padding: "4px 10px", borderRadius: "6px", fontSize: "11px", fontWeight: 600, background: "rgba(239,68,68,0.15)", color: "#f87171", border: "1px solid rgba(239,68,68,0.35)", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, opacity: removing === acc.id ? 0.5 : 1 }}
-                      onMouseOver={e => e.currentTarget.style.background = "rgba(239,68,68,0.28)"}
-                      onMouseOut={e => e.currentTarget.style.background = "rgba(239,68,68,0.15)"}
-                    >
-                      <X size={11} /> {t("setConfirmRemove")}
-                    </button>
-                  </div>
-                )}
-
                 {/* GSC re-auth warning */}
-                {!acc.gscAccess && confirmDeleteId !== acc.id && (
+                {!acc.gscAccess && (
                   <div style={{ padding: "0 8px 10px 50px", display: "flex", alignItems: "center", gap: "10px" }}>
                     <span style={{ fontSize: "11px", color: "#f87171", flex: 1 }}>
                       {t("setNoGscAccess")}
@@ -2091,7 +2039,6 @@ export default function SettingsPage() {
   const [nav, setNav] = useState<NavItem>("accounts");
   const [accounts, setAccounts] = useState<ConnectedAccount[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(true);
-  const [removing, setRemoving] = useState<string | null>(null);
   const [teamName, setTeamName] = useState("");
   const [editingTeam, setEditingTeam] = useState(false);
 
@@ -2113,16 +2060,8 @@ export default function SettingsPage() {
   };
   useEffect(() => { fetchAccounts(); }, []);
 
-  const handleAdd = () => signIn("google", { callbackUrl: "/settings" });
   const handleReauth = (email: string) =>
     signIn("google", { callbackUrl: "/settings", login_hint: email });
-  const handleRemove = async (id: string) => {
-    if (!confirm(t("disconnectConfirm"))) return;
-    setRemoving(id);
-    await fetch("/api/gsc/accounts", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: id }) });
-    await fetchAccounts();
-    setRemoving(null);
-  };
 
   const NavBtn = ({ id, icon, label, badge }: { id: NavItem; icon: React.ReactNode; label: string; badge?: string }) => (
     <button
@@ -2160,7 +2099,7 @@ export default function SettingsPage() {
           <div style={{ marginBottom: "28px" }}>
             <div style={{ fontSize: "12px", fontWeight: 700, color: "var(--color-text-primary)", marginBottom: "2px" }}>{t("sidebarAccount")}</div>
             <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginBottom: "10px" }}>{user?.email}</div>
-            <NavBtn id="accounts" icon={<GoogleIcon size={14} />} label={t("navMyGoogleAccounts")} />
+            <NavBtn id="accounts" icon={<GoogleIcon size={14} />} label={t("yourAccount")} />
             <NavBtn id="bing" icon={<BingIcon size={14} />} label="Bing Webmaster" />
             <NavBtn id="yandex" icon={<YandexIcon size={14} />} label="Яндекс.Вебмастер" />
             <NavBtn id="teams" icon={<Users size={14} />} label={t("myTeams")} />
@@ -2197,7 +2136,7 @@ export default function SettingsPage() {
 
         {/* Main content */}
         <div style={{ flex: 1, minWidth: 0 }}>
-          {nav === "accounts"     && <AccountsSection user={user} accounts={accounts} loadingAccounts={loadingAccounts} removing={removing} onAdd={handleAdd} onRemove={handleRemove} onReauth={handleReauth} />}
+          {nav === "accounts"     && <AccountsSection user={user} accounts={accounts} loadingAccounts={loadingAccounts} onReauth={handleReauth} />}
           {nav === "bing"         && (
             <SectionCard>
               <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>

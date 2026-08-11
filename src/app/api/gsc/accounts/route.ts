@@ -6,7 +6,7 @@ import { google } from 'googleapis';
 
 export async function GET() {
   const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = session?.user.id;
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
@@ -52,20 +52,4 @@ export async function GET() {
   );
 
   return NextResponse.json({ accounts: enriched });
-}
-
-export async function DELETE(req: Request) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
-  if (!userId) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const { accountId } = await req.json();
-
-  await prisma.account.deleteMany({
-    where: { id: accountId, userId },
-  });
-
-  return NextResponse.json({ success: true });
 }
