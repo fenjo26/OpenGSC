@@ -10,7 +10,7 @@
 
 import {
   Boxes, Globe, FileText, LayoutTemplate, PenLine, RefreshCw, Fingerprint, Search, Bot,
-  Quote, Link2, ScrollText, History, Compass, Users, type LucideIcon,
+  Quote, Link2, ScrollText, History, Compass, Users, Workflow, type LucideIcon,
 } from "lucide-react";
 
 export interface SeoTool {
@@ -41,5 +41,6 @@ export const SEO_TOOLS: SeoTool[] = [
   { href: "/seo-tools/citations", key: "seoTabCitations", desc: "seoTileCitations", icon: Quote,         color: "#ff375f" },
   { href: "/seo-tools/links",     key: "seoTabLinks",     desc: "seoTileLinks",     icon: Link2,         color: "#64d2ff" },
   { href: "/seo-tools/policy",    key: "seoTabPolicy",    desc: "seoTilePolicy",    icon: ScrollText,    color: "#ffd60a" },
+  { href: "/seo-tools/content-ops", key: "contentOpsTab", desc: "contentOpsTile", icon: Workflow, color: "#ff9f0a" },
   { href: "/seo-tools/history",   key: "seoTabHistory",   desc: "seoTileHistory",   icon: History,       color: "#8e8e93" },
 ];

@@ -21,9 +21,12 @@ URL и основных форматов API:
   draft/copy без отправки, связь с Backlink/alive-check и четыре локальных MCP action.
 - Related Intent как второй режим существующей Cannibalization: inverted token/ranking-URL index,
   page roles, position/flip-flop evidence, confidence и только review-рекомендации.
+- Content Operations как отдельный stateful workflow поверх, а не вместо Demand/Outline/Text/Rewrite:
+  очередь и audit trail, импорт готового текста из History, approval/review, детерминированный
+  preflight, зашифрованный fine-grained GitHub token, обязательный diff/confirm и PR без auto-merge.
 
 Остаются отдельными следующими этапами: обновление внешнего сайта `opengsc.org`, первый корректный
-Git tag/GitHub Release, Sitemap Inventory и Content Operations. Они не маскируются как готовые
+Git tag/GitHub Release, Sitemap Inventory, public checker и post-deploy outcome automation. Они не маскируются как готовые
 функции.
 
 ## 1. Цель
@@ -528,6 +531,13 @@ Clicks/impressions помогают выбрать более сильную с�
 
 **Источник идеи:** DispatchSEO. Из-за AGPL переносится только продуктовая концепция;
 реализация создаётся независимо на существующих примитивах OpenGSC.
+
+> Реализован безопасный MVP: самостоятельная очередь в SEO Tools, импорт готового текста из
+> `SeoHistory`, закрытые переходы состояний, audit timeline, server-only AES-GCM storage токена,
+> проверка repository/base branch, bounded diff и повторный preflight непосредственно перед
+> явным созданием branch/commit/PR. Auto-merge отсутствует; merge и факт deployment не смешиваются.
+> Автоматическая HTTP-проверка deployment, indexing/rank handoff и отчёт 7/30/90 остаются следующим
+> совместимым расширением этой модели.
 
 ### 8.1 MVP workflow
 

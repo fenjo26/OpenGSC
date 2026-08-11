@@ -91,6 +91,11 @@ model User {
   // SEO Tools background generation jobs
   seoJobs             SeoJob[]
 
+  // Content Operations is a publishing workflow layered on top of the existing
+  // Demand / Outline / Text / Rewrite tools. Repository credentials stay server-only.
+  contentRepositories ContentRepository[]
+  contentOperations   ContentOperation[]
+
   // GEO Audits (how AI search engines perceive the brand/niche)
   geoAudits           GeoAudit[]
 }
@@ -650,6 +655,78 @@ model SeoHistory {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([userId, createdAt])
+}
+
+// ─── Content Operations — editorial queue and explicit GitHub PR delivery ────────────────
+// This deliberately does not replace SeoHistory or the existing generators. A queue item may
+// point at one of their results, but it owns only approval/review/publishing state.
+model ContentRepository {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  owner       String
+  repo        String
+  baseBranch  String   @default("main")
+  contentRoot String   @default("content")
+  tokenCipher String   // AES-256-GCM; never returned by an API
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  operations  ContentOperation[]
+
+  @@unique([userId, owner, repo])
+  @@index([userId])
+}
+
+model ContentOperation {
+  id             String   @id @default(cuid())
+  userId         String
+  repositoryId   String?
+  title          String
+  keyword        String   @default("")
+  operationType  String   @default("new") // "new" | "update"
+  sourceType     String   @default("manual") // "manual" | "history" | "demand" | "gsc" | "content_gap"
+  sourceRef      String?
+  targetUrl      String?
+  filePath       String?
+  content        String   @default("")
+  status         String   @default("idea") // idea → approved → review → pr_open → pr_merged → live
+  gates          String?  // JSON snapshot of the latest deterministic preflight
+  prNumber       Int?
+  prUrl          String?
+  branchName     String?
+  commitSha      String?
+  error          String?
+  approvedAt     DateTime?
+  prCreatedAt    DateTime?
+  mergedAt       DateTime?
+  liveAt         DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user           User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  repository     ContentRepository?  @relation(fields: [repositoryId], references: [id], onDelete: SetNull)
+  events         ContentOperationEvent[]
+
+  @@index([userId, status, updatedAt])
+  @@index([repositoryId])
+}
+
+model ContentOperationEvent {
+  id          String   @id @default(cuid())
+  operationId String
+  userId      String
+  fromStatus  String?
+  toStatus    String
+  note        String   @default("")
+  meta        String?
+  createdAt   DateTime @default(now())
+
+  operation   ContentOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+
+  @@index([operationId, createdAt])
   @@index([userId, createdAt])
 }
 

@@ -506,6 +506,7 @@ pm2 startup
 |---|---|---|
 | `DATABASE_URL` | Path to the SQLite database | `file:/root/opengsc/data/prod.db` |
 | `NEXTAUTH_SECRET` | Random secret used to encrypt sessions | `openssl rand -base64 32` |
+| `CONTENT_OPS_SECRET` | Optional stable key for Content Operations GitHub-token encryption; falls back to `NEXTAUTH_SECRET` | `openssl rand -base64 32` |
 | `NEXTAUTH_URL` | The app's full URL, including domain | `https://your-domain.com` |
 | `GOOGLE_CLIENT_ID` | From Google Cloud Console | `123...apps.googleusercontent.com` |
 | `GOOGLE_CLIENT_SECRET` | From Google Cloud Console | `GOCSPX-...` |
@@ -516,6 +517,10 @@ Generate a secret:
 ```bash
 openssl rand -base64 32
 ```
+
+If Content Operations is connected to GitHub, keep `CONTENT_OPS_SECRET` (or the fallback
+`NEXTAUTH_SECRET`) stable across restarts and upgrades. Repository tokens are encrypted with it;
+the token is never returned by the API or exposed to MCP.
 
 <br/>
 
