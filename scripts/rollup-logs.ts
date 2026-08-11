@@ -10,7 +10,7 @@ async function main() {
   console.log("Starting IndexerLog rollup & migration...");
 
   // 1. Group all raw logs by domainId, date, botType, statusCode
-  // Using raw SQL because formatting date is much faster in SQLite batch
+  // Using robust date extraction that handles ISO strings, standard datetimes, and integer timestamps
   const rows = await prisma.$queryRawUnsafe<
     Array<{
       domainId: string;
@@ -22,7 +22,10 @@ async function main() {
   >(`
     SELECT
       "domainId",
-      strftime('%Y-%m-%d', CASE WHEN typeof("timestamp") = 'integer' THEN "timestamp" / 1000 ELSE strftime('%s', "timestamp") END, 'unixepoch') AS date,
+      CASE
+        WHEN typeof("timestamp") = 'integer' THEN date("timestamp" / 1000, 'unixepoch')
+        ELSE COALESCE(date("timestamp"), substr("timestamp", 1, 10))
+      END AS date,
       "botType",
       "statusCode",
       COUNT(*) AS cnt
@@ -36,7 +39,7 @@ async function main() {
   let inserted = 0;
 
   for (const r of rows) {
-    if (!r.domainId || !r.date) continue;
+    if (!r.domainId || !r.date || r.date.length < 10) continue;
     const count = Number(r.cnt);
     const code = Number(r.statusCode) || 200;
 
@@ -57,21 +60,17 @@ async function main() {
 
   console.log(`Successfully merged ${inserted} daily stat rows into IndexerDailyStat.`);
 
-  // 2. Retention Cleanup: Keep raw logs from the last 7 days only
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - 7);
+  // 2. Retention Cleanup: Keep the 5,000 most recent raw log entries only
+  const deleteResult = await prisma.$executeRawUnsafe(`
+    DELETE FROM "IndexerLog"
+    WHERE "id" NOT IN (
+      SELECT "id" FROM "IndexerLog" ORDER BY "timestamp" DESC LIMIT 5000
+    )
+  `);
 
-  const deleteResult = await prisma.indexerLog.deleteMany({
-    where: {
-      timestamp: {
-        lt: cutoff,
-      },
-    },
-  });
+  console.log(`Purged old raw log entries, keeping the latest 5,000 entries.`);
 
-  console.log(`Purged ${deleteResult.count} old raw log entries older than 7 days.`);
-
-  // Vacuum SQLite database to recover disk space if needed
+  // Vacuum SQLite database to recover disk space
   try {
     await prisma.$executeRawUnsafe(`VACUUM`);
     console.log("Database VACUUM completed successfully.");

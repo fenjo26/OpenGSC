@@ -72,9 +72,9 @@ export async function GET(req: Request) {
           await prisma.$executeRawUnsafe(`
             INSERT INTO "IndexerDailyStat" ("id", "domainId", "date", "botType", "statusCode", "count")
             SELECT
-              'stat_' || "domainId" || '_' || strftime('%Y-%m-%d', CASE WHEN typeof("timestamp") = 'integer' THEN "timestamp" / 1000 ELSE strftime('%s', "timestamp") END, 'unixepoch') || '_' || "botType" || '_' || "statusCode",
+              'stat_' || "domainId" || '_' || (CASE WHEN typeof("timestamp") = 'integer' THEN date("timestamp" / 1000, 'unixepoch') ELSE COALESCE(date("timestamp"), substr("timestamp", 1, 10)) END) || '_' || "botType" || '_' || "statusCode",
               "domainId",
-              strftime('%Y-%m-%d', CASE WHEN typeof("timestamp") = 'integer' THEN "timestamp" / 1000 ELSE strftime('%s', "timestamp") END, 'unixepoch') AS d,
+              (CASE WHEN typeof("timestamp") = 'integer' THEN date("timestamp" / 1000, 'unixepoch') ELSE COALESCE(date("timestamp"), substr("timestamp", 1, 10)) END) AS d,
               "botType",
               "statusCode",
               COUNT(*)
@@ -86,10 +86,13 @@ export async function GET(req: Request) {
             DO UPDATE SET "count" = "count" + excluded."count"
           `);
 
-          // Purge raw logs older than 7 days
-          const cutoff = new Date();
-          cutoff.setDate(cutoff.getDate() - 7);
-          await prisma.indexerLog.deleteMany({ where: { timestamp: { lt: cutoff } } });
+          // Purge raw logs, keeping only the 5,000 most recent entries
+          await prisma.$executeRawUnsafe(`
+            DELETE FROM "IndexerLog"
+            WHERE "id" NOT IN (
+              SELECT "id" FROM "IndexerLog" ORDER BY "timestamp" DESC LIMIT 5000
+            )
+          `);
 
           // Re-fetch daily stats after rollup
           dailyStats = await prisma.indexerDailyStat.findMany({

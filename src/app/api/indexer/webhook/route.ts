@@ -89,13 +89,9 @@ export async function POST(req: Request) {
       },
     });
 
-    // 3. Periodic log retention purge (~1% of requests) to keep raw logs clean
+    // 3. Periodic log retention purge (~1% of requests) to keep raw logs clean (capped at 5,000 rows)
     if (Math.random() < 0.01) {
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - 7);
-      prisma.indexerLog.deleteMany({
-        where: { timestamp: { lt: cutoff } },
-      }).catch(() => {});
+      rawExec(`DELETE FROM "IndexerLog" WHERE "id" NOT IN (SELECT "id" FROM "IndexerLog" ORDER BY "timestamp" DESC LIMIT 5000)`).catch(() => {});
     }
 
     // Update pages and subdomains counts on the domain dynamically
