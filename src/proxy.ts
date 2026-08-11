@@ -39,6 +39,7 @@ export default withAuth(
         //     that exists, sending it into an authorization flow this server cannot complete.
         //     The connector then fails with nothing useful in the error.
         if (pathname.startsWith("/.well-known/")) return true;
+        if (pathname === "/free-seo-checker" || pathname.startsWith("/api/public/seo-check")) return true;
         if (pathname.startsWith("/share/")) return true;
         if (pathname.startsWith("/api/") && searchParams.has("shareToken")) return true;
         return !!token;

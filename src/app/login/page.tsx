@@ -1,6 +1,7 @@
 "use client";
 
 import { signIn } from "next-auth/react";
+import Link from "next/link";
 import { TrendingUp, Globe, Shield, Moon, Sun } from "lucide-react";
 import { useTheme } from "@/lib/ThemeContext";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
@@ -132,7 +133,7 @@ const featureIcons = [
 
 export default function LoginPage() {
   const { dark, setDark } = useTheme();
-  const { language, setLanguage } = useLanguage();
+  const { language, setLanguage, t } = useLanguage();
   const c = content[language];
 
   return (
@@ -308,6 +309,10 @@ export default function LoginPage() {
             <GoogleIcon />
             {c.signIn}
           </button>
+
+          <Link href="/free-seo-checker" style={{ display: "flex", justifyContent: "center", marginTop: "13px", fontSize: "12px", fontWeight: 650, color: "var(--color-accent-blue)", textDecoration: "none" }}>
+            {t("publicCheckLoginLink" as any)}
+          </Link>
 
           <div style={{ margin: "28px 0", height: "1px", background: "var(--color-border)" }} />
 

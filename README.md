@@ -507,6 +507,9 @@ pm2 startup
 | `DATABASE_URL` | Path to the SQLite database | `file:/root/opengsc/data/prod.db` |
 | `NEXTAUTH_SECRET` | Random secret used to encrypt sessions | `openssl rand -base64 32` |
 | `CONTENT_OPS_SECRET` | Optional stable key for Content Operations GitHub-token encryption; falls back to `NEXTAUTH_SECRET` | `openssl rand -base64 32` |
+| `TURNSTILE_SECRET_KEY` | Optional Cloudflare Turnstile secret for the public Free SEO Checker | `0x...` |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Matching public Turnstile site key (set together with the secret) | `0x...` |
+| `PUBLIC_CHECKER_HASH_SECRET` | Optional independent salt for short-lived public-checker rate buckets; falls back to `NEXTAUTH_SECRET` | `openssl rand -base64 32` |
 | `NEXTAUTH_URL` | The app's full URL, including domain | `https://your-domain.com` |
 | `GOOGLE_CLIENT_ID` | From Google Cloud Console | `123...apps.googleusercontent.com` |
 | `GOOGLE_CLIENT_SECRET` | From Google Cloud Console | `GOCSPX-...` |

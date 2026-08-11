@@ -24,9 +24,12 @@ URL и основных форматов API:
 - Content Operations как отдельный stateful workflow поверх, а не вместо Demand/Outline/Text/Rewrite:
   очередь и audit trail, импорт готового текста из History, approval/review, детерминированный
   preflight, зашифрованный fine-grained GitHub token, обязательный diff/confirm и PR без auto-merge.
+- Public Free SEO Checker на `/free-seo-checker`: одна homepage, общий audit registry и SSRF-safe
+  fetch, TLS/indexability/metadata/schema/security/response facts, consequence+action, 7 локалей,
+  10-минутный анонимный rate bucket, 15-минутный memory cache и опциональный Turnstile.
 
 Остаются отдельными следующими этапами: обновление внешнего сайта `opengsc.org`, первый корректный
-Git tag/GitHub Release, Sitemap Inventory, public checker и post-deploy outcome automation. Они не маскируются как готовые
+Git tag/GitHub Release, Sitemap Inventory и post-deploy outcome automation. Они не маскируются как готовые
 функции.
 
 ## 1. Цель
@@ -588,6 +591,11 @@ Content Ops получает собственную поверхность то�
 ## 9. Этап 4 — публичный Site Health Check
 
 **Источники идей:** site-health-check, EchoSEO и базовый сценарий seo-audit-backend.
+
+> Реализован Public Lite без регистрации и постоянного хранения: публичен только отдельный route,
+> он не видит GSC/сайты/API-ключи оператора. Результат домена живёт в memory cache 15 минут,
+> rate-limit хранит только salted hash соединения 10 минут, Turnstile включается парой env keys.
+> Персональные report URLs и email не создаются; Expert report остаётся отдельным будущим opt-in.
 
 ### 9.1 Цель
 

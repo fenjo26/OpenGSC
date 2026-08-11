@@ -757,7 +757,7 @@ function TopBar() {
 
 // ─── Shell ────────────────────────────────────────────────────────────────────
 // Paths rendered without the app shell (no TopBar): auth pages and public share links.
-const AUTH_PATHS = ["/login", "/share"];
+const AUTH_PATHS = ["/login", "/share", "/free-seo-checker"];
 
 function Shell({ children }: { children: React.ReactNode }) {
   // Shell no longer reads the layout context: page width is applied through CSS custom properties
