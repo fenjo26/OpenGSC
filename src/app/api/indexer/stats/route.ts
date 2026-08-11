@@ -53,12 +53,56 @@ export async function GET(req: Request) {
     const ids = domains.map(d => d.id);
 
     // Fetch pre-aggregated daily stats (only ~30 rows per domain!)
-    const dailyStats = await prisma.indexerDailyStat.findMany({
+    let dailyStats = await prisma.indexerDailyStat.findMany({
       where: {
         domainId: { in: ids },
         date: { gte: sinceStr },
       },
     });
+
+    // Self-healing migration: if IndexerDailyStat is empty, automatically roll up legacy IndexerLog records
+    if (dailyStats.length === 0) {
+      try {
+        const legacyLogCount = await prisma.indexerLog.count({
+          where: { domainId: { in: ids } },
+        });
+
+        if (legacyLogCount > 0) {
+          const quotedIds = ids.map(id => `'${id}'`).join(",");
+          await prisma.$executeRawUnsafe(`
+            INSERT INTO "IndexerDailyStat" ("id", "domainId", "date", "botType", "statusCode", "count")
+            SELECT
+              'stat_' || "domainId" || '_' || strftime('%Y-%m-%d', CASE WHEN typeof("timestamp") = 'integer' THEN "timestamp" / 1000 ELSE strftime('%s', "timestamp") END, 'unixepoch') || '_' || "botType" || '_' || "statusCode",
+              "domainId",
+              strftime('%Y-%m-%d', CASE WHEN typeof("timestamp") = 'integer' THEN "timestamp" / 1000 ELSE strftime('%s', "timestamp") END, 'unixepoch') AS d,
+              "botType",
+              "statusCode",
+              COUNT(*)
+            FROM "IndexerLog"
+            WHERE "domainId" IN (${quotedIds})
+              AND "timestamp" IS NOT NULL
+            GROUP BY "domainId", d, "botType", "statusCode"
+            ON CONFLICT("domainId", "date", "botType", "statusCode")
+            DO UPDATE SET "count" = "count" + excluded."count"
+          `);
+
+          // Purge raw logs older than 7 days
+          const cutoff = new Date();
+          cutoff.setDate(cutoff.getDate() - 7);
+          await prisma.indexerLog.deleteMany({ where: { timestamp: { lt: cutoff } } });
+
+          // Re-fetch daily stats after rollup
+          dailyStats = await prisma.indexerDailyStat.findMany({
+            where: {
+              domainId: { in: ids },
+              date: { gte: sinceStr },
+            },
+          });
+        }
+      } catch (err) {
+        console.error("[Indexer Stats] Auto-rollup fallback error:", err);
+      }
+    }
 
     // ─── Per-domain & Summary Totals ──────────────────────────────────────────
     const counts = new Map<string, Record<string, number>>();
