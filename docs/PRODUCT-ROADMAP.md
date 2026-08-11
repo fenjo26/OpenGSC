@@ -14,14 +14,14 @@ URL и основных форматов API:
 - безопасный outbound fetch с DNS/IP pinning, повторной проверкой redirects и лимитами;
 - SQLite backup с `integrity_check` перед изменением схемы;
 - lifecycle/heartbeat для audit и платных SEO jobs без автоматического повтора платного вызова;
-- единый registry из 17 audit rules;
+- исполняемый registry из 30 правил только для встроенного Site Audit;
 - Audit Verification: повторный обход и результаты `resolved`, `still present`, `regression`,
   `inconclusive` в UI, API и MCP.
 - Outreach Workspace внутри Links: campaigns, prospect evidence, stage history, follow-up,
   draft/copy без отправки, связь с Backlink/alive-check и четыре локальных MCP action.
 
 Остаются отдельными следующими этапами: обновление внешнего сайта `opengsc.org`, первый корректный
-Git tag/GitHub Release, дополнительные проверки именно для Site Audit, semantic cannibalization,
+Git tag/GitHub Release, semantic cannibalization,
 Sitemap Inventory и Content Operations. Они не маскируются как готовые функции.
 
 ## 1. Цель

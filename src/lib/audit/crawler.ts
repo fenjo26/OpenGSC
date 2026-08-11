@@ -7,62 +7,14 @@
 import { prisma } from "@/lib/prisma";
 import { checkAiCrawlability } from "@/lib/audit/aiCrawl";
 import { safeFetch } from "@/lib/security/safeFetch";
-import { AUDIT_RULE_IDS } from "@/lib/audit/rules";
+import { extractAuditHtml, missingSecurityHeaders, robotsDirectivesConflict, type AuditHtmlSignals } from "@/lib/audit/pageSignals";
+import { AUDIT_ACTIONABLE_RULE_IDS, AUDIT_RULE_IDS, AUDIT_SCORING_RULE_IDS, evaluateAuditPageRules, type AuditPageFacts } from "@/lib/audit/rules";
 import { compareAuditFindings } from "@/lib/audit/verification";
 
 const UA = "Mozilla/5.0 (compatible; OpenGSC-Audit/1.0; +https://opengsc.org)";
 const PAGE_TIMEOUT_MS = 20_000;
 const CONCURRENCY = 4;
 const POLITENESS_DELAY_MS = 150; // per worker, between requests — be a good citizen on the user's own site
-
-// ─── HTML extraction (regex — fine for the signals we need) ─────────────────────
-
-const strip = (s: string) => s.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-const decode = (s: string) => s
-  .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-  .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&nbsp;/g, " ");
-
-function extract(html: string) {
-  const head = html.slice(0, 200_000);
-  const title = decode(strip(head.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? ""));
-  const metaDesc = decode(
-    head.match(/<meta[^>]+name=["']description["'][^>]*content=["']([\s\S]*?)["'][^>]*>/i)?.[1] ??
-    head.match(/<meta[^>]+content=["']([\s\S]*?)["'][^>]*name=["']description["'][^>]*>/i)?.[1] ?? "");
-  const robots = (
-    head.match(/<meta[^>]+name=["']robots["'][^>]*content=["']([^"']*)["']/i)?.[1] ??
-    head.match(/<meta[^>]+content=["']([^"']*)["'][^>]*name=["']robots["']/i)?.[1] ?? "").toLowerCase();
-  const canonical = head.match(/<link[^>]+rel=["']canonical["'][^>]*href=["']([^"']+)["']/i)?.[1]
-    ?? head.match(/<link[^>]+href=["']([^"']+)["'][^>]*rel=["']canonical["']/i)?.[1] ?? null;
-  const h1Count = (html.match(/<h1[\s>]/gi) ?? []).length;
-
-  const hrefs: string[] = [];
-  for (const m of html.matchAll(/<a\s[^>]*href=["']([^"'#]+)["']/gi)) hrefs.push(m[1]);
-
-  const imgTags = html.match(/<img\s[^>]*>/gi) ?? [];
-  const imagesNoAlt = imgTags.filter(t => !/\salt=["'][^"']+["']/i.test(t)).length;
-
-  // Word count over body text with scripts/styles removed — a thin-content signal, not prose analytics.
-  const body = html
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<nav[\s\S]*?<\/nav>/gi, " ")
-    .replace(/<footer[\s\S]*?<\/footer>/gi, " ");
-  const wordCount = strip(body).split(/\s+/).filter(w => w.length > 1).length;
-
-  // Client-side render detection. The crawler fetches raw HTML only (no headless browser — see
-  // ARCHITECTURE.md §7), so a SPA that mounts content via JS shows up as an empty shell here, and
-  // every content-based signal below (word count, H1 presence) would be a lie about the rendered
-  // page. These two flags feed the js_rendered issue in the second pass; detecting them here, on the
-  // original html before script-stripping, is the only point where the evidence still exists.
-  const spaMarker = /\bid=["']?(root|__next|__nuxt|app)["']?/i.test(html) || /data-reactroot|data-react-helmet/i.test(html);
-  // A large inline/bundled script is the other half of the signal: near-empty static HTML with a
-  // 50KB+ payload is the universal shape of a JS-bundled app shell. Measured on the raw html (the
-  // body above has already had every <script> removed), summing all script tag contents.
-  const hasLargeScript = (html.match(/<script\b[^>]*>([\s\S]*?)<\/script>/gi) ?? [])
-    .reduce((sum, tag) => sum + tag.length, 0) > 50_000;
-
-  return { title, metaDesc, robots, canonical, h1Count, hrefs, imagesNoAlt, wordCount, spaMarker, hasLargeScript };
-}
 
 // ─── URL normalization ──────────────────────────────────────────────────────────
 
@@ -88,6 +40,7 @@ interface PageResult {
   contentType: string;
   loadMs: number;
   html: string | null;
+  responseHeaders: Record<string, string>;
   fetchError?: string;
 }
 
@@ -103,14 +56,18 @@ async function fetchPage(url: string): Promise<PageResult> {
     });
     const loadMs = Date.now() - started;
     const contentType = res.headers.get("content-type") ?? "";
+    const responseHeaders = Object.fromEntries([
+      "content-security-policy", "strict-transport-security", "x-content-type-options",
+      "x-frame-options", "referrer-policy", "x-robots-tag",
+    ].map(name => [name, res.headers.get(name) ?? ""]));
     if (res.status >= 300 && res.status < 400) {
-      return { url, httpStatus: res.status, redirectTo: res.headers.get("location"), contentType, loadMs, html: null };
+      return { url, httpStatus: res.status, redirectTo: res.headers.get("location"), contentType, loadMs, html: null, responseHeaders };
     }
     const isHtml = contentType.includes("html") || contentType === "";
     const html = res.ok && isHtml ? await res.text() : null;
-    return { url, httpStatus: res.status, redirectTo: null, contentType, loadMs, html };
+    return { url, httpStatus: res.status, redirectTo: null, contentType, loadMs, html, responseHeaders };
   } catch (e: any) {
-    return { url, httpStatus: 0, redirectTo: null, contentType: "", loadMs: Date.now() - started, html: null, fetchError: String(e?.message ?? e).slice(0, 120) };
+    return { url, httpStatus: 0, redirectTo: null, contentType: "", loadMs: Date.now() - started, html: null, responseHeaders: {}, fetchError: String(e?.message ?? e).slice(0, 120) };
   }
 }
 
@@ -237,7 +194,7 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
     type QItem = { url: string; depth: number };
     const queue: QItem[] = [{ url: root.href, depth: 0 }];
     const seen = new Set<string>([root.href]);
-    const results = new Map<string, PageResult & { depth: number; ex?: ReturnType<typeof extract>; internalTargets?: string[] }>();
+    const results = new Map<string, PageResult & { depth: number; ex?: AuditHtmlSignals; internalTargets?: string[] }>();
 
     let crawled = 0;
     const workers = Array.from({ length: CONCURRENCY }, async () => {
@@ -248,7 +205,7 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
         const page = await fetchPage(item.url);
         const entry: any = { ...page, depth: item.depth };
         if (page.html) {
-          const ex = extract(page.html);
+          const ex = extractAuditHtml(page.html);
           entry.ex = ex;
           entry.internalTargets = [];
           for (const href of ex.hrefs) {
@@ -297,53 +254,80 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
     const issueTotals: Record<string, number> = {};
     const bump = (code: string) => { issueTotals[code] = (issueTotals[code] ?? 0) + 1; };
 
+    const redirectTrace = (start: string): { hops: number; loop: boolean } => {
+      const visited = new Set<string>();
+      let current = start;
+      let hops = 0;
+      while (hops <= 10) {
+        if (visited.has(current)) return { hops, loop: true };
+        visited.add(current);
+        const page = results.get(current);
+        if (!page?.redirectTo || page.httpStatus < 300 || page.httpStatus >= 400) break;
+        const next = normalizeUrl(page.redirectTo, new URL(current));
+        if (!next || !sameHost(next, root)) break;
+        current = next.href;
+        hops++;
+      }
+      return { hops, loop: false };
+    };
+
     const rows: any[] = [];
     for (const [url, r] of results) {
-      const issues: string[] = [];
       const broken: string[] = [];
-      if (r.httpStatus === 0) issues.push("fetch_failed");
-      else if (r.httpStatus >= 400) issues.push("http_error");
-      else if (r.httpStatus >= 300) issues.push("redirect");
-      if (r.loadMs > 3000) issues.push("slow_response");
       if (r.ex) {
-        const { title, metaDesc, robots, canonical, h1Count, imagesNoAlt, wordCount, spaMarker, hasLargeScript, hrefs } = r.ex;
-        if (!title) issues.push("title_missing");
-        else {
-          if (title.length > 65) issues.push("title_too_long");
-          if ((titleCount.get(title.toLowerCase().trim()) ?? 0) > 1) issues.push("title_duplicate");
-        }
-        if (!metaDesc) issues.push("description_missing");
-        else if (metaDesc.length > 165) issues.push("description_too_long");
-        // Client-side render detection — three signals together, never one. A near-empty text body
-        // with no navigation links AND a SPA marker or large bundle is the shape of an unrendered JS
-        // app shell, not a thin static page. Requiring all three keeps false positives off the many
-        // static sites that happen to ship analytics scripts or a small framework bootstrapper.
-        const jsRendered = wordCount < 30 && hrefs.length <= 1 && (spaMarker || hasLargeScript);
-        if (jsRendered) {
-          issues.push("js_rendered");
-        } else {
-          // h1_missing and thin_content are suppressed on a JS-rendered shell because they describe
-          // the (empty) raw HTML, not the rendered DOM — flagging them would send the user to "fix"
-          // content that exists, just not in the bytes the crawler received.
-          if (h1Count === 0) issues.push("h1_missing");
-          if (h1Count > 1) issues.push("h1_multiple");
-          if (wordCount < 150) issues.push("thin_content");
-        }
-        if (/noindex/.test(robots)) issues.push("noindex");
-        if (canonical) {
-          try {
-            const c = new URL(canonical, url);
-            const here = new URL(url);
-            if (c.href.replace(/\/$/, "") !== here.href.replace(/\/$/, "")) issues.push("canonical_mismatch");
-          } catch { /* malformed canonical — ignore */ }
-        }
-        if (imagesNoAlt > 0) issues.push("images_no_alt");
         for (const target of new Set(r.internalTargets ?? [])) {
           const st = statusOf.get(target);
           if (st !== undefined && (st >= 400 || st === 0)) broken.push(target);
         }
-        if (broken.length) issues.push("broken_links");
       }
+
+      const redirect = redirectTrace(url);
+      const robots = [r.ex?.robots ?? "", r.responseHeaders["x-robots-tag"] ?? ""]
+        .filter(Boolean).join(", ").toLowerCase();
+      let canonicalInvalid = false;
+      let canonicalMismatch = false;
+      if (r.ex?.canonical) {
+        try {
+          const canonicalUrl = new URL(r.ex.canonical, url);
+          const here = new URL(url);
+          canonicalMismatch = canonicalUrl.href.replace(/\/$/, "") !== here.href.replace(/\/$/, "");
+        } catch { canonicalInvalid = true; }
+      }
+      const jsRendered = !!r.ex && r.ex.wordCount < 30 && r.ex.hrefs.length <= 1 && (r.ex.spaMarker || r.ex.hasLargeScript);
+      // Redirect targets from the start URL keep depth 0, so the final homepage still receives
+      // site-scope header/schema checks when http→https or apex→www is configured correctly.
+      const isRoot = r.depth === 0;
+      const facts: AuditPageFacts = {
+        hasHtml: !!r.ex,
+        isRoot,
+        isHttps: new URL(url).protocol === "https:",
+        httpStatus: r.httpStatus,
+        loadMs: r.loadMs,
+        redirectHops: redirect.hops,
+        redirectLoop: redirect.loop,
+        title: r.ex?.title ?? "",
+        titleDuplicate: !!r.ex?.title && (titleCount.get(r.ex.title.toLowerCase().trim()) ?? 0) > 1,
+        metaDescription: r.ex?.metaDesc ?? "",
+        robots,
+        robotsConflict: robotsDirectivesConflict(robots),
+        canonical: r.ex?.canonical?.trim() || null,
+        canonicalInvalid,
+        canonicalMismatch,
+        h1Count: r.ex?.h1Count ?? 0,
+        wordCount: r.ex?.wordCount ?? 0,
+        imagesNoAlt: r.ex?.imagesNoAlt ?? 0,
+        brokenLinkCount: broken.length,
+        jsRendered,
+        viewportPresent: r.ex?.viewportPresent ?? false,
+        htmlLang: r.ex?.htmlLang ?? "",
+        jsonLdInvalid: r.ex?.jsonLdInvalid ?? 0,
+        organizationSchemaIncomplete: r.ex?.organizationSchemaIncomplete ?? false,
+        openGraphMissing: r.ex?.openGraphMissing.length ?? 0,
+        twitterCardIncomplete: r.ex?.twitterCardIncomplete ?? false,
+        mixedContentCount: r.ex?.mixedContentUrls.length ?? 0,
+        missingSecurityHeaders: isRoot && r.ex ? missingSecurityHeaders(r.responseHeaders, new URL(url).protocol === "https:").length : 0,
+      };
+      const issues = evaluateAuditPageRules(facts);
       for (const code of issues) bump(code);
       rows.push({
         auditId,
@@ -355,9 +339,9 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
         metaDescription: r.ex?.metaDesc?.slice(0, 400) ?? "",
         h1Count: r.ex?.h1Count ?? 0,
         canonical: r.ex?.canonical ?? null,
-        noindex: /noindex/.test(r.ex?.robots ?? ""),
+        noindex: /(^|[\s,;:])noindex(?=$|[\s,;])/i.test(robots),
         internalLinks: new Set(r.internalTargets ?? []).size,
-        externalLinks: r.ex ? r.ex.hrefs.length - (r.internalTargets?.length ?? 0) : 0,
+        externalLinks: r.ex ? Math.max(0, r.ex.hrefs.length - (r.internalTargets?.length ?? 0)) : 0,
         imagesNoAlt: r.ex?.imagesNoAlt ?? 0,
         wordCount: r.ex?.wordCount ?? 0,
         loadMs: r.loadMs,
@@ -374,7 +358,14 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
       await prisma.siteAuditPage.createMany({ data: rows.slice(i, i + 50) });
     }
 
-    const pagesWithIssues = rows.filter(r => r.issues).length;
+    const rowIssues = (row: any): string[] => row.issues ? JSON.parse(row.issues) : [];
+    const pagesWithFindings = rows.filter(row => row.issues).length;
+    const pagesWithIssues = rows.filter(row => rowIssues(row).some(issue => AUDIT_ACTIONABLE_RULE_IDS.has(issue))).length;
+    // Informational and useful-but-non-universal checks remain visible without destabilizing the
+    // established health score. Older audits keep the score already stored with them.
+    const pagesWithScoredIssues = rows.filter(row => {
+      return rowIssues(row).some(issue => AUDIT_SCORING_RULE_IDS.has(issue));
+    }).length;
     // Awaited here, at the only point its result is used: the summary. By now the crawl has run
     // its course, so a slow robots/llms fetch (or one that already resolved) costs no extra latency.
     // The catch above already nulls a failed check, so a network error here never fails the audit.
@@ -406,7 +397,9 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
         summary: JSON.stringify({
           pages: rows.length,
           pagesWithIssues,
-          healthScore: rows.length ? Math.round(100 * (1 - pagesWithIssues / rows.length)) : 0,
+          pagesWithFindings,
+          pagesWithScoredIssues,
+          healthScore: rows.length ? Math.round(100 * (1 - pagesWithScoredIssues / rows.length)) : 0,
           issues: issueTotals,
           avgLoadMs: rows.length ? Math.round(rows.reduce((s, r) => s + r.loadMs, 0) / rows.length) : 0,
           // Site-wide (not per-page), so it lives in the summary rather than as a row issue. Old

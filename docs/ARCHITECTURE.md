@@ -543,17 +543,28 @@ these tools ship in `.agents/skills/`.
 
 ## 7. Site Audit crawler (`src/lib/audit/crawler.ts`)
 
-A deliberately dependency-free technical audit: plain `fetch` + regex extraction, no headless
-browser — the audited signals (status codes, titles/meta, H1s, canonicals, `noindex`, link
-graph, word counts) all live in raw HTML. The crawler BFS-walks same-host pages from the site
-root (≤500 pages, 4 workers, manual-redirect mode so 3xx chains are visible, a politeness
-delay per request), then a **second pass** computes issues that need the whole crawl map:
-broken internal links (a link is "broken" if its target was crawled and returned ≥400) and
-duplicate titles. Results land in `SiteAuditPage` rows plus a JSON summary (issue counts +
-health score) on `SiteAudit`.
+A deliberately dependency-free technical audit: plain `fetch` + deterministic HTML/header
+extraction, no headless browser. The executable 30-rule registry in `rules.ts` is the single
+source for crawler evaluation, UI labels/severity, exports, verification and MCP. Alongside the
+original status/title/meta/H1/canonical/link/content checks it covers redirect chains/loops,
+conflicting robots directives, missing/invalid canonicals, viewport/language, invalid JSON-LD,
+incomplete Organization/Person and social metadata, mixed content and root security headers.
+`pageSignals.ts` owns parsing so attribute order and JSON-LD edge cases are unit-tested outside a
+live crawl.
 
-Two checks ride along on every audit but live outside the per-page issue model, because they
-are site-wide rather than per-page:
+The crawler BFS-walks same-host pages from the site root (≤500 pages, 4 workers,
+manual-redirect mode so 3xx chains are visible, a politeness delay per request), then a **second
+pass** computes issues that need the whole crawl map: broken internal links, duplicate titles and
+redirect traces. Results land in `SiteAuditPage` rows plus a JSON summary on `SiteAudit`.
+Informational and useful-but-non-universal checks remain visible but do not lower the established
+health score; older audit snapshots retain the score already stored with them.
+
+This registry belongs only to runtime **Site Audit**. It imports no `AeoCheck`/AI Visibility or
+`GeoAudit` data and does not change those products' settings, APIs or screens. The AI-crawler card
+below is a separate robots-access observation made during Site Audit, not a merge with either
+visibility product.
+
+One site-wide check rides along on every audit outside the per-page issue model:
 
 - **AI Crawlability** (`src/lib/audit/aiCrawl.ts`) — fetches `/robots.txt` and `/llms.txt` once
   and reports, per AI crawler (GPTBot, ClaudeBot, PerplexityBot, OAI-SearchBot, Google-Extended,
@@ -561,11 +572,10 @@ are site-wide rather than per-page:
   root block on GPTBot is a silent reason an answer engine never cites the site; this surfaces it
   as a fixable lever rather than just the GEO/AEO symptom ("not cited"). Stored in the audit
   summary's `aiCrawlability` key (free-form JSON, no migration) and rendered as its own card.
-- **`js_rendered` issue** — a page is flagged when the raw HTML is a near-empty JS app shell
-  (low text word count + ≤1 internal link + a SPA marker like `id="root"`/`__next__` or a large
-  bundled script). On such pages the static-HTML signals `thin_content` and `h1_missing` are
-  suppressed, because they describe the empty shell, not the rendered DOM — flagging them would
-  send a user to fix content that exists. The flag is informational (blue), not a fault.
+The per-page **`js_rendered` issue** flags a near-empty JS app shell (low text word count + ≤1
+internal link + a SPA marker or a large bundled script). On such pages `thin_content` and
+`h1_missing` are suppressed because they describe the empty raw shell, not the rendered DOM. The
+flag is informational and does not lower health.
 
 Runs as the same fire-and-forget job pattern as `SeoJob` (§1): `POST /api/audit` creates the
 row and calls `runAudit()` without awaiting; the client polls `GET /api/audit?siteId=`. A run with

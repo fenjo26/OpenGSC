@@ -373,7 +373,7 @@ const CORE_TOOLS: McpTool[] = [
     name: "get_site_audit",
     cost: "local",
     description:
-      "Latest technical site audit from OpenGSC's built-in crawler: health score, issue counts (broken links, missing/duplicate titles, missing meta descriptions, H1 problems, noindex, canonical mismatches, thin content, slow pages), and the affected URLs for a chosen issue. If no audit exists, tell the user to run one in the site's Audit tab.",
+      "Latest technical Site Audit from OpenGSC's built-in crawler: health score and issue counts across HTTP/redirects, metadata, canonicals/robots, HTML structure, JSON-LD/social metadata, links, mixed content, security headers and response time, plus affected URLs for one issue. This is the runtime Site Audit only; it does not combine AI Visibility or SEO Tools → GEO data. If no audit exists, tell the user to run one in the site's Audit tab.",
     inputSchema: {
       type: "object",
       properties: {

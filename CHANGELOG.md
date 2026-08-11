@@ -9,8 +9,10 @@ All notable changes to OpenGSC. Dates are release dates; the version shown in
 
 - Audit Verification re-crawls the same scope and separates resolved findings, persistent
   findings, regressions and inconclusive pages in the UI, API and MCP.
-- Shared audit rule registry, additive job lifecycle/heartbeat fields, and verified SQLite backup
-  before updater schema changes.
+- Executable 30-rule Site Audit registry with redirect chain/loop, canonical and robots conflicts,
+  viewport/language, JSON-LD, social metadata, mixed-content and security-header checks. It remains
+  independent from AI Visibility and SEO Tools → GEO.
+- Additive job lifecycle/heartbeat fields and verified SQLite backup before updater schema changes.
 - Localized Private Indexer risk acknowledgement and responsible-use documentation.
 - Release metadata and seven-locale consistency checks under `npm run check`.
 - Outreach Workspace inside Link Monitor with campaigns, evidence snapshots, manual follow-ups,
