@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { buildRelatedIntentGroups, siteBrandTerms } from '@/lib/cannibalization/relatedIntent';
 
 // Extract brand terms from site URL for non-brand filtering
 function brandTerms(siteUrl: string): string[] {
@@ -35,6 +36,7 @@ export async function GET(req: Request) {
   const days    = Math.min(parseInt(searchParams.get('days') ?? '90'), 365);
   const minImpr = parseInt(searchParams.get('minImpressions') ?? '30');
   const limit   = Math.min(parseInt(searchParams.get('limit') ?? '60'), 200);
+  const mode    = searchParams.get('mode') === 'related' ? 'related' : 'exact';
 
   let siteIds: string[];
   let siteMap: Map<string, any>;
@@ -52,6 +54,41 @@ export async function GET(req: Request) {
 
   const since = new Date();
   since.setDate(since.getDate() - days);
+
+  // Additive second mode: the default exact-query response below remains byte-for-byte the same
+  // shape for existing UI/MCP consumers. Related Intent uses only already-synced GSC rows and a
+  // deterministic candidate index — no LLM, live SERP call or paid provider.
+  if (mode === 'related') {
+    const dailyRows = await prisma.dailyMetric.findMany({
+      where: { siteId: { in: siteIds }, date: { gte: since }, query: { not: '' }, url: { not: '' } },
+      select: { siteId: true, query: true, url: true, date: true, clicks: true, impressions: true, ctr: true, position: true },
+      orderBy: { impressions: 'desc' },
+      take: 30_000,
+    });
+    const rowsBySite = new Map<string, typeof dailyRows>();
+    for (const row of dailyRows) {
+      const rows = rowsBySite.get(row.siteId) ?? [];
+      rows.push(row);
+      rowsBySite.set(row.siteId, rows);
+    }
+    const groups = siteIds.flatMap(currentSiteId => {
+      const site = siteMap.get(currentSiteId);
+      if (!site) return [];
+      const siteName = site.url.replace('sc-domain:', '').replace(/^https?:\/\//, '').replace(/\/$/, '');
+      return buildRelatedIntentGroups(
+        rowsBySite.get(currentSiteId) ?? [],
+        { siteId: currentSiteId, siteName, brandTerms: siteBrandTerms(site.siteId), minImpressions: minImpr, limit },
+      );
+    }).sort((left, right) => right.confidence - left.confidence || right.totalImpressions - left.totalImpressions).slice(0, limit);
+
+    return NextResponse.json({
+      mode: 'related',
+      groups,
+      brand: siteIds.length === 1 ? brandTerms(siteMap.values().next().value.siteId) : [],
+      methodology: { deterministic: true, paidCalls: 0, candidateIndex: ['query_tokens', 'ranking_urls'], autoActions: false },
+      truncated: dailyRows.length === 30_000,
+    });
+  }
 
   // ── Aggregate (query, url) pairs ───────────────────────────────────────────────
   type AggRow = { siteId: string; url: string; query: string; _sum: { clicks: number | null; impressions: number | null }; _avg: { ctr: number | null; position: number | null } };

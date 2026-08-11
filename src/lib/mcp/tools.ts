@@ -43,6 +43,7 @@ import { METRICS_TOOLS } from "./toolsMetrics";
 import { DEMAND_TOOLS } from "./toolsDemand";
 import { OUTREACH_TOOLS } from "./toolsOutreach";
 import { rawQuery } from "@/lib/db/raw";
+import { buildRelatedIntentGroups, siteBrandTerms } from "@/lib/cannibalization/relatedIntent";
 
 export type { McpTool, ToolCost };
 
@@ -175,11 +176,12 @@ const CORE_TOOLS: McpTool[] = [
     name: "get_cannibalization",
     cost: "local",
     description:
-      "Keyword cannibalization for a site: queries where two or more of the site's own URLs compete in search results, with per-URL clicks/impressions/position so the winner and loser pages are obvious. High-impression queries with a close position split are consolidation candidates.",
+      "Cannibalization for one site. mode=exact (default, backward-compatible) returns queries where two or more URLs compete. mode=related deterministically finds different query wordings with similar intent and conflicting ranking URLs, including confidence, page roles, flip-flops and review-only recommendations. Related mode is local: no LLM, live SERP or paid call, and it never changes pages/canonicals/redirects.",
     inputSchema: {
       type: "object",
       properties: {
         site: siteArg,
+        mode: { type: "string", enum: ["exact", "related"], description: "exact (default) or related intent conflicts" },
         days: { type: "number", description: "Lookback window in days (default 90)" },
         minImpressions: { type: "number", description: "Minimum summed impressions per query (default 30)" },
         limit: { type: "number", description: "Max queries (default 30, max 100)" },
@@ -191,6 +193,29 @@ const CORE_TOOLS: McpTool[] = [
       const since = sinceDate(args.days, 90);
       const minImpr = Math.max(0, Number(args.minImpressions ?? 30));
       const take = lim(args.limit, 30, 100);
+
+      if (args.mode === "related") {
+        const rows = await prisma.dailyMetric.findMany({
+          where: { siteId: site.id, date: { gte: since }, query: { not: "" }, url: { not: "" } },
+          select: { query: true, url: true, date: true, clicks: true, impressions: true, ctr: true, position: true },
+          orderBy: { impressions: "desc" },
+          take: 30_000,
+        });
+        const relatedConflicts = buildRelatedIntentGroups(rows, {
+          siteId: site.id,
+          siteName: site.url.replace("sc-domain:", "").replace(/^https?:\/\//, "").replace(/\/$/, ""),
+          brandTerms: siteBrandTerms(site.siteId),
+          minImpressions: minImpr,
+          limit: take,
+        });
+        return {
+          site: site.url,
+          mode: "related",
+          relatedConflicts,
+          methodology: { deterministic: true, paidCalls: 0, candidateIndex: ["query_tokens", "ranking_urls"], autoActions: false },
+          truncated: rows.length === 30_000,
+        };
+      }
 
       const pairs = await prisma.dailyMetric.groupBy({
         by: ["query", "url"],

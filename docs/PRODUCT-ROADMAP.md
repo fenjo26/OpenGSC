@@ -19,10 +19,12 @@ URL и основных форматов API:
   `inconclusive` в UI, API и MCP.
 - Outreach Workspace внутри Links: campaigns, prospect evidence, stage history, follow-up,
   draft/copy без отправки, связь с Backlink/alive-check и четыре локальных MCP action.
+- Related Intent как второй режим существующей Cannibalization: inverted token/ranking-URL index,
+  page roles, position/flip-flop evidence, confidence и только review-рекомендации.
 
 Остаются отдельными следующими этапами: обновление внешнего сайта `opengsc.org`, первый корректный
-Git tag/GitHub Release, semantic cannibalization,
-Sitemap Inventory и Content Operations. Они не маскируются как готовые функции.
+Git tag/GitHub Release, Sitemap Inventory и Content Operations. Они не маскируются как готовые
+функции.
 
 ## 1. Цель
 
@@ -473,6 +475,12 @@ Email-интеграция рассматривается позже с rate lim
 
 **Источник идеи:** SEO Keyword Cannibalization & Intent Overlap Detector. Его простой
 Jaccard/bigram алгоритм рассматривается как прототип задачи, не как готовая semantic model.
+
+**Статус:** реализовано как аддитивный режим существующего отчёта. Exact-query остаётся режимом
+по умолчанию и сохраняет старый API shape. Related Intent строит кандидатов через inverted index
+по query tokens и наблюдаемым ranking URLs из GSC; live SERP/LLM не вызываются скрыто. Он показывает
+page role, query/URL overlap, position gap, дневные flip-flops, confidence и варианты только для
+ручной проверки. Для CJK используются детерминированные character bigrams.
 
 **Что сделать**
 

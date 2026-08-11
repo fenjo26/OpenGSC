@@ -18,6 +18,9 @@ All notable changes to OpenGSC. Dates are release dates; the version shown in
 - Outreach Workspace inside Link Monitor with campaigns, evidence snapshots, manual follow-ups,
   stage history, localized draft/copy, Backlink liveness linkage and local MCP actions. It never
   sends outreach automatically.
+- Related Intent mode on the existing Cannibalization report clusters different GSC query
+  formulations through inverted token/ranking-URL indexes, explains page roles, position gaps and
+  daily winner changes, and offers review-only actions without LLM, live SERP or paid calls.
 
 ### Security
 

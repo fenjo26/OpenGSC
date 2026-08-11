@@ -96,6 +96,16 @@ mail: its localized pitch is a deterministic draft for manual review/copy. All w
 by `userId`; campaign and backlink ownership are checked server-side. These models intentionally
 have no relationship to `GeoAudit`, `AeoCheck` or the Site Audit crawler.
 
+**Cannibalization** keeps its original exact-query algorithm and API response as the default.
+`mode=related` is an additive deterministic path in `lib/cannibalization/relatedIntent.ts`: it
+builds candidate pairs through inverted indexes over normalized query tokens and observed GSC
+ranking URLs, then scores lexical similarity, URL overlap, significant competing-page share,
+position distance and day-to-day dominant-URL changes. This avoids a portfolio-wide O(n²) scan.
+The result includes inferred query intent and page roles plus review-only actions (`merge_review`,
+`differentiate`, `canonical_review`, `internal_linking`). It calls no LLM or live SERP provider and
+never performs any of those actions. CJK queries gain deterministic character bigrams rather than
+requiring a language-model tokenizer.
+
 ## 3. The SEO generation pipeline (`src/lib/seo/generate.ts`)
 
 This is the most intricate part of the codebase. `genOutline()` and `genText()` are each a chain of

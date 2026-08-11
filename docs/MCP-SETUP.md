@@ -110,7 +110,7 @@ should I do first?”*
 | `get_search_performance` | GSC totals + top queries/pages for a date window; `page` param scopes to one page |
 | `compare_periods` | Period-over-period deltas: winners, losers, new & lost queries/pages |
 | `get_striking_distance` | Queries at positions 4–20 with impressions — fastest wins |
-| `get_cannibalization` | Queries where 2+ of the site's own URLs compete |
+| `get_cannibalization` | Exact-query conflicts by default; `mode=related` adds deterministic related-intent clusters, page roles, flip-flops and review-only actions |
 | `get_content_decay` | Pages trending down, with per-bucket history; Warning past −5%, Critical past −25% |
 | `get_ctr_benchmark` | Top-10 queries whose real CTR trails the benchmark for their position — a snippet problem, not a content one |
 | `get_content_groups` | Your Content Groups and Topic Clusters with aggregate performance |

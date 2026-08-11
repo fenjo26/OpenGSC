@@ -137,7 +137,7 @@ porting guide and do not promise feature parity; see [`docs/TESTING-MYSQL.md`](d
 Every site gets its own deep-dive page with clicks/impressions/CTR/position trends, and four analyses that a stock GSC UI doesn't give you:
 
 - **Striking Distance Keywords** — queries ranking position 4–20 with real impression volume: your fastest wins to page 1.
-- **Keyword Cannibalization** — queries where multiple URLs on your own site compete against each other, with a clear winner/loser breakdown.
+- **Keyword Cannibalization** — the original exact-query winner/loser report plus a separate **Related Intent** mode that finds different query formulations splitting visibility across your pages. It explains ranking-URL overlap, page roles, position gaps and daily winner changes, then suggests what to review—never an automatic merge, canonical or redirect.
 - **Content Decay Map** — a heatmap of pages losing traffic over time, so you catch decay before it's a crisis.
 - **CTR Benchmark** — your actual click-through rate vs. industry-standard CTR curves by position, surfacing pages where a better title/meta could unlock clicks you're currently leaving on the table.
 

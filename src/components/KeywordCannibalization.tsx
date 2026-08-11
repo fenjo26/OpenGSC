@@ -2,7 +2,8 @@
 
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
-import { withShare, isGuestView } from "@/lib/shareParam";
+import { withShare } from "@/lib/shareParam";
+import RelatedIntentCannibalization from "@/components/RelatedIntentCannibalization";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface CannibalPage {
@@ -351,10 +352,14 @@ function CannibalizationTable({ siteDbId }: { siteDbId: string }) {
 
 // ─── Main export ───────────────────────────────────────────────────────────────
 export default function KeywordCannibalization({ siteDbId }: { siteDbId: string }) {
+  const { t } = useLanguage();
+  const [mode, setMode] = useState<"exact" | "related">("exact");
   return (
     <div style={{ border: "1px solid var(--color-border)", borderRadius: "12px", overflow: "hidden", marginTop: "20px", background: "var(--color-card)" }}>
-      <InfoBlock />
-      <CannibalizationTable siteDbId={siteDbId} />
+      <div style={{ display: "flex", gap: "4px", padding: "10px 14px 0", borderBottom: "1px solid var(--color-border)", overflowX: "auto" }}>
+        {(["exact", "related"] as const).map(value => <button key={value} onClick={() => setMode(value)} style={{ padding: "8px 13px", border: "none", borderBottom: mode === value ? "2px solid #3B82F6" : "2px solid transparent", background: "transparent", color: mode === value ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontSize: "12px", fontWeight: mode === value ? 700 : 500, cursor: "pointer", whiteSpace: "nowrap" }}>{t(value === "exact" ? "kcModeExact" : "kcModeRelated")}</button>)}
+      </div>
+      {mode === "exact" ? <><InfoBlock /><CannibalizationTable siteDbId={siteDbId} /></> : <RelatedIntentCannibalization siteDbId={siteDbId} />}
     </div>
   );
 }
