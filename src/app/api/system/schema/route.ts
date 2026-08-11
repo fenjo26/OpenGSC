@@ -38,6 +38,9 @@ const EXPECTED_TABLES: { table: string; feature: string }[] = [
   { table: "Digest", feature: "Digests" },
   { table: "GeoAudit", feature: "GEO Audit" },
   { table: "LinkWatchBrand", feature: "Link Monitor" },
+  { table: "OutreachCampaign", feature: "Outreach Workspace" },
+  { table: "OutreachProspect", feature: "Outreach Workspace" },
+  { table: "OutreachStageEvent", feature: "Outreach Workspace" },
 ];
 
 export async function GET() {
@@ -60,7 +63,7 @@ export async function GET() {
         );
     // Lower-cased on both sides, because MySQL on Windows runs with lower_case_table_names=1 and
     // stores every table folded to lowercase. `KeywordMetricCache` comes back as
-    // `keywordmetriccache`, an exact-match check finds none of the fourteen, and the banner tells
+    // `keywordmetriccache`, an exact-match check finds none of the expected tables, and the banner tells
     // a correctly migrated instance to run `prisma db push` — which then reports the schema is
     // already in sync, leaving the user with two tools contradicting each other.
     present = new Set(rows.map(r => String(r.name).toLowerCase()));

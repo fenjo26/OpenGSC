@@ -127,6 +127,19 @@ should I do first?”*
 | `get_backlinks` | The site's own backlink inventory with liveness/index status |
 | `get_link_mentions` | Competitor backlinks (Link Monitor) + multi-linker domains |
 
+### Outreach Workspace (local)
+
+These tools extend Link Monitor's saved evidence into a manual pipeline. They are separate from
+Site Audit, GEO Audit and AI Visibility. None sends email, fetches a publisher or spends API
+credits.
+
+| Tool | Mode | Returns / changes |
+|---|---|---|
+| `list_outreach_prospects` | read-only | Campaigns, prospects, evidence, stages, follow-ups and won-link state |
+| `save_outreach_prospect` | local write, idempotent | Saves one domain/source as a prospect; duplicate domains return the existing row |
+| `update_outreach_prospect` | local write, idempotent | Updates stage/contact/follow-up and records stage history |
+| `create_outreach_campaign` | local write | Creates a grouping/measurement campaign; it does not launch anything |
+
 ### Market data — demand, difficulty, competitors
 
 Everything Search Console cannot see: how much demand exists, how hard a keyword is, and who is

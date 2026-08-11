@@ -20,7 +20,7 @@ const PROTOCOL_VERSION = "2025-06-18";
 const SERVER_INFO = { name: "opengsc", version: pkg.version };
 
 const INSTRUCTIONS =
-  "OpenGSC — self-hosted Google Search Console dashboard with rank tracking, AI-answer-engine (AEO) visibility, content decay and CTR analysis, backlinks, a competitor Link Monitor, a built-in site-audit crawler, GEO audits, a private indexer network, and an AI SEO content suite. " +
+  "OpenGSC — self-hosted Google Search Console dashboard with rank tracking, AI-answer-engine (AEO) visibility, content decay and CTR analysis, backlinks, a competitor Link Monitor plus manual Outreach Workspace, a built-in site-audit crawler, separate GEO audits, a private indexer network, and an AI SEO content suite. " +
   "Call get_capabilities first: it reports which modules actually hold data and groups every tool by what calling it costs. Then list_sites for exact site identifiers.\n\n" +
   "Cost tiers, and they matter:\n" +
   "• local — reads the instance's own database. Free, instant, the large majority of tools.\n" +
@@ -69,16 +69,17 @@ async function authUserId(req: Request): Promise<string | null> {
 // without parsing our prose. openWorldHint is true for anything that leaves the box.
 function describeTool(t: McpTool) {
   const cost = t.cost ?? "local";
+  const readOnly = t.readOnly ?? cost !== "paid";
   return {
     name: t.name,
     description: t.description,
     inputSchema: t.inputSchema,
     annotations: {
       title: t.name,
-      readOnlyHint: cost !== "paid",
-      destructiveHint: false,
-      idempotentHint: cost === "local",
-      openWorldHint: cost !== "local",
+      readOnlyHint: readOnly,
+      destructiveHint: t.destructive ?? false,
+      idempotentHint: t.idempotent ?? (readOnly && cost === "local"),
+      openWorldHint: t.openWorld ?? cost !== "local",
     },
     _meta: { cost },
   };

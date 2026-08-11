@@ -6,11 +6,13 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Loader2, AlertTriangle, Plus, X, RefreshCw, Link2, Sparkles, ExternalLink, Star } from "lucide-react";
+import { Loader2, AlertTriangle, Plus, X, RefreshCw, Link2, Sparkles, ExternalLink, Star, Send, Target, Check } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { getTaskCreds } from "@/lib/seo/keys";
 import { getMetricsCreds } from "@/lib/seo/metricsClient";
 import { markdownToHtml } from "@/lib/seo/outlineFormat";
+import OutreachWorkspace from "@/components/OutreachWorkspace";
+import { outreachErrorKey } from "@/lib/outreach/types";
 
 const card = "panel";
 const inputStyle = "tool-input";
@@ -38,12 +40,17 @@ export default function LinkWatchPage() {
   const [err, setErr] = useState("");
   const [runInfo, setRunInfo] = useState("");
   const [favs, setFavs] = useState<Set<string>>(new Set());
-  const [view, setView] = useState<"domains" | "mentions">("domains");
+  const [section, setSection] = useState<"mentions" | "prospects" | "campaigns">("mentions");
+  const [resultView, setResultView] = useState<"domains" | "mentions">("domains");
+  const [outreachRefresh, setOutreachRefresh] = useState(0);
+  const [prospectDomains, setProspectDomains] = useState<Set<string>>(new Set());
+  const [outreachInfo, setOutreachInfo] = useState("");
 
   useEffect(() => {
     if (!mounted) return;
     try { setFavs(new Set(JSON.parse(localStorage.getItem("lwFavDomains") || "[]"))); } catch {}
     reload();
+    reloadOutreachDomains();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted]);
 
@@ -52,6 +59,27 @@ export default function LinkWatchPage() {
       const d = await fetch("/api/linkwatch").then(r => r.json());
       setBrands(d.brands || []); setMentions(d.mentions || []); setTopDomains(d.topDomains || []);
     } catch {}
+  }
+
+  async function reloadOutreachDomains() {
+    try {
+      const d = await fetch("/api/outreach", { cache: "no-store" }).then(r => r.json());
+      setProspectDomains(new Set((d.prospects || []).map((prospect: any) => String(prospect.domain))));
+    } catch {}
+  }
+
+  async function addProspect(input: { domain?: string; sourceUrl?: string }) {
+    setErr(""); setOutreachInfo("");
+    try {
+      const res = await fetch("/api/outreach", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "outreach_error");
+      setOutreachInfo(t(d.created ? "outreachProspectAdded" : "outreachProspectExists"));
+      await reloadOutreachDomains();
+      setOutreachRefresh(value => value + 1);
+    } catch (e: any) { setErr(t(outreachErrorKey(e?.message ?? e))); }
   }
 
   function toggleFav(domain: string) {
@@ -113,7 +141,7 @@ export default function LinkWatchPage() {
     setInsLoading(false);
   }
 
-  const shownMentions = mentions.filter(m => favs.size === 0 || view !== "mentions" ? true : favs.has(m.domainFrom));
+  const shownMentions = mentions.filter(m => favs.size === 0 || resultView !== "mentions" ? true : favs.has(m.domainFrom));
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -124,13 +152,27 @@ export default function LinkWatchPage() {
         <p style={{ fontSize: "13px", color: "var(--color-text-secondary)", margin: 0 }}>{t("lwSub")}</p>
       </div>
 
+      <div style={{ display: "flex", gap: "4px", borderBottom: "1px solid var(--color-border)", overflowX: "auto" }}>
+        {([
+          ["mentions", "lwMentions", Link2],
+          ["prospects", "outreachProspects", Send],
+          ["campaigns", "outreachCampaigns", Target],
+        ] as const).map(([value, key, Icon]) => (
+          <button key={value} onClick={() => setSection(value)} style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "9px 14px", border: "none", borderBottom: section === value ? "2px solid var(--color-accent-purple)" : "2px solid transparent", background: "transparent", color: section === value ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontSize: "12px", fontWeight: section === value ? 700 : 500, cursor: "pointer", whiteSpace: "nowrap" }}>
+            <Icon size={14} /> {t(key)}
+          </button>
+        ))}
+      </div>
+
+      {err && <div className={card} style={{ borderColor: "rgba(255,69,58,0.35)", background: "rgba(255,69,58,0.06)", color: "var(--color-accent-red)", fontSize: "12px" }}>{err}</div>}
+
+      {section === "mentions" && <>
+
       {mounted && !ahrefsKey && (
         <div className={card} style={{ borderColor: "rgba(255,159,10,0.35)", background: "rgba(255,159,10,0.06)", display: "flex", gap: "10px", alignItems: "center", fontSize: "13px", color: "var(--color-text-secondary)" }}>
           <AlertTriangle size={18} color="var(--color-accent-orange)" /> {t("lwNoKey")} <Link href="/settings?tab=metrics" style={{ color: "var(--color-accent-blue)" }}>{t("navMetrics")}</Link>
         </div>
       )}
-      {err && <div className={card} style={{ borderColor: "rgba(255,69,58,0.35)", background: "rgba(255,69,58,0.06)", color: "var(--color-accent-red)", fontSize: "12px" }}>{err}</div>}
-
       {/* Brands */}
       <div className="panel privacy-blur-all">
         <div className="tool-section-label">{t("lwBrands")} ({brands.length})</div>
@@ -162,7 +204,7 @@ export default function LinkWatchPage() {
           <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
             <div style={{ display: "flex", border: "1px solid var(--color-border)", borderRadius: "8px", overflow: "hidden" }}>
               {([["domains", t("lwTopDomains")], ["mentions", t("lwMentions")]] as const).map(([v, lbl]) => (
-                <button key={v} onClick={() => setView(v)} style={{ padding: "7px 12px", fontSize: "12px", fontWeight: 600, cursor: "pointer", border: "none", background: view === v ? "var(--color-text-primary)" : "var(--color-bg)", color: view === v ? "var(--color-bg)" : "var(--color-text-secondary)" }}>{lbl}</button>
+                <button key={v} onClick={() => setResultView(v)} style={{ padding: "7px 12px", fontSize: "12px", fontWeight: 600, cursor: "pointer", border: "none", background: resultView === v ? "var(--color-text-primary)" : "var(--color-bg)", color: resultView === v ? "var(--color-bg)" : "var(--color-text-secondary)" }}>{lbl}</button>
               ))}
             </div>
             <button onClick={genInsights} disabled={insLoading} style={{ ...btnGhost, marginLeft: "auto" }}>
@@ -170,18 +212,21 @@ export default function LinkWatchPage() {
             </button>
           </div>
 
-          {view === "domains" ? (
+          {resultView === "domains" ? (
             <div className="privacy-blur-all" style={{ display: "flex", flexDirection: "column", gap: "4px", maxHeight: "480px", overflow: "auto" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "26px minmax(0,1fr) 110px 80px 80px", gap: "8px", fontSize: "10px", fontWeight: 700, textTransform: "uppercase", color: "var(--color-text-tertiary)", padding: "4px 8px" }}>
-                <span /><span>{t("lwColDomain")}</span><span>{t("lwColBrands")}</span><span>{t("lwColLinks")}</span><span>{t("lwColMaxDr")}</span>
+              <div style={{ display: "grid", gridTemplateColumns: "26px minmax(0,1fr) 90px 70px 70px 110px", gap: "8px", fontSize: "10px", fontWeight: 700, textTransform: "uppercase", color: "var(--color-text-tertiary)", padding: "4px 8px" }}>
+                <span /><span>{t("lwColDomain")}</span><span>{t("lwColBrands")}</span><span>{t("lwColLinks")}</span><span>{t("lwColMaxDr")}</span><span />
               </div>
               {topDomains.map((d: any) => (
-                <div key={d.domainFrom} style={{ display: "grid", gridTemplateColumns: "26px minmax(0,1fr) 110px 80px 80px", gap: "8px", alignItems: "center", padding: "7px 8px", borderRadius: "8px", border: "1px solid var(--color-border)", fontSize: "12px" }}>
+                <div key={d.domainFrom} style={{ display: "grid", gridTemplateColumns: "26px minmax(0,1fr) 90px 70px 70px 110px", gap: "8px", alignItems: "center", padding: "7px 8px", borderRadius: "8px", border: "1px solid var(--color-border)", fontSize: "12px" }}>
                   <Star size={14} style={{ cursor: "pointer" }} color={favs.has(d.domainFrom) ? "#F59E0B" : "var(--color-border)"} fill={favs.has(d.domainFrom) ? "#F59E0B" : "none"} onClick={() => toggleFav(d.domainFrom)} />
                   <a href={`https://${d.domainFrom}`} target="_blank" rel="noreferrer" style={{ color: "var(--color-text-primary)", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis" }}>{d.domainFrom} <ExternalLink size={9} style={{ opacity: 0.5 }} /></a>
                   <span style={{ fontWeight: 700, color: Number(d.brandsLinked) > 1 ? "var(--color-accent-green)" : "var(--color-text-secondary)" }}>{Number(d.brandsLinked)}</span>
                   <span>{Number(d.links)}</span>
                   <span>DR {Math.round(Number(d.maxDr))}</span>
+                  <button onClick={() => addProspect({ domain: d.domainFrom })} disabled={prospectDomains.has(d.domainFrom)} style={{ ...btnGhost, padding: "5px 8px", fontSize: "10px", opacity: prospectDomains.has(d.domainFrom) ? 0.55 : 1 }}>
+                    {prospectDomains.has(d.domainFrom) ? <Check size={11} /> : <Plus size={11} />} {t(prospectDomains.has(d.domainFrom) ? "outreachSaved" : "outreachSaveProspect")}
+                  </button>
                 </div>
               ))}
             </div>
@@ -195,6 +240,9 @@ export default function LinkWatchPage() {
                   <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginTop: "2px" }}>
                     {m.domainFrom} → <b>{m.brand}</b> · DR {Math.round(m.drFrom)}{m.dofollow ? "" : " · nofollow"}{m.anchor ? ` · «${String(m.anchor).slice(0, 60)}»` : ""} · {m.firstSeen}
                   </div>
+                  <button onClick={() => addProspect({ domain: m.domainFrom, sourceUrl: m.urlFrom })} disabled={prospectDomains.has(m.domainFrom)} style={{ ...btnGhost, padding: "5px 8px", fontSize: "10px", marginTop: "6px", opacity: prospectDomains.has(m.domainFrom) ? 0.55 : 1 }}>
+                    {prospectDomains.has(m.domainFrom) ? <Check size={11} /> : <Plus size={11} />} {t(prospectDomains.has(m.domainFrom) ? "outreachSaved" : "outreachSaveProspect")}
+                  </button>
                 </div>
               ))}
             </div>
@@ -208,6 +256,10 @@ export default function LinkWatchPage() {
           <div className="seo-article" dangerouslySetInnerHTML={{ __html: markdownToHtml(insights) }} />
         </div>
       )}
+      {outreachInfo && <div style={{ fontSize: "12px", color: "var(--color-accent-green)" }}>{outreachInfo}</div>}
+      </>}
+
+      {section !== "mentions" && <OutreachWorkspace mode={section} refreshToken={outreachRefresh} onError={setErr} />}
     </div>
   );
 }

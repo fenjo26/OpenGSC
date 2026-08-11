@@ -1,9 +1,9 @@
 # OpenGSC — продуктовый roadmap и план интеграции OSS-идей
 
 > Статус документа: рабочий план, 12 августа 2026 года. Он описывает порядок работ и
-> критерии готовности. Фактический прогресс первой итерации отмечен ниже.
+> критерии готовности. Фактический прогресс итераций отмечен ниже.
 
-## Текущий прогресс первой итерации
+## Текущий прогресс
 
 На ветке `codex/roadmap-foundation` уже собран совместимый фундамент без изменения старых
 URL и основных форматов API:
@@ -17,10 +17,12 @@ URL и основных форматов API:
 - единый registry из 17 audit rules;
 - Audit Verification: повторный обход и результаты `resolved`, `still present`, `regression`,
   `inconclusive` в UI, API и MCP.
+- Outreach Workspace внутри Links: campaigns, prospect evidence, stage history, follow-up,
+  draft/copy без отправки, связь с Backlink/alive-check и четыре локальных MCP action.
 
 Остаются отдельными следующими этапами: обновление внешнего сайта `opengsc.org`, первый корректный
-Git tag/GitHub Release, Outreach Workspace, semantic cannibalization, Sitemap Inventory и Content
-Operations. Они не маскируются как готовые функции.
+Git tag/GitHub Release, дополнительные проверки именно для Site Audit, semantic cannibalization,
+Sitemap Inventory и Content Operations. Они не маскируются как готовые функции.
 
 ## 1. Цель
 
@@ -43,7 +45,8 @@ Operations. Они не маскируются как готовые функц�
 Новые функции должны встраиваться в существующие поверхности:
 
 - повторная проверка исправлений — внутрь **Site → Audit**, а не в новый верхнеуровневый раздел;
-- новые GEO/technical checks — в существующий audit rule engine;
+- выбранные technical/crawlability checks — в существующий Site Audit rule engine. Самостоятельные
+  **AI Visibility** и **SEO Tools → GEO** сохраняют свои данные, настройки, экраны и логику;
 - outreach — продолжение **SEO Tools → Links / Link Monitor**;
 - semantic intent conflicts — развитие существующей страницы **Cannibalization**;
 - sitemap inventory — развитие **Site → Indexing**;
@@ -330,7 +333,7 @@ Fire-and-forget и in-process schedulers сохраняют простую эк�
 - повторный POST с тем же idempotency key не создаёт вторую платную задачу;
 - restart semantics документированы в `docs/ARCHITECTURE.md`.
 
-## 6. Этап 1 — Audit Verification и единое audit-ядро
+## 6. Этап 1 — Audit Verification и реестр правил Site Audit
 
 ### 6.1 Audit Rule Registry
 
@@ -344,7 +347,7 @@ Fire-and-forget и in-process schedulers сохраняют простую эк�
 ```ts
 type AuditRule = {
   id: string;
-  category: "technical" | "content" | "performance" | "security" | "geo";
+  category: "technical" | "content" | "performance" | "security" | "crawlability";
   severity: "critical" | "high" | "medium" | "low" | "info";
   evaluate(input: AuditFacts): AuditFinding[];
 };
@@ -352,6 +355,11 @@ type AuditRule = {
 
 Каждый finding несёт `ruleId`, URL, verdict, evidence, impact, fix, source и confidence.
 Rule engine не должен зависеть от React, Prisma или конкретного reporter.
+
+Это реестр только встроенного **Site Audit**. Он не читает и не заменяет состояние
+**AI Visibility** или **SEO Tools → GEO**: у этих инструментов остаются самостоятельные модели,
+настройки, API и UI. Похожие сигналы могут иметь общую идею, но выполняются и объясняются в
+контексте своего инструмента.
 
 Добавить в существующий набор по приоритету:
 
@@ -761,11 +769,14 @@ timeline. Код AGPL не переносить.
 
 1. Является ли public checker приоритетом привлечения или сначала нужен installed-product value?
 2. Какой первый publishing target: GitHub-only или сразу adapter contract для CMS?
-3. Outreach MVP должен иметь только reminders или также draft emails без отправки?
-4. Нужно ли хранить audit screenshots, учитывая размер SQLite/backup, или начать с HTML evidence?
-5. Как долго хранить crawl snapshots и public reports?
-6. Какие background jobs безопасно автоматически resume, а какие всегда требуют подтверждения?
-7. Следующий release после Milestone A — patch `1.3.x` или feature release `1.4.0`?
+3. Нужно ли хранить audit screenshots, учитывая размер SQLite/backup, или начать с HTML evidence?
+4. Как долго хранить crawl snapshots и public reports?
+5. Какие background jobs безопасно автоматически resume, а какие всегда требуют подтверждения?
+6. Следующий release после Milestone A — patch `1.3.x` или feature release `1.4.0`?
+
+Решение по Outreach принято: MVP включает reminders и локализованный draft/copy, но никогда не
+отправляет сообщение автоматически. Первый publishing target для Content Operations — GitHub PR;
+CMS adapters остаются следующим расширением, а не частью первого контура.
 
 До ответа на эти вопросы можно реализовывать Milestone A и Audit Rule Registry: они полезны при
 любом выборе дальнейшего продуктового направления.

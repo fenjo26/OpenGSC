@@ -41,6 +41,7 @@ import { DATA_TOOLS, dataModuleCounts } from "./toolsData";
 import { OPTIMIZE_TOOLS } from "./toolsOptimize";
 import { METRICS_TOOLS } from "./toolsMetrics";
 import { DEMAND_TOOLS } from "./toolsDemand";
+import { OUTREACH_TOOLS } from "./toolsOutreach";
 import { rawQuery } from "@/lib/db/raw";
 
 export type { McpTool, ToolCost };
@@ -740,7 +741,7 @@ const CORE_TOOLS: McpTool[] = [
 
 // The single registry the route handler sees. Order matters only for readability in
 // tools/list — agents pick by name, and get_capabilities groups them by cost.
-export const MCP_TOOLS: McpTool[] = [...CORE_TOOLS, ...DATA_TOOLS, ...METRICS_TOOLS, ...DEMAND_TOOLS, ...OPTIMIZE_TOOLS];
+export const MCP_TOOLS: McpTool[] = [...CORE_TOOLS, ...DATA_TOOLS, ...METRICS_TOOLS, ...DEMAND_TOOLS, ...OPTIMIZE_TOOLS, ...OUTREACH_TOOLS];
 
 // A duplicate name would silently shadow a tool in findTool, and the failure would look
 // like "that tool ignores half its arguments" rather than "there are two of them".

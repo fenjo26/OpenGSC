@@ -54,7 +54,7 @@ while keeping the legacy `processing/completed/error` statuses and response fiel
 |---|---|
 | Auth | `Account`, `Session`, `User`, `VerificationToken` |
 | GSC core | `Site`, `SitemapUrl`, `IndexingOperation`, `DailyMetric`, `PageInspection`, `PageInspectionHistory` |
-| Growth tools | `TrackedKeyword`, `RankCheck` (Rank Tracker), `TrackedQuestion`, `AeoCheck` (AEO Tracker), `Backlink`, `ContentGroup`, `TopicCluster`, `LinkWatchBrand`, `LinkMention` (Link Monitor), `DrCache` (Ahrefs DR cache) |
+| Growth tools | `TrackedKeyword`, `RankCheck` (Rank Tracker), `TrackedQuestion`, `AeoCheck` (AEO Tracker), `Backlink`, `ContentGroup`, `TopicCluster`, `LinkWatchBrand`, `LinkMention` (Link Monitor), `OutreachCampaign`, `OutreachProspect`, `OutreachStageEvent`, `DrCache` (Ahrefs DR cache) |
 | Integrations | `ClaritySnapshot`, `SiteHealth` |
 | Indexer | `IndexerDomain`, `IndexerLog`, `IndexerQueue`, `IndexerDictionary` |
 | SEO Tools | `SeoJob`, `SeoHistory`, `GeoAudit`, `RagSlot`, `RagCasino` |
@@ -88,6 +88,13 @@ respect Ahrefs' per-minute rate limits — and offers an LLM insights pass over 
 via `fetchLLM`. Both features (and the history/keys sync above) are written with raw SQL
 (`$queryRawUnsafe`) so they degrade gracefully — returning empty results instead of crashing — on
 a database that hasn't run `prisma db push` yet.
+
+**Outreach Workspace** extends Link Monitor without changing its fetch or scoring logic. A saved
+prospect gets an immutable evidence snapshot, optional campaign/contact/follow-up fields, a stage
+history and an optional link to the owner's existing `Backlink` row. The workspace never sends
+mail: its localized pitch is a deterministic draft for manual review/copy. All writes are scoped
+by `userId`; campaign and backlink ownership are checked server-side. These models intentionally
+have no relationship to `GeoAudit`, `AeoCheck` or the Site Audit crawler.
 
 ## 3. The SEO generation pipeline (`src/lib/seo/generate.ts`)
 
@@ -440,21 +447,23 @@ and the token check *could* live in the gate now. It still shouldn't. The gate r
 request to every path; putting a database lookup there to serve one endpoint would spend a query
 on every page load to save one inside `/api/mcp`. The exclusion list stays where it is.
 
-The tool registry is split across three files for readability and flattened into one
+The tool registry is split across six files for readability and flattened into one
 `MCP_TOOLS` array at the bottom of `src/lib/mcp/tools.ts`: the GSC core (`tools.ts`), the
 remaining read surfaces (`toolsData.ts` — decay, CTR benchmark, content groups, rank history,
 GEO audits, generations, engine portfolios, GA4, Clarity, indexer, digests, alerts), and the
-page-optimization contour (`toolsOptimize.ts`). Shared helpers live in `shared.ts` so no file
-imports another's registry. A duplicate tool name throws at module load, since `findTool`
+metrics, demand, page-optimization and Outreach contours (`toolsMetrics.ts`, `toolsDemand.ts`,
+`toolsOptimize.ts`, `toolsOutreach.ts`). Shared helpers live in `shared.ts` so no file imports
+another's registry. A duplicate tool name throws at module load, since `findTool`
 would otherwise silently shadow one and the symptom ("that tool ignores half its arguments")
 points nowhere near the cause.
 
 Two rules keep it safe and predictable:
 
-1. **Read-only by default** — no tool mutates user-visible state. Three exceptions, each
-   deliberate: `inspect_url` refreshes the `PageInspection` cache with what it just fetched
-   (which only makes the Indexing tab fresher), and the two paid tools below create their own
-   job rows.
+1. **Mutations are explicit** — read tools remain read-only, while every local or paid action that
+   changes state overrides `readOnly`/`idempotent` protocol annotations. The Outreach mutations
+   only update local workspace rows and explicitly state that they do not send mail. Existing
+   exceptions remain deliberate: `inspect_url` refreshes the `PageInspection` cache, and paid
+   generation tools create their own job rows.
 2. **Every tool declares what it costs** — `McpTool.cost` is one of `local` (reads the local
    database), `quota` (calls Google on the user's OAuth: free, quota-limited), `net` (fetches
    a third-party page), or `paid` (spends the user's own AI credits). `tools/list` maps this

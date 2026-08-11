@@ -30,6 +30,11 @@ export interface McpTool {
    * so — compiles cleanly and is then announced to agents as free.
    */
   cost: ToolCost;
+  /** Override protocol annotations for local tools that intentionally mutate this instance. */
+  readOnly?: boolean;
+  idempotent?: boolean;
+  destructive?: boolean;
+  openWorld?: boolean;
   handler: (userId: string, args: Json) => Promise<unknown>;
 }
 

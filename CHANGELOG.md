@@ -13,6 +13,9 @@ All notable changes to OpenGSC. Dates are release dates; the version shown in
   before updater schema changes.
 - Localized Private Indexer risk acknowledgement and responsible-use documentation.
 - Release metadata and seven-locale consistency checks under `npm run check`.
+- Outreach Workspace inside Link Monitor with campaigns, evidence snapshots, manual follow-ups,
+  stage history, localized draft/copy, Backlink liveness linkage and local MCP actions. It never
+  sends outreach automatically.
 
 ### Security
 

@@ -687,6 +687,82 @@ model LinkMention {
   @@index([userId, domainFrom])
 }
 
+// ─── Outreach Workspace — manual, auditable follow-up for Link Monitor prospects ──
+// No row in this group sends email or performs an external action. It persists the operator's
+// workflow and a snapshot of the evidence that justified adding a prospect; LinkMention rows are
+// refreshed on every monitor run and therefore cannot be the only copy of that evidence.
+model OutreachCampaign {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  status      String   @default("active") // active | archived
+  targetAsset String   @default("")
+  notes       String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  prospects OutreachProspect[]
+
+  @@unique([userId, name])
+  @@index([userId, status])
+}
+
+model OutreachProspect {
+  id              String   @id @default(cuid())
+  userId          String
+  campaignId      String?
+  domain          String
+  stage           String   @default("discovered") // discovered | qualified | ready | contacted | replied | negotiating | won | lost
+
+  // Immutable-at-add evidence snapshot from Link Monitor (or a manual source URL).
+  sourceUrl       String   @default("")
+  sourceTitle     String   @default("")
+  sourceBrand     String   @default("")
+  sourceAnchor    String   @default("")
+  sourceDr        Float    @default(0)
+  sourceFirstSeen String   @default("")
+  sourceDofollow  Boolean  @default(true)
+
+  contactName     String   @default("")
+  contactEmail    String   @default("")
+  contactUrl      String   @default("")
+  contactSource   String   @default("")
+  pitchAngle      String   @default("")
+  targetAsset     String   @default("")
+  notes           String   @default("")
+
+  lastContactAt   DateTime?
+  nextFollowUpAt  DateTime?
+  backlinkId      String?  // validated against a Backlink owned through one of this user's sites
+  wonBacklinkUrl  String   @default("")
+  wonAt           DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  campaign OutreachCampaign?    @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  events   OutreachStageEvent[]
+
+  @@unique([userId, domain])
+  @@index([userId, stage])
+  @@index([userId, nextFollowUpAt])
+  @@index([campaignId])
+}
+
+model OutreachStageEvent {
+  id         String   @id @default(cuid())
+  prospectId String
+  userId     String
+  fromStage  String
+  toStage    String
+  note       String   @default("")
+  createdAt  DateTime @default(now())
+
+  prospect OutreachProspect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+
+  @@index([prospectId, createdAt])
+  @@index([userId, createdAt])
+}
+
 model RagCasino {
   id          String @id @default(cuid())
   name        String

@@ -74,6 +74,8 @@ export async function GET(req: Request) {
     tools: MCP_TOOLS.map(t => ({
       name: t.name,
       cost: t.cost ?? "local",
+      readOnly: t.readOnly ?? t.cost !== "paid",
+      idempotent: t.idempotent ?? ((t.readOnly ?? t.cost !== "paid") && t.cost === "local"),
       description: t.description,
       inputSchema: t.inputSchema,
     })),
