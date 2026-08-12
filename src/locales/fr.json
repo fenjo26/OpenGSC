@@ -787,7 +787,7 @@
   "renameHintCluster": "Cliquez sur un nom pour le renommer. Modifiez les motifs (séparés par des barres verticales). Décochez pour exclure.",
   "renameHintGroup": "Cliquez sur un nom pour le renommer. Modifiez les motifs d’URL (séparés par des barres verticales). Décochez pour exclure.",
   "aiConfiguration": "Configuration de l’IA",
-  "aiConfigDesc": "Configurez votre fournisseur d’IA préféré pour alimenter des fonctionnalités telles que le clustering automatique des sujets et le regroupement de contenus. Les clés sont enregistrées de façon sécurisée dans votre navigateur.",
+  "aiConfigDesc": "Configurez votre fournisseur d'IA préféré pour le clustering thématique et les groupes de contenu. Les clés sont enregistrées sur votre propre instance.",
   "aiProvider": "Fournisseur d’IA",
   "tabHealth": "Santé",
   "healthTitle": "Santé du site",
@@ -824,7 +824,7 @@
   "healthVtTotal": "Total",
   "healthApiKeysTitle": "Clés API de contrôle de santé",
   "healthApiKeysSub": "Utilisées dans l’onglet Santé sur chaque page de site. Le SSL est toujours vérifié gratuitement. Ajoutez des clés ci-dessous pour activer les contrôles Safe Browsing, Core Web Vitals et VirusTotal.",
-  "healthApiKeysHint": "💡 Les clés sont stockées uniquement dans votre navigateur et envoyées aux API respectives lorsque vous lancez un contrôle de santé. Elles ne sont jamais stockées sur le serveur.",
+  "healthApiKeysHint": "💡 Les clés sont enregistrées sur votre propre instance et servent uniquement à appeler ces API lors d'un contrôle de santé. Elles survivent à une reconnexion et restent disponibles pour votre équipe ; rien ne part ailleurs que chez le fournisseur.",
   "healthGetKey": "Obtenir la clé ↗",
   "claritySettingsNote": "Le jeton est configuré par site dans l’onglet « UX / Clarity ».",
   "claritySettingsWhere": "Aller sur le site →",
@@ -1105,7 +1105,7 @@
   "seoSetRankProvider": "Fournisseur SERP du Rank Tracker",
   "seoSetRankProviderDesc": "Les vérifications de position (onglet Positions) peuvent utiliser un fournisseur différent de la génération de contenu — par ex. un fournisseur avec offre gratuite pour des vérifications quotidiennes fréquentes.",
   "seoSetRankProviderInherit": "Identique au précédent",
-  "seoSetTip": "Toutes les clés sont stockées uniquement dans le navigateur et envoyées directement au fournisseur. Minimum pour démarrer : une clé SERP (Serper) + un fournisseur d’IA ci-dessus. Firecrawl est facultatif — sans lui, le scraping utilise la récupération directe.",
+  "seoSetTip": "Les clés sont enregistrées sur votre propre instance et envoyées directement au fournisseur — nulle part ailleurs. Minimum pour démarrer : une clé SERP (Serper) + un fournisseur IA ci-dessus. Firecrawl est optionnel — sans lui, le scraping utilise un fetch direct.",
   "seoSetHintSerper": "Bon marché et simple (~0,30–1 $ / 1000). Meilleur choix pour démarrer.",
   "seoSetInstrSerper": "Inscrivez-vous sur serper.dev → Dashboard → API Key. Vous obtenez 2500 requêtes gratuites pour démarrer.",
   "seoSetHintDfs": "SERP (Google + Bing) et métriques type Ahrefs dans une seule API. Collez le jeton Base64 du tableau de bord, ou login:mot de passe.",
@@ -3309,5 +3309,6 @@
   "crawlerMetricsConfirm": "Récupérer les métriques de ce domaine ? Cela consomme vos unités.",
   "crawlerMetrics_no_key": "Aucune clé API configurée dans SEO Tools → Réglages.",
   "crawlerMetrics_cap_exceeded": "Votre plafond mensuel d'unités serait dépassé.",
-  "crawlerMetrics_failed": "La requête au fournisseur a échoué."
+  "crawlerMetrics_failed": "La requête au fournisseur a échoué.",
+  "aiKeysHint": "Les clés sont enregistrées sur votre propre instance et envoyées directement au fournisseur d'IA lors du One Click Setup. Rien ne part ailleurs."
 }

@@ -1375,7 +1375,7 @@ function AIConfigSection() {
         {AI_PROVIDERS.map(p => <AIProviderCard key={p.id} provider={p} />)}
       </div>
       <div style={{ marginTop: "14px", padding: "11px 14px", borderRadius: "8px", background: "rgba(59,130,246,0.06)", border: "1px solid rgba(59,130,246,0.18)", fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
-        💡 Keys are stored in your browser only and sent directly to the AI provider when running One Click Setup. They are never stored on the server.
+        💡 {t("aiKeysHint")}
       </div>
     </SectionCard>
   );
@@ -1874,7 +1874,7 @@ function HealthApiKeysSection() {
         {HEALTH_PROVIDERS.map(p => <HealthKeyCard key={p.id} provider={p} />)}
       </div>
       <div style={{ marginTop: "14px", padding: "11px 14px", borderRadius: "8px", background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.18)", fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
-        {t("healthApiKeysHint") || "💡 Keys are stored in your browser only and sent to the respective APIs when you run a health check. They are never stored on the server."}
+        {t("healthApiKeysHint")}
       </div>
     </SectionCard>
   );

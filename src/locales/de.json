@@ -787,7 +787,7 @@
   "renameHintCluster": "Klicke auf einen Namen, um ihn umzubenennen. Patterns bearbeiten (Pipe-getrennt). Abwählen zum Ausschließen.",
   "renameHintGroup": "Klicke auf einen Namen, um ihn umzubenennen. URL-Patterns bearbeiten (Pipe-getrennt). Abwählen zum Ausschließen.",
   "aiConfiguration": "AI-Konfiguration",
-  "aiConfigDesc": "Konfiguriere deinen bevorzugten AI-Provider für Funktionen wie automatisches Themen-Clustern und Content-Gruppierung. Keys werden sicher in deinem Browser gespeichert.",
+  "aiConfigDesc": "Konfigurieren Sie Ihren bevorzugten KI-Anbieter für Funktionen wie automatisches Themen-Clustering und Content-Gruppen. Schlüssel werden auf Ihrer eigenen Instanz gespeichert.",
   "aiProvider": "AI-Provider",
   "tabHealth": "Health",
   "healthTitle": "Website-Health",
@@ -824,7 +824,7 @@
   "healthVtTotal": "Gesamt",
   "healthApiKeysTitle": "Health-Check-API-Keys",
   "healthApiKeysSub": "Werden im Health-Tab auf jeder Website-Seite verwendet. SSL wird immer kostenlos geprüft. Füge unten Keys hinzu, um Safe-Browsing-, Core-Web-Vitals- und VirusTotal-Prüfungen zu aktivieren.",
-  "healthApiKeysHint": "💡 Keys werden nur in deinem Browser gespeichert und beim Ausführen eines Health-Checks an die jeweiligen APIs gesendet. Sie werden nie auf dem Server gespeichert.",
+  "healthApiKeysHint": "💡 Schlüssel werden auf Ihrer eigenen Instanz gespeichert und nur verwendet, um diese APIs beim Health-Check aufzurufen. Sie überstehen eine erneute Anmeldung und stehen Ihrem Team zur Verfügung; außer an den Anbieter selbst geht nichts.",
   "healthGetKey": "Key holen ↗",
   "claritySettingsNote": "Token wird pro Website im Tab „UX / Clarity“ konfiguriert.",
   "claritySettingsWhere": "Zur Website →",
@@ -1105,7 +1105,7 @@
   "seoSetRankProvider": "Rank-Tracker-SERP-Provider",
   "seoSetRankProviderDesc": "Positions-Prüfungen (Tab Positions) können einen anderen Provider nutzen als die Content-Erstellung — z. B. einen Free-Tier für häufige tägliche Prüfungen.",
   "seoSetRankProviderInherit": "Wie oben",
-  "seoSetTip": "Alle Keys werden nur im Browser gespeichert und direkt an den Provider gesendet. Minimum zum Starten: ein SERP-Key (Serper) + ein AI-Provider oben. Firecrawl ist optional — ohne es nutzt Scraping direktes Fetching.",
+  "seoSetTip": "Schlüssel werden auf Ihrer eigenen Instanz gespeichert und direkt an den Anbieter gesendet — sonst nirgendwohin. Minimum für den Start: ein SERP-Schlüssel (Serper) + ein KI-Anbieter oben. Firecrawl ist optional — ohne ihn nutzt das Scraping einen direkten Fetch.",
   "seoSetHintSerper": "Günstig und einfach (~0,30–1 $ / 1000). Beste Wahl zum Starten.",
   "seoSetInstrSerper": "Registriere dich unter serper.dev → Dashboard → API Key. Du bekommst 2500 kostenlose Anfragen zum Start.",
   "seoSetHintDfs": "SERP (Google + Bing) und Ahrefs-ähnliche Metriken in einer API. Füge das Base64-Token aus dem Dashboard ein, oder login:password.",
@@ -3309,5 +3309,6 @@
   "crawlerMetricsConfirm": "Metriken für diese Domain abrufen? Das verbraucht Ihre Anbieter-Einheiten.",
   "crawlerMetrics_no_key": "Kein API-Schlüssel in SEO Tools → Einstellungen hinterlegt.",
   "crawlerMetrics_cap_exceeded": "Ihr monatliches Einheitenlimit würde überschritten.",
-  "crawlerMetrics_failed": "Die Anbieter-Anfrage ist fehlgeschlagen."
+  "crawlerMetrics_failed": "Die Anbieter-Anfrage ist fehlgeschlagen.",
+  "aiKeysHint": "Schlüssel werden auf Ihrer eigenen Instanz gespeichert und beim One Click Setup direkt an den KI-Anbieter gesendet. Sonst geht nichts irgendwohin."
 }

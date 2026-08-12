@@ -787,7 +787,7 @@
   "renameHintCluster": "点击名称可重命名。编辑模式（用竖线分隔）。取消勾选可排除。",
   "renameHintGroup": "点击名称可重命名。编辑 URL 模式（用竖线分隔）。取消勾选可排除。",
   "aiConfiguration": "AI 配置",
-  "aiConfigDesc": "配置你首选的 AI 服务商，以驱动自动话题聚类和内容分组等功能。密钥安全地保存在你的浏览器中。",
+  "aiConfigDesc": "配置你偏好的 AI 服务商，用于自动主题聚类和内容分组。密钥保存在你自己的实例上。",
   "aiProvider": "AI 服务商",
   "tabHealth": "健康",
   "healthTitle": "网站健康",
@@ -824,7 +824,7 @@
   "healthVtTotal": "总计",
   "healthApiKeysTitle": "健康检查 API 密钥",
   "healthApiKeysSub": "在每个网站页面的健康标签中使用。SSL 始终免费检查。在下方添加密钥以启用 Safe Browsing、Core Web Vitals 和 VirusTotal 检查。",
-  "healthApiKeysHint": "💡 密钥仅存储在你的浏览器中，并在你运行健康检查时发送给相应的 API。它们绝不会存储在服务器上。",
+  "healthApiKeysHint": "💡 密钥保存在你自己的实例上，仅在运行健康检查时用于调用这些 API。重新登录不会丢失，团队成员也能使用；除服务商本身外不会发送到任何地方。",
   "healthGetKey": "获取密钥 ↗",
   "claritySettingsNote": "令牌按网站在“UX / Clarity”标签中配置。",
   "claritySettingsWhere": "前往网站 →",
@@ -1105,7 +1105,7 @@
   "seoSetRankProvider": "Rank Tracker SERP 服务商",
   "seoSetRankProviderDesc": "排名检查（Positions 标签）可以使用与内容生成不同的服务商——例如，用一个免费层服务商做频繁的每日检查。",
   "seoSetRankProviderInherit": "与上方相同",
-  "seoSetTip": "所有密钥仅存储在浏览器中并直接发送给服务商。开始所需的最低配置：一个 SERP 密钥（Serper）+ 上方的一个 AI 服务商。Firecrawl 是可选的——没有它，抓取将使用直接抓取。",
+  "seoSetTip": "密钥保存在你自己的实例上，并直接发送给服务商，不会去往别处。最少配置：一个 SERP 密钥（Serper）+ 上方的一个 AI 服务商。Firecrawl 可选，不启用时抓取走直接请求。",
   "seoSetHintSerper": "便宜简单（约 $0.30–1 / 1000 次）。入门首选。",
   "seoSetInstrSerper": "在 serper.dev 注册 → Dashboard → API Key。你将获得 2500 次免费请求来开始。",
   "seoSetHintDfs": "一个 API 同时提供 SERP（Google + Bing）和类 Ahrefs 指标。粘贴仪表盘中的 Base64 令牌，或 login:password。",
@@ -3309,5 +3309,6 @@
   "crawlerMetricsConfirm": "获取该域名的指标？这会消耗你的服务商额度。",
   "crawlerMetrics_no_key": "未在 SEO Tools → 设置中配置 API 密钥。",
   "crawlerMetrics_cap_exceeded": "将超出你的每月额度上限。",
-  "crawlerMetrics_failed": "服务商请求失败。"
+  "crawlerMetrics_failed": "服务商请求失败。",
+  "aiKeysHint": "密钥保存在你自己的实例上，运行 One Click Setup 时直接发送给 AI 服务商，不会去往任何其他地方。"
 }

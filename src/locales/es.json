@@ -787,7 +787,7 @@
   "renameHintCluster": "Haz clic en un nombre para renombrarlo. Edita los patrones (separados por barra vertical). Desmarca para excluir.",
   "renameHintGroup": "Haz clic en un nombre para renombrarlo. Edita los patrones de URL (separados por barra vertical). Desmarca para excluir.",
   "aiConfiguration": "Configuración de IA",
-  "aiConfigDesc": "Configura tu proveedor de IA preferido para potenciar funciones como el agrupamiento automático de temas y la agrupación de contenido. Las claves se guardan de forma segura en tu navegador.",
+  "aiConfigDesc": "Configura tu proveedor de IA preferido para el clustering temático y los grupos de contenido. Las claves se guardan en tu propia instancia.",
   "aiProvider": "Proveedor de IA",
   "tabHealth": "Salud",
   "healthTitle": "Salud del sitio",
@@ -824,7 +824,7 @@
   "healthVtTotal": "Total",
   "healthApiKeysTitle": "Claves de API de comprobación de salud",
   "healthApiKeysSub": "Se usan en la pestaña Salud en cada página de sitio. SSL siempre se comprueba gratis. Añade claves abajo para habilitar las comprobaciones de Safe Browsing, Core Web Vitals y VirusTotal.",
-  "healthApiKeysHint": "💡 Las claves se guardan solo en tu navegador y se envían a las respectivas APIs cuando ejecutas una comprobación de salud. Nunca se almacenan en el servidor.",
+  "healthApiKeysHint": "💡 Las claves se guardan en tu propia instancia y solo se usan para llamar a estas API al ejecutar la comprobación de salud. Sobreviven a un nuevo inicio de sesión y están disponibles para tu equipo; no se envía nada salvo al propio proveedor.",
   "healthGetKey": "Obtener clave ↗",
   "claritySettingsNote": "El token se configura por sitio en la pestaña «UX / Clarity».",
   "claritySettingsWhere": "Ir al sitio →",
@@ -1105,7 +1105,7 @@
   "seoSetRankProvider": "Proveedor SERP del Rank Tracker",
   "seoSetRankProviderDesc": "Las comprobaciones de posición (pestaña Positions) pueden usar un proveedor distinto al de generación de contenido — p. ej. uno de tier gratuita para comprobaciones diarias frecuentes.",
   "seoSetRankProviderInherit": "Igual que el anterior",
-  "seoSetTip": "Todas las claves se guardan solo en el navegador y se envían directamente al proveedor. Mínimo para empezar: una clave SERP (Serper) + un proveedor de IA de arriba. Firecrawl es opcional — sin él el scraping usa fetch directo.",
+  "seoSetTip": "Las claves se guardan en tu propia instancia y se envían directamente al proveedor, a ningún otro sitio. Mínimo para empezar: una clave SERP (Serper) + un proveedor de IA arriba. Firecrawl es opcional: sin él, el scraping usa un fetch directo.",
   "seoSetHintSerper": "Barato y sencillo (~0,30–1 $ / 1000). La mejor opción para empezar.",
   "seoSetInstrSerper": "Regístrate en serper.dev → Panel → API Key. Obtienes 2500 solicitudes gratuitas para empezar.",
   "seoSetHintDfs": "SERP (Google + Bing) y métricas tipo Ahrefs en una sola API. Pega el token Base64 del panel, o login:password.",
@@ -3309,5 +3309,6 @@
   "crawlerMetricsConfirm": "¿Descargar métricas de este dominio? Gastará unidades de tu proveedor.",
   "crawlerMetrics_no_key": "No hay clave API configurada en SEO Tools → Ajustes.",
   "crawlerMetrics_cap_exceeded": "Se superaría tu límite mensual de unidades.",
-  "crawlerMetrics_failed": "La petición al proveedor falló."
+  "crawlerMetrics_failed": "La petición al proveedor falló.",
+  "aiKeysHint": "Las claves se guardan en tu propia instancia y se envían directamente al proveedor de IA al ejecutar One Click Setup. No van a ningún otro sitio."
 }

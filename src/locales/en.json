@@ -787,7 +787,7 @@
   "renameHintCluster": "Click a name to rename it. Edit patterns (pipe-separated). Uncheck to exclude.",
   "renameHintGroup": "Click a name to rename it. Edit URL patterns (pipe-separated). Uncheck to exclude.",
   "aiConfiguration": "AI Configuration",
-  "aiConfigDesc": "Configure your preferred AI provider to power features like automatic topic clustering and content grouping. Keys are saved securely in your browser.",
+  "aiConfigDesc": "Configure your preferred AI provider to power features like automatic topic clustering and content grouping. Keys are saved on your own instance.",
   "aiProvider": "AI Provider",
   "tabHealth": "Health",
   "healthTitle": "Site Health",
@@ -824,7 +824,7 @@
   "healthVtTotal": "Total",
   "healthApiKeysTitle": "Health Check API Keys",
   "healthApiKeysSub": "Used in the Health tab on each site page. SSL is always checked for free. Add keys below to enable Safe Browsing, Core Web Vitals, and VirusTotal checks.",
-  "healthApiKeysHint": "💡 Keys are stored in your browser only and sent to the respective APIs when you run a health check. They are never stored on the server.",
+  "healthApiKeysHint": "💡 Keys are saved on your own instance and used only to call these APIs when you run a health check. They survive a re-login and are available to your team; nothing is sent anywhere except the provider itself.",
   "healthGetKey": "Get key ↗",
   "claritySettingsNote": "Token is configured per-site in the «UX / Clarity» tab.",
   "claritySettingsWhere": "Go to site →",
@@ -1105,7 +1105,7 @@
   "seoSetRankProvider": "Rank Tracker SERP provider",
   "seoSetRankProviderDesc": "Position checks (Positions tab) can use a different provider than content generation — e.g. a free-tier one for frequent daily checks.",
   "seoSetRankProviderInherit": "Same as above",
-  "seoSetTip": "All keys are stored in the browser only and sent directly to the provider. Minimum to start: one SERP key (Serper) + an AI provider above. Firecrawl is optional — without it scraping uses direct fetch.",
+  "seoSetTip": "Keys are saved on your own instance and sent straight to the provider — nowhere else. Minimum to start: one SERP key (Serper) + an AI provider above. Firecrawl is optional — without it scraping uses direct fetch.",
   "seoSetHintSerper": "Cheap and simple (~$0.30–1 / 1000). Best choice to start.",
   "seoSetInstrSerper": "Sign up at serper.dev → Dashboard → API Key. You get 2500 free requests to start.",
   "seoSetHintDfs": "SERP (Google + Bing) and Ahrefs-like metrics in one API. Paste the Base64 token from the dashboard, or login:password.",
@@ -3309,5 +3309,6 @@
   "crawlerMetricsConfirm": "Fetch metrics for this domain? This spends your provider units.",
   "crawlerMetrics_no_key": "No API key configured in SEO Tools → Settings.",
   "crawlerMetrics_cap_exceeded": "Your monthly unit cap would be exceeded.",
-  "crawlerMetrics_failed": "The provider request failed."
+  "crawlerMetrics_failed": "The provider request failed.",
+  "aiKeysHint": "Keys are saved on your own instance and sent straight to the AI provider when One Click Setup runs. Nothing goes anywhere else."
 }
