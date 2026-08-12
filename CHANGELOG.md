@@ -20,9 +20,19 @@ All notable changes to OpenGSC. Dates are release dates; the version shown in
   shared ownership; a shared nameserver or IP only means a shared host and is marked weak. Redirect
   targets are recorded too, which is how a dropped domain merged into another shows itself.
 
+  It also runs the Googlebot View comparison on every scan: the page is fetched a second time as
+  Googlebot Smartphone arriving from a Google search and diffed against the browser view. A doorway
+  that cloaks by User-Agent looks perfectly ordinary to a scanner that only identifies as itself,
+  and this is what sees through it — different status, different final URL, different title or word
+  count, or a site that refuses Googlebot outright.
+
+  Ahrefs/Semrush figures for the scanned domain are read from the local cache for free on every
+  scan. Fetching fresh ones is a separate click that states the cost first and spends the owner's
+  own units, per the rule that nothing bills anyone by opening a page.
+
   One page plus the paths a site publishes anyway (robots.txt, sitemap, llms.txt). Nothing is
   brute-forced, no credential is tried, and the WordPress paths are only requested when the page
-  already looks like WordPress.
+  already looks like WordPress. Reports download as Markdown.
 
 ### Changed
 
@@ -31,6 +41,9 @@ All notable changes to OpenGSC. Dates are release dates; the version shown in
   plainly whether it was reached — "the whole site as far as the crawler could reach it" or
   "stopped at the limit, so the site may have more". Asking for a page count up front was asking a
   question nobody can answer before the crawl, and guessing low truncated the audit silently.
+- **Long tables are paginated** — the audit page list and the scan history both stopped being a
+  scroll bar pretending to be a table. Scanner cards are two per row rather than four, where the
+  values wrapped mid-word.
 - **The audit export is now a work order rather than a page list.** Every finding carries the value
   that triggered it (`og:image, og:description` instead of an empty column) — captured during the
   crawl and stored, which it previously was not. A finding on 80% or more of the pages is labelled

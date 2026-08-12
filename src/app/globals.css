@@ -640,10 +640,15 @@ input:-webkit-autofill {
   gap: 14px;
   align-items: start;
 }
+/* Two per row, not four. Each card is a label/value table, and at a quarter of the width the
+   values wrap after every second word — "WordPre ss" — which reads as broken rather than dense. */
 .crawler-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+}
+@media (max-width: 1100px) {
+  .crawler-cards { grid-template-columns: 1fr; }
 }
 @media (max-width: 900px) {
   .crawler-grid { grid-template-columns: 1fr; }

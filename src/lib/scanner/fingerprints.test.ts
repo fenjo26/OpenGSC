@@ -46,6 +46,16 @@ test("shared hosting is not evidence of shared ownership", () => {
   assert.equal(fingerprintStrength("ip:1.2.3.4"), "weak");
 });
 
+test("a CDN address is not an ownership signal", () => {
+  // Two sites behind Cloudflare share Cloudflare, not an owner. Recording the IP would make every
+  // Cloudflare site match every other one as the scan history grows.
+  const fp = extractFingerprints("<html></html>");
+  const behind = flattenFingerprints(fp, { ips: ["188.114.96.0"], ns: ["rudy.ns.cloudflare.com"], behindCdn: true });
+  assert.deepEqual(behind, [], "a Cloudflare IP and a Cloudflare nameserver carry no ownership information");
+  const direct = flattenFingerprints(fp, { ips: ["203.0.113.9"], ns: ["ns1.small-host.example"], behindCdn: false });
+  assert.deepEqual(direct, ["ns:ns1.small-host.example", "ip:203.0.113.9"]);
+});
+
 test("flattened keys are lowercase, deduplicated and human-readable", () => {
   const keys = flattenFingerprints(extractFingerprints(HTML), { ns: ["NS1.Example.NET", "NS1.Example.NET"], ips: ["1.2.3.4"] });
   assert.ok(keys.includes("ga4:g-ab12cd34ef"));

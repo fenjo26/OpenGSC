@@ -59,6 +59,7 @@ export interface AuditHtmlSignals {
   organizationSchemaIncomplete: boolean;
   openGraphMissing: string[];
   twitterCardIncomplete: boolean;
+  twitterCardMissing: string[];
   mixedContentUrls: string[];
 }
 
@@ -117,8 +118,13 @@ export function extractAuditHtml(html: string): AuditHtmlSignals {
     .filter(key => !metaValues(head, key).some(value => value.trim()));
   const twitterKeys = ["twitter:card", "twitter:title", "twitter:description", "twitter:image"];
   const twitterValues = twitterKeys.map(key => metaValues(head, key));
-  const twitterCardIncomplete = twitterValues.some(values => values.length > 0) &&
-    twitterValues.some(values => !values.some(value => value.trim()));
+  // Which tags are missing, not merely that some are: "twitter:card, twitter:image" is a task,
+  // "incomplete" is a riddle. Only reported when the site clearly meant to have a card at all —
+  // a page with no Twitter tags whatsoever is a choice, not an oversight.
+  const twitterCardMissing = twitterValues.some(values => values.length > 0)
+    ? twitterKeys.filter((_, index) => !twitterValues[index].some(value => value.trim()))
+    : [];
+  const twitterCardIncomplete = twitterCardMissing.length > 0;
 
   const mixedContentUrls = new Set<string>();
   for (const tag of html.match(/<(?:img|script|iframe|source|video|audio|link|form)\b[^>]*>/gi) ?? []) {
@@ -130,7 +136,7 @@ export function extractAuditHtml(html: string): AuditHtmlSignals {
   return {
     title, metaDesc, robots, canonical, h1Count, hrefs, imagesNoAlt, wordCount,
     spaMarker, hasLargeScript, viewportPresent, htmlLang, jsonLdCount, jsonLdInvalid,
-    organizationSchemaIncomplete, openGraphMissing, twitterCardIncomplete,
+    organizationSchemaIncomplete, openGraphMissing, twitterCardIncomplete, twitterCardMissing,
     mixedContentUrls: [...mixedContentUrls].slice(0, 20),
   };
 }

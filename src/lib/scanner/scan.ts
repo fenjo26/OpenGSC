@@ -2,6 +2,7 @@ import "server-only";
 import { promises as dns } from "node:dns";
 import { extractAuditHtml, missingSecurityHeaders, robotsDirectivesConflict, type AuditHtmlSignals } from "@/lib/audit/pageSignals";
 import { evaluateAuditPageRules, type AuditPageFacts } from "@/lib/audit/rules";
+import { diffViews, followChain, type CloakingDiff, type ViewResult } from "@/lib/seo/googlebot";
 import { safeFetch, SafeFetchError } from "@/lib/security/safeFetch";
 import { extractFingerprints, flattenFingerprints, type Fingerprints } from "./fingerprints";
 import { detectPlatform, wordpressAssets, type PlatformReport } from "./platform";
@@ -48,6 +49,19 @@ export interface ScanReport {
   infra: { ips: string[]; nameservers: string[]; mx: string[]; cdn: string | null };
   scale: { sitemaps: string[]; sitemapUrls: number | null; languages: string[] };
   ai: { robotsTxt: boolean; llmsTxt: boolean; blockedBots: string[] };
+  /**
+   * What the site shows Googlebot versus a browser. A doorway that cloaks by User-Agent looks
+   * perfectly ordinary to a scanner that only ever identifies as itself, which is exactly the case
+   * this fills: the same comparison Googlebot View runs, folded into every scan.
+   */
+  cloaking: {
+    verdict: CloakingDiff["verdict"];
+    score: number;
+    flags: string[];
+    googlebot: { status: number; finalUrl: string; title: string; words: number; indexable: boolean; blocked?: boolean };
+    browser: { status: number; finalUrl: string; title: string; words: number; indexable: boolean };
+    redirectChain: string[];
+  } | null;
   fingerprints: Fingerprints;
   fingerprintKeys: string[];
   scannedAt: string;
@@ -207,6 +221,7 @@ export async function runScan(input: string): Promise<ScanReport> {
     severity: SEVERITY[id] ?? "info",
     evidence: id === "security_headers_missing" ? security.join(", ")
       : id === "open_graph_incomplete" ? (signals?.openGraphMissing ?? []).join(", ")
+      : id === "twitter_card_incomplete" ? (signals?.twitterCardMissing ?? []).join(", ")
       : id === "mixed_content" ? (signals?.mixedContentUrls ?? []).slice(0, 3).join(", ")
       : id === "thin_content" ? `${facts.wordCount} words`
       : id === "slow_response" ? `${loadMs} ms`
@@ -231,6 +246,35 @@ export async function runScan(input: string): Promise<ScanReport> {
   }
 
   const infra = await infrastructure(finalUrl.hostname);
+  const cdn = cdnFrom(headers);
+
+  // Two more fetches: one as Googlebot Smartphone carrying a Google referer, one as a plain
+  // browser. A UA-cloaked doorway serves different content to each, and comparing them is the only
+  // way to see it from outside. Failures here degrade the scan rather than fail it — plenty of
+  // sites simply block anything claiming to be a bot, which is itself worth reporting.
+  let cloaking: ScanReport["cloaking"] = null;
+  try {
+    const [asGooglebot, asBrowser] = await Promise.all([
+      followChain(finalUrl.href, "gbMobile", { referer: true }),
+      followChain(finalUrl.href, "chrome"),
+    ]);
+    if (asGooglebot.ok || asBrowser.ok) {
+      const diff = diffViews(asGooglebot, asBrowser);
+      const view = (v: ViewResult) => ({
+        status: v.finalStatus, finalUrl: v.finalUrl, title: v.signals.title ?? "",
+        words: v.wordCount, indexable: v.signals.indexable,
+      });
+      cloaking = {
+        verdict: diff.verdict, score: diff.score, flags: diff.flags,
+        googlebot: { ...view(asGooglebot), blocked: asGooglebot.blocked },
+        browser: view(asBrowser),
+        redirectChain: asGooglebot.hops.map(hop => `${hop.status} ${hop.url}`).slice(0, 10),
+      };
+      if (diff.verdict === "cloaking") findings.unshift({ id: "cloaking_detected", severity: "critical", evidence: diff.flags.slice(0, 4).join("; ") });
+      else if (diff.verdict === "suspicious") findings.push({ id: "cloaking_suspected", severity: "warning", evidence: diff.flags.slice(0, 4).join("; ") });
+      if (asGooglebot.blocked) findings.push({ id: "googlebot_blocked", severity: "warning", evidence: `HTTP ${asGooglebot.finalStatus}` });
+    }
+  } catch { /* the comparison is an enrichment, not a precondition */ }
   const fingerprints = extractFingerprints(html);
   const languages = [...new Set((html.match(/hreflang=["']([a-z-]{2,7})["']/gi) ?? [])
     .map(m => m.replace(/.*=["']/, "").replace(/["']/, "").toLowerCase()))].slice(0, 12);
@@ -253,11 +297,12 @@ export async function runScan(input: string): Promise<ScanReport> {
     findings,
     score: scoreFrom(findings),
     platform: { ...detectPlatform(html, headers), ...(wordpress ? { wordpress } : {}) },
-    infra: { ...infra, cdn: cdnFrom(headers) },
+    infra: { ...infra, cdn },
     scale: { sitemaps: sitemaps.length ? sitemaps : [primarySitemap], sitemapUrls, languages },
     ai: { robotsTxt: robots.ok, llmsTxt: llms.ok, blockedBots: robots.ok ? blockedBots(robots.text) : [] },
+    cloaking,
     fingerprints,
-    fingerprintKeys: flattenFingerprints(fingerprints, { ns: infra.nameservers, ips: infra.ips }),
+    fingerprintKeys: flattenFingerprints(fingerprints, { ns: infra.nameservers, ips: infra.ips, behindCdn: !!cdn }),
     scannedAt: new Date().toISOString(),
   };
 }

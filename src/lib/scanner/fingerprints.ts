@@ -53,8 +53,32 @@ export function extractFingerprints(html: string): Fingerprints {
   };
 }
 
-/** Flat, searchable form: `kind:value`, which is what cross-scan matching compares. */
-export function flattenFingerprints(fp: Fingerprints, extra: { ns?: string[]; ips?: string[] } = {}): string[] {
+/**
+ * DNS providers so widely used that sharing one says nothing about ownership.
+ *
+ * Two sites on Cloudflare have as much in common as two people who both use electricity. Left in,
+ * these swamp the comparison: after a hundred scans every Cloudflare site "matches" every other
+ * one, the strong signals drown in the list, and the feature stops being believable.
+ */
+const UBIQUITOUS_DNS = [
+  "cloudflare.com", "awsdns", "googledomains.com", "google.com", "domaincontrol.com",
+  "registrar-servers.com", "namecheaphosting.com", "azure-dns", "digitalocean.com",
+  "hostinger.com", "dnsimple.com", "nsone.net", "vercel-dns.com", "netlify.com",
+];
+
+function meaningfulNameserver(host: string): boolean {
+  const value = host.toLowerCase();
+  return !UBIQUITOUS_DNS.some(provider => value.includes(provider));
+}
+
+/**
+ * Flat, searchable form: `kind:value`, which is what cross-scan matching compares.
+ *
+ * `behindCdn` matters more than it looks. An IP behind a CDN belongs to the CDN, not to the site,
+ * so two domains sharing 188.114.96.0 share Cloudflare and nothing else — recording that as an
+ * ownership signal would be actively wrong, not merely weak.
+ */
+export function flattenFingerprints(fp: Fingerprints, extra: { ns?: string[]; ips?: string[]; behindCdn?: boolean } = {}): string[] {
   const out: string[] = [];
   const push = (kind: string, values: string[]) => values.forEach(value => out.push(`${kind}:${value.toLowerCase()}`));
   push("ga4", fp.ga4);
@@ -65,8 +89,8 @@ export function flattenFingerprints(fp: Fingerprints, extra: { ns?: string[]; ip
   push("pixel", fp.facebookPixel);
   push("hotjar", fp.hotjar);
   push("clarity", fp.clarity);
-  push("ns", extra.ns ?? []);
-  push("ip", extra.ips ?? []);
+  push("ns", (extra.ns ?? []).filter(meaningfulNameserver));
+  if (!extra.behindCdn) push("ip", extra.ips ?? []);
   return [...new Set(out)];
 }
 

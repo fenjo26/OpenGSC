@@ -2,10 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  AlertTriangle, CheckCircle2, Fingerprint, Globe2, Info, Layers, Loader2, Radar, Search, Server,
-  ShieldAlert, Trash2, XCircle,
+  AlertTriangle, CheckCircle2, Download, Fingerprint, Globe2, Info, Layers, Loader2, Radar, Search,
+  BarChart3, Eye, Server, ShieldAlert, Trash2, XCircle,
 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import { buildScanMarkdown } from "@/lib/scanner/exportMd";
+import { getMetricsCreds } from "@/lib/seo/metricsClient";
+import { downloadFile } from "@/lib/seo/exportFormats";
 
 type Finding = { id: string; severity: "critical" | "warning" | "info"; evidence?: string };
 type Related = { host: string; scanId: string; matches: string[]; strength: "strong" | "weak" };
@@ -18,6 +21,10 @@ type Report = {
   infra: { ips: string[]; nameservers: string[]; mx: string[]; cdn: string | null };
   scale: { sitemaps: string[]; sitemapUrls: number | null; languages: string[] };
   ai: { robotsTxt: boolean; llmsTxt: boolean; blockedBots: string[] };
+  cloaking: null | { verdict: "clean" | "suspicious" | "cloaking" | "unknown"; score: number; flags: string[];
+    googlebot: { status: number; finalUrl: string; title: string; words: number; indexable: boolean; blocked?: boolean };
+    browser: { status: number; finalUrl: string; title: string; words: number; indexable: boolean };
+    redirectChain: string[] };
   fingerprints: Record<string, any>;
   scannedAt: string;
 };
@@ -34,6 +41,14 @@ export default function CrawlerPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notMigrated, setNotMigrated] = useState(false);
+  // The history grows one row per check and is the first thing on screen; past a screenful it needs
+  // paging for the same reason the audit table does.
+  const [page, setPage] = useState(0);
+  // Ahrefs/Semrush numbers for the scanned domain. Read from the local cache for free on every
+  // scan; fetching fresh ones spends the owner's units, so that stays a separate, priced click.
+  const [metrics, setMetrics] = useState<Record<string, any> | null>(null);
+  const [metricsBusy, setMetricsBusy] = useState(false);
+  const [metricsNote, setMetricsNote] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -59,6 +74,38 @@ export default function CrawlerPage() {
     finally { setBusy(false); }
   }
 
+  const loadMetrics = useCallback(async (host: string, spend: boolean) => {
+    const creds = getMetricsCreds();
+    if (spend && !creds.apiKey) { setMetricsNote("no_key"); return; }
+    setMetricsBusy(true); setMetricsNote("");
+    try {
+      const res = await fetch("/api/metrics/domain", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          domains: [host], provider: creds.provider, fetch: spend,
+          ...(spend ? { apiKey: creds.apiKey, baseUrl: creds.baseUrl, cap: creds.cap } : {}),
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      setMetrics(body?.metrics?.[host] ?? null);
+      if (body?.error) setMetricsNote(String(body.error));
+    } catch { setMetricsNote("failed"); }
+    finally { setMetricsBusy(false); }
+  }, []);
+
+  // A cache read costs nothing and reaches no provider, so it happens automatically; anything that
+  // bills the owner never does.
+  //
+  // Reads `current` rather than the `report` alias: the alias is declared further down, and a
+  // dependency array is evaluated during render, so naming it here is a use-before-initialization
+  // — which is precisely how this failed the first time.
+  const scannedHost = current?.report?.host;
+  useEffect(() => {
+    if (!scannedHost) return;
+    setMetrics(null); setMetricsNote("");
+    void loadMetrics(scannedHost, false);
+  }, [scannedHost, loadMetrics]);
+
   async function open(id: string) {
     const res = await fetch(`/api/scan/${encodeURIComponent(id)}`, { cache: "no-store" });
     const body = await res.json();
@@ -72,7 +119,17 @@ export default function CrawlerPage() {
     void load();
   }
 
+  const PAGE_SIZE = 12;
+  const pageCount = Math.max(1, Math.ceil(scans.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const visibleScans = scans.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
   const report = current?.report;
+
+  function exportMarkdown() {
+    if (!report) return;
+    const md = buildScanMarkdown(report as any, current?.related ?? [], code => t((ISSUE_KEYS[code] ?? code) as any) || code);
+    downloadFile(md, `scan-${report.host}-${report.scannedAt.slice(0, 10)}.md`, "text/markdown;charset=utf-8");
+  }
 
   return <div className="main-content" style={{ display: "flex", flexDirection: "column", gap: 16, paddingTop: 20, paddingBottom: 40 }}>
     <div>
@@ -108,7 +165,7 @@ export default function CrawlerPage() {
           {t("crawlerHistory" as any)} · {scans.length}
         </div>
         {!scans.length && <div style={{ padding: 24, textAlign: "center", fontSize: 12, color: "var(--color-text-secondary)" }}>{t("crawlerNoScans" as any)}</div>}
-        {scans.map(item => <div key={item.id} style={{ display: "flex", alignItems: "center", borderBottom: "1px solid var(--color-border)" }}>
+        {visibleScans.map(item => <div key={item.id} style={{ display: "flex", alignItems: "center", borderBottom: "1px solid var(--color-border)" }}>
           <button onClick={() => open(item.id)} style={{ flex: 1, minWidth: 0, textAlign: "left", border: 0, background: item.id === current?.id ? "rgba(41,151,255,.07)" : "transparent", color: "var(--color-text-primary)", padding: "11px 14px", cursor: "pointer" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
               {item.status === "completed" ? <CheckCircle2 size={13} color={scoreColor(item.score ?? 0)} /> : <XCircle size={13} color="#ff453a" />}
@@ -119,6 +176,11 @@ export default function CrawlerPage() {
           </button>
           <button onClick={() => remove(item.id)} title={t("crawlerDelete" as any)} style={{ border: 0, background: "transparent", color: "var(--color-text-tertiary)", padding: "0 10px", cursor: "pointer" }}><Trash2 size={13} /></button>
         </div>)}
+        {scans.length > PAGE_SIZE && <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 12px", fontSize: 11, color: "var(--color-text-secondary)" }}>
+          <button onClick={() => setPage(Math.max(0, safePage - 1))} disabled={safePage === 0} style={pager(safePage === 0)}>←</button>
+          <span>{safePage + 1} / {pageCount}</span>
+          <button onClick={() => setPage(Math.min(pageCount - 1, safePage + 1))} disabled={safePage >= pageCount - 1} style={pager(safePage >= pageCount - 1)}>→</button>
+        </div>}
       </div>
 
       <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
@@ -133,6 +195,28 @@ export default function CrawlerPage() {
                 {report.redirected && ` · ${t("crawlerRedirected" as any)}`}
               </div>
             </div>
+            <button onClick={exportMarkdown} style={ghostLarge}><Download size={14} /> {t("crawlerExportMd" as any)}</button>
+          </div>
+
+          <div className="panel">
+            <h3 style={sectionTitle}><BarChart3 size={15} /> {t("crawlerMetrics" as any)}</h3>
+            {metrics ? <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginTop: 8, fontSize: 13 }}>
+              <Metric label="DR" value={metrics.dr ?? metrics.domainRating} />
+              <Metric label={t("crawlerRefDomains" as any)} value={metrics.refDomains ?? metrics.referringDomains} />
+              <Metric label={t("crawlerBacklinks" as any)} value={metrics.backlinks} />
+              <Metric label={t("crawlerTraffic" as any)} value={metrics.traffic ?? metrics.organicTraffic} />
+              {metrics.checkedAt && <span style={{ ...hint, alignSelf: "center" }}>{new Date(metrics.checkedAt).toLocaleDateString()}</span>}
+            </div> : <p style={hint}>{t("crawlerMetricsEmpty" as any)}</p>}
+            <p style={{ ...hint, marginTop: 8 }}>{t("crawlerMetricsCost" as any)}</p>
+            {metricsNote && <p style={{ ...hint, color: "var(--color-accent-orange)" }}>
+              {t(`crawlerMetrics_${metricsNote}` as any) !== `crawlerMetrics_${metricsNote}` ? t(`crawlerMetrics_${metricsNote}` as any) : metricsNote}
+            </p>}
+            <button
+              style={{ ...ghostLarge, marginTop: 8 }} disabled={metricsBusy}
+              onClick={() => report && window.confirm(t("crawlerMetricsConfirm" as any)) && loadMetrics(report.host, true)}
+            >
+              {metricsBusy ? <Loader2 className="spin" size={14} /> : <BarChart3 size={14} />} {t("crawlerMetricsFetch" as any)}
+            </button>
           </div>
 
           {current?.related?.length ? <div className="panel">
@@ -149,6 +233,37 @@ export default function CrawlerPage() {
               </div>)}
             </div>
           </div> : null}
+
+          {report.cloaking && <div className="panel" style={report.cloaking.verdict === "cloaking" ? { borderColor: "rgba(255,69,58,.4)" } : report.cloaking.verdict === "suspicious" ? { borderColor: "rgba(255,159,10,.4)" } : undefined}>
+            <h3 style={sectionTitle}><Eye size={15} /> {t("crawlerCloaking" as any)}</h3>
+            <p style={hint}>{t("crawlerCloakingHint" as any)}</p>
+            <div style={{ display: "flex", alignItems: "center", gap: 9, margin: "10px 0" }}>
+              <span style={{ padding: "4px 10px", borderRadius: 20, fontSize: 11, fontWeight: 800, textTransform: "uppercase",
+                color: report.cloaking.verdict === "cloaking" ? "#ff453a" : report.cloaking.verdict === "suspicious" ? "#ff9f0a" : "#34c759",
+                background: report.cloaking.verdict === "cloaking" ? "rgba(255,69,58,.1)" : report.cloaking.verdict === "suspicious" ? "rgba(255,159,10,.1)" : "rgba(52,199,89,.1)" }}>
+                {t(`crawlerCloak_${report.cloaking.verdict}` as any)}
+              </span>
+              {report.cloaking.googlebot.blocked && <span style={{ fontSize: 11, color: "var(--color-accent-orange)" }}>{t("crawlerGooglebotBlocked" as any)}</span>}
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <thead><tr style={{ color: "var(--color-text-tertiary)", textAlign: "left" }}>
+                <th style={cell}> </th><th style={cell}>Googlebot</th><th style={cell}>{t("crawlerBrowser" as any)}</th>
+              </tr></thead>
+              <tbody>
+                <tr><td style={cell}>HTTP</td><td style={cell}>{report.cloaking.googlebot.status}</td><td style={cell}>{report.cloaking.browser.status}</td></tr>
+                <tr><td style={cell}>URL</td><td style={cell}>{report.cloaking.googlebot.finalUrl}</td><td style={cell}>{report.cloaking.browser.finalUrl}</td></tr>
+                <tr><td style={cell}>Title</td><td style={cell}>{report.cloaking.googlebot.title || "—"}</td><td style={cell}>{report.cloaking.browser.title || "—"}</td></tr>
+                <tr><td style={cell}>{t("crawlerWords" as any)}</td><td style={cell}>{report.cloaking.googlebot.words}</td><td style={cell}>{report.cloaking.browser.words}</td></tr>
+                <tr><td style={cell}>{t("crawlerIndexable" as any)}</td><td style={cell}>{report.cloaking.googlebot.indexable ? "✓" : "—"}</td><td style={cell}>{report.cloaking.browser.indexable ? "✓" : "—"}</td></tr>
+              </tbody>
+            </table>
+            {report.cloaking.flags.length > 0 && <ul style={{ margin: "10px 0 0", paddingLeft: 18, fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+              {report.cloaking.flags.map(flag => <li key={flag}>{flag}</li>)}
+            </ul>}
+            {report.cloaking.redirectChain.length > 1 && <div style={{ marginTop: 10, fontSize: 11, color: "var(--color-text-tertiary)", overflowWrap: "anywhere" }}>
+              {t("crawlerChain" as any)}: {report.cloaking.redirectChain.join("  →  ")}
+            </div>}
+          </div>}
 
           <div className="panel">
             <h3 style={sectionTitle}><ShieldAlert size={15} /> {t("crawlerFindings" as any)} · {report.findings.length}</h3>
@@ -176,7 +291,7 @@ export default function CrawlerPage() {
               [t("crawlerStack" as any), report.platform.hints.join(", ") || "—"],
               ...(report.platform.wordpress ? [
                 [t("crawlerWpTheme" as any), report.platform.wordpress.themes.join(", ") || "—"],
-                [t("crawlerWpPlugins" as any), `${report.platform.wordpress.plugins.length}: ${report.platform.wordpress.plugins.slice(0, 8).join(", ")}`],
+                [t("crawlerWpPlugins" as any), report.platform.wordpress.plugins.length ? `${report.platform.wordpress.plugins.length}: ${report.platform.wordpress.plugins.slice(0, 8).join(", ")}` : "—"],
                 [t("crawlerWpUsers" as any), report.platform.wordpress.restUsers.join(", ") || "—"],
               ] as [string, string][] : []),
             ]} />
@@ -210,6 +325,13 @@ export default function CrawlerPage() {
   </div>;
 }
 
+function Metric({ label, value }: { label: string; value: unknown }) {
+  return <span style={{ display: "flex", flexDirection: "column" }}>
+    <b style={{ fontSize: 17 }}>{value == null || value === "" ? "—" : String(value)}</b>
+    <small style={{ color: "var(--color-text-tertiary)" }}>{label}</small>
+  </span>;
+}
+
 function Card({ icon, title, rows }: { icon: React.ReactNode; title: string; rows: [string, string][] }) {
   return <div className="panel" style={{ minWidth: 0 }}>
     <h3 style={sectionTitle}>{icon} {title}</h3>
@@ -227,6 +349,8 @@ function Card({ icon, title, rows }: { icon: React.ReactNode; title: string; row
 const ISSUE_KEYS: Record<string, string> = {
   https_unavailable: "publicCheckHttpsUnavailable", robots_txt_missing: "crawlerIssueRobotsMissing",
   sitemap_missing: "crawlerIssueSitemapMissing", wp_users_exposed: "crawlerIssueWpUsers",
+  cloaking_detected: "crawlerIssueCloaking", cloaking_suspected: "crawlerIssueCloakSuspect",
+  googlebot_blocked: "crawlerIssueGbBlocked",
   wp_xmlrpc_open: "crawlerIssueXmlrpc", wp_readme_public: "crawlerIssueReadme",
   http_error: "auditIssueHttpError", redirect: "auditIssueRedirect", redirect_chain: "auditIssueRedirectChain",
   title_missing: "auditIssueTitleMissing", title_too_long: "auditIssueTitleTooLong",
@@ -247,3 +371,6 @@ const hint: React.CSSProperties = { fontSize: 12, lineHeight: 1.55, color: "var(
 const sectionTitle: React.CSSProperties = { display: "flex", alignItems: "center", gap: 7, fontSize: 14, fontWeight: 700, margin: "0 0 4px", color: "var(--color-text-primary)" };
 const primary: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 15px", borderRadius: 9, border: 0, background: "var(--color-accent-blue)", color: "#fff", fontSize: 13, fontWeight: 650, cursor: "pointer" };
 const ghost: React.CSSProperties = { padding: "5px 9px", borderRadius: 7, border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-secondary)", fontSize: 11, cursor: "pointer" };
+const cell: React.CSSProperties = { padding: "6px 10px 6px 0", borderBottom: "1px solid var(--color-border)", overflowWrap: "anywhere", verticalAlign: "top" };
+const ghostLarge: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 13px", borderRadius: 9, border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-secondary)", fontSize: 12, fontWeight: 650, cursor: "pointer" };
+const pager = (disabled: boolean): React.CSSProperties => ({ padding: "4px 9px", borderRadius: 6, border: "1px solid var(--color-border)", background: "var(--color-card)", color: disabled ? "var(--color-text-tertiary)" : "var(--color-text-secondary)", cursor: disabled ? "default" : "pointer" });

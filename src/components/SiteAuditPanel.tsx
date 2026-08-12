@@ -103,6 +103,9 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
   const guest = isGuestView();
   const [audits, setAudits] = useState<any[]>([]);
   const [current, setCurrent] = useState<any>(null); // { audit, pages }
+  // A 200-page crawl rendered 300 rows at once, which is a scroll bar rather than a table. The
+  // filter changes what "page 1" means, so the position resets whenever the filter or audit does.
+  const [auditPage, setAuditPage] = useState(0);
   // Empty means "the whole site", which is what almost everyone wants and what a crawler should do
   // without being asked. The field stays for the rare case of deliberately sampling a huge site.
   const [maxPages, setMaxPages] = useState<number | "">("");
@@ -214,10 +217,18 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
     if (!current?.audit) return;
     const next = issueFilter === code ? "" : code;
     setIssueFilter(next);
+    setAuditPage(0);
     openAudit(current.audit.id, next);
   };
 
   const summary = current?.audit?.summary;
+  // 300 rows in one table is a scroll bar pretending to be a report. The filter decides what page
+  // one contains, so both it and switching audits reset the position.
+  const AUDIT_PAGE_SIZE = 50;
+  const filteredPages: any[] = (current?.pages ?? []).filter((p: any) => !issueFilter || p.issues.includes(issueFilter));
+  const auditPageCount = Math.max(1, Math.ceil(filteredPages.length / AUDIT_PAGE_SIZE));
+  const safePage = Math.min(auditPage, auditPageCount - 1);
+  const visiblePages = filteredPages.slice(safePage * AUDIT_PAGE_SIZE, safePage * AUDIT_PAGE_SIZE + AUDIT_PAGE_SIZE);
   const verification = current?.audit?.verification;
   const verificationOpen = verification ? [
     ...(verification.regressions ?? []).map((finding: any) => ({ ...finding, kind: "regression" })),
@@ -378,7 +389,7 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
                 </tr>
               </thead>
               <tbody>
-                {(current?.pages ?? []).filter((p: any) => !issueFilter || p.issues.includes(issueFilter)).slice(0, 300).map((p: any) => (
+                {visiblePages.map((p: any) => (
                   <tr key={p.url} style={{ borderBottom: "1px solid var(--color-border)" }}>
                     <td style={{ padding: "8px 14px", maxWidth: "340px" }}>
                       <a href={p.url} target="_blank" rel="noreferrer" style={{ color: "var(--color-accent-blue)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "4px" }}>
@@ -414,6 +425,18 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
                 ))}
               </tbody>
             </table>
+            {filteredPages.length > AUDIT_PAGE_SIZE && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 14px", borderTop: "1px solid var(--color-border)", fontSize: 12, color: "var(--color-text-secondary)" }}>
+                <span>
+                  {safePage * AUDIT_PAGE_SIZE + 1}–{safePage * AUDIT_PAGE_SIZE + visiblePages.length} / {filteredPages.length}
+                </span>
+                <span style={{ display: "flex", gap: 6 }}>
+                  <button onClick={() => setAuditPage(Math.max(0, safePage - 1))} disabled={safePage === 0} style={pagerButton(safePage === 0)}>←</button>
+                  <span style={{ padding: "6px 4px" }}>{safePage + 1} / {auditPageCount}</span>
+                  <button onClick={() => setAuditPage(Math.min(auditPageCount - 1, safePage + 1))} disabled={safePage >= auditPageCount - 1} style={pagerButton(safePage >= auditPageCount - 1)}>→</button>
+                </span>
+              </div>
+            )}
           </div>
         </>
       )}
@@ -441,3 +464,9 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
     </div>
   );
 }
+
+const pagerButton = (disabled: boolean): React.CSSProperties => ({
+  padding: "6px 11px", borderRadius: 7, border: "1px solid var(--color-border)",
+  background: "var(--color-card)", color: disabled ? "var(--color-text-tertiary)" : "var(--color-text-secondary)",
+  cursor: disabled ? "default" : "pointer", fontSize: 12,
+});

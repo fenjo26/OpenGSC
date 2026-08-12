@@ -481,7 +481,7 @@ function buildEvidence(
   issues: string[],
   ctx: {
     facts: AuditPageFacts;
-    signals: { openGraphMissing?: string[]; mixedContentUrls?: string[]; jsonLdInvalid?: number; htmlLang?: string; canonical?: string | null } | null | undefined;
+    signals: { openGraphMissing?: string[]; twitterCardMissing?: string[]; mixedContentUrls?: string[]; jsonLdInvalid?: number; htmlLang?: string; canonical?: string | null } | null | undefined;
     securityHeaders: string[];
     redirectTo?: string | null;
     brokenLinks: string[];
@@ -515,6 +515,7 @@ function buildEvidence(
     lang_missing: facts.htmlLang ? `lang="${facts.htmlLang}"` : "no lang attribute",
     jsonld_invalid: `${facts.jsonLdInvalid} invalid block(s)`,
     open_graph_incomplete: list(signals?.openGraphMissing) || `${facts.openGraphMissing} missing`,
+    twitter_card_incomplete: list(signals?.twitterCardMissing),
     mixed_content: list(signals?.mixedContentUrls, 3),
     security_headers_missing: list(ctx.securityHeaders, 6),
     orphan_sitemap_page: "in sitemap, no internal links",

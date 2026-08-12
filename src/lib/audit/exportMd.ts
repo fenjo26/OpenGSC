@@ -248,11 +248,17 @@ export function buildAuditMarkdown(
     }
   }
 
-  // Every affected URL, once, at the end: the tables above stay readable and nothing is lost for a
-  // reader who does need the full set.
-  const overflow = ordered.filter(([, list]) => list.length > (isSiteWide(list.length) ? 3 : MAX_ROWS));
-  if (overflow.length) {
-    out.push("## Appendix — all affected pages", "");
+  // The appendix exists for findings scattered across a subset of pages, where knowing exactly
+  // which ones is the work. A site-wide finding is on everything by definition, so printing the
+  // same two hundred paths again — once per template issue — pads the file without adding a fact.
+  const overflow = ordered.filter(([, list]) => !isSiteWide(list.length) && list.length > MAX_ROWS);
+  const siteWideCodes = ordered.filter(([, list]) => isSiteWide(list.length));
+  if (overflow.length || siteWideCodes.length) {
+    out.push("## Appendix — affected pages", "");
+    for (const [code, list] of siteWideCodes) {
+      out.push(`- \`${code}\`: all ${list.length} crawled pages${list.length < crawled ? ` (of ${crawled})` : ""}.`);
+    }
+    if (siteWideCodes.length) out.push("");
     for (const [code, list] of overflow) {
       out.push(`### \`${code}\` (${list.length})`, "");
       out.push(list.map(p => shortUrl(p.url)).join("\n"), "");
