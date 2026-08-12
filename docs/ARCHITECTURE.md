@@ -106,6 +106,27 @@ The result includes inferred query intent and page roles plus review-only action
 never performs any of those actions. CJK queries gain deterministic character bigrams rather than
 requiring a language-model tokenizer.
 
+**Sitemap Inventory** is an additive layer on the existing `SitemapUrl` indexing table, not a new
+audit product. A sync keeps source sitemap, raw/valid `lastmod`, extension counts, first/last seen
+and a per-run change state while preserving every Google/XML River/2index/Neural field. Sitemap
+indexes are bounded to 50 children, depth 3 and 20,000 unique URLs; raw `.gz` bodies and
+image/video/news namespaces are understood. A failed root returns an error, and a failed child
+makes the run `partial`. Crucially, only a complete run advances negative evidence: the first miss
+becomes `pending_missing`, the second consecutive complete miss becomes `missing`, and neither a
+network error nor a partial tree changes unseen rows. Page-metadata verification is a separate,
+explicit action capped at 50 URLs; it stores a normalized SHA-256 fingerprint and small response
+facts, never page content. This lets a changed `lastmod` with unchanged observed content be marked
+as suspicious.
+
+The “Audit from sitemap” button only sets `seedFromSitemap` on a normal `SiteAudit` run. The audit
+still uses its own models, rule registry, history and screen; active inventory URLs merely augment
+the BFS frontier, and a seeded page with no observed internal inbound link is reported as an orphan
+candidate. AI Visibility and SEO Tools → GEO remain completely unrelated to this path.
+
+These columns are applied by the normal updater's backup + `prisma db push` sequence. The change is
+additive and preserves old `SitemapUrl` rows; rollback means restoring the updater's pre-change
+SQLite backup rather than manually dropping columns from a live database.
+
 ## 3. The SEO generation pipeline (`src/lib/seo/generate.ts`)
 
 This is the most intricate part of the codebase. `genOutline()` and `genText()` are each a chain of

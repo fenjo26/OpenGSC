@@ -187,6 +187,32 @@ model SitemapUrl {
   siteId        String
   url           String
 
+  // Sitemap Inventory. These fields are additive: the indexing providers below keep their
+  // existing semantics, while syncs can now explain where a URL came from and how it changed.
+  sourceSitemap       String?
+  sitemapType         String    @default("standard") // standard | image | video | news | mixed
+  lastmod             String?   // raw W3C value; invalid values remain inspectable
+  lastmodValid        Boolean?
+  imageCount          Int       @default(0)
+  videoCount          Int       @default(0)
+  newsCount           Int       @default(0)
+  firstSeenAt         DateTime  @default(now())
+  lastSeenAt          DateTime  @default(now())
+  lastSeenSync        String?
+  missingSyncs        Int       @default(0)
+  inventoryStatus     String    @default("active") // active | pending_missing | missing
+  changeStatus        String    @default("added")  // added | changed | restored | unchanged | pending_missing | missing
+
+  // Bounded, explicit metadata verification. Content is never stored; only a normalized hash
+  // and small response facts are retained so noisy lastmod values can be identified.
+  contentHash         String?
+  contentType         String?
+  contentHttpStatus   Int?
+  contentTitle        String?
+  contentCheckedAt    DateTime?
+  contentLastmod      String?
+  lastmodReliability  String    @default("unknown") // unknown | reliable | suspicious
+
   // Google URL Inspection status
   googleStatus   String?   // "Submitted and indexed", "URL is not on Google", etc.
   googleCoverage String?   // raw coverage state
@@ -213,6 +239,8 @@ model SitemapUrl {
 
   @@unique([siteId, url])
   @@index([siteId])
+  @@index([siteId, inventoryStatus])
+  @@index([siteId, changeStatus])
 }
 
 model Backlink {

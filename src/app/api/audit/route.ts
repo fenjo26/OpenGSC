@@ -25,7 +25,7 @@ export async function POST(req: Request) {
   if (running) return NextResponse.json({ error: "already_running", id: running.id }, { status: 409 });
 
   const baselineAuditId = String(b.baselineAuditId ?? "").trim() || null;
-  let baselineOptions: { ignorePatterns?: string[]; skipDefaultIgnores?: boolean } | null = null;
+  let baselineOptions: { ignorePatterns?: string[]; skipDefaultIgnores?: boolean; seedFromSitemap?: boolean } | null = null;
   if (baselineAuditId) {
     const baseline = await prisma.siteAudit.findFirst({
       where: { id: baselineAuditId, siteId, status: "completed" },
@@ -45,6 +45,7 @@ export async function POST(req: Request) {
       ? b.ignorePatterns.map(String)
       : String(b.ignorePatterns ?? "").split(/[\n,]/),
     skipDefaultIgnores: b.skipDefaultIgnores === true,
+    seedFromSitemap: b.seedFromSitemap === true,
   };
   const audit = await prisma.siteAudit.create({
     data: {

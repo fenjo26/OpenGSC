@@ -102,6 +102,8 @@ export interface AuditOptions {
   ignorePatterns?: string[];
   /** turn off the built-in list above (defaults stay on) */
   skipDefaultIgnores?: boolean;
+  /** add active sitemap inventory URLs to the crawl frontier; normal BFS remains the default */
+  seedFromSitemap?: boolean;
 }
 
 const activeAudits = new Set<string>();
@@ -114,6 +116,7 @@ function storedOptions(value?: string | null): AuditOptions | undefined {
     return {
       ignorePatterns: Array.isArray(parsed?.ignorePatterns) ? parsed.ignorePatterns.map(String) : undefined,
       skipDefaultIgnores: parsed?.skipDefaultIgnores === true,
+      seedFromSitemap: parsed?.seedFromSitemap === true,
     };
   } catch { return undefined; }
 }
@@ -194,6 +197,22 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
     type QItem = { url: string; depth: number };
     const queue: QItem[] = [{ url: root.href, depth: 0 }];
     const seen = new Set<string>([root.href]);
+    const sitemapSeeds = new Set<string>();
+    if (opts?.seedFromSitemap) {
+      const inventory = await prisma.sitemapUrl.findMany({
+        where: { siteId: audit.siteId, inventoryStatus: { not: "missing" } },
+        orderBy: { lastSeenAt: "desc" },
+        take: Math.max(0, maxPages - 1),
+        select: { url: true },
+      });
+      for (const row of inventory) {
+        const seed = normalizeUrl(row.url, root);
+        if (!seed || !sameHost(seed, root) || isIgnored(seed.href) || seen.has(seed.href)) continue;
+        seen.add(seed.href);
+        sitemapSeeds.add(seed.href);
+        queue.push({ url: seed.href, depth: 1 });
+      }
+    }
     const results = new Map<string, PageResult & { depth: number; ex?: AuditHtmlSignals; internalTargets?: string[] }>();
 
     let crawled = 0;
@@ -249,6 +268,13 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
     for (const r of results.values()) {
       const t = r.ex?.title?.toLowerCase().trim();
       if (t) titleCount.set(t, (titleCount.get(t) ?? 0) + 1);
+    }
+    const inboundLinks = new Map<string, number>();
+    for (const [source, result] of results) {
+      for (const target of new Set(result.internalTargets ?? [])) {
+        if (target === source) continue;
+        inboundLinks.set(target, (inboundLinks.get(target) ?? 0) + 1);
+      }
     }
 
     const issueTotals: Record<string, number> = {};
@@ -326,6 +352,8 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
         twitterCardIncomplete: r.ex?.twitterCardIncomplete ?? false,
         mixedContentCount: r.ex?.mixedContentUrls.length ?? 0,
         missingSecurityHeaders: isRoot && r.ex ? missingSecurityHeaders(r.responseHeaders, new URL(url).protocol === "https:").length : 0,
+        sitemapSeeded: sitemapSeeds.has(url),
+        internalInboundLinks: inboundLinks.get(url) ?? 0,
       };
       const issues = evaluateAuditPageRules(facts);
       for (const code of issues) bump(code);
@@ -405,6 +433,10 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
           // Site-wide (not per-page), so it lives in the summary rather than as a row issue. Old
           // audits predating this field simply have no key, and the UI renders nothing for them.
           ...(aiCrawlability ? { aiCrawlability } : {}),
+          ...(opts?.seedFromSitemap ? {
+            sitemapSeeds: sitemapSeeds.size,
+            orphanPages: issueTotals.orphan_sitemap_page ?? 0,
+          } : {}),
         }),
         verification: verification ? JSON.stringify(verification) : null,
       },

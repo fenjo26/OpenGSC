@@ -514,6 +514,12 @@ Clicks/impressions помогают выбрать более сильную с�
 
 **Источник идеи:** продуктовая задача sitemap-harvester; его бинарный архив не используется.
 
+> Реализовано как совместимое расширение вкладки Indexing: старые indexing-поля и JSON-ответы
+> сохранены, добавлены metadata/diff/coverage, gzip и sitemap extensions. Исчезновение требует двух
+> полных успешных sync; partial/error не дают отрицательного evidence. Site Audit получает только
+> явный `seedFromSitemap` и собственный orphan finding — его модели, registry и UI не объединяются
+> с Indexing, AI Visibility или SEO Tools → GEO.
+
 **Что сделать**
 
 - сохранять `lastmod`, source sitemap, sitemap type, firstSeen, lastSeen и content metadata;

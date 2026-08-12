@@ -32,6 +32,8 @@ const healthyFacts = (overrides: Partial<AuditPageFacts> = {}): AuditPageFacts =
   twitterCardIncomplete: false,
   mixedContentCount: 0,
   missingSecurityHeaders: 0,
+  sitemapSeeded: false,
+  internalInboundLinks: 2,
   ...overrides,
 });
 
@@ -95,4 +97,9 @@ test("robots and security checks distinguish conflict from absence", () => {
     "referrer-policy": "strict-origin-when-cross-origin",
     "strict-transport-security": "max-age=31536000",
   }, true), []);
+});
+
+test("only a sitemap-seeded page without internal inbound links is an orphan candidate", () => {
+  assert.equal(evaluateAuditPageRules(healthyFacts({ sitemapSeeded: true, internalInboundLinks: 0 })).includes("orphan_sitemap_page"), true);
+  assert.equal(evaluateAuditPageRules(healthyFacts({ sitemapSeeded: false, internalInboundLinks: 0 })).includes("orphan_sitemap_page"), false);
 });

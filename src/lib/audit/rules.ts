@@ -30,6 +30,8 @@ export interface AuditPageFacts {
   twitterCardIncomplete: boolean;
   mixedContentCount: number;
   missingSecurityHeaders: number;
+  sitemapSeeded: boolean;
+  internalInboundLinks: number;
 }
 
 export interface AuditRuleDefinition {
@@ -78,6 +80,7 @@ export const AUDIT_RULES: readonly AuditRuleDefinition[] = [
   { id: "thin_content", severity: "warning", category: "content", titleKey: "auditIssueThinContent", scope: "page", evaluate: facts => visibleHtml(facts) && facts.wordCount < 150 },
   { id: "images_no_alt", severity: "warning", category: "content", titleKey: "auditIssueImagesNoAlt", scope: "page", evaluate: facts => html(facts) && facts.imagesNoAlt > 0 },
   { id: "broken_links", severity: "critical", category: "links", titleKey: "auditIssueBrokenLinks", scope: "page", evaluate: facts => html(facts) && facts.brokenLinkCount > 0 },
+  { id: "orphan_sitemap_page", severity: "warning", category: "links", titleKey: "auditIssueOrphanSitemapPage", scope: "site", affectsScore: false, evaluate: facts => html(facts) && facts.sitemapSeeded && facts.internalInboundLinks === 0 },
   { id: "slow_response", severity: "warning", category: "performance", titleKey: "auditIssueSlowResponse", scope: "page", evaluate: facts => facts.loadMs > 3000 },
   { id: "js_rendered", severity: "info", category: "rendering", titleKey: "auditIssueJsRendered", scope: "page", evaluate: facts => html(facts) && facts.jsRendered },
   { id: "viewport_missing", severity: "warning", category: "rendering", titleKey: "auditIssueViewportMissing", scope: "page", evaluate: facts => html(facts) && !facts.viewportPresent },

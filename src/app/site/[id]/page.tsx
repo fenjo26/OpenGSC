@@ -2406,8 +2406,13 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
   // ── Sitemap sync state ──
   const [syncing,    setSyncing]    = useState(false);
   const [syncError,  setSyncError]  = useState("");
+  const [syncNotice, setSyncNotice] = useState("");
   const [customSitemapUrl, setCustomSitemapUrl] = useState("");
   const [crawlInterval, setCrawlInterval] = useState("disabled");
+  const [metadataChecking, setMetadataChecking] = useState(false);
+  const [metadataMsg, setMetadataMsg] = useState("");
+  const [auditStarting, setAuditStarting] = useState(false);
+  const [auditSeedMsg, setAuditSeedMsg] = useState("");
 
   // ── Selection ──
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -2486,18 +2491,55 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
 
   // ── Sitemap sync ──
   const runSync = async () => {
-    setSyncing(true); setSyncError(""); setSubmitResult(null);
+    setSyncing(true); setSyncError(""); setSyncNotice(""); setSubmitResult(null);
     try {
       const res = await fetch("/api/indexing/sitemap/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ siteDbId, sitemapUrl: customSitemapUrl || undefined }),
+        body: JSON.stringify({ siteDbId, sitemapUrl: customSitemapUrl || undefined, crawlInterval }),
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error ?? t("errSyncFailed"));
+      setSyncNotice(d.partial ? t("idxPartialSync") : t("idxSyncComplete"));
       await loadUrls(1, statusFilter, search);
     } catch (e: any) { setSyncError(e.message); }
     setSyncing(false);
+  };
+
+  const verifyInventoryMetadata = async () => {
+    setMetadataChecking(true); setMetadataMsg("");
+    try {
+      const res = await fetch("/api/indexing/sitemap/metadata", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ siteDbId, ...(selected.size ? { urls: [...selected] } : {}) }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error ?? t("errSyncFailed"));
+      setMetadataMsg(t("idxMetadataVerified").replace("{n}", String(d.checked ?? 0)) + (d.errors ? ` · ${d.errors} ${t("idxErrors")}` : ""));
+      await loadUrls(page, statusFilter, search);
+    } catch (error: any) {
+      setMetadataMsg(`✗ ${error.message}`);
+    }
+    setMetadataChecking(false);
+  };
+
+  const startSitemapAudit = async () => {
+    setAuditStarting(true); setAuditSeedMsg("");
+    try {
+      const res = await fetch("/api/audit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ siteId: siteDbId, maxPages: Math.max(10, Math.min(500, counters.active || 200)), seedFromSitemap: true }),
+      });
+      const d = await res.json();
+      if (res.status === 409 && d.error === "already_running") setAuditSeedMsg(t("idxAuditAlreadyRunning"));
+      else if (!res.ok) throw new Error(d.error ?? t("errSyncFailed"));
+      else setAuditSeedMsg(t("idxAuditStarted"));
+    } catch (error: any) {
+      setAuditSeedMsg(`✗ ${error.message}`);
+    }
+    setAuditStarting(false);
   };
 
   // ── Google URL Inspection check ──
@@ -2703,13 +2745,40 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
     if (/blocked/i.test(s)) return t("idxBlocked");
     return s;
   };
+  const inventoryStatusLabel = (row: any) => {
+    if (row.inventoryStatus === "missing") return t("idxMissing");
+    if (row.inventoryStatus === "pending_missing") return t("idxPendingMissing");
+    if (row.changeStatus === "added") return t("idxAdded");
+    if (row.changeStatus === "changed") return t("idxChanged");
+    if (row.changeStatus === "restored") return t("idxRestored");
+    return t("idxInventoryActive");
+  };
+  const inventoryStatusColor = (row: any) => row.inventoryStatus === "missing" ? "#F87171"
+    : row.inventoryStatus === "pending_missing" ? "#FBBF24"
+    : row.changeStatus === "added" ? "#4ADE80"
+    : row.changeStatus === "changed" ? "#FBBF24"
+    : row.changeStatus === "restored" ? "#60A5FA"
+    : "var(--color-text-secondary)";
   const opTypeLabel = (type: string) => {
     const m: Record<string,string> = {
       sitemap_sync: t("opSyncSitemap"), google_check: t("opGoogleCheck"),
       xr_check: t("opXmlRiver"), "2index_submit": t("op2indexSubmit"), neural_submit: "NeuralIndexer",
+      sitemap_metadata: t("idxVerifyMetadata"),
       backlink_check_alive: "Check 404", backlink_check_xr: "XML River",
     };
     return m[type] ?? type;
+  };
+  const operationDetail = (op: any) => {
+    if (!op.detail?.startsWith("{")) return op.detail ?? "—";
+    try {
+      const detail = JSON.parse(op.detail);
+      if (op.type === "sitemap_sync") {
+        const summary = detail.summary ?? {};
+        return `${detail.sitemapUrl ?? "sitemap"} · +${summary.added ?? 0} · Δ${summary.changed ?? 0} · −${summary.disappeared ?? 0}${summary.partial ? " · partial" : ""}`;
+      }
+      if (op.type === "sitemap_metadata") return `${detail.checked ?? 0} checked · ${detail.suspicious ?? 0} suspicious · ${detail.errors ?? 0} errors`;
+      return op.detail;
+    } catch { return op.detail; }
   };
 
   const hasData = urlRows.length > 0 || counters.total > 0;
@@ -2765,6 +2834,52 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
             style={{ flex: 1, fontSize: "12px", padding: "5px 10px", borderRadius: "6px", border: "1px solid var(--color-border)", background: "var(--color-bg)", color: "var(--color-text-primary)", maxWidth: "480px" }}
           />
         </div>
+        {counters.total > 0 && (
+          <div style={{ padding: "10px 16px", borderTop: "1px solid var(--color-border)", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+            <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--color-text-primary)", marginRight: 2 }}>{t("idxInventory")}</span>
+            {[
+              [t("idxInventoryActive"), counters.active ?? 0, "inventory_active", "#4ADE80"],
+              [t("idxAdded"), counters.added ?? 0, "inventory_added", "#34D399"],
+              [t("idxChanged"), counters.changed ?? 0, "inventory_changed", "#FBBF24"],
+              [t("idxPendingMissing"), counters.pendingMissing ?? 0, "inventory_pending", "#F59E0B"],
+              [t("idxMissing"), counters.missing ?? 0, "inventory_missing", "#F87171"],
+              [t("idxSuspiciousLastmod"), counters.suspiciousLastmod ?? 0, "lastmod_suspicious", "#FB7185"],
+            ].map(([label, value, filter, color]) => (
+              <button key={String(filter)} onClick={() => { setStatusFilter(String(filter)); setPage(1); loadUrls(1, String(filter), search); }}
+                style={{ padding: "4px 8px", borderRadius: 999, border: `1px solid ${color}45`, background: `${color}10`, color: String(color), fontSize: "10px", cursor: "pointer" }}>
+                {String(label)} · {String(value)}
+              </button>
+            ))}
+            {(meta.latestSync?.summary?.invalid ?? 0) > 0 && (
+              <span title={(meta.latestSync?.invalidExamples ?? []).join("\n")} style={{ padding: "4px 8px", borderRadius: 999, border: "1px solid rgba(248,113,113,0.3)", background: "rgba(248,113,113,0.08)", color: "#F87171", fontSize: "10px" }}>
+                {t("idxInvalid")} · {meta.latestSync.summary.invalid}
+              </span>
+            )}
+            <span style={{ fontSize: "10px", color: "var(--color-text-secondary)", marginLeft: "auto" }}>
+              {t("idxAuditCoverage")}: {counters.auditCovered ?? 0}/{counters.total ?? 0}
+            </span>
+          </div>
+        )}
+        {counters.total > 0 && (
+          <div style={{ padding: "10px 16px", borderTop: "1px solid var(--color-border)", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", background: "rgba(255,255,255,0.01)" }}>
+            <button onClick={verifyInventoryMetadata} disabled={metadataChecking}
+              style={{ padding: "6px 12px", borderRadius: "7px", border: "1px solid var(--color-border)", background: "transparent", color: "var(--color-text-primary)", fontSize: "11px", fontWeight: 600, cursor: metadataChecking ? "not-allowed" : "pointer", opacity: metadataChecking ? 0.6 : 1 }}>
+              {metadataChecking ? t("idxVerifyingMetadata") : `${t("idxVerifyMetadata")}${selected.size ? ` (${selected.size})` : ""}`}
+            </button>
+            <button onClick={startSitemapAudit} disabled={auditStarting}
+              style={{ padding: "6px 12px", borderRadius: "7px", border: "1px solid rgba(139,92,246,0.35)", background: "rgba(139,92,246,0.08)", color: "#A78BFA", fontSize: "11px", fontWeight: 600, cursor: auditStarting ? "not-allowed" : "pointer", opacity: auditStarting ? 0.6 : 1 }}>
+              {auditStarting ? t("auditRunning") : t("idxAuditFromSitemap")}
+            </button>
+            {metadataMsg && <span style={{ fontSize: "11px", color: metadataMsg.startsWith("✗") ? "#F87171" : "#4ADE80" }}>{metadataMsg}</span>}
+            {auditSeedMsg && <span style={{ fontSize: "11px", color: auditSeedMsg.startsWith("✗") ? "#F87171" : "#A78BFA" }}>{auditSeedMsg}</span>}
+          </div>
+        )}
+        {(syncNotice || meta.latestSync?.result === "partial") && (
+          <div style={{ padding: "8px 16px", background: meta.latestSync?.result === "partial" ? "rgba(245,158,11,0.08)" : "rgba(74,222,128,0.05)", borderTop: "1px solid var(--color-border)", fontSize: "11px", color: meta.latestSync?.result === "partial" ? "#FBBF24" : "#4ADE80" }}>
+            {meta.latestSync?.result === "partial" ? `⚠ ${t("idxPartialSync")}. ${t("idxPartialSyncHint")}` : `✓ ${syncNotice || t("idxSyncComplete")}`}
+            {meta.latestSync?.summary?.invalid > 0 && <span> · {t("idxInvalid")}: {meta.latestSync.summary.invalid}</span>}
+          </div>
+        )}
         {syncError && (
           <div style={{ padding: "8px 16px", background: "rgba(239,68,68,0.06)", borderTop: "1px solid rgba(239,68,68,0.2)", fontSize: "12px", color: "#f87171" }}>
             ✗ {syncError}
@@ -2803,6 +2918,13 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
               ["not_checked", t("idxNotChecked")],
               ["neural_indexed", `Neural: ✓ ${t("idxInIndex")}`],
               ["neural_not_indexed", `Neural: ✗ ${t("idxNotInIndex")}`],
+              ["inventory_active", t("idxInventoryActive")],
+              ["inventory_added", t("idxAdded")],
+              ["inventory_changed", t("idxChanged")],
+              ["inventory_pending", t("idxPendingMissing")],
+              ["inventory_missing", t("idxMissing")],
+              ["lastmod_suspicious", t("idxSuspiciousLastmod")],
+              ["audit_missing", t("idxNotAudited")],
             ].map(([v,l]) => (
               <option key={v} value={v}>{l}</option>
             ))}
@@ -2996,14 +3118,14 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
             </div>
           </div>
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", minWidth: "700px" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", minWidth: "1120px" }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--color-border)", background: "rgba(255,255,255,0.02)" }}>
                   <th style={{ padding: "9px 12px", width: 32 }}>
                     <input type="checkbox" checked={selected.size === urlRows.length && urlRows.length > 0} onChange={toggleAll}
                       style={{ cursor: "pointer", width: 13, height: 13, accentColor: "#3B82F6" }} />
                   </th>
-                  {["URL",t("idxColGoogleStatus"),"XML RIVER","2INDEX","NEURAL",t("idxColChecked")].map(h => (
+                  {["URL",t("idxInventoryStatus"),t("idxLastmod"),t("idxAudit"),t("idxColGoogleStatus"),"XML RIVER","2INDEX","NEURAL",t("idxColChecked")].map(h => (
                     <th key={h} style={{ textAlign: "left", padding: "9px 12px", color: "var(--color-text-secondary)", fontWeight: 500, fontSize: "10px", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>{h}</th>
                   ))}
                 </tr>
@@ -3014,7 +3136,7 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
                   const gColor = googleStatusColor(row.googleStatus);
                   const isSelected = selected.has(row.url);
                   return (
-                    <tr key={row.id} style={{ borderBottom: "1px solid var(--color-border)", background: isSelected ? "rgba(59,130,246,0.05)" : i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.012)" }}>
+                    <tr key={row.id} style={{ borderBottom: "1px solid var(--color-border)", background: isSelected ? "rgba(59,130,246,0.05)" : i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.012)", opacity: row.inventoryStatus === "missing" ? 0.72 : 1 }}>
                       <td style={{ padding: "8px 12px" }}>
                         <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(row.url)}
                           style={{ cursor: "pointer", width: 13, height: 13, accentColor: "#3B82F6" }} />
@@ -3024,6 +3146,28 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
                           style={{ color: "#60a5fa", textDecoration: "none" }}
                           onMouseOver={e => (e.currentTarget.style.textDecoration = "underline")}
                           onMouseOut={e => (e.currentTarget.style.textDecoration = "none")}>{path}</a>
+                      </td>
+                      <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
+                        <span title={`${row.sourceSitemap ?? ""}\n${row.sitemapType ?? "standard"}\n${row.firstSeenAt ?? ""} → ${row.lastSeenAt ?? ""}`} style={{ color: inventoryStatusColor(row), fontSize: "10px", fontWeight: 700 }}>
+                          {inventoryStatusLabel(row)}
+                        </span>
+                        {(row.imageCount > 0 || row.videoCount > 0 || row.newsCount > 0) && (
+                          <div style={{ color: "var(--color-text-secondary)", fontSize: "9px", marginTop: 2 }}>
+                            {row.imageCount > 0 && `IMG ${row.imageCount} `}{row.videoCount > 0 && `VID ${row.videoCount} `}{row.newsCount > 0 && `NEWS ${row.newsCount}`}
+                          </div>
+                        )}
+                      </td>
+                      <td title={`${row.sourceSitemap ?? ""}\n${row.lastmod ?? ""}`} style={{ padding: "8px 12px", whiteSpace: "nowrap", color: row.lastmodValid === false || row.lastmodReliability === "suspicious" ? "#F87171" : "var(--color-text-secondary)", fontSize: "10px" }}>
+                        {row.lastmod ? row.lastmod.slice(0, 10) : "—"}
+                        {row.lastmodReliability === "suspicious" && <div style={{ fontSize: "9px", color: "#FB7185" }}>⚠ {t("idxSuspiciousLastmod")}</div>}
+                        {row.lastmodValid === false && <div style={{ fontSize: "9px", color: "#F87171" }}>⚠ {t("idxInvalid")}</div>}
+                      </td>
+                      <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
+                        {row.audit?.covered
+                          ? <span style={{ color: row.audit.issueCount ? "#FBBF24" : "#4ADE80", fontSize: "10px", fontWeight: 600 }}>
+                              {row.audit.issueCount ? t("idxAuditIssues").replace("{n}", String(row.audit.issueCount)) : "✓"}
+                            </span>
+                          : <span style={{ color: "var(--color-text-secondary)", fontSize: "10px" }}>{t("idxNotAudited")}</span>}
                       </td>
                       <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
                         {row.googleStatus ? (
@@ -3104,7 +3248,7 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
                         </span>
                         {op.urlCount != null && <span style={{ color: "var(--color-text-secondary)", marginLeft: 4 }}>· {op.urlCount} URL</span>}
                       </td>
-                      <td style={{ padding: "8px 14px", color: "var(--color-text-secondary)", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{op.detail ?? "—"}</td>
+                      <td title={op.detail ?? ""} style={{ padding: "8px 14px", color: "var(--color-text-secondary)", maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{operationDetail(op)}</td>
                       <td style={{ padding: "8px 14px", color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>{timeAgo(new Date(op.createdAt))}</td>
                     </tr>
                   ))}

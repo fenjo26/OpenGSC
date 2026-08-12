@@ -183,6 +183,7 @@ export async function runPublicCheck(input: string): Promise<PublicCheckResult> 
     jsonLdInvalid: signals?.jsonLdInvalid ?? 0, organizationSchemaIncomplete: signals?.organizationSchemaIncomplete ?? false,
     openGraphMissing: signals?.openGraphMissing.length ?? 0, twitterCardIncomplete: signals?.twitterCardIncomplete ?? false,
     mixedContentCount: signals?.mixedContentUrls.length ?? 0, missingSecurityHeaders: security.length,
+    sitemapSeeded: false, internalInboundLinks: 0,
   };
 
   // The pinned fetch exposes total duration only at the caller, so measure a cheap HEAD against
