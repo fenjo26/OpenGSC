@@ -34,6 +34,19 @@ All notable changes to OpenGSC. Dates are release dates; the version shown in
   brute-forced, no credential is tried, and the WordPress paths are only requested when the page
   already looks like WordPress. Reports download as Markdown.
 
+### Fixed
+
+- **The pre-update SQLite backup could hang forever on a busy instance.** `better-sqlite3`'s
+  `.backup()` copies page by page and restarts whenever the source is written to, so on a
+  production database with schedulers running it never finished — an update sat on that line for
+  fifteen minutes with no output and no error, which is worse than a failure because it cannot be
+  told apart from slow. The backup now uses `VACUUM INTO`: one statement, one read snapshot, no
+  restart on concurrent writes — measured at 0.4 s for a 21 MB database while 617 writes landed in
+  it. A copy of the database and its WAL sidecars is the fallback, the result is opened and
+  integrity-checked before the update proceeds, and the updater caps the step at ten minutes so it
+  can never block again.
+
+
 ### Changed
 
 - **Site Audit no longer asks how many pages to crawl.** It crawls the site. The number survives as

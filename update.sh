@@ -22,7 +22,10 @@ git fetch origin || { echo "[update] git fetch FAILED"; echo "___OPENGSC_UPDATE_
 backed_up_before_reset=0
 if [ -f scripts/backup-sqlite.mjs ]; then
   echo "[update] backing up SQLite before touching the working tree..."
-  if node scripts/backup-sqlite.mjs; then
+  # Hard ceiling. A backup that hangs is worse than one that fails: the updater sits there with no
+  # output, the operator cannot tell it apart from slow, and nothing else can run. Ten minutes is
+  # far beyond any real copy — VACUUM INTO does a 20 MB database in under a second.
+  if timeout 600 node scripts/backup-sqlite.mjs; then
     backed_up_before_reset=1
   else
     echo "[update] database backup FAILED — nothing was changed"; echo "___OPENGSC_UPDATE_FAIL___"; exit 1
@@ -57,7 +60,7 @@ node scripts/check-native-deps.mjs || { echo "[update] dependency check FAILED";
 # predates scripts/backup-sqlite.mjs. The schema must never change without a verified copy.
 if [ "$backed_up_before_reset" != "1" ]; then
   echo "[update] backing up SQLite..."
-  node scripts/backup-sqlite.mjs || { echo "[update] database backup FAILED — schema was not changed"; echo "___OPENGSC_UPDATE_FAIL___"; exit 1; }
+  timeout 600 node scripts/backup-sqlite.mjs || { echo "[update] database backup FAILED — schema was not changed"; echo "___OPENGSC_UPDATE_FAIL___"; exit 1; }
 fi
 
 echo "[update] prisma db push..."
