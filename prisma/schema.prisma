@@ -286,6 +286,41 @@ model SitemapUrl {
   @@index([siteId, changeStatus])
 }
 
+// A one-off X-ray of any domain — usually somebody else's.
+//
+// Deliberately not a Site: the sites table is the operator's own portfolio, joined to Search
+// Console, metrics and audits, and a competitor scanned once must not leak into portfolio counts,
+// digests or alerts. Scans are their own history, keyed by hostname, and they store the fingerprints
+// that make the interesting question answerable: which of these domains belong to the same person?
+model SiteScan {
+  id        String   @id @default(cuid())
+  userId    String
+  host      String   // normalized, lowercase, no www
+  url       String   // what was requested
+  finalUrl  String?  // after redirects — a dropped domain merged into another shows up here
+  status    String   @default("running") // running | completed | error
+  httpStatus Int     @default(0)
+  score     Int?
+  error     String?
+
+  // Everything the scan found, as JSON: page facts, findings, platform, infrastructure, scale.
+  // A scan is a snapshot of a moment, so it is stored whole rather than normalized into columns
+  // that would then have to be migrated every time a detector is added.
+  report    String?
+
+  // Cross-scan identity signals, kept as their own column so they can be searched across scans:
+  // ["ga4:G-XXXX","gtm:GTM-YYYY","adsense:ca-pub-1","ns:ns1.example.net","ip:1.2.3.4"].
+  // A shared analytics container across unrelated domains is the strongest cheap signal that one
+  // person runs both.
+  fingerprints String?
+
+  createdAt DateTime @default(now())
+  finishedAt DateTime?
+
+  @@index([userId, createdAt])
+  @@index([userId, host])
+}
+
 model Backlink {
   id            String    @id @default(cuid())
   siteId        String
@@ -414,7 +449,7 @@ model SiteAudit {
   verification String?   // JSON: resolved / stillPresent / regressions / inconclusive
   startedAt    DateTime  @default(now())
   finishedAt   DateTime?
-  maxPages     Int       @default(200)
+  maxPages     Int       @default(5000) // safety ceiling, not a target — see crawler.ts
   pagesCrawled Int       @default(0)
   summary      String?   // JSON: issue counts, totals
   error        String?
@@ -444,6 +479,11 @@ model SiteAuditPage {
   loadMs          Int     @default(0)
   depth           Int     @default(0)
   issues          String? // JSON array of issue codes, e.g. ["title_missing","broken_links"]
+  // JSON map of issue code -> the value that actually triggered it, e.g.
+  // {"open_graph_incomplete":"og:image, og:type","security_headers_missing":"CSP, HSTS"}.
+  // Without it a report says a page has a problem but not what the problem is, which is the
+  // difference between a list someone can act on and a list they must re-investigate.
+  evidence        String?
   brokenLinks     String? // JSON array of hrefs on this page that resolved 4xx/5xx
 
   audit SiteAudit @relation(fields: [auditId], references: [id], onDelete: Cascade)

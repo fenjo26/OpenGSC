@@ -313,9 +313,6 @@ export default function LoginPage() {
 
           <MemberSignIn t={t as (key: string) => string} />
 
-          <Link href="/free-seo-checker" style={{ display: "flex", justifyContent: "center", marginTop: "13px", fontSize: "12px", fontWeight: 650, color: "var(--color-accent-blue)", textDecoration: "none" }}>
-            {t("publicCheckLoginLink" as any)}
-          </Link>
 
           <div style={{ margin: "28px 0", height: "1px", background: "var(--color-border)" }} />
 

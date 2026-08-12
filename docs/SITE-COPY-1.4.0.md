@@ -9,7 +9,7 @@ this release — nothing here is aspirational.
 | Where | Says | Should say |
 |---|---|---|
 | Stack / tech section | Next.js 15, Prisma 5 | Next.js 16, Prisma 7, React 19 |
-| Version references | 1.2.x | 1.4.0 |
+| Version references | 1.2.x | 1.4.1 |
 | Database | "SQLite / MySQL" without qualification | SQLite is the supported path; MySQL/MariaDB is experimental |
 | Team features, if implied | multi-user / teams | one instance belongs to one operator; Team/Members/Super Sites screens are prototypes behind a flag |
 
@@ -17,9 +17,10 @@ this release — nothing here is aspirational.
 
 Short blurbs, in the order they matter for a first-time visitor:
 
-- **Free SEO Checker** — a public check of any homepage with no signup, at `/free-seo-checker` on
-  the visitor's own instance and worth linking from the site's navigation as the lowest-friction
-  entry point.
+- **Competitor Crawler** — X-ray any domain from inside the console: technical state, platform,
+  hosting, scale, and cross-scan matching of analytics and ads identifiers to expose which domains
+  share an owner. (The public no-signup checker that shipped briefly in 1.4.0 was removed in 1.4.1;
+  do not advertise it.)
 - **Demand** — keyword research joined against the site's own Search Console positions, so each row
   says reach / wrong page / nothing rather than a bare volume number.
 - **AEO Tracker / AI Visibility** — whether AI answer engines cite the site, with the stored answer

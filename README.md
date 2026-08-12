@@ -8,7 +8,7 @@
 
 Self-hosted on your own VPS. No subscriptions, no seat limits, no third party touching your data.
 
-[![Version 1.4.0](https://img.shields.io/badge/version-1.4.0-brightgreen)](https://github.com/fenjo26/opengsc/releases)
+[![Version 1.4.1](https://img.shields.io/badge/version-1.4.1-brightgreen)](https://github.com/fenjo26/opengsc/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Next.js 16](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue?logo=typescript)](https://www.typescriptlang.org/)
@@ -375,6 +375,17 @@ Watch any set of competitor brand domains and pull their **fresh quality backlin
 </details>
 
 <details open>
+<summary><b>Competitor Crawler</b> — X-ray any site on the internet, and find out who else owns it</summary>
+<br/>
+
+Point it at a competitor and get their homepage judged by the same rule registry your own audits use, plus what the site is built with (CMS, framework, WordPress theme and plugin slugs, exposed usernames, a reachable `xmlrpc.php`), where it runs (A/AAAA, nameservers, MX, CDN), how big it is (sitemap URL count, hreflang languages), and whether AI crawlers are allowed in.
+
+Then the part a single-site checker cannot do. Every scan records the identity signals a site leaks — **GA4, Universal Analytics, Tag Manager, AdSense, Yandex Metrica, Meta Pixel, Hotjar, Clarity, nameservers, IPs** — and matches each new scan against every earlier one. An analytics property or an ads publisher id is billed to one person, so an overlap there is reported as **strong** evidence that two domains share an owner; a shared nameserver or IP only means a shared host and is marked **weak**. Redirect targets are stored as well, which is how a dropped domain merged into another gives itself away. Build up a scan history and a private network stops being invisible.
+
+One page per scan, plus the paths every site publishes anyway (robots.txt, sitemap, llms.txt). Nothing is brute-forced and no credential is tried — the WordPress paths are requested only when the page already looks like WordPress.
+</details>
+
+<details open>
 <summary><b>Content Operations & Source Audit</b> — review drafts, ship PRs, check code before deployment</summary>
 <br/>
 
@@ -529,9 +540,6 @@ pm2 startup
 | `DATABASE_URL` | Path to the SQLite database | `file:/root/opengsc/data/prod.db` |
 | `NEXTAUTH_SECRET` | Random secret used to encrypt sessions | `openssl rand -base64 32` |
 | `CONTENT_OPS_SECRET` | Optional stable key for Content Operations GitHub-token encryption; falls back to `NEXTAUTH_SECRET` | `openssl rand -base64 32` |
-| `TURNSTILE_SECRET_KEY` | Optional Cloudflare Turnstile secret for the public Free SEO Checker | `0x...` |
-| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Matching public Turnstile site key (set together with the secret) | `0x...` |
-| `PUBLIC_CHECKER_HASH_SECRET` | Optional independent salt for short-lived public-checker rate buckets; falls back to `NEXTAUTH_SECRET` | `openssl rand -base64 32` |
 | `OPENGSC_ALLOW_PRIVATE_TARGETS` | Optional. Allows owner-driven audits of localhost/LAN targets, which are blocked by default as SSRF protection. The public Free SEO Checker ignores it | `1` |
 | `NEXTAUTH_URL` | The app's full URL, including domain | `https://your-domain.com` |
 | `GOOGLE_CLIENT_ID` | From Google Cloud Console | `123...apps.googleusercontent.com` |

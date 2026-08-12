@@ -24,9 +24,10 @@ URL и основных форматов API:
 - Content Operations как отдельный stateful workflow поверх, а не вместо Demand/Outline/Text/Rewrite:
   очередь и audit trail, импорт готового текста из History, approval/review, детерминированный
   preflight, зашифрованный fine-grained GitHub token, обязательный diff/confirm и PR без auto-merge.
-- Public Free SEO Checker на `/free-seo-checker`: одна homepage, общий audit registry и SSRF-safe
-  fetch, TLS/indexability/metadata/schema/security/response facts, consequence+action, 7 локалей,
-  10-минутный анонимный rate bucket, 15-минутный memory cache и опциональный Turnstile.
+- Краулер конкурентов вместо публичного чекера: тот же движок, но внутри консоли и по любому чужому
+  домену — техническое состояние, платформа, инфраструктура, масштаб, плюс сопоставление отпечатков
+  аналитики и рекламы между проверками для поиска сеток. Публичная страница удалена: приложение,
+  вся суть которого в отсутствии публичных поверхностей, не должно иметь лендинг для лидогенерации.
 - Sitemap Inventory внутри Indexing: рекурсивные sitemap/gzip/extensions, безопасная модель
   disappearance, diff, явная metadata verification и отдельный sitemap-seeded запуск Site Audit.
 - Source Audit как отдельная read-only вкладка Content Operations: ограниченный GitHub snapshot,

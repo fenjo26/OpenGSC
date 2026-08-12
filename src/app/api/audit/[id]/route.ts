@@ -43,6 +43,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       noindex: p.noindex, internalLinks: p.internalLinks, externalLinks: p.externalLinks,
       imagesNoAlt: p.imagesNoAlt, wordCount: p.wordCount, loadMs: p.loadMs, depth: p.depth,
       issues: p.issues ? JSON.parse(p.issues) : [],
+      // Older audits have no evidence column value; the export falls back to deriving what it can.
+      evidence: (p as any).evidence ? JSON.parse((p as any).evidence) : null,
       brokenLinks: p.brokenLinks ? JSON.parse(p.brokenLinks) : [],
     })),
   });

@@ -103,7 +103,9 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
   const guest = isGuestView();
   const [audits, setAudits] = useState<any[]>([]);
   const [current, setCurrent] = useState<any>(null); // { audit, pages }
-  const [maxPages, setMaxPages] = useState(200);
+  // Empty means "the whole site", which is what almost everyone wants and what a crawler should do
+  // without being asked. The field stays for the rare case of deliberately sampling a huge site.
+  const [maxPages, setMaxPages] = useState<number | "">("");
   // On by default: the built-in list is bot-protection and admin endpoints that are supposed to
   // refuse a crawler, so counting them as broken links is always wrong.
   const [useDefaults, setUseDefaults] = useState(true);
@@ -163,7 +165,7 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
         body: JSON.stringify(baselineAuditId
           ? { siteId: siteDbId, baselineAuditId }
           : {
-              siteId: siteDbId, maxPages,
+              siteId: siteDbId, ...(maxPages ? { maxPages } : {}),
               ignorePatterns: ignoreExtra,
               skipDefaultIgnores: !useDefaults,
             }),
@@ -233,10 +235,12 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
             <div style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)" }}>{t("auditTitle")}</div>
             <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginTop: "2px" }}>{t("auditSub")}</div>
           </div>
-          {!guest && <select value={maxPages} onChange={e => setMaxPages(parseInt(e.target.value))}
-            style={{ padding: "8px 10px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-primary)", fontSize: "12px" }}>
-            {[50, 100, 200, 350, 500].map(n => <option key={n} value={n}>{n} {t("auditPagesUnit")}</option>)}
-          </select>}
+          {!guest && <input
+            type="number" min={10} max={5000} value={maxPages}
+            onChange={e => setMaxPages(e.target.value ? Math.max(10, Math.min(5000, parseInt(e.target.value) || 10)) : "")}
+            placeholder={t("auditPagesAll")} title={t("auditPagesHint")}
+            style={{ width: 132, padding: "8px 10px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-primary)", fontSize: "12px" }}
+          />}
           {summary && (
             <button onClick={exportMd} disabled={exporting} title={t("auditExportMdHint")}
               style={{ display: "inline-flex", alignItems: "center", gap: "7px", padding: "10px 14px", borderRadius: "9px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-secondary)", fontSize: "13px", fontWeight: 600, cursor: exporting ? "default" : "pointer" }}>
@@ -251,7 +255,7 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
           )}
           {!guest && <button onClick={() => start()} disabled={starting || !!running}
             style={{ display: "inline-flex", alignItems: "center", gap: "7px", padding: "10px 16px", borderRadius: "9px", border: "none", background: running ? "rgba(255,255,255,0.08)" : "var(--color-accent-blue)", color: running ? "var(--color-text-secondary)" : "#fff", fontSize: "13px", fontWeight: 600, cursor: running ? "default" : "pointer" }}>
-            {running ? <><Loader2 size={14} className="spin" /> {t("auditRunning")} ({running.pagesCrawled}/{running.maxPages})</> : <><Play size={14} /> {t("auditStart")}</>}
+            {running ? <><Loader2 size={14} className="spin" /> {t("auditRunning")} ({running.pagesCrawled})</> : <><Play size={14} /> {t("auditStart")}</>}
           </button>}
         </div>
 

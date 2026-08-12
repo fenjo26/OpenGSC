@@ -3,6 +3,45 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
+## [1.4.1] — 2026-08-12
+
+### Added
+
+- **Competitor crawler** (`/crawler`, next to Digest). An X-ray of any site on the internet, run
+  from inside your own console: technical state judged by the same rule registry as Site Audit,
+  what the site is built with (CMS, framework, WordPress theme and plugin slugs, exposed usernames,
+  reachable `xmlrpc.php`), where it is hosted (A/AAAA, nameservers, MX, CDN), how big it is
+  (sitemap URL count, hreflang languages) and whether it lets AI crawlers in.
+
+  The part a single-site checker cannot do: every scan stores the identity signals a site leaks —
+  GA4, Universal Analytics, Tag Manager, AdSense, Yandex Metrica, Meta Pixel, Hotjar, Clarity,
+  nameservers, IPs — and each new scan is matched against the ones before it. An analytics property
+  or ads publisher id is billed to one person, so a match there is reported as strong evidence of
+  shared ownership; a shared nameserver or IP only means a shared host and is marked weak. Redirect
+  targets are recorded too, which is how a dropped domain merged into another shows itself.
+
+  One page plus the paths a site publishes anyway (robots.txt, sitemap, llms.txt). Nothing is
+  brute-forced, no credential is tried, and the WordPress paths are only requested when the page
+  already looks like WordPress.
+
+### Changed
+
+- **Site Audit no longer asks how many pages to crawl.** It crawls the site. The number survives as
+  an optional safety ceiling for deliberately sampling something enormous, and the report says
+  plainly whether it was reached — "the whole site as far as the crawler could reach it" or
+  "stopped at the limit, so the site may have more". Asking for a page count up front was asking a
+  question nobody can answer before the crawl, and guessing low truncated the audit silently.
+- **The audit export is now a work order rather than a page list.** Every finding carries the value
+  that triggered it (`og:image, og:description` instead of an empty column) — captured during the
+  crawl and stored, which it previously was not. A finding on 80% or more of the pages is labelled
+  site-wide and shown once with an example, because that is one template to fix and not two hundred
+  pages. Each of the 31 rules carries a one-line fix, long lists move to an appendix, and the report
+  explains why a health score can stay high while an informational finding affects every page.
+- **The public Free SEO Checker is gone**, replaced by the competitor crawler above. It was a
+  lead-generation page on an application whose whole premise is that nothing is public; the engine
+  survives inside a tool that does more, for people who are signed in. `/free-seo-checker`,
+  `/api/public/seo-check`, the anonymous rate bucket and the Turnstile options no longer exist.
+
 ## [1.4.0] — 2026-08-12
 
 Everything below closes the same loop: find a problem, act on it, and prove afterwards that the

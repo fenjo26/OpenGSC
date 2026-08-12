@@ -152,6 +152,20 @@ These columns are applied by the normal updater's backup + `prisma db push` sequ
 additive and preserves old `SitemapUrl` rows; rollback means restoring the updater's pre-change
 SQLite backup rather than manually dropping columns from a live database.
 
+**Competitor Crawler** (`src/lib/scanner/`, `/crawler`) scans one page of any domain through the
+SSRF-safe fetcher and judges it with the shared audit rule registry, so a finding means the same
+thing here as in Site Audit. Beyond the page it reads platform markers, WordPress asset slugs and
+the public `wp-json` user list, DNS (A/AAAA/NS/MX) and CDN headers, and the robots/sitemap/llms.txt
+trio. Scans live in `SiteScan`, deliberately not in `Site`: the sites table is the operator's own
+portfolio and a competitor scanned once must not enter portfolio counts, digests or alerts.
+
+The cross-scan part is the reason the table stores a separate `fingerprints` column. Analytics,
+tag-manager, ads and heatmap identifiers are extracted per scan and compared against every earlier
+scan by the same owner; `fingerprintStrength()` splits them into signals billed to a person (strong)
+and signals shared by every customer of a host (weak), and the UI never presents the weak ones as a
+conclusion. Extraction is pure and unit-tested in `fingerprints.test.ts`, so the part that decides
+whether two domains belong together has no network or database in it.
+
 **Source Audit** is a repository-code checker inside Content Operations, not another runtime site
 audit. It reads a user-selected GitHub branch through fixed tree/blob API paths, with hard limits
 of 80 files, 256 KiB per file, 4 MiB total and five concurrent blob reads. Source contents exist

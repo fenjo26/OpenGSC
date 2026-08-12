@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import PasswordChangeGate from "@/components/PasswordChangeGate";
 import { useSession, signOut } from "next-auth/react";
 import { useState, useEffect, Suspense } from "react";
-import { Settings, LogOut, Sparkles, Globe, Newspaper, LayoutDashboard, TrendingUp, Anchor, BarChart2, Users, Compass } from "lucide-react";
+import { Settings, LogOut, Sparkles, Globe, Newspaper, LayoutDashboard, TrendingUp, Anchor, BarChart2, Users, Compass, Radar } from "lucide-react";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { useTheme } from "@/lib/ThemeContext";
 import { useLayout } from "@/lib/LayoutContext";
@@ -493,6 +493,9 @@ function NavLinks() {
     // line SEO Tools draws.
     { href: "/seo-tools", label: t("seoNavTitle"), key: "seo-tools", icon: <Sparkles size={14} /> },
     { href: "/indexer", label: t("indexerNavTitle"), key: "indexer", icon: <Globe size={14} /> },
+    // Sits next to the portfolio tools but points outward: everything above reads this instance's
+    // own data, this one looks at somebody else's site.
+    { href: "/crawler", label: t("crawlerNavTitle"), key: "crawler", icon: <Radar size={14} /> },
     { href: "/digest", label: t("digestNavTitle"), key: "digest", icon: <Newspaper size={14} /> },
   ];
 
@@ -758,7 +761,7 @@ function TopBar() {
 
 // ─── Shell ────────────────────────────────────────────────────────────────────
 // Paths rendered without the app shell (no TopBar): auth pages and public share links.
-const AUTH_PATHS = ["/login", "/share", "/free-seo-checker", "/join"];
+const AUTH_PATHS = ["/login", "/share", "/join"];
 
 function Shell({ children }: { children: React.ReactNode }) {
   // Shell no longer reads the layout context: page width is applied through CSS custom properties

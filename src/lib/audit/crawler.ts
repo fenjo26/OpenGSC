@@ -8,6 +8,8 @@ import { prisma } from "@/lib/prisma";
 import { checkAiCrawlability } from "@/lib/audit/aiCrawl";
 import { safeFetch } from "@/lib/security/safeFetch";
 import { extractAuditHtml, missingSecurityHeaders, robotsDirectivesConflict, type AuditHtmlSignals } from "@/lib/audit/pageSignals";
+export const AUDIT_PAGE_CEILING = 5000;
+
 import { AUDIT_ACTIONABLE_RULE_IDS, AUDIT_RULE_IDS, AUDIT_SCORING_RULE_IDS, evaluateAuditPageRules, type AuditPageFacts } from "@/lib/audit/rules";
 import { compareAuditFindings } from "@/lib/audit/verification";
 
@@ -179,7 +181,12 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
     });
     const rootUrl = audit.site.url.startsWith("http") ? audit.site.url : `https://${audit.site.url.replace(/^sc-domain:/, "")}`;
     const root = new URL(rootUrl);
-    const maxPages = Math.min(500, Math.max(10, audit.maxPages));
+    // A hard stop, not a setting anyone should have to think about. Asking "how many pages?" before
+    // a crawl is asking a question the user cannot answer — they do not know how big the site is,
+    // and guessing low silently truncates the audit into a half-truth. The default now covers whole
+    // sites; the number survives only as a safety rail against an accidental crawl of something
+    // enormous, and the report says plainly whether it was reached.
+    const maxPages = Math.min(AUDIT_PAGE_CEILING, Math.max(10, audit.maxPages || AUDIT_PAGE_CEILING));
 
     // AI Crawlability is a site-wide check (robots.txt + /llms.txt), independent of which pages get
     // crawled. Started before the BFS loop so its two requests overlap with the page crawl rather
@@ -357,6 +364,16 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
       };
       const issues = evaluateAuditPageRules(facts);
       for (const code of issues) bump(code);
+      // The facts above are booleans and counts, which is all a rule needs to fire — but a report
+      // reader (or an agent asked to fix the site) needs the value behind the verdict. It is
+      // captured here, while the parsed page is still in scope, and never recomputed later.
+      const evidence = buildEvidence(issues, {
+        facts,
+        signals: r.ex,
+        securityHeaders: isRoot && r.ex ? missingSecurityHeaders(r.responseHeaders, new URL(url).protocol === "https:") : [],
+        redirectTo: r.redirectTo,
+        brokenLinks: broken,
+      });
       rows.push({
         auditId,
         url,
@@ -375,6 +392,7 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
         loadMs: r.loadMs,
         depth: r.depth,
         issues: issues.length ? JSON.stringify(issues) : null,
+        evidence: Object.keys(evidence).length ? JSON.stringify(evidence) : null,
         brokenLinks: broken.length ? JSON.stringify(broken.slice(0, 50)) : null,
       });
     }
@@ -449,4 +467,62 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
   } finally {
     activeAudits.delete(auditId);
   }
+}
+
+/**
+ * The value that triggered each finding on one page.
+ *
+ * Deliberately short strings rather than structured objects: they are read by humans in a table and
+ * by language models in a Markdown report, and both do better with "og:image, og:type" than with a
+ * nested shape they have to interpret. Anything absent here simply has no useful detail to give —
+ * "no title" adds nothing to the rule name.
+ */
+function buildEvidence(
+  issues: string[],
+  ctx: {
+    facts: AuditPageFacts;
+    signals: { openGraphMissing?: string[]; mixedContentUrls?: string[]; jsonLdInvalid?: number; htmlLang?: string; canonical?: string | null } | null | undefined;
+    securityHeaders: string[];
+    redirectTo?: string | null;
+    brokenLinks: string[];
+  },
+): Record<string, string> {
+  const { facts, signals } = ctx;
+  const list = (values: string[] | undefined, max = 4) => {
+    const items = (values ?? []).filter(Boolean);
+    if (!items.length) return "";
+    const head = items.slice(0, max).join(", ");
+    return items.length > max ? `${head} +${items.length - max}` : head;
+  };
+  const map: Record<string, string> = {
+    http_error: `HTTP ${facts.httpStatus}`,
+    fetch_failed: "no response",
+    redirect: ctx.redirectTo ? `-> ${ctx.redirectTo}` : "",
+    redirect_chain: `${facts.redirectHops} hops`,
+    redirect_loop: "loop",
+    title_too_long: `${facts.title.length} chars: ${facts.title.slice(0, 80)}`,
+    title_duplicate: facts.title.slice(0, 90),
+    description_too_long: `${facts.metaDescription.length} chars`,
+    h1_multiple: `${facts.h1Count} H1`,
+    noindex: facts.robots || "noindex",
+    robots_conflict: facts.robots,
+    canonical_invalid: `canonical: ${facts.canonical ?? "?"}`,
+    canonical_mismatch: `canonical -> ${facts.canonical ?? "?"}`,
+    thin_content: `${facts.wordCount} words`,
+    images_no_alt: `${facts.imagesNoAlt} images`,
+    broken_links: list(ctx.brokenLinks, 3),
+    slow_response: `${facts.loadMs} ms`,
+    lang_missing: facts.htmlLang ? `lang="${facts.htmlLang}"` : "no lang attribute",
+    jsonld_invalid: `${facts.jsonLdInvalid} invalid block(s)`,
+    open_graph_incomplete: list(signals?.openGraphMissing) || `${facts.openGraphMissing} missing`,
+    mixed_content: list(signals?.mixedContentUrls, 3),
+    security_headers_missing: list(ctx.securityHeaders, 6),
+    orphan_sitemap_page: "in sitemap, no internal links",
+  };
+  const out: Record<string, string> = {};
+  for (const code of issues) {
+    const value = map[code];
+    if (value) out[code] = value.slice(0, 240);
+  }
+  return out;
 }

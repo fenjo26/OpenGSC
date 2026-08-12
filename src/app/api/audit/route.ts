@@ -14,7 +14,9 @@ export async function POST(req: Request) {
 
   const b = await req.json().catch(() => ({}));
   const siteId = String(b.siteId ?? "");
-  let maxPages = Math.min(500, Math.max(10, parseInt(String(b.maxPages ?? 200), 10) || 200));
+  // Default: crawl the whole site. A client may still pass a smaller number (the advanced field),
+  // but omitting it no longer means "stop at 200 pages and do not mention it".
+  let maxPages = Math.min(5000, Math.max(10, parseInt(String(b.maxPages ?? 5000), 10) || 5000));
 
   const site = await prisma.site.findFirst({ where: { id: siteId, userId } });
   if (!site) return NextResponse.json({ error: "Not found" }, { status: 404 });
