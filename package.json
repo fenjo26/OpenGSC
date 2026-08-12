@@ -1,6 +1,6 @@
 {
   "name": "app-temp",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "engines": {
     "node": ">=22.12.0"
   },
@@ -17,10 +17,12 @@
     "dev": "next dev",
     "build": "prisma generate && next build",
     "start": "next start",
+    "create-owner": "node scripts/create-owner.mjs",
+    "set-password": "node scripts/set-password.mjs",
     "lint": "next lint",
     "check:i18n": "node scripts/check-keys.js",
     "check:release": "node scripts/check-release.js",
-    "test:unit": "tsx --test src/lib/security/safeFetch.test.ts src/lib/audit/verification.test.ts src/lib/audit/rules.test.ts src/lib/cannibalization/relatedIntent.test.ts src/lib/outreach/types.test.ts src/lib/contentOps/types.test.ts src/lib/publicChecker/guard.test.ts src/lib/sitemap/inventory.test.ts src/lib/sitemap/metadata.test.ts src/lib/sitemap/diff.test.ts",
+    "test:unit": "tsx --test src/lib/team/roles.test.ts src/lib/security/safeFetch.test.ts src/lib/audit/verification.test.ts src/lib/audit/rules.test.ts src/lib/cannibalization/relatedIntent.test.ts src/lib/outreach/types.test.ts src/lib/contentOps/types.test.ts src/lib/contentOps/outcomeMath.test.ts src/lib/publicChecker/guard.test.ts src/lib/sitemap/inventory.test.ts src/lib/sitemap/metadata.test.ts src/lib/sitemap/diff.test.ts src/lib/sourceAudit/rules.test.ts",
     "check": "npm run check:i18n && npm run check:release && npm run test:unit",
     "postinstall": "prisma generate"
   },

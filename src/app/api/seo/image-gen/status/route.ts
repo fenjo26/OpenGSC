@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { getKieImageTask } from "@/lib/seo/kieImages";
 
 // POST /api/seo/image-gen/status — poll a kie.ai image-generation task.
 // body: { taskId, apiKey } -> { state, resultUrls?, progress?, error? }
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!(session?.user as any)?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const workspaceId = await workspaceUserId("act");
+  if (!workspaceId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const b = await req.json();
   const apiKey = String(b.apiKey ?? "");

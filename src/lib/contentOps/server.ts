@@ -1,11 +1,15 @@
 import "server-only";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { workspaceUserId } from "@/lib/team/workspace";
+import type { Capability } from "@/lib/team/roles";
 
-export async function contentOpsUserId(): Promise<string | null> {
-  const session = await getServerSession(authOptions);
-  return ((session?.user as any)?.id as string | undefined) ?? null;
+/**
+ * The workspace this request acts on, or null when the caller may not do `capability`.
+ * Content Operations is editorial work, so reading is open to the whole team while creating a pull
+ * request — the only action here that leaves the instance — needs the publish capability.
+ */
+export async function contentOpsUserId(capability: Capability = "read"): Promise<string | null> {
+  return workspaceUserId(capability);
 }
 export function repositoryDto(repo: any) {
   if (!repo) return null;
@@ -43,6 +47,12 @@ export function operationDto(operation: any) {
     prCreatedAt: operation.prCreatedAt,
     mergedAt: operation.mergedAt,
     liveAt: operation.liveAt,
+    siteId: operation.siteId ?? null,
+    trackedKeywordId: operation.trackedKeywordId ?? null,
+    indexingLinkedAt: operation.indexingLinkedAt ?? null,
+    measurementStartedAt: operation.measurementStartedAt ?? null,
+    lastMeasuredAt: operation.lastMeasuredAt ?? null,
+    outcome: json(operation.outcomeJson),
     createdAt: operation.createdAt,
     updatedAt: operation.updatedAt,
     repository: repositoryDto(operation.repository),

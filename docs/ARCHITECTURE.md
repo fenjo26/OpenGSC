@@ -22,6 +22,31 @@ Search Console / Analytics / Ads-adjacent Google APIs on the user's behalf. Ther
 multi-tenant user system — this is designed to be one operator's personal dashboard across
 multiple Google identities, not a multi-customer SaaS.
 
+**Workspace and roles.** Every table is scoped by `userId`, and that still means the owner. Team
+members do not own rows: `getWorkspace()` in `src/lib/team/workspace.ts` resolves a request to
+`{ ownerId, actorId, role }`, and route handlers call `workspaceUserId(capability)` instead of
+reading the session, so the hundreds of existing queries are unchanged while gaining an access
+rule. The permission table lives in `src/lib/team/roles.ts` — pure, unit-tested, and importable by
+client components to hide controls, though the server checks it again because a hidden button is
+not a permission system. Two boundaries carry the design: spending the owner's API credits requires
+`admin`, and anything that can lock the owner out or expose credentials is owner-only.
+
+**Identity is not Google.** Accounts authenticate through the Credentials provider; the owner is
+created from the console (`scripts/create-owner.mjs`) and recovered the same way
+(`scripts/set-password.mjs`). Google OAuth exists to attach an `Account` row — the grant behind
+Search Console and Analytics reads — and linking one requires an active owner session. Google may
+still be used to sign in while the owner has no password, which is the bootstrap state of a fresh
+install and of every instance created before this release; `googleLoginStillAllowed()` in
+`src/lib/auth.ts` encodes that as a state rather than a setting, so there is no migration flag and
+no window in which an instance has no way in.
+
+Membership is read on every request rather than cached in the JWT. Sessions last 30 days and cannot
+be revoked, so a cached role would keep a suspended member working for a month; one indexed lookup
+buys immediate suspension. Members authenticate through a Credentials provider with bcrypt — never
+Google, because an employee's Google account carries their own Search Console properties and those
+must not enter someone else's workspace. `Membership` rows exist only for members; the owner is the
+user carrying `isOwner`, resolved lazily from the first user on instances that predate the column.
+
 Background work (AI generation jobs, cron-style sync) does **not** use a queue broker. It uses two
 lightweight patterns instead:
 
@@ -57,7 +82,7 @@ while keeping the legacy `processing/completed/error` statuses and response fiel
 | Growth tools | `TrackedKeyword`, `RankCheck` (Rank Tracker), `TrackedQuestion`, `AeoCheck` (AEO Tracker), `Backlink`, `ContentGroup`, `TopicCluster`, `LinkWatchBrand`, `LinkMention` (Link Monitor), `OutreachCampaign`, `OutreachProspect`, `OutreachStageEvent`, `DrCache` (Ahrefs DR cache) |
 | Integrations | `ClaritySnapshot`, `SiteHealth` |
 | Indexer | `IndexerDomain`, `IndexerLog`, `IndexerQueue`, `IndexerDictionary` |
-| SEO Tools | `SeoJob`, `SeoHistory`, `GeoAudit`, `RagSlot`, `RagCasino` |
+| SEO Tools | `SeoJob`, `SeoHistory`, `GeoAudit`, `RagSlot`, `RagCasino`, `ContentRepository`, `ContentOperation`, `ContentOperationEvent`, `SourceAuditRun` |
 | Site Audit | `SiteAudit`, `SiteAuditPage` (built-in crawler) |
 | Search engines | `EnginePortfolioCache` (cached live Bing/Yandex portfolio per `userId`+`engine`+`period`) |
 | Notifications | `AlertEvent` (fired alerts, dedupe), `Digest` (digest history) |
@@ -126,6 +151,33 @@ candidate. AI Visibility and SEO Tools → GEO remain completely unrelated to th
 These columns are applied by the normal updater's backup + `prisma db push` sequence. The change is
 additive and preserves old `SitemapUrl` rows; rollback means restoring the updater's pre-change
 SQLite backup rather than manually dropping columns from a live database.
+
+**Source Audit** is a repository-code checker inside Content Operations, not another runtime site
+audit. It reads a user-selected GitHub branch through fixed tree/blob API paths, with hard limits
+of 80 files, 256 KiB per file, 4 MiB total and five concurrent blob reads. Source contents exist
+only for the duration of the in-memory analysis. `SourceAuditRun` stores the immutable commit SHA,
+framework, progress, bounded findings and severity counters; it stores neither file bodies nor
+secret values. Oversized files, GitHub-truncated trees and local scan limits make the report
+explicitly `truncated` instead of silently complete.
+
+**Post-deploy outcome** (`src/lib/contentOps/outcome.ts`, arithmetic in `outcomeMath.ts`) answers the
+question the workflow otherwise drops: did the published page do anything? `POST
+/api/content-ops/{id}/outcome` verifies the target URL with the SSRF-safe fetcher, and only a real
+200 moves the operation to `measuring`. It then upserts the URL into `SitemapUrl` so the Indexing
+tab sees it, upserts a `TrackedKeyword` when the item has one, and stores a 28-day baseline. Windows
+close at 7, 30 and 90 days and are captured on the next list request rather than by a timer — a
+couple of local aggregates over `DailyMetric`, plus the closest `RankCheck`, with a three-day settle
+for Search Console's reporting lag. Checkpoints are append-only, and the operation reaches
+`completed` when day 90 lands. No paid indexer submission and no merge is ever automatic; the
+`siteId`/`trackedKeywordId` columns are deliberately plain scalars so deleting a site or keyword
+cannot cascade into the editorial audit trail.
+
+Rules live in the independent `src/lib/sourceAudit/rules.ts` registry and currently target Next.js
+SEO, performance, correctness, security and architecture patterns. The implementation uses the
+installed Next.js 16 documentation as its behavioral source and copies no Svelte-specific rules.
+The job is read-only and fire-and-forget; heartbeats let the next list request mark a run stale
+after ten minutes as `interrupted`, but it is not retried automatically. Site Audit, AI Visibility
+and SEO Tools → GEO keep independent models, state, API and UI and do not consume Source Audit rows.
 
 ## 3. The SEO generation pipeline (`src/lib/seo/generate.ts`)
 
@@ -478,12 +530,12 @@ and the token check *could* live in the gate now. It still shouldn't. The gate r
 request to every path; putting a database lookup there to serve one endpoint would spend a query
 on every page load to save one inside `/api/mcp`. The exclusion list stays where it is.
 
-The tool registry is split across six files for readability and flattened into one
+The tool registry is split across seven files for readability and flattened into one
 `MCP_TOOLS` array at the bottom of `src/lib/mcp/tools.ts`: the GSC core (`tools.ts`), the
 remaining read surfaces (`toolsData.ts` — decay, CTR benchmark, content groups, rank history,
 GEO audits, generations, engine portfolios, GA4, Clarity, indexer, digests, alerts), and the
-metrics, demand, page-optimization and Outreach contours (`toolsMetrics.ts`, `toolsDemand.ts`,
-`toolsOptimize.ts`, `toolsOutreach.ts`). Shared helpers live in `shared.ts` so no file imports
+metrics, demand, page-optimization, Outreach and Source Audit contours (`toolsMetrics.ts`,
+`toolsDemand.ts`, `toolsOptimize.ts`, `toolsOutreach.ts`, `toolsSourceAudit.ts`). Shared helpers live in `shared.ts` so no file imports
 another's registry. A duplicate tool name throws at module load, since `findTool`
 would otherwise silently shadow one and the symptom ("that tool ignores half its arguments")
 points nowhere near the cause.

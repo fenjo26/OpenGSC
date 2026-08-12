@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { MCP_TOOLS, findTool, type McpTool } from "@/lib/mcp/tools";
+import { can, statusGrantsAccess, type WorkspaceRole } from "@/lib/team/roles";
+import { workspaceOwner } from "@/lib/team/workspace";
 import { rawQuery } from "@/lib/db/raw";
 import pkg from "../../../../package.json";
 
@@ -64,6 +66,28 @@ async function authUserId(req: Request): Promise<string | null> {
   }
 }
 
+/**
+ * An MCP token belongs to a person, and that person has a role. A member's agent therefore reads
+ * the owner's data — there is no other data on the instance — but inherits the same ceiling as the
+ * member: a viewer's agent cannot start a paid job just because it was handed a token.
+ */
+async function tokenWorkspace(actorId: string): Promise<{ ownerId: string; role: WorkspaceRole } | null> {
+  const owner = await workspaceOwner();
+  if (!owner) return null;
+  if (owner.id === actorId) return { ownerId: owner.id, role: "owner" };
+  try {
+    const rows: any[] = await rawQuery(
+      `SELECT role, status FROM "Membership" WHERE ownerId = ? AND userId = ? LIMIT 1`,
+      owner.id, actorId,
+    );
+    const row = rows?.[0];
+    if (!row || !statusGrantsAccess(String(row.status))) return null;
+    return { ownerId: owner.id, role: (String(row.role) as WorkspaceRole) };
+  } catch {
+    return null; // no Membership table yet: only the owner can hold a working token
+  }
+}
+
 // Translate the registry's `cost` into the protocol's own hints, so a client that shows
 // tool badges or asks for confirmation on non-read-only calls gets the right signal
 // without parsing our prose. openWorldHint is true for anything that leaves the box.
@@ -90,7 +114,7 @@ type RpcMsg = { jsonrpc?: string; id?: number | string | null; method?: string; 
 const rpcResult = (id: RpcMsg["id"], result: unknown) => ({ jsonrpc: "2.0", id: id ?? null, result });
 const rpcError = (id: RpcMsg["id"], code: number, message: string) => ({ jsonrpc: "2.0", id: id ?? null, error: { code, message } });
 
-async function handleMessage(msg: RpcMsg, userId: string): Promise<object | null> {
+async function handleMessage(msg: RpcMsg, userId: string, role: WorkspaceRole): Promise<object | null> {
   const { id, method, params } = msg;
 
   // Notifications (no id) get no response body.
@@ -115,6 +139,15 @@ async function handleMessage(msg: RpcMsg, userId: string): Promise<object | null
       const name = String(params?.name ?? "");
       const tool = findTool(name);
       if (!tool) return rpcError(id, -32602, `Unknown tool: ${name}`);
+      // The registry already declares what a call costs, so the permission follows from the tool
+      // rather than from a second list that can drift out of sync with it.
+      const needed = tool.cost === "paid" ? "spend" : tool.readOnly === false ? "write" : "read";
+      if (!can({ role }, needed)) {
+        return rpcResult(id, {
+          content: [{ type: "text", text: `This workspace role (${role}) may not call ${name}. Required: ${needed}.` }],
+          isError: true,
+        });
+      }
       try {
         const result = await tool.handler(userId, params?.arguments ?? {});
         return rpcResult(id, { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], isError: false });
@@ -136,8 +169,10 @@ async function handleMessage(msg: RpcMsg, userId: string): Promise<object | null
 }
 
 export async function POST(req: Request) {
-  const userId = await authUserId(req);
-  if (!userId) {
+  const actorId = await authUserId(req);
+  const workspace = actorId ? await tokenWorkspace(actorId) : null;
+  const userId = workspace?.ownerId ?? null;
+  if (!userId || !workspace) {
     return NextResponse.json(rpcError(null, -32001, "Unauthorized: pass your MCP token as 'Authorization: Bearer <token>' (generate one in OpenGSC → Settings → API & MCP)"), { status: 401 });
   }
 
@@ -147,12 +182,12 @@ export async function POST(req: Request) {
   }
 
   if (Array.isArray(body)) {
-    const responses = (await Promise.all(body.map(m => handleMessage(m, userId)))).filter(Boolean);
+    const responses = (await Promise.all(body.map(m => handleMessage(m, userId, workspace.role)))).filter(Boolean);
     if (!responses.length) return new Response(null, { status: 202 });
     return NextResponse.json(responses);
   }
 
-  const response = await handleMessage(body, userId);
+  const response = await handleMessage(body, userId, workspace.role);
   if (!response) return new Response(null, { status: 202 }); // notification
   return NextResponse.json(response);
 }

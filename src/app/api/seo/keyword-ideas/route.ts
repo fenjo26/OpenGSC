@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { expandKeywords, type KwSource } from "@/lib/seo/keywordSource";
 import { priceExpand, type IdeaMode } from "@/lib/seo/metrics";
 import { readUsage, recordUsage, withinCap, releaseUnusedUnits } from "@/lib/seo/metricsStore";
@@ -19,8 +19,7 @@ import { readUsage, recordUsage, withinCap, releaseUnusedUnits } from "@/lib/seo
 const SOURCES: KwSource[] = ["ahrefs", "semrush", "dataforseo", "off"];
 
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = await workspaceUserId("spend");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const b = await req.json().catch(() => ({}));

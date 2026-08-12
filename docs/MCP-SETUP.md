@@ -99,6 +99,13 @@ http_headers = { "Authorization" = "Bearer ogsc_YOUR_TOKEN" }
 Then try: *“Look at mysite.com in OpenGSC — which keywords are in striking distance and what
 should I do first?”*
 
+### Tokens and team roles
+
+A token belongs to a person, and that person has a workspace role. An agent therefore reads the
+owner's data — there is no other data on the instance — but inherits the same ceiling as its holder:
+a viewer's token cannot call a tool that writes, and only `admin` or the owner can call the three
+paid tools. A suspended member's token stops working on the next call.
+
 ## 3. Available tools
 
 ### Search performance (local)
@@ -139,6 +146,16 @@ credits.
 | `save_outreach_prospect` | local write, idempotent | Saves one domain/source as a prospect; duplicate domains return the existing row |
 | `update_outreach_prospect` | local write, idempotent | Updates stage/contact/follow-up and records stage history |
 | `create_outreach_campaign` | local write | Creates a grouping/measurement campaign; it does not launch anything |
+
+### Source Audit (local, read-only)
+
+Static findings from Content Operations → Source Audit, which scans a bounded snapshot of a
+connected GitHub branch **before** deployment. It is not the runtime Site Audit crawler, and it
+shares no data with AI Visibility or SEO Tools → GEO.
+
+| Tool | Mode | Returns / changes |
+|---|---|---|
+| `get_source_audit` | read-only | Stored runs: score, severity counters, rule id, file path and line, evidence, confidence, and whether the snapshot was truncated. Starting a run stays a deliberate action in the UI |
 
 ### Market data — demand, difficulty, competitors
 
@@ -210,6 +227,7 @@ these tools into complete workflows:
 
 - `gsc-performance-review` — striking distance + cannibalization → prioritized action plan
 - `page-optimization` — decay/CTR → brief → rewrite → deterministic verification
+- `seo-production` — demand evidence → approved outline → claim ledger → draft → deterministic verification → package for Content Operations
 - `link-prospecting` — Link Monitor mentions → outreach shortlist with pitch angles
 - `aeo-visibility-review` — AI-search scoreboard → how to win uncited questions
 - `site-triage` — health + indexing + traffic → "is anything on fire?" report

@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { safeFetch } from "@/lib/security/safeFetch";
 
 export async function GET(req: Request) {
   try {
-    const session = await getServerSession(authOptions);
-    const userId = (session?.user as any)?.id as string | undefined;
+    const userId = await workspaceUserId();
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     // Server-side pagination — the queue can hold thousands of URLs, so never ship them all.
@@ -125,8 +124,7 @@ async function submitToIndexNow(
 
 export async function POST(req: Request) {
   try {
-    const session = await getServerSession(authOptions);
-    const userId = (session?.user as any)?.id as string | undefined;
+    const userId = await workspaceUserId("spend");
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const body = await req.json();
@@ -229,8 +227,7 @@ export async function POST(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
-    const session = await getServerSession(authOptions);
-    const userId = (session?.user as any)?.id as string | undefined;
+    const userId = await workspaceUserId("write");
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     // Clear the queue for the user's domains.

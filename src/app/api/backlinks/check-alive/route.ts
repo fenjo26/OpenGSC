@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from '@/lib/prisma';
 import { safeFetch } from '@/lib/security/safeFetch';
 
@@ -66,7 +66,10 @@ async function checkOnce(url: string): Promise<Outcome> {
   // retryable one and we re-fetch the body anyway to extract the title.
   const gr = await safeFetch(url, {
     timeoutMs: 8_000,
-    maxBytes: 1024 * 1024,
+    // Generous on purpose: only the <title> is needed, but a page over the cap raises
+    // response_too_large, and the caller records an unreachable link as "blocked". A heavy page
+    // is not a blocked page.
+    maxBytes: 8 * 1024 * 1024,
     redirect: 'follow',
     headers: { 'User-Agent': UA },
   });
@@ -86,8 +89,7 @@ async function checkOnce(url: string): Promise<Outcome> {
 }
 
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = await workspaceUserId("act");
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await req.json();

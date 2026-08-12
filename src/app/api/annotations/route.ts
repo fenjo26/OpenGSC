@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { getAlgoUpdates } from "@/lib/algoUpdatesServer";
 import { rawQuery, rawExec, dayExpr } from "@/lib/db/raw";
@@ -155,8 +155,7 @@ async function ownedSite(userId: string, siteId: string) {
 }
 
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = await workspaceUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
@@ -271,8 +270,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = await workspaceUserId("write");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const b = await req.json().catch(() => ({}));
@@ -302,8 +300,7 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = await workspaceUserId("write");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const id = new URL(req.url).searchParams.get("id") || "";
@@ -325,8 +322,7 @@ export async function DELETE(req: Request) {
 }
 
 export async function PUT(req: Request) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = await workspaceUserId("write");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const b = await req.json().catch(() => ({}));

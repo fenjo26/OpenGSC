@@ -72,7 +72,9 @@ export function normalizePublicTarget(input: string): URL {
 }
 
 async function certificateDays(url: URL): Promise<number | null> {
-  const safe = await assertSafeTarget(url);
+  // allowPrivate is pinned to false on every public-surface call: this route is reachable without
+  // a session, so it must never inherit the instance's OPENGSC_ALLOW_PRIVATE_TARGETS setting.
+  const safe = await assertSafeTarget(url, { allowPrivate: false });
   const address = safe.addresses[0];
   if (!address) return null;
   return new Promise(resolve => {
@@ -140,7 +142,7 @@ export async function runPublicCheck(input: string): Promise<PublicCheckResult> 
   try {
     response = await safeFetch(requested, {
       headers: { "User-Agent": UA, Accept: "text/html,application/xhtml+xml" },
-      redirect: "follow", timeoutMs: 15_000, maxRedirects: 5, maxBytes: MAX_HTML_BYTES,
+      redirect: "follow", timeoutMs: 15_000, maxRedirects: 5, maxBytes: MAX_HTML_BYTES, allowPrivate: false,
     });
   } catch (error) {
     httpsFailure = error instanceof SafeFetchError ? error.code : "network_error";
@@ -148,7 +150,7 @@ export async function runPublicCheck(input: string): Promise<PublicCheckResult> 
     try {
       response = await safeFetch(fallback, {
         headers: { "User-Agent": UA, Accept: "text/html,application/xhtml+xml" },
-        redirect: "follow", timeoutMs: 15_000, maxRedirects: 5, maxBytes: MAX_HTML_BYTES,
+        redirect: "follow", timeoutMs: 15_000, maxRedirects: 5, maxBytes: MAX_HTML_BYTES, allowPrivate: false,
       });
       https = response.url.startsWith("https:");
     } catch {
@@ -189,7 +191,7 @@ export async function runPublicCheck(input: string): Promise<PublicCheckResult> 
   // The pinned fetch exposes total duration only at the caller, so measure a cheap HEAD against
   // the already-validated final URL. If it fails, latency is unavailable rather than a finding.
   const latencyStart = Date.now();
-  try { await safeFetch(finalUrl, { method: "HEAD", redirect: "follow", timeoutMs: 8_000, maxBytes: 1 }); facts.loadMs = Date.now() - latencyStart; }
+  try { await safeFetch(finalUrl, { method: "HEAD", redirect: "follow", timeoutMs: 8_000, maxBytes: 1, allowPrivate: false }); facts.loadMs = Date.now() - latencyStart; }
   catch { facts.loadMs = 0; }
 
   const ids = evaluateAuditPageRules(facts).filter(id => PUBLIC_RULE_IDS.has(id));

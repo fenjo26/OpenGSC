@@ -6,7 +6,7 @@ import { GitHubError, verifyRepository } from "@/lib/contentOps/github";
 import { validateRepositoryInput } from "@/lib/contentOps/types";
 
 export async function POST(req: Request) {
-  const userId = await contentOpsUserId();
+  const userId = await contentOpsUserId("manageSecrets");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json().catch(() => ({}));
   const token = String(body.token ?? "").trim();

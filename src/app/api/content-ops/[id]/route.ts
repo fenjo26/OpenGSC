@@ -6,7 +6,7 @@ import { contentOpsUserId, operationDto, ownedOperation, recordTransition } from
 const MAX_CONTENT = 2_000_000;
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const userId = await contentOpsUserId();
+  const userId = await contentOpsUserId("write");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
   const operation = await ownedOperation(userId, id);
@@ -64,7 +64,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const userId = await contentOpsUserId();
+  const userId = await contentOpsUserId("write");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
   const operation = await prisma.contentOperation.findFirst({ where: { id, userId }, select: { status: true } }).catch(() => null);

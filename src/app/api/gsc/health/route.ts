@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { assertSafeTarget } from "@/lib/security/safeFetch";
 import * as tls from "tls";
@@ -160,8 +160,7 @@ async function checkVirusTotal(domain: string, apiKey: string): Promise<{
 
 // ─── Route ────────────────────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = await workspaceUserId();
   const { searchParams } = new URL(req.url);
   const siteId = searchParams.get("siteId");
   if (!siteId) return NextResponse.json({ error: "siteId required" }, { status: 400 });
@@ -200,8 +199,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = await workspaceUserId("act");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();

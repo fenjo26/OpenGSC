@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { verifyAuthOrShare } from "@/lib/authShare";
 import { getUserSerpCreds } from "@/lib/rank";
@@ -29,8 +29,7 @@ export async function GET(req: Request) {
     userId = site.userId;
     whereClause = { siteId: site.id };
   } else {
-    const session = await getServerSession(authOptions);
-    const loggedInId = (session?.user as any)?.id as string | undefined;
+        const loggedInId = await workspaceUserId();
     if (!loggedInId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     userId = loggedInId;
 
@@ -103,8 +102,7 @@ export async function GET(req: Request) {
 
 // POST /api/rank/keywords  { siteId, keywords: string[], country?, lang?, device? }
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = await workspaceUserId("write");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const b = await req.json().catch(() => ({}));
@@ -143,8 +141,7 @@ export async function POST(req: Request) {
 
 // DELETE /api/rank/keywords  { siteId, ids: string[] }
 export async function DELETE(req: Request) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = await workspaceUserId("write");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const b = await req.json().catch(() => ({}));

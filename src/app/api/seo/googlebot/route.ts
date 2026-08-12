@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { analyzeUrl } from "@/lib/seo/googlebot";
 import { assertSafeTarget, SafeFetchError } from "@/lib/security/safeFetch";
@@ -102,8 +102,7 @@ async function inspectOwnSite(userId: string, inspectUrl: string) {
 }
 
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = await workspaceUserId("act");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json().catch(() => ({}));

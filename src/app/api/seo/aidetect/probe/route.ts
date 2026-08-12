@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { fetchLLMDetailed, supportsTemperature } from "@/lib/llm";
 
 // POST /api/seo/aidetect/probe — generate ONE writing sample with an explicit model + temperature.
@@ -14,8 +14,8 @@ import { fetchLLMDetailed, supportsTemperature } from "@/lib/llm";
 // Deliberately NOT the full generation pipeline. Chunking, fact-checking and the volume guard would
 // each perturb the token distribution and confound the comparison; the bench needs one clean call.
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!(session?.user as any)?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const workspaceId = await workspaceUserId("spend");
+  if (!workspaceId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const b = await req.json().catch(() => ({}));
   const prompt = String(b.prompt ?? "").trim();

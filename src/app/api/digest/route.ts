@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
+import type { Capability } from "@/lib/team/roles";
 import { prisma } from "@/lib/prisma";
 import { buildDigestData, renderDigestMarkdown, aiSummary, getDigestSettings, saveDigestSettings, DEFAULT_DIGEST_SETTINGS } from "@/lib/digest";
 import { buildEngineRows, configuredEngines } from "@/lib/digestEngines";
@@ -20,9 +21,8 @@ const hasTag = (tagsField: string | null, tag: string): boolean => {
 //                     → "send"    {tag,days,ai} — build + deliver to Telegram + save
 //                     → "settings" {settings}   — save the schedule
 
-async function uid(): Promise<string | null> {
-  const session = await getServerSession(authOptions);
-  return ((session?.user as any)?.id as string) || null;
+async function uid(capability: Capability = "read"): Promise<string | null> {
+return workspaceUserId(capability);
 }
 
 export async function GET() {
@@ -63,7 +63,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const userId = await uid();
+  const userId = await uid("write");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const b = await req.json().catch(() => ({}));
   const action = String(b.action ?? "");
@@ -122,7 +122,7 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  const userId = await uid();
+  const userId = await uid("write");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id") ?? "";

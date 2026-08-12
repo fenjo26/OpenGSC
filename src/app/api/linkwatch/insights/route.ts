@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { fetchLLM } from "@/lib/llm";
 import { rawQuery } from "@/lib/db/raw";
 
@@ -9,8 +9,7 @@ import { rawQuery } from "@/lib/db/raw";
 // content/PR opportunities (the analysis step of detailed.com/ai-backlinks-api).
 
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = await workspaceUserId("spend");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const b = await req.json().catch(() => ({}));
   const apiKey = String(b.aiApiKey ?? "");

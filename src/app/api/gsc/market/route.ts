@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { marketFor } from "@/lib/seo/market";
 
@@ -13,8 +13,7 @@ import { marketFor } from "@/lib/seo/market";
 // market falls back to whatever the ccTLD implies, which for `foo.gr` is Greece and for `foo.com`
 // is nothing at all. Storing an empty string would look like an answer while meaning the opposite.
 export async function PATCH(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = await workspaceUserId("write");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { siteId, market } = await req.json().catch(() => ({}));

@@ -12,7 +12,28 @@ export class GitHubError extends Error {
 
 interface RepoConfig { owner: string; repo: string; baseBranch: string; contentRoot: string; }
 
+export interface RepositorySourceSnapshot {
+  ref: string;
+  commitSha: string;
+  files: Array<{ path: string; content: string; size: number }>;
+  totalFiles: number;
+  truncated: boolean;
+}
+
+const SOURCE_FILE_LIMIT = 80;
+const SOURCE_FILE_BYTES = 256 * 1024;
+const SOURCE_TOTAL_BYTES = 4 * 1024 * 1024;
+const SOURCE_CONCURRENCY = 5;
+
 function pathPart(value: string): string { return value.split("/").map(encodeURIComponent).join("/"); }
+
+export function validateSourceRef(value: unknown, fallback = "main"): string {
+  const ref = String(value ?? fallback).trim() || fallback;
+  if (ref.length > 200 || !/^[A-Za-z0-9._/-]+$/.test(ref) || ref.includes("..") || ref.startsWith("/") || ref.endsWith("/")) {
+    throw new Error("invalid_source_ref");
+  }
+  return ref;
+}
 
 async function githubRequest<T>(token: string, pathname: string, init: RequestInit = {}, accepted: number[] = [200]): Promise<T> {
   if (!pathname.startsWith("/")) throw new Error("invalid_github_path");
@@ -49,6 +70,73 @@ export async function verifyRepository(token: string, config: RepoConfig) {
     defaultBranch: String(repo.default_branch ?? ""),
     baseSha: String(branch?.commit?.sha ?? ""),
     canPush: repo?.permissions?.push === true,
+  };
+}
+
+function sourcePriority(path: string): number {
+  if (/^(?:package\.json|next\.config\.[cm]?[jt]s|(?:src\/)?app\/(?:layout|robots|sitemap)\.[cm]?[jt]sx?|public\/(?:robots\.txt|sitemap\.xml))$/i.test(path)) return 0;
+  if (/(?:^|\/)(?:page|layout|route|middleware|proxy)\.[cm]?[jt]sx?$/i.test(path)) return 1;
+  if (/(?:^|\/)(?:components?|lib)\//i.test(path)) return 2;
+  return 3;
+}
+
+function sourcePathCandidate(entry: any): boolean {
+  const path = String(entry?.path ?? "");
+  if (entry?.type !== "blob" || !path) return false;
+  if (/(?:^|\/)(?:node_modules|\.next|dist|build|coverage|vendor|generated|__snapshots__)(?:\/|$)/i.test(path)) return false;
+  if (/(?:^|\/)(?:__tests__|tests?|fixtures)(?:\/|$)|\.(?:test|spec)\.[^.]+$/i.test(path)) return false;
+  if (/(?:^|\/)(?:package-lock|pnpm-lock|yarn\.lock|bun\.lock)/i.test(path)) return false;
+  return /(?:^|\/)(?:package\.json|next\.config\.[cm]?[jt]s|public\/(?:robots\.txt|sitemap\.xml))$|\.(?:[cm]?[jt]sx?|mdx|css|scss|json|html?)$/i.test(path);
+}
+
+/** Read a bounded, immutable source snapshot through GitHub's tree/blob APIs. */
+export async function readRepositorySource(
+  token: string,
+  config: RepoConfig,
+  requestedRef?: string,
+  onProgress?: (completed: number, total: number) => Promise<void> | void,
+): Promise<RepositorySourceSnapshot> {
+  const c = validateRepositoryInput(config as unknown as Record<string, unknown>);
+  const ref = validateSourceRef(requestedRef, c.baseBranch);
+  const repoPath = `/repos/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}`;
+  const branch: any = await githubRequest(token, `${repoPath}/git/ref/heads/${pathPart(ref)}`);
+  const commitSha = String(branch?.object?.sha ?? "");
+  if (!commitSha) throw new GitHubError("Source ref has no commit", 400, "github_empty_branch");
+  const commit: any = await githubRequest(token, `${repoPath}/git/commits/${encodeURIComponent(commitSha)}`);
+  const treeSha = String(commit?.tree?.sha ?? "");
+  if (!treeSha) throw new GitHubError("Commit has no source tree", 400, "github_empty_tree");
+  const tree: any = await githubRequest(token, `${repoPath}/git/trees/${encodeURIComponent(treeSha)}?recursive=1`);
+  const relevant = (Array.isArray(tree?.tree) ? tree.tree : []).filter(sourcePathCandidate);
+  const oversized = relevant.some((entry: any) => Number(entry?.size ?? 0) > SOURCE_FILE_BYTES);
+  const candidates = relevant
+    .filter((entry: any) => Number(entry?.size ?? 0) <= SOURCE_FILE_BYTES)
+    .sort((a: any, b: any) => sourcePriority(String(a.path)) - sourcePriority(String(b.path)) || String(a.path).localeCompare(String(b.path)));
+  const selected = candidates.slice(0, SOURCE_FILE_LIMIT);
+  const files: RepositorySourceSnapshot["files"] = [];
+  let cursor = 0;
+  let totalBytes = 0;
+  let budgetTruncated = false;
+  const workers = Array.from({ length: Math.min(SOURCE_CONCURRENCY, selected.length) }, async () => {
+    while (cursor < selected.length) {
+      const entry = selected[cursor++];
+      const size = Number(entry.size ?? 0);
+      if (totalBytes + size > SOURCE_TOTAL_BYTES) { budgetTruncated = true; continue; }
+      totalBytes += size; // reserve before awaiting so concurrent workers share one hard budget
+      const blob: any = await githubRequest(token, `${repoPath}/git/blobs/${encodeURIComponent(String(entry.sha))}`);
+      if (blob?.encoding !== "base64" || typeof blob?.content !== "string") { budgetTruncated = true; continue; }
+      const content = Buffer.from(blob.content.replace(/\n/g, ""), "base64").toString("utf8");
+      files.push({ path: String(entry.path), content, size: Buffer.byteLength(content) });
+      await onProgress?.(files.length, selected.length);
+    }
+  });
+  await Promise.all(workers);
+  files.sort((a, b) => a.path.localeCompare(b.path));
+  return {
+    ref,
+    commitSha,
+    files,
+    totalFiles: candidates.length,
+    truncated: !!tree?.truncated || oversized || candidates.length > SOURCE_FILE_LIMIT || budgetTruncated,
   };
 }
 

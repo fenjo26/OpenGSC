@@ -13,6 +13,24 @@ echo "[update] $(date -u) — starting in $(pwd)"
 echo "[update] git fetch..."
 git fetch origin || { echo "[update] git fetch FAILED"; echo "___OPENGSC_UPDATE_FAIL___"; exit 1; }
 
+# The backup happens BEFORE `git reset --hard`, not after, and the ordering is deliberate.
+#
+# A production install points DATABASE_URL at an absolute path outside the repository
+# (data/prod.db), so the reset cannot touch it. A local install left on the template default
+# (file:./dev.db) is a different story: dev.db is tracked, so `git reset --hard` restores the
+# repository's copy over it. Backing up first means that case costs a restore, not the data.
+backed_up_before_reset=0
+if [ -f scripts/backup-sqlite.mjs ]; then
+  echo "[update] backing up SQLite before touching the working tree..."
+  if node scripts/backup-sqlite.mjs; then
+    backed_up_before_reset=1
+  else
+    echo "[update] database backup FAILED — nothing was changed"; echo "___OPENGSC_UPDATE_FAIL___"; exit 1
+  fi
+else
+  echo "[update] no backup script in this checkout yet — it arrives with this update"
+fi
+
 echo "[update] git reset --hard origin/main..."
 git reset --hard origin/main || { echo "[update] git reset FAILED"; echo "___OPENGSC_UPDATE_FAIL___"; exit 1; }
 
@@ -35,8 +53,12 @@ npm i --include=dev || { echo "[update] npm i FAILED"; echo "___OPENGSC_UPDATE_F
 # the cause, instead of the build or the first request doing it much less clearly.
 node scripts/check-native-deps.mjs || { echo "[update] dependency check FAILED"; echo "___OPENGSC_UPDATE_FAIL___"; exit 1; }
 
-echo "[update] backing up SQLite..."
-node scripts/backup-sqlite.mjs || { echo "[update] database backup FAILED — schema was not changed"; echo "___OPENGSC_UPDATE_FAIL___"; exit 1; }
+# Only runs when the pre-reset backup could not: an install updating from a version that
+# predates scripts/backup-sqlite.mjs. The schema must never change without a verified copy.
+if [ "$backed_up_before_reset" != "1" ]; then
+  echo "[update] backing up SQLite..."
+  node scripts/backup-sqlite.mjs || { echo "[update] database backup FAILED — schema was not changed"; echo "___OPENGSC_UPDATE_FAIL___"; exit 1; }
+fi
 
 echo "[update] prisma db push..."
 npx prisma db push --skip-generate || npx prisma db push || { echo "[update] prisma db push FAILED"; echo "___OPENGSC_UPDATE_FAIL___"; exit 1; }

@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { fetchLLM } from "@/lib/llm";
 import { stripForeignScripts } from "@/lib/seo/generate";
 
 // POST /api/seo/factfix — rewrite an article to remove/soften/flag unverified claims
 // found by fact-check. body: { article, claims[], keyword?, aiProvider, aiApiKey, model? }
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!(session?.user as any)?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const workspaceId = await workspaceUserId("spend");
+  if (!workspaceId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const b = await req.json();
   const article = String(b.article ?? "");

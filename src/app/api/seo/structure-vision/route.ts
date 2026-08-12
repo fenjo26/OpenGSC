@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { fetchLLMVision } from "@/lib/llm";
 import { buildVisionStructurePrompt, extractJson } from "@/lib/seo/prompts";
 
@@ -9,8 +9,8 @@ import { buildVisionStructurePrompt, extractJson } from "@/lib/seo/prompts";
 // body: { imageBase64, mimeType?, aiProvider, aiApiKey, model?, aiBaseUrl? }
 // -> { title, nodes: [{level,text,words}] }
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!(session?.user as any)?.id) {
+  const workspaceId = await workspaceUserId("spend");
+  if (!workspaceId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

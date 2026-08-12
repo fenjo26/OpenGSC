@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { OPENAI_FALLBACK_MODELS } from "@/lib/seo/models";
 import { prisma } from "@/lib/prisma";
 import { runGeoAudit, type GeoEngine } from "@/lib/seo/geo";
@@ -24,8 +24,7 @@ function runAudit(id: string, params: { query: string; language: string; country
 
 // POST /api/seo/geo — start a GEO audit. body: { query, language?, country?, model?, apiKey }
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id;
+  const userId = await workspaceUserId("spend");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const b = await req.json();
@@ -54,8 +53,7 @@ export async function POST(req: Request) {
 
 // GET /api/seo/geo — list the user's recent audits (metadata only, no full report).
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id;
+  const userId = await workspaceUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     // Auto-fail audits stuck "processing" past the max window (server may have restarted).

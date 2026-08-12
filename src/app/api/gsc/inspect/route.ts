@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from '@/lib/prisma';
 import { google } from 'googleapis';
 import { safeFetch } from '@/lib/security/safeFetch';
@@ -25,8 +25,7 @@ function makeOAuth2(account: {
 
 // ─── GET ?siteId= → return cached inspections ─────────────────────────────────
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = await workspaceUserId();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
@@ -96,8 +95,7 @@ async function getSitemapUrlsFallback(siteId: string, siteUrl: string, customSit
 
 // ─── POST { siteId, urls?, forceRefresh? } → inspect & cache ─────────────────
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = await workspaceUserId("act");
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await req.json();

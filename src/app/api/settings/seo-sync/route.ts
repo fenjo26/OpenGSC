@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { rawQuery, rawExec } from "@/lib/db/raw";
 
 // Server-side backup of the browser-stored SEO Tools settings (API keys, providers,
@@ -9,8 +9,7 @@ import { rawQuery, rawExec } from "@/lib/db/raw";
 // Raw SQL (not prisma.user.update) so it works without regenerating the Prisma client.
 
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = await workspaceUserId("manageSecrets");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const rows: any[] = await rawQuery(`SELECT seoSettings FROM "User" WHERE id = ?`, userId);
@@ -22,8 +21,7 @@ export async function GET() {
 }
 
 export async function PUT(req: Request) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = await workspaceUserId("manageSecrets");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   let body: any;
   try { body = await req.json(); } catch { return NextResponse.json({ error: "bad_json" }, { status: 400 }); }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
+import type { Capability } from "@/lib/team/roles";
 import { runUpsert } from "@/lib/db/upsert";
 import { rawQuery, rawExec } from "@/lib/db/raw";
 
@@ -10,9 +11,8 @@ import { rawQuery, rawExec } from "@/lib/db/raw";
 // PUT { records }   → upsert the given records (client pushes its current list)
 // DELETE ?id=X      → delete one record;  DELETE ?all=1 → wipe the user's history
 
-async function uid(): Promise<string | null> {
-  const session = await getServerSession(authOptions);
-  return ((session?.user as any)?.id as string) || null;
+async function uid(capability: Capability = "read"): Promise<string | null> {
+return workspaceUserId(capability);
 }
 
 export async function GET() {
@@ -36,7 +36,7 @@ export async function GET() {
 function safeParse(s: string): any { try { return JSON.parse(s); } catch { return s; } }
 
 export async function PUT(req: Request) {
-  const userId = await uid();
+  const userId = await uid("write");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   let body: any;
   try { body = await req.json(); } catch { return NextResponse.json({ error: "bad_json" }, { status: 400 }); }
@@ -71,7 +71,7 @@ export async function PUT(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  const userId = await uid();
+  const userId = await uid("write");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { searchParams } = new URL(req.url);
   try {

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from '@/lib/prisma';
 
 const BASE = 'https://inderixingbot.com/api';
@@ -8,8 +8,7 @@ const BASE = 'https://inderixingbot.com/api';
 // GET /api/indexing/neural/status?checkId=m11522&siteDbId=...
 // Polls NeuralIndexer for a specific check task. When done, saves results to DB.
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = await workspaceUserId();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { searchParams } = new URL(req.url);

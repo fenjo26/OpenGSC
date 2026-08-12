@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { fetchDomainMetrics, DOMAIN_UNITS, MetricsProvider } from "@/lib/seo/metrics";
 import {
   readDomainCache, writeDomainCache, readUsage, recordUsage, withinCap, DOMAIN_TTL_DAYS,
@@ -19,8 +19,7 @@ import {
 const norm = (d: string) => d.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
 
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = await workspaceUserId("spend");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const b = await req.json().catch(() => ({}));

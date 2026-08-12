@@ -5,7 +5,7 @@ import { createContentPullRequest, GitHubError, previewRepositoryChange } from "
 import { contentOpsUserId, operationDto, ownedOperation } from "@/lib/contentOps/server";
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const userId = await contentOpsUserId();
+  const userId = await contentOpsUserId("publish");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json().catch(() => ({}));
   if (body.confirm !== true) return NextResponse.json({ error: "confirmation_required" }, { status: 400 });

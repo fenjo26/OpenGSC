@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from '@/lib/prisma';
 
 const BASE = 'https://inderixingbot.com/api';
@@ -10,8 +10,7 @@ const BASE = 'https://inderixingbot.com/api';
 // 2. Polls GET /api/v2/checks/{id} until completed (up to ~30s)
 // 3. Persists results to SitemapUrl
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = await workspaceUserId("spend");
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const user = await prisma.user.findUnique({

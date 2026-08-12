@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from '@/lib/prisma';
 
 // Industry-standard CTR benchmarks per position (Backlinko 2023)
@@ -11,8 +11,7 @@ const BENCHMARKS: Record<number, number> = {
 
 // GET /api/gsc/ctr?siteId=&days=90&minImpressions=10&limit=200
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions);
-  let userId = (session?.user as any)?.id as string | undefined;
+  let userId = await workspaceUserId();
   if (!userId) {
     // Guest access via a share link: the token must match the requested site (never 'all').
     const sp = new URL(req.url).searchParams;

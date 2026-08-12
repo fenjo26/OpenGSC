@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { recoverStaleAudits, runAudit } from "@/lib/audit/crawler";
 
@@ -9,8 +9,7 @@ import { recoverStaleAudits, runAudit } from "@/lib/audit/crawler";
 // GET  /api/audit?siteId=                → list audits for a site (latest first)
 
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = await workspaceUserId("act");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const b = await req.json().catch(() => ({}));
@@ -66,8 +65,7 @@ export async function POST(req: Request) {
 }
 
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = await workspaceUserId();
 
   const { searchParams } = new URL(req.url);
   const siteId = searchParams.get("siteId") ?? "";

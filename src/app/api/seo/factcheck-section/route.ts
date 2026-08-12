@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { fetchLLM } from "@/lib/llm";
 import { runSerp, SerpEngine } from "@/lib/seo/serp";
 import { scrapeMany } from "@/lib/seo/scrape";
@@ -9,8 +9,8 @@ import { buildFactCheckSectionPrompt, extractJson } from "@/lib/seo/prompts";
 // POST /api/seo/factcheck-section
 // body: { heading, text, keyword, serpProvider, serpKey, engine?, gl?, hl?, aiProvider, aiApiKey, model? }
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!(session?.user as any)?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const workspaceId = await workspaceUserId("spend");
+  if (!workspaceId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const b = await req.json();
   const heading = String(b.heading ?? "");

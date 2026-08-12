@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertSafeTarget, isUnsafeAddress, SafeFetchError } from "./safeFetch";
+import { assertSafeTarget, isUnsafeAddress, privateTargetsAllowed, SafeFetchError } from "./safeFetch";
 
 test("blocks private, local, link-local and reserved IPv4 ranges", () => {
   for (const address of [
@@ -30,4 +30,33 @@ test("rejects local hostnames and literal private destinations before a socket o
   for (const target of ["http://localhost/", "http://service.internal/", "http://127.0.0.1/", "http://[::1]/", "http://[::ffff:127.0.0.1]/"]) {
     await assert.rejects(() => assertSafeTarget(target), (error: unknown) => error instanceof SafeFetchError && error.code === "private_address", target);
   }
+});
+
+// The opt-in below exists for operators auditing a staging site on their own box. Every test here
+// guards the same contract: it is off by default, it never widens a public surface, and it does
+// not relax any check other than the destination address.
+test("private targets stay blocked unless the instance opts in", async () => {
+  const previous = process.env.OPENGSC_ALLOW_PRIVATE_TARGETS;
+  try {
+    delete process.env.OPENGSC_ALLOW_PRIVATE_TARGETS;
+    assert.equal(privateTargetsAllowed(), false);
+    await assert.rejects(() => assertSafeTarget("http://127.0.0.1/"), (error: unknown) => error instanceof SafeFetchError && error.code === "private_address");
+
+    process.env.OPENGSC_ALLOW_PRIVATE_TARGETS = "1";
+    assert.equal(privateTargetsAllowed(), true);
+    const allowed = await assertSafeTarget("http://127.0.0.1:3000/audit");
+    assert.equal(allowed.addresses[0]?.address, "127.0.0.1");
+
+    // A public route passes allowPrivate:false and must keep the strict behaviour regardless.
+    await assert.rejects(() => assertSafeTarget("http://127.0.0.1/", { allowPrivate: false }), (error: unknown) => error instanceof SafeFetchError && error.code === "private_address");
+    await assert.rejects(() => assertSafeTarget("http://localhost/", { allowPrivate: false }), (error: unknown) => error instanceof SafeFetchError && error.code === "private_address");
+  } finally {
+    if (previous === undefined) delete process.env.OPENGSC_ALLOW_PRIVATE_TARGETS;
+    else process.env.OPENGSC_ALLOW_PRIVATE_TARGETS = previous;
+  }
+});
+
+test("the private-target opt-in does not relax protocol or credential rules", async () => {
+  await assert.rejects(() => assertSafeTarget("file:///etc/passwd", { allowPrivate: true }), (error: unknown) => error instanceof SafeFetchError && error.code === "unsupported_protocol");
+  await assert.rejects(() => assertSafeTarget("http://user:pass@127.0.0.1/", { allowPrivate: true }), (error: unknown) => error instanceof SafeFetchError && error.code === "credentials_not_allowed");
 });

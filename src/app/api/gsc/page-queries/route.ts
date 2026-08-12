@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 
 // GET /api/gsc/page-queries?url=https://example.com/page&days=90&limit=30
@@ -17,8 +17,7 @@ import { prisma } from "@/lib/prisma";
 // Ownership is still enforced — the URL must belong to one of the caller's own sites.
 
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = await workspaceUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const sp = new URL(req.url).searchParams;

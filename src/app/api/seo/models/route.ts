@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 
 // POST /api/seo/models  { provider, apiKey }
 // Fetches the live model list from the provider's API (server-side to avoid CORS).
 // Returns { models: [{ id, label }] }.
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!(session?.user as any)?.id) {
+  const workspaceId = await workspaceUserId("act");
+  if (!workspaceId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

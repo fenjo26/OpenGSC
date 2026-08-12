@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { AEO_DEFAULT_MODEL } from "@/lib/seo/aeo";
 
@@ -26,8 +26,7 @@ function shape(site: any) {
 
 // GET /api/aeo/settings?siteId=…
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = await workspaceUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
@@ -41,8 +40,7 @@ export async function GET(req: Request) {
 // Empty string clears a field back to null — "ask without a location" has to be expressible,
 // otherwise a country picked once could never be un-picked.
 export async function PUT(req: Request) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = await workspaceUserId("write");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const b = await req.json().catch(() => ({}));

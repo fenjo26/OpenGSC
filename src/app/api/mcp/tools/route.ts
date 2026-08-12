@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { MCP_TOOLS } from "@/lib/mcp/tools";
 import { rawQuery } from "@/lib/db/raw";
 
@@ -46,8 +46,7 @@ async function authUserId(req: Request): Promise<string | null> {
   // reason, the honest answer is "not authorized", not a 500 on a diagnostic endpoint
   // whose whole purpose is to be readable when something else is already broken.
   try {
-    const session = await getServerSession(authOptions);
-    return ((session?.user as any)?.id as string) ?? null;
+    return workspaceUserId();
   } catch {
     return null;
   }

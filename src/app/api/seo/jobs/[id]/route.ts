@@ -1,14 +1,13 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 
 const jobs = () => (prisma as any).seoJob;
 
 // GET /api/seo/jobs/[id] — poll a single job (status + result when done).
 export async function GET(_req: Request, context: { params: Promise<{ id: string }> }) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id;
+  const userId = await workspaceUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await context.params;
   try {
@@ -22,8 +21,7 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
 
 // DELETE /api/seo/jobs/[id] — remove a job (after it's imported into local History, or dismissed).
 export async function DELETE(_req: Request, context: { params: Promise<{ id: string }> }) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id;
+  const userId = await workspaceUserId("write");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await context.params;
   try {

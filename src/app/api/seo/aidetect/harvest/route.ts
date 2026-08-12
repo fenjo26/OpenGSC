@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { runSerp } from "@/lib/seo/serp";
 import { scrapeMany } from "@/lib/seo/scrape";
 import { normalizeForCorpus, tokenize } from "@/lib/seo/aidetect";
@@ -14,8 +14,8 @@ import { normalizeForCorpus, tokenize } from "@/lib/seo/aidetect";
 // Accepts either a keyword (top-N organic results) or an explicit URL list — the latter matters
 // because the best reference pages are usually ones the operator already knows are human-written.
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!(session?.user as any)?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const workspaceId = await workspaceUserId("spend");
+  if (!workspaceId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const b = await req.json().catch(() => ({}));
   const keyword = String(b.keyword ?? "").trim();

@@ -27,10 +27,23 @@ URL и основных форматов API:
 - Public Free SEO Checker на `/free-seo-checker`: одна homepage, общий audit registry и SSRF-safe
   fetch, TLS/indexability/metadata/schema/security/response facts, consequence+action, 7 локалей,
   10-минутный анонимный rate bucket, 15-минутный memory cache и опциональный Turnstile.
+- Sitemap Inventory внутри Indexing: рекурсивные sitemap/gzip/extensions, безопасная модель
+  disappearance, diff, явная metadata verification и отдельный sitemap-seeded запуск Site Audit.
+- Source Audit как отдельная read-only вкладка Content Operations: ограниченный GitHub snapshot,
+  независимый registry Next.js/security/architecture правил, история и ссылки на строки без
+  хранения исходников или изменения репозитория.
 
-Остаются отдельными следующими этапами: обновление внешнего сайта `opengsc.org`, первый корректный
-Git tag/GitHub Release, Sitemap Inventory и post-deploy outcome automation. Они не маскируются как готовые
-функции.
+- SEO Production skill в `.agents/skills/seo-production/`: task card, demand evidence, outline-first,
+  claim ledger, детерминированная проверка и передача пакета в Content Operations без публикации.
+- Post-deploy outcome: проверка реального HTTP 200 после merge, связывание URL с Indexing и
+  Rank Tracker, baseline за 28 дней и checkpoints 7/30/90 из собственных данных GSC с поправкой на
+  задержку отчётности. Ни один платный сабмит и ни один merge не выполняются автоматически.
+- `OPENGSC_ALLOW_PRIVATE_TARGETS`: явная форточка для аудита локального стейджинга. По умолчанию
+  выключена, публичный Free SEO Checker игнорирует её всегда.
+- Бэкап SQLite до `git reset --hard` в `update.sh` и защита локальных баз в `.gitignore`.
+
+Остаётся отдельным этапом обновление внешнего сайта `opengsc.org` и первый корректный
+Git tag/GitHub Release. Они не маскируются как готовые функции.
 
 ## 1. Цель
 
@@ -144,7 +157,7 @@ Git tag/GitHub Release, Sitemap Inventory и post-deploy outcome automation. О�
 | P2 | Content Operations → PR | Инструменты создания и измерения не соединены | Полный цикл idea → PR → index → rank |
 | P2 | Public Site Health Check | Сильный продукт пока виден только после установки | Публичная демонстрация и входящая воронка |
 | P2 | SEO Production agent skill | Контентный pipeline мощный, но workflow агента фрагментирован | Повторяемое производство с fact/integrity gates |
-| Later | Source Audit | Полезно после подключения репозиториев | Проверка SEO до deployment |
+| Done | Source Audit | Использует уже подключённые репозитории | Проверка кода до deployment без смешивания runtime-аудитов |
 | Later | Team / multi-user | Это отдельная архитектура, а не UI-переключатель | Агентства и совместная работа, если спрос подтверждён |
 
 ## 5. Этап 0 — product truth, release hygiene и эксплуатационная база
@@ -667,13 +680,35 @@ Expert report после явного consent/email, если этот кана�
 - меньше галлюцинаций и механического «AI-текста»;
 - skill использует факты и инструменты OpenGSC, а не дублирует их prompt-ом.
 
-## 11. Что отложить
+## 11. Отдельный Source Audit и то, что остаётся отложенным
 
-### Source Audit по образцу svelte-vitals
+### Source Audit — реализован независимо
 
-Полезны registry/reporters/SARIF/agent-remediation patterns, но SvelteKit rules не подходят
-Next.js и не решают основную задачу пользователей OpenGSC. Вернуться после GitHub integration:
-тогда source audit сможет проверять PR до deployment и использовать framework adapters.
+После GitHub integration добавлена отдельная вкладка **Source Audit** внутри Content Operations.
+От svelte-vitals взята только продуктовая идея registry/reporters: его SvelteKit rules и исходный
+код не переносились. Правила реализованы независимо под установленный Next.js 16 и проверены по
+локальной документации этой версии.
+
+Текущий контракт:
+
+- пользователь явно выбирает подключённый репозиторий и ветку;
+- GitHub tree/blob API читает максимум 80 подходящих файлов, 256 КБ на файл и 4 МБ суммарно;
+- проверка выполняется только в памяти, а БД хранит commit SHA, счётчики и bounded findings;
+- имена подозрительных env-переменных допустимы в evidence, но значения секретов и исходники нет;
+- результат помечается неполным при GitHub tree truncation, слишком больших файлах или лимите;
+- проверка только читает GitHub и никогда не создаёт commit/PR, не исправляет код автоматически;
+- heartbeat позволяет честно пометить зависший запуск как interrupted после restart.
+
+Registry содержит консервативные SEO/performance/correctness/security/architecture checks:
+Metadata API, sitemap/robots conventions, raw images и alt, `next/font`, public secret-like env
+names, server env in Client Components, безопасная JSON-LD serialization, raw HTML review,
+user-derived raw fetch, wildcard remote images, page/route conflicts и очень крупные Client
+Components. Findings ведут в конкретный GitHub-файл/строку и предлагают ручное исправление.
+
+Это не новый runtime-аудит сайта. **Site Audit**, **AI Visibility** и **SEO Tools → GEO** сохраняют
+собственные модели, настройки, API, экраны и правила; ни один их отчёт не читается и не
+перезаписывается Source Audit. SARIF, framework adapters кроме Next.js и автоматический audit PR
+остаются будущими расширениями после подтверждения спроса.
 
 ### bisibility как отдельный сервис
 
@@ -790,7 +825,7 @@ timeline. Код AGPL не переносить.
 | Awesome SEO Writing Skill | Адаптировать workflow в OpenGSC agent skill с attribution |
 | DispatchSEO | Независимо реализовать queue/approval/PR/outcome; AGPL-код не копировать |
 | bisibility | Только архитектурный reference; не добавлять второй backend stack |
-| svelte-vitals | Взять rule/reporter architecture позже; Svelte rules не интегрировать |
+| svelte-vitals | Взята только идея rule/reporter architecture; Source Audit реализован независимо под Next.js, Svelte rules/код не переносились |
 | Cannibalization Detector | Взять идею related-query conflicts; простой lexical O(n²) не переносить как production engine |
 | guest-post-backlinks-tool | Только идея outreach workspace; код/архив не использовать |
 | sitemap-harvester | Только идея sitemap inventory; бинарный архив не использовать |

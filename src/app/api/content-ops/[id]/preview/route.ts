@@ -5,7 +5,7 @@ import { contentOpsUserId, ownedOperation } from "@/lib/contentOps/server";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const userId = await contentOpsUserId();
+  const userId = await contentOpsUserId("write");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
   const operation = await ownedOperation(userId, id);

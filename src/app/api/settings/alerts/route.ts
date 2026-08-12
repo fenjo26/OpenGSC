@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
+import type { Capability } from "@/lib/team/roles";
 import { prisma } from "@/lib/prisma";
 import { getAlertSettings, DEFAULT_ALERT_SETTINGS, runAlertsOnce } from "@/lib/alertScheduler";
 import { normalizeLang } from "@/lib/notifyI18n";
@@ -10,13 +11,12 @@ import { rawExec } from "@/lib/db/raw";
 // GET  → { settings, recent (last 20 fired alerts) }
 // POST → { settings } save;  { action: "run" } evaluate rules right now (for testing)
 
-async function uid(): Promise<string | null> {
-  const session = await getServerSession(authOptions);
-  return ((session?.user as any)?.id as string) || null;
+async function uid(capability: Capability = "read"): Promise<string | null> {
+return workspaceUserId(capability);
 }
 
 export async function GET() {
-  const userId = await uid();
+  const userId = await uid("manageSecrets");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const settings = await getAlertSettings(userId);
   let recent: any[] = [];
@@ -30,7 +30,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const userId = await uid();
+  const userId = await uid("manageSecrets");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const b = await req.json().catch(() => ({}));
 

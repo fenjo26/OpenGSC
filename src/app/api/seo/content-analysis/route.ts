@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { runContentSearch } from "@/lib/seo/contentAnalysis";
 
 // POST /api/seo/content-analysis  { keyword, dfsKey, limit? }
 // Brand/keyword citations across the web with sentiment (DataForSEO Content Analysis).
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!(session?.user as any)?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const workspaceId = await workspaceUserId("spend");
+  if (!workspaceId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const b = await req.json();
   const keyword = String(b.keyword ?? "").trim();

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { verifyAuthOrShare } from "@/lib/authShare";
 import { getOwnerEngineKey } from "@/lib/engineKeysServer";
 
@@ -62,8 +62,7 @@ export async function GET(req: Request) {
     const shareToken = searchParams.get("shareToken") || "";
 
     // Authenticate as the logged-in owner OR via a valid share link for this site.
-    const session = await getServerSession(authOptions);
-    let ownerId = (session?.user as any)?.id as string | undefined;
+        let ownerId = await workspaceUserId();
     if (!ownerId && shareToken && siteId) {
       const auth = await verifyAuthOrShare(req, siteId);
       if (auth) ownerId = auth.userId;
@@ -139,8 +138,8 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!(session?.user as any)?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const workspaceId = await workspaceUserId("act");
+    if (!workspaceId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const b = await req.json().catch(() => ({}));
     const action = String(b.action ?? "");

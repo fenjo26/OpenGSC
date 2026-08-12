@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from '@/lib/prisma';
 
 type Metric = 'clicks' | 'impressions';
@@ -48,8 +48,7 @@ function bucketIndex(date: Date, buckets: ReturnType<typeof buildBuckets>): numb
 
 // GET /api/gsc/decay?siteId=&metric=clicks|impressions&period=month|week&cols=16&top=20
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions);
-  let userId = (session?.user as any)?.id as string | undefined;
+  let userId = await workspaceUserId();
   if (!userId) {
     // Guest access via a share link: the token must match the requested site (never 'all').
     const sp = new URL(req.url).searchParams;

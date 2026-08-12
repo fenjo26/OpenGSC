@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { parseSeoSignals } from "@/lib/seo/googlebot";
 import { fetchAsGooglebotBrowser } from "@/lib/seo/richResults";
 import { assertSafeTarget, SafeFetchError } from "@/lib/security/safeFetch";
@@ -45,8 +45,8 @@ function buildView(url: string, html: string, screenshot?: string) {
 }
 
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!(session?.user as any)?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const workspaceId = await workspaceUserId("act");
+  if (!workspaceId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json().catch(() => ({}));
   let url = typeof body.url === "string" ? body.url.trim() : "";

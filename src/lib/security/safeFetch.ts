@@ -24,6 +24,12 @@ export class SafeFetchError extends Error {
 
 export interface SafeFetchOptions {
   method?: "GET" | "HEAD";
+  /**
+   * Opt out of the private-address guard for this call. Defaults to the instance setting
+   * (OPENGSC_ALLOW_PRIVATE_TARGETS). Anything reachable by an anonymous visitor must pass
+   * `false` explicitly instead of inheriting the default.
+   */
+  allowPrivate?: boolean;
   headers?: HeadersInit;
   redirect?: "follow" | "manual";
   timeoutMs?: number;
@@ -54,6 +60,17 @@ interface RawResponse {
   statusText: string;
   headers: Headers;
   body: Buffer;
+}
+
+/**
+ * A self-hosted operator may legitimately need to audit a staging site on the same box or LAN
+ * (http://localhost:3000, 192.168.x.x). That is exactly the shape of an SSRF target, so it stays
+ * off unless the instance owner turns it on with OPENGSC_ALLOW_PRIVATE_TARGETS=1 in .env.
+ * The flag is read per call, never cached, and public surfaces override it with allowPrivate:false.
+ */
+export function privateTargetsAllowed(): boolean {
+  const value = (process.env.OPENGSC_ALLOW_PRIVATE_TARGETS || "").trim().toLowerCase();
+  return value === "1" || value === "true";
 }
 
 const DEFAULT_TIMEOUT_MS = 20_000;
@@ -175,16 +192,21 @@ function normalizedHostname(url: URL): string {
   return url.hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
 }
 
-export async function assertSafeTarget(input: string | URL): Promise<{ url: URL; addresses: ResolvedAddress[] }> {
+export async function assertSafeTarget(
+  input: string | URL,
+  options: { allowPrivate?: boolean } = {},
+): Promise<{ url: URL; addresses: ResolvedAddress[] }> {
+  const allowPrivate = options.allowPrivate ?? privateTargetsAllowed();
   const url = parseTarget(input);
   const hostname = normalizedHostname(url);
-  if (!hostname || hostname === "localhost" || /\.(?:localhost|local|internal|home|lan)$/.test(hostname)) {
+  if (!hostname) throw new SafeFetchError("private_address", "Local and internal hostnames are not allowed.");
+  if (!allowPrivate && (hostname === "localhost" || /\.(?:localhost|local|internal|home|lan)$/.test(hostname))) {
     throw new SafeFetchError("private_address", "Local and internal hostnames are not allowed.");
   }
 
   const literalFamily = isIP(hostname);
   if (literalFamily) {
-    if (isUnsafeAddress(hostname)) {
+    if (!allowPrivate && isUnsafeAddress(hostname)) {
       throw new SafeFetchError("private_address", "Private, local and reserved addresses are not allowed.");
     }
     return { url, addresses: [{ address: hostname, family: literalFamily as 4 | 6 }] };
@@ -197,7 +219,7 @@ export async function assertSafeTarget(input: string | URL): Promise<{ url: URL;
     throw new SafeFetchError("dns_failed", "The target hostname could not be resolved.", { cause });
   }
   if (!records.length) throw new SafeFetchError("dns_failed", "The target hostname has no addresses.");
-  if (records.some(record => isUnsafeAddress(record.address))) {
+  if (!allowPrivate && records.some(record => isUnsafeAddress(record.address))) {
     throw new SafeFetchError("private_address", "The target resolves to a private, local or reserved address.");
   }
 
@@ -332,6 +354,9 @@ export async function safeFetch(input: string | URL, options: SafeFetchOptions =
   const timeoutMs = Math.min(120_000, Math.max(250, options.timeoutMs || DEFAULT_TIMEOUT_MS));
   const maxBytes = Math.min(50 * 1024 * 1024, Math.max(1, options.maxBytes || DEFAULT_MAX_BYTES));
   const maxRedirects = Math.min(10, Math.max(0, options.maxRedirects ?? DEFAULT_MAX_REDIRECTS));
+  // Resolved once so every hop of one request shares the same decision, even if the environment
+  // variable changes mid-flight.
+  const allowPrivate = options.allowPrivate ?? privateTargetsAllowed();
   const deadline = Date.now() + timeoutMs;
   const headers = new Headers(options.headers);
   if (!headers.has("accept")) headers.set("accept", "*/*");
@@ -343,7 +368,7 @@ export async function safeFetch(input: string | URL, options: SafeFetchOptions =
   let current = parseTarget(input);
   let redirects = 0;
   while (true) {
-    const { url, addresses } = await assertSafeTarget(current);
+    const { url, addresses } = await assertSafeTarget(current, { allowPrivate });
     let raw: RawResponse | null = null;
     let lastError: unknown = null;
 

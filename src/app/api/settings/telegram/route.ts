@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
+import type { Capability } from "@/lib/team/roles";
 import { detectChatId, sendTelegram } from "@/lib/notify";
 import { rawQuery, rawExec } from "@/lib/db/raw";
 
@@ -10,9 +11,8 @@ import { rawQuery, rawExec } from "@/lib/db/raw";
 // DELETE          → disconnect
 // Raw SQL for graceful degradation before `prisma db push` (seoSettings convention).
 
-async function uid(): Promise<string | null> {
-  const session = await getServerSession(authOptions);
-  return ((session?.user as any)?.id as string) || null;
+async function uid(capability: Capability = "read"): Promise<string | null> {
+return workspaceUserId(capability);
 }
 
 async function readRow(userId: string): Promise<{ token: string; chatId: string }> {
@@ -26,7 +26,7 @@ async function readRow(userId: string): Promise<{ token: string; chatId: string 
 }
 
 export async function GET() {
-  const userId = await uid();
+  const userId = await uid("manageSecrets");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { token, chatId } = await readRow(userId);
   return NextResponse.json({
@@ -37,7 +37,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const userId = await uid();
+  const userId = await uid("manageSecrets");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const b = await req.json().catch(() => ({}));
   const action = String(b.action ?? "save");
@@ -73,7 +73,7 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE() {
-  const userId = await uid();
+  const userId = await uid("manageSecrets");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     await rawExec(`UPDATE "User" SET telegramBotToken = NULL, telegramChatId = NULL WHERE id = ?`, userId);

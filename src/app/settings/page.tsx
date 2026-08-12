@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import TeamMembersPanel from "@/components/TeamMembersPanel";
 import SeoToolsSettings, { SeoProviderKeysSection, AeoProviderKeysSection } from "@/components/SeoToolsSettings";
 import MetricsSettingsSection from "@/components/MetricsSettingsSection";
 
@@ -2116,7 +2117,8 @@ export default function SettingsPage() {
     const valid: NavItem[] = [
       "accounts", "bing", "yandex", "api", "api-keys", "indexing-api", "metrics",
       "seo-tools", "notifications", "preferences",
-      ...(EXPERIMENTAL_TEAM_UI ? ["teams", "members", "supersites"] as NavItem[] : []),
+      "members",
+      ...(EXPERIMENTAL_TEAM_UI ? ["teams", "supersites"] as NavItem[] : []),
     ];
     if (tab && (valid as string[]).includes(tab)) setNav(tab as NavItem);
   }, []);
@@ -2207,10 +2209,10 @@ export default function SettingsPage() {
               <Edit2 size={11} style={{ color: "var(--color-text-secondary)", cursor: "pointer", flexShrink: 0 }} onClick={() => setEditingTeam(true)} />
             </div> : (
               <div style={{ fontSize: "11px", lineHeight: 1.45, color: "var(--color-text-secondary)", marginBottom: "10px" }}>
-                {t("singleOperatorTitle")}
+                {t("workspaceSidebarHint")}
               </div>
             )}
-            {EXPERIMENTAL_TEAM_UI && <NavBtn id="members" icon={<Users size={14} />} label={t("navTeamMembers")} badge="1" />}
+            <NavBtn id="members" icon={<Users size={14} />} label={t("navTeamMembers")} />
             <NavBtn id="preferences" icon={<Settings size={14} />} label={t("navPreferences")} />
             {EXPERIMENTAL_TEAM_UI && <NavBtn id="supersites" icon={<Star size={14} />} label={t("navSuperSites")} />}
           </div>
@@ -2260,7 +2262,7 @@ export default function SettingsPage() {
           {nav === "metrics"      && <MetricsSettingsSection />}
           {nav === "seo-tools"    && <SeoToolsSettings />}
           {nav === "notifications" && <NotificationsSection />}
-          {EXPERIMENTAL_TEAM_UI && nav === "members" && <MembersSection user={user} />}
+          {nav === "members" && <TeamMembersPanel />}
           {nav === "preferences"  && <PreferencesSection user={user} />}
           {EXPERIMENTAL_TEAM_UI && nav === "supersites" && <SuperSitesSection />}
         </div>

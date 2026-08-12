@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from '@/lib/prisma';
 
 // GET /api/gsc/striking?siteId=&posFrom=4&posTo=20&days=90&minImpressions=10&limit=100
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions);
-  let userId = (session?.user as any)?.id as string | undefined;
+  let userId = await workspaceUserId();
   if (!userId) {
     // Guest access via a share link: the token must match the requested site (never 'all').
     const sp = new URL(req.url).searchParams;

@@ -1,14 +1,14 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { workspaceUserId } from "@/lib/team/workspace";
 import { fetchLLM } from '@/lib/llm';
 
 // POST /api/gsc/ai-summary  { prompt, aiProvider, aiApiKey }
 // Generic AI completion endpoint used by the Clarity UX analysis (and reusable
 // elsewhere). The provider + key come from the client (stored in localStorage).
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!(session?.user as any)?.id && !session?.user?.email) {
+    const workspaceId = await workspaceUserId("spend");
+  if (!workspaceId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

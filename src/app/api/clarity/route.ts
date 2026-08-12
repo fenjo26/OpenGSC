@@ -1,20 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { runClarityFetch } from "@/lib/clarityFetch";
 import { aggregateSnapshots } from "@/lib/clarityParse";
 
 // ─── GET: return cached snapshot (or null if none) ───────────────────────────
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const workspaceId = await workspaceUserId();
+  if (!workspaceId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
   const siteDbId = searchParams.get("siteId");
   if (!siteDbId) return NextResponse.json({ error: "Missing siteId" }, { status: 400 });
 
-  const user = await prisma.user.findUnique({ where: { email: session.user.email } });
+  const user = await prisma.user.findUnique({ where: { id: workspaceId } });
   if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
   // Verify site belongs to user
@@ -49,15 +49,15 @@ export async function GET(req: NextRequest) {
 
 // ─── POST: save token/projectId OR fetch fresh data from Clarity API ─────────
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const workspaceId = await workspaceUserId("act");
+  if (!workspaceId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
   const { siteId, action, clarityToken, clarityProjectId, clarityInterval, numOfDays = 3 } = body;
 
   if (!siteId) return NextResponse.json({ error: "Missing siteId" }, { status: 400 });
 
-  const user = await prisma.user.findUnique({ where: { email: session.user.email } });
+  const user = await prisma.user.findUnique({ where: { id: workspaceId } });
   if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
   const site = await prisma.site.findFirst({ where: { id: siteId, userId: user.id } });

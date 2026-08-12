@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 
 function parsedSyncDetail(detail: string | null): any | null {
@@ -10,8 +10,7 @@ function parsedSyncDetail(detail: string | null): any | null {
 
 // GET /api/indexing/sitemap/urls?siteDbId=...&page=1&limit=50&status=all&search=
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = await workspaceUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);

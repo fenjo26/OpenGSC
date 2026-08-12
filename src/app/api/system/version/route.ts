@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { promisify } from "util";
 import { exec as execCb } from "child_process";
 import { readFileSync } from "fs";
@@ -33,8 +33,8 @@ async function localCommit(): Promise<string | null> {
 }
 
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!(session?.user as any)?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const workspaceId = await workspaceUserId();
+  if (!workspaceId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const local = await localCommit();
   if (!local) {

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { fetchBacklinkProfile, estimateProfileUnits, MetricsProvider } from "@/lib/seo/metrics";
 import { readUsage, recordUsage, withinCap } from "@/lib/seo/metricsStore";
@@ -15,8 +15,7 @@ import {
 // with no key at all.
 
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = await workspaceUserId("spend");
 
   const b = await req.json().catch(() => ({}));
   const siteId = String(b.siteId ?? "");

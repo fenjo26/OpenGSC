@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { rawQuery } from "@/lib/db/raw";
 import { contentOpsUserId, operationDto, repositoryDto } from "@/lib/contentOps/server";
 import { extractHistoryContent, runContentPreflight } from "@/lib/contentOps/types";
+import { captureDueCheckpoints } from "@/lib/contentOps/outcome";
 
 const MAX_CONTENT = 2_000_000;
 
@@ -10,6 +11,9 @@ export async function GET() {
   const userId = await contentOpsUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
+    // Outcome windows close on their own schedule, so they are captured on read instead of by a
+    // background timer: a couple of local aggregates, and nothing to lose across a restart.
+    await captureDueCheckpoints(userId).catch(() => 0);
     const [operations, repositories, historyRows] = await Promise.all([
       prisma.contentOperation.findMany({
         where: { userId }, orderBy: { updatedAt: "desc" }, take: 100,
@@ -36,7 +40,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const userId = await contentOpsUserId();
+  const userId = await contentOpsUserId("write");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json().catch(() => ({}));
   const title = String(body.title ?? "").trim().slice(0, 240);

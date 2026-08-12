@@ -8,7 +8,7 @@
 
 Self-hosted on your own VPS. No subscriptions, no seat limits, no third party touching your data.
 
-[![Version 1.3.0](https://img.shields.io/badge/version-1.3.0-brightgreen)](https://github.com/fenjo26/opengsc/releases)
+[![Version 1.4.0](https://img.shields.io/badge/version-1.4.0-brightgreen)](https://github.com/fenjo26/opengsc/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Next.js 16](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue?logo=typescript)](https://www.typescriptlang.org/)
@@ -73,10 +73,19 @@ On top of that dashboard, OpenGSC ships two things most GSC tools don't: a full 
 
 **Trade-offs, honestly:** you need a VPS and a domain (Google OAuth won't work against a bare IP), you run your own updates (`git pull && npm run build && pm2 restart`), and there's no built-in team/white-label layer. If that's an acceptable trade for owning your data and never paying a subscription, read on.
 
-**Support contract:** OpenGSC is a single-operator application. One owner can connect multiple
-Google accounts and sites, but the Team, Members, roles and shared billing model are not implemented.
-SQLite is the only fully supported production database. The MySQL/MariaDB notes are an experimental
-porting guide and do not promise feature parity; see [`docs/TESTING-MYSQL.md`](docs/TESTING-MYSQL.md).
+**Signing in:** identity and data are separate. You sign in with an email and a password —
+create the first account from the server console with `npm run create-owner -- --email you@example.com`
+— while Google OAuth stays what it should be: the grant that pulls Search Console and Analytics
+data in. The owner can also keep signing in with Google — after setting a password both work — while a
+Google account that is not the owner's is refused rather than quietly attached. Lost the password? `npm run set-password -- --email you@example.com`
+from the server.
+
+**Support contract:** OpenGSC is a single-workspace application. One owner connects the Google
+accounts and pays for every API key; team members are invited into that workspace with a role
+(viewer, editor or admin) and sign in with an email and a password rather than Google, so nobody's
+personal Search Console properties are pulled in. There is no multi-tenancy: one instance serves one
+workspace. SQLite is the only fully supported production database; the MySQL/MariaDB notes are an
+experimental porting guide with no promise of feature parity — see [`docs/TESTING-MYSQL.md`](docs/TESTING-MYSQL.md).
 
 <br/>
 
@@ -225,7 +234,7 @@ Share a site's dashboard with a client without giving them an account: **site �
 
 ### MCP Server — Connect AI Agents
 
-OpenGSC ships a built-in **MCP (Model Context Protocol) server** at `/api/mcp` with **44 tools**, so Claude Code, Claude Desktop, Cursor, Codex, or any MCP client can work with your SEO data directly: sites, search performance, striking-distance keywords, cannibalization, content decay, CTR benchmarks, content groups, rank tracking and history, AEO visibility, GEO audits, backlinks, Link Monitor mentions and the manual Outreach Workspace, keyword demand and difficulty, competitor gaps, site health, indexing status, audit results, GA4, Clarity, Bing/Yandex portfolios, the indexer network, fired alerts, digests, generation history, and arbitrary read-only SQL. Generate a token under **Settings → API & MCP**, then:
+OpenGSC ships a built-in **MCP (Model Context Protocol) server** at `/api/mcp` with **45 tools**, so Claude Code, Claude Desktop, Cursor, Codex, or any MCP client can work with your SEO data directly: sites, search performance, striking-distance keywords, cannibalization, content decay, CTR benchmarks, content groups, rank tracking and history, AEO visibility, GEO audits, backlinks, Link Monitor mentions and the manual Outreach Workspace, stored Source Audit findings, keyword demand and difficulty, competitor gaps, site health, indexing status, audit results, GA4, Clarity, Bing/Yandex portfolios, the indexer network, fired alerts, digests, generation history, and arbitrary read-only SQL. Generate a token under **Settings → API & MCP**, then:
 
 ```bash
 claude mcp add --transport http opengsc https://your-domain.com/api/mcp \
@@ -234,9 +243,9 @@ claude mcp add --transport http opengsc https://your-domain.com/api/mcp \
 
 Agents can also **optimize pages**, not just read about them. `get_optimization_brief` returns everything known about one URL in a single call — its queries, striking-distance keywords, CTR gaps, decay trend, cannibalization conflicts, audit issues and current content — the agent writes the new version itself, and `analyze_text` verifies it deterministically: uniqueness, heading-structure drift, and any number or brand that appears in the draft but not the source. No model is called for that check, so it costs nothing and always returns the same answer.
 
-Every tool declares what calling it costs, and `get_capabilities` reports the grouping: **local** (free and instant, 36 of the 44; four Outreach actions are explicitly marked as local writes), **quota** (calls Google on your own OAuth), **net** (fetches a page), and **paid** (spends your own credits). The three paid tools — the app's own Content Rewriter, the full article pipeline, and keyword discovery — refuse to run without an explicit `confirm: true`, so an agent exploring the registry can never bill you by accident. The two AI ones are asynchronous: they return a job id and save each finished page as it completes, so a client timeout or a server restart can never discard work you have already paid for. Keyword discovery is synchronous because it does not need to be — it writes its result to the cache before returning, so an abandoned call still leaves a search that replays for free.
+Every tool declares what calling it costs, and `get_capabilities` reports the grouping: **local** (free and instant, 37 of the 45; four Outreach actions are explicitly marked as local writes), **quota** (calls Google on your own OAuth), **net** (fetches a page), and **paid** (spends your own credits). The three paid tools — the app's own Content Rewriter, the full article pipeline, and keyword discovery — refuse to run without an explicit `confirm: true`, so an agent exploring the registry can never bill you by accident. The two AI ones are asynchronous: they return a job id and save each finished page as it completes, so a client timeout or a server restart can never discard work you have already paid for. Keyword discovery is synchronous because it does not need to be — it writes its result to the cache before returning, so an abandoned call still leaves a search that replays for free.
 
-The repo also ships ready-made **agent skills** in [`.agents/skills/`](.agents/skills/) (performance review, page optimization, link prospecting, AEO review, site triage) — copy them into your agent's skills folder for guided SEO workflows. Details: [`docs/MCP-SETUP.md`](docs/MCP-SETUP.md).
+The repo also ships ready-made **agent skills** in [`.agents/skills/`](.agents/skills/) (performance review, page optimization, article production, link prospecting, AEO review, site triage) — copy them into your agent's skills folder for guided SEO workflows. Details: [`docs/MCP-SETUP.md`](docs/MCP-SETUP.md).
 
 ### Indexing Status Tools
 
@@ -363,6 +372,19 @@ Not to be confused with GEO's AI-citation tracking — this tracks classic web-w
 <br/>
 
 Watch any set of competitor brand domains and pull their **fresh quality backlinks** through your own Ahrefs API v3 key, filtered the way link-building pros do (the [detailed.com](https://detailed.com/ai-backlinks-api/) workflow): in-content links only, live, DR ≥ 50 (configurable), first seen within the last 3 months, one per referring domain. The report surfaces **multi-linker domains** — sites that link to two or more of your watched brands, i.e. your highest-probability outreach targets — plus an AI insights pass over the data: which content types earn links, in what context authors mention the brands, anchor patterns, and concrete content/PR opportunities. Save any result into the built-in **Outreach Workspace** to track campaigns, evidence, contacts, follow-ups, stage history, conversion and the backlink eventually won. OpenGSC can prepare a localized pitch draft, but never sends it automatically. Not to be confused with the per-site **Backlinks Checker** above, which tracks *your own* curated link inventory.
+</details>
+
+<details open>
+<summary><b>Content Operations & Source Audit</b> — review drafts, ship PRs, check code before deployment</summary>
+<br/>
+
+*New in 1.4.0 — the first release where OpenGSC writes to a system outside itself. Connect a scratch repository first and watch one item go through end to end.*
+
+Move an existing draft through an explicit idea → approval → review workflow, preview a deterministic diff, and create a GitHub branch and pull request only after confirmation. OpenGSC never writes to the base branch and never auto-merges. The same connected repository has a separate, **read-only Source Audit** tab: choose a branch and run bounded Next.js SEO, performance, correctness, security and architecture checks against its immutable commit snapshot. Up to 80 files / 4 MB are inspected in memory; source bodies and secret values are not stored, and any safety-limit truncation is visible in the report.
+
+Source Audit checks repository code before deployment. It does **not** replace or merge data with the runtime **Site Audit**, **AI Visibility**, or **SEO Tools → GEO** — those remain separate tools with their own settings, reports and logic.
+
+After the merge the loop actually closes. A merged pull request is not a deployment, so OpenGSC fetches the target URL itself and starts measuring only on a real HTTP 200 — then links the page into **Indexing** and, when the item has a keyword, into the **Rank Tracker**. Outcome windows open on the live date and close at **7, 30 and 90 days**, each captured once from your own Search Console rows against a 28-day baseline, with the reporting lag accounted for: an empty row means *not measured yet*, never zero traffic. Nothing is auto-submitted to a paid indexer, and nothing is merged for you.
 </details>
 
 <details open>
@@ -510,6 +532,7 @@ pm2 startup
 | `TURNSTILE_SECRET_KEY` | Optional Cloudflare Turnstile secret for the public Free SEO Checker | `0x...` |
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Matching public Turnstile site key (set together with the secret) | `0x...` |
 | `PUBLIC_CHECKER_HASH_SECRET` | Optional independent salt for short-lived public-checker rate buckets; falls back to `NEXTAUTH_SECRET` | `openssl rand -base64 32` |
+| `OPENGSC_ALLOW_PRIVATE_TARGETS` | Optional. Allows owner-driven audits of localhost/LAN targets, which are blocked by default as SSRF protection. The public Free SEO Checker ignores it | `1` |
 | `NEXTAUTH_URL` | The app's full URL, including domain | `https://your-domain.com` |
 | `GOOGLE_CLIENT_ID` | From Google Cloud Console | `123...apps.googleusercontent.com` |
 | `GOOGLE_CLIENT_SECRET` | From Google Cloud Console | `GOCSPX-...` |

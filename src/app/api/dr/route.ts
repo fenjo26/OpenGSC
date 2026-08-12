@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { runUpsert } from "@/lib/db/upsert";
 import { rawQuery } from "@/lib/db/raw";
@@ -26,10 +25,9 @@ async function fetchDr(domain: string): Promise<number | null> {
 }
 
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions);
   const { searchParams } = new URL(req.url);
   const shareToken = searchParams.get('shareToken');
-  let isAuthorized = !!(session?.user as any)?.id;
+  let isAuthorized = !!(await workspaceUserId());
   if (!isAuthorized && shareToken) {
     const site = await prisma.site.findFirst({ where: { shareToken, shareEnabled: true } });
     if (site) isAuthorized = true;

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from '@/lib/prisma';
 import { getUserGoogleAccounts, queryGsc, isoDaysAgo } from '@/lib/gscQuery';
 
@@ -46,8 +46,7 @@ async function pooled<T, R>(items: T[], limit: number, fn: (item: T) => Promise<
 type Row = { keys?: string[] | null; impressions?: number | null; clicks?: number | null; position?: number | null };
 
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions);
-  let userId = (session?.user as any)?.id as string | undefined;
+  let userId = await workspaceUserId();
   const { searchParams } = new URL(req.url);
 
   if (!userId) {

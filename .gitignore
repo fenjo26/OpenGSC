@@ -32,6 +32,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...except the placeholder template. README and docs/DOCKER-SETUP.md both start with
+# `cp .env.template .env`, which only works if the template is actually in the repository.
+!.env.template
 
 # vercel
 .vercel
@@ -51,3 +54,15 @@ dev.db-journal
 # The agent skills that DO ship with the project live in .agents/skills/.
 .claude/
 .zcode/
+
+# Local SQLite databases, WAL sidecars and automatic pre-update backups.
+# OPENGSC local databases: a production install points DATABASE_URL at data/prod.db, and
+# scripts/backup-sqlite.mjs writes next to it. None of that may ever enter the repository.
+/data/*.db
+/data/*.db-journal
+/data/*.db-wal
+/data/*.db-shm
+/data/backups/
+backups/
+*.db-wal
+*.db-shm

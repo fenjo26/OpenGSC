@@ -613,3 +613,106 @@ input:-webkit-autofill {
   border-color: var(--color-danger);
   background-color: color-mix(in srgb, var(--color-danger) 10%, transparent);
 }
+
+
+/* ── Public Free SEO Checker (/free-seo-checker) ──────────────────────────────
+   The only page rendered without the dashboard shell, so it carries its own header,
+   hero and report layout. Every selector is scoped under .public-check-page: generic
+   names like .fact or .cached would otherwise leak into the app. Colours come from the
+   same tokens as the rest of OpenGSC, so light and dark themes follow automatically. */
+.public-check-page { min-height:100vh;background:var(--color-bg);color:var(--color-text-primary); }
+.public-check-page .public-check-header { height:64px;padding:0 clamp(16px,4vw,52px);display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--color-border);background:color-mix(in srgb,var(--color-card) 88%,transparent);gap:14px; }
+.public-check-page .public-check-brand { display:flex;align-items:center;gap:9px;color:var(--color-text-primary);text-decoration:none;font-size:17px;font-weight:800; }
+.public-check-page .public-check-controls { display:flex;align-items:center;gap:8px }
+.public-check-page .public-check-langs { display:flex;border:1px solid var(--color-border);border-radius:8px;overflow:hidden }
+.public-check-page .public-check-langs button { border:0;background:transparent;color:var(--color-text-secondary);font-size:10px;font-weight:700;text-transform:uppercase;padding:6px 7px;cursor:pointer }
+.public-check-page .public-check-langs button.active { background:var(--color-accent-purple);color:#fff }
+.public-check-page .icon-control { display:flex;padding:7px;border:1px solid var(--color-border);border-radius:8px;background:var(--color-card);color:var(--color-text-secondary);cursor:pointer }
+.public-check-page .login-link { font-size:12px;font-weight:700;text-decoration:none;color:#fff;background:var(--color-accent-blue);padding:8px 12px;border-radius:8px }
+.public-check-page .public-check-main { width:min(1080px,calc(100% - 32px));margin:0 auto;padding:clamp(44px,7vw,84px) 0 60px }
+.public-check-page .public-check-hero { text-align:center;display:flex;align-items:center;flex-direction:column }
+.public-check-page .public-check-kicker { display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:20px;background:rgba(41,151,255,.1);color:var(--color-accent-blue);font-size:11px;font-weight:750 }
+.public-check-page .public-check-hero h1 { font-size:clamp(34px,5vw,58px);letter-spacing:-.04em;line-height:1.04;max-width:850px;margin:18px 0 14px }
+.public-check-page .public-check-hero>p { max-width:720px;font-size:clamp(14px,2vw,18px);line-height:1.6;color:var(--color-text-secondary);margin:0 }
+.public-check-page .public-check-form { width:min(760px,100%);display:flex;align-items:center;gap:10px;margin:28px 0 12px;padding:7px 7px 7px 15px;border:1px solid var(--color-border);border-radius:14px;background:var(--color-card);box-shadow:0 14px 45px rgba(0,0,0,.08) }
+.public-check-page .public-check-form>svg { color:var(--color-text-tertiary);flex-shrink:0 }
+.public-check-page .public-check-form input { flex:1;min-width:0;border:0;outline:0;background:transparent;color:var(--color-text-primary);font-size:15px }
+.public-check-page .public-check-form button { display:flex;align-items:center;gap:7px;border:0;border-radius:9px;padding:11px 17px;background:var(--color-accent-blue);color:#fff;font-weight:750;cursor:pointer;white-space:nowrap }
+.public-check-page .public-check-form button:disabled { opacity:.5;cursor:not-allowed }
+.public-check-page .turnstile-slot { min-height:1px;margin:2px auto 8px }
+.public-check-page .public-check-trust { display:flex;gap:18px;flex-wrap:wrap;justify-content:center;color:var(--color-text-tertiary);font-size:11px }
+.public-check-page .public-check-trust span { display:flex;align-items:center;gap:5px }
+.public-check-page .public-check-error { display:flex;align-items:center;gap:8px;margin-top:18px;color:var(--color-accent-red);background:rgba(255,69,58,.08);border:1px solid rgba(255,69,58,.25);padding:10px 13px;border-radius:9px;font-size:12px }
+.public-check-page .public-check-scope { display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:56px }
+.public-check-page .public-check-scope div { display:flex;flex-direction:column;gap:10px;padding:18px;border:1px solid var(--color-border);border-radius:12px;background:var(--color-card);font-size:12px }
+.public-check-page .public-check-scope span { width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:9px;background:rgba(94,92,230,.1);color:var(--color-accent-purple) }
+.public-check-page .public-check-scope svg { width:16px }
+.public-check-page .public-check-loading { display:flex;flex-direction:column;align-items:center;gap:9px;padding:70px 10px;color:var(--color-accent-blue) }
+.public-check-page .public-check-loading span { font-size:12px;color:var(--color-text-secondary) }
+.public-check-page .public-report { margin-top:48px;display:flex;flex-direction:column;gap:14px }
+.public-check-page .public-report-head { display:grid;grid-template-columns:220px 1fr;gap:14px }
+.public-check-page .public-score-card, .public-check-page .public-overview, .public-check-page .public-finding, .public-check-page .public-pass-card, .public-check-page .public-cta { border:1px solid var(--color-border);border-radius:14px;background:var(--color-card) }
+.public-check-page .public-score-card { padding:22px;display:flex;flex-direction:column;align-items:center;text-align:center }
+.public-check-page .public-score-ring { width:120px;height:120px;border-radius:50%;display:grid;place-items:center;position:relative }
+.public-check-page .public-score-ring:after { content:"";position:absolute;inset:10px;border-radius:50%;background:var(--color-card) }
+.public-check-page .public-score-ring b { z-index:1;font-size:32px }
+.public-check-page .public-score-card>span { font-size:11px;color:var(--color-text-secondary);margin-top:10px }
+.public-check-page .public-overview { padding:20px }
+.public-check-page .public-overview-top { display:flex;justify-content:space-between;gap:12px;align-items:flex-start }
+.public-check-page .public-overview h2 { font-size:18px;margin:0 0 5px;word-break:break-word }
+.public-check-page .public-overview a { font-size:12px;color:var(--color-accent-blue);text-decoration:none }
+.public-check-page .public-overview-grid { display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:18px }
+.public-check-page .fact { padding:10px;border-radius:9px;background:var(--color-bg);font-size:11px;color:var(--color-text-secondary) }
+.public-check-page .fact b { display:block;color:var(--color-text-primary);font-size:14px;margin-bottom:3px }
+.public-check-page .cached { font-size:10px;color:var(--color-accent-green);padding:4px 8px;border-radius:20px;background:rgba(52,199,89,.1);white-space:nowrap }
+.public-check-page .public-findings-title { display:flex;align-items:center;justify-content:space-between;margin:10px 1px 0 }
+.public-check-page .public-findings-title h2 { font-size:17px;margin:0 }
+.public-check-page .public-findings-title span { font-size:11px;color:var(--color-text-tertiary) }
+.public-check-page .public-finding { padding:17px;display:grid;grid-template-columns:24px minmax(150px,.8fr) minmax(230px,1.5fr);gap:13px;align-items:start }
+.public-check-page .public-finding-icon { padding-top:2px }
+.public-check-page .public-finding h3 { font-size:13px;margin:0 0 5px }
+.public-check-page .severity-chip { display:inline-flex;padding:3px 7px;border-radius:20px;font-size:9px;font-weight:800;text-transform:uppercase }
+.public-check-page .evidence { font-size:10px;color:var(--color-text-tertiary);word-break:break-word }
+.public-check-page .public-finding-copy { display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:11px;line-height:1.5;color:var(--color-text-secondary) }
+.public-check-page .public-finding-copy b { display:block;color:var(--color-text-primary);font-size:10px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px }
+.public-check-page .public-pass-card { padding:18px;display:flex;align-items:center;gap:10px;color:var(--color-accent-green);font-size:13px }
+.public-check-page .public-cta { padding:24px;display:flex;align-items:center;justify-content:space-between;gap:18px;background:linear-gradient(125deg,rgba(41,151,255,.09),rgba(191,90,242,.08)) }
+.public-check-page .public-cta h2 { font-size:18px;margin:0 0 5px }
+.public-check-page .public-cta p { font-size:12px;color:var(--color-text-secondary);margin:0;line-height:1.5 }
+.public-check-page .public-cta a { display:flex;align-items:center;gap:7px;padding:10px 14px;background:var(--color-accent-blue);color:#fff;border-radius:9px;text-decoration:none;font-size:12px;font-weight:750;white-space:nowrap }
+.public-check-page .again-button { display:flex;align-items:center;gap:6px;border:1px solid var(--color-border);background:var(--color-bg);color:var(--color-text-secondary);padding:7px 10px;border-radius:8px;font-size:11px;cursor:pointer }
+.public-check-page .public-check-privacy { margin:42px auto 0;max-width:800px;display:flex;gap:8px;align-items:flex-start;font-size:11px;line-height:1.55;color:var(--color-text-tertiary) }
+.public-check-page .public-check-privacy svg { flex-shrink:0;margin-top:1px }
+@media(max-width:760px) {
+  .public-check-page .public-check-header { height:auto;min-height:62px;padding-top:10px;padding-bottom:10px }
+  .public-check-page .public-check-controls { flex-wrap:wrap;justify-content:flex-end }
+  .public-check-page .public-check-langs { order:3 }
+  .public-check-page .public-check-scope { grid-template-columns:repeat(2,1fr) }
+  .public-check-page .public-report-head { grid-template-columns:1fr }
+  .public-check-page .public-overview-grid { grid-template-columns:repeat(2,1fr) }
+  .public-check-page .public-finding { grid-template-columns:24px 1fr }
+  .public-check-page .public-finding-copy { grid-column:2;grid-template-columns:1fr }
+  .public-check-page .public-cta { align-items:flex-start;flex-direction:column }
+  .public-check-page .public-check-form { flex-wrap:wrap }
+  .public-check-page .public-check-form input { min-height:40px }
+  .public-check-page .public-check-form button { width:100% }
+  .public-check-page .login-link { display:none }
+}
+
+
+/* ── Two-column tool layouts (SEO Tools → Content Operations, Source Audit) ───
+   A narrow list next to a wide detail pane, collapsing to one column on tablets.
+   Same 14px gutter and breakpoint as the rest of the tool pages. */
+.content-ops-grid,
+.source-audit-grid {
+  display: grid;
+  gap: 14px;
+  align-items: start;
+}
+.content-ops-grid { grid-template-columns: minmax(270px, 0.8fr) minmax(420px, 1.6fr); }
+.source-audit-grid { grid-template-columns: minmax(250px, 0.72fr) minmax(420px, 1.8fr); }
+
+@media (max-width: 900px) {
+  .content-ops-grid,
+  .source-audit-grid { grid-template-columns: 1fr; }
+}

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import {
   decodeExport, parseTable, detectReport, mapKeywordRows, mapDomainRows, mapRefDomainRows,
@@ -24,8 +24,7 @@ export const runtime = "nodejs";
 const MAX_BYTES = 25 * 1024 * 1024;
 
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = await workspaceUserId("write");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   let form: FormData;

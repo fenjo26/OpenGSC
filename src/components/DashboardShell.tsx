@@ -1,6 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
+import PasswordChangeGate from "@/components/PasswordChangeGate";
 import { useSession, signOut } from "next-auth/react";
 import { useState, useEffect, Suspense } from "react";
 import { Settings, LogOut, Sparkles, Globe, Newspaper, LayoutDashboard, TrendingUp, Anchor, BarChart2, Users, Compass } from "lucide-react";
@@ -757,7 +758,7 @@ function TopBar() {
 
 // ─── Shell ────────────────────────────────────────────────────────────────────
 // Paths rendered without the app shell (no TopBar): auth pages and public share links.
-const AUTH_PATHS = ["/login", "/share", "/free-seo-checker"];
+const AUTH_PATHS = ["/login", "/share", "/free-seo-checker", "/join"];
 
 function Shell({ children }: { children: React.ReactNode }) {
   // Shell no longer reads the layout context: page width is applied through CSS custom properties
@@ -766,6 +767,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
       <TopBar />
+      <PasswordChangeGate />
       <UpdateBanner />
       <SchemaBanner />
       <main style={{

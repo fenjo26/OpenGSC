@@ -68,6 +68,20 @@ model User {
   // Cursor, etc.) query this user's SEO data. Generated in Settings → API & MCP.
   mcpToken String? @unique
 
+  // ─── Workspace membership ──────────────────────────────────────────────────
+  // A workspace is the owner's account: members act on the owner's data and own nothing
+  // themselves. The owner is the account that connected Google and pays for every API key, so
+  // exactly one user carries `isOwner`. Instances that predate this column resolve it lazily on
+  // first use — the first user by id, matching the old rule in `auth.ts`.
+  isOwner       Boolean @default(false)
+  workspaceName String?
+  // Members sign in with a password instead of Google, on purpose: an employee's Google account
+  // carries their own Search Console properties, and pulling those into the agency workspace is
+  // both wrong and something nobody agreed to. Null for the owner, who uses Google.
+  passwordHash       String?
+  mustChangePassword Boolean @default(false)
+  passwordUpdatedAt  DateTime?
+
   // Notifications: user-owned Telegram bot (BotFather token + detected chat id) and
   // JSON settings for the alert rules / digest schedule. Accessed via raw SQL (same
   // graceful-degradation convention as seoSettings).
@@ -98,6 +112,35 @@ model User {
 
   // GEO Audits (how AI search engines perceive the brand/niche)
   geoAudits           GeoAudit[]
+  memberships         Membership[] @relation("MembershipMember")
+  workspaceMembers    Membership[] @relation("MembershipOwner")
+}
+
+// One person's access to one workspace. Rows exist only for members — the owner's access comes
+// from owning the data, which is why no membership can grant or revoke it.
+model Membership {
+  id      String  @id @default(cuid())
+  ownerId String  // the workspace being granted
+  userId  String? // set once the account exists; null while an invite is outstanding
+  email   String  // lowercased, the identity a member signs in with
+  role    String  @default("viewer") // viewer | editor | admin
+  status  String  @default("active") // active | invited | suspended
+
+  // Only the SHA-256 of an invite token is stored: a leaked database must not hand out logins.
+  inviteHash      String?   @unique
+  inviteExpiresAt DateTime?
+
+  invitedById String
+  invitedAt   DateTime  @default(now())
+  acceptedAt  DateTime?
+  lastSeenAt  DateTime?
+
+  owner  User  @relation("MembershipOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  member User? @relation("MembershipMember", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, email])
+  @@index([userId])
+  @@index([ownerId, status])
 }
 
 model VerificationToken {
@@ -703,9 +746,40 @@ model ContentRepository {
 
   user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   operations  ContentOperation[]
+  sourceAudits SourceAuditRun[]
 
   @@unique([userId, owner, repo])
   @@index([userId])
+}
+
+// Read-only static repository checks. This is intentionally separate from the runtime SiteAudit
+// crawler: it scans a bounded GitHub source snapshot and never writes to the repository.
+model SourceAuditRun {
+  id             String   @id @default(cuid())
+  userId         String
+  repositoryId   String
+  ref            String
+  commitSha      String?
+  framework      String   @default("unknown")
+  status         String   @default("running") // running | completed | error | interrupted
+  stage          String   @default("tree")     // tree | fetch | analyze | completed | error | interrupted
+  progress       Int      @default(0)
+  attempt        Int      @default(1)
+  heartbeatAt    DateTime?
+  filesScanned   Int      @default(0)
+  totalFiles     Int      @default(0)
+  truncated      Boolean  @default(false)
+  score          Int?
+  summary        String?  // JSON: severity/category counters
+  findings       String?  // JSON: bounded deterministic findings, no source bodies or secrets
+  error          String?
+  startedAt      DateTime @default(now())
+  finishedAt     DateTime?
+
+  repository ContentRepository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startedAt])
+  @@index([repositoryId, startedAt])
 }
 
 model ContentOperation {
@@ -731,6 +805,19 @@ model ContentOperation {
   prCreatedAt    DateTime?
   mergedAt       DateTime?
   liveAt         DateTime?
+
+  // Post-deploy outcome. These are plain scalar ids rather than relations on purpose: a deleted
+  // site or keyword must not cascade into the editorial audit trail, and the reader already has
+  // to tolerate a missing row (the operation outlives both).
+  siteId              String?
+  trackedKeywordId    String?
+  indexingLinkedAt    DateTime?
+  measurementStartedAt DateTime?
+  lastMeasuredAt      DateTime?
+  // JSON: { baseline, checkpoints: [{ day, capturedAt, clicks, impressions, position, rank }] }.
+  // Checkpoints are append-only — a captured 7-day figure is never recomputed later, because the
+  // point of the record is what the page actually did in that window.
+  outcomeJson         String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

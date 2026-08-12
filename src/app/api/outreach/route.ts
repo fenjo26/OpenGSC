@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
+import type { Capability } from "@/lib/team/roles";
 import { createOutreachCampaign, createOutreachProspect, listOutreach } from "@/lib/outreach/service";
 
-async function uid() {
-  const session = await getServerSession(authOptions);
-  return ((session?.user as any)?.id as string) || null;
+async function uid(capability: Capability = "read") {
+return workspaceUserId(capability);
 }
 
 const errorStatus = (message: string) => message.endsWith("_not_found") ? 404 : message.endsWith("_exists") ? 409 : message.includes("required") || message.startsWith("invalid_") ? 400 : 500;
@@ -31,7 +31,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const userId = await uid();
+  const userId = await uid("write");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json().catch(() => ({}));
   try {

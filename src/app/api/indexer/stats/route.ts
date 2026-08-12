@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 
 // Indexer statistics using pre-aggregated IndexerDailyStat summary table.
@@ -23,8 +23,7 @@ const emptyDay = (date: string): DailyRow => ({
 
 export async function GET(req: Request) {
   try {
-    const session = await getServerSession(authOptions);
-    const userId = (session?.user as any)?.id as string | undefined;
+    const userId = await workspaceUserId();
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const refresh = new URL(req.url).searchParams.get("refresh") === "1";

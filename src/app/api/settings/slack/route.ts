@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
+import type { Capability } from "@/lib/team/roles";
 import { sendSlack } from "@/lib/notify";
 import { rawQuery, rawExec } from "@/lib/db/raw";
 
-async function uid(): Promise<string | null> {
-  const session = await getServerSession(authOptions);
-  return ((session?.user as any)?.id as string) || null;
+async function uid(capability: Capability = "read"): Promise<string | null> {
+return workspaceUserId(capability);
 }
 
 async function readRow(userId: string): Promise<string> {
@@ -20,7 +20,7 @@ async function readRow(userId: string): Promise<string> {
 }
 
 export async function GET() {
-  const userId = await uid();
+  const userId = await uid("manageSecrets");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const webhook = await readRow(userId);
   return NextResponse.json({
@@ -30,7 +30,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const userId = await uid();
+  const userId = await uid("manageSecrets");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const b = await req.json().catch(() => ({}));
   const action = String(b.action ?? "save");
@@ -60,7 +60,7 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE() {
-  const userId = await uid();
+  const userId = await uid("manageSecrets");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     await rawExec(`UPDATE "User" SET slackWebhook = NULL WHERE id = ?`, userId);

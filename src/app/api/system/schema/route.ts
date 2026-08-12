@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { currentDialect } from "@/lib/db/upsert";
 import { rawQuery } from "@/lib/db/raw";
 
@@ -44,13 +44,14 @@ const EXPECTED_TABLES: { table: string; feature: string }[] = [
   { table: "ContentRepository", feature: "Content Operations" },
   { table: "ContentOperation", feature: "Content Operations" },
   { table: "ContentOperationEvent", feature: "Content Operations" },
+  { table: "SourceAuditRun", feature: "Source Audit" },
 ];
 
 export async function GET() {
   // Session-gated, not owner-gated: it reports table names, nothing about data, and a guest on a
   // share link has no shell to show the banner in anyway.
-  const session = await getServerSession(authOptions);
-  if (!(session?.user as any)?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const workspaceId = await workspaceUserId();
+  if (!workspaceId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   let present = new Set<string>();
   try {

@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { contentOpsUserId } from "@/lib/contentOps/server";
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const userId = await contentOpsUserId();
+  const userId = await contentOpsUserId("manageSecrets");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
   const result = await prisma.contentRepository.deleteMany({ where: { id, userId } }).catch(() => ({ count: 0 }));

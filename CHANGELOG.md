@@ -3,34 +3,117 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
-## Unreleased
+## [1.4.0] — 2026-08-12
+
+Everything below closes the same loop: find a problem, act on it, and prove afterwards that the
+action worked. Existing tools keep their own data, screens and logic — **Site Audit**, **AI
+Visibility** and **SEO Tools → GEO** were not merged into anything.
+
+**Before you update.** The schema change is additive and the updater takes a verified SQLite backup
+before touching anything, so the upgrade path is the usual one. Two features in this release reach
+outside the instance for the first time and are worth trying on something disposable before you
+rely on them: **Content Operations** creates branches and pull requests in a GitHub repository you
+connect yourself, and **Source Audit** reads that repository. Both require you to add a
+fine-grained token explicitly, neither touches your base branch, and nothing is merged
+automatically — but they are new, and a first run against a scratch repository will tell you more
+than this paragraph can. Everything else in the list reads data this instance already has.
 
 ### Added
 
-- Audit Verification re-crawls the same scope and separates resolved findings, persistent
-  findings, regressions and inconclusive pages in the UI, API and MCP.
-- Executable 30-rule Site Audit registry with redirect chain/loop, canonical and robots conflicts,
-  viewport/language, JSON-LD, social metadata, mixed-content and security-header checks. It remains
-  independent from AI Visibility and SEO Tools → GEO.
-- Additive job lifecycle/heartbeat fields and verified SQLite backup before updater schema changes.
-- Localized Private Indexer risk acknowledgement and responsible-use documentation.
-- Release metadata and seven-locale consistency checks under `npm run check`.
-- Outreach Workspace inside Link Monitor with campaigns, evidence snapshots, manual follow-ups,
-  stage history, localized draft/copy, Backlink liveness linkage and local MCP actions. It never
-  sends outreach automatically.
-- Related Intent mode on the existing Cannibalization report clusters different GSC query
-  formulations through inverted token/ranking-URL indexes, explains page roles, position gaps and
-  daily winner changes, and offers review-only actions without LLM, live SERP or paid calls.
+- **Team collaboration.** A workspace is the owner's account, and members act on the owner's data
+  with a role: viewer reads, editor runs free actions and edits content, admin may also spend the
+  owner's API credits and manage people, and the owner keeps keys, Google connections, updates and
+  deletions. The owner cannot be removed or demoted, and ownership transfer is a separate explicit
+  action so the workspace survives someone leaving.
+
+  **Sign-in no longer goes through Google at all.** Identity and data are separate concerns:
+  `npm run create-owner -- --email you@example.com` creates the owner from the server console, and
+  `npm run set-password` is the recovery path when nobody can get in. Google OAuth keeps doing the
+  only job it should ever have had — pulling Search Console and Analytics data into the workspace.
+  Nothing is taken away: the owner can keep signing in with Google, and after setting a password
+  both doors work. What closed is the other case — a Google account that is not the owner's no
+  longer attaches itself to the instance, and connecting one is an owner action from inside a
+  session. Owners still on Google see a single dismissible prompt suggesting a password, with the
+  SSH command included; it never returns once one exists.
+
+  **Members sign in with an email and a password, never with Google.** An employee's Google account
+  carries their own Search Console properties, and signing them in that way would pull personal
+  sites into an agency workspace — in both directions the wrong thing. An admin either sets a
+  starting password (the member must change it at first sign-in, so the admin's copy stops being a
+  credential) or sends a single-use invite link valid for 72 hours. Suspension takes effect on the
+  next request, and the members screen explains on-screen what each role can do, including which
+  ones can spend money. MCP tokens inherit the holder's role, so a viewer's agent cannot start a
+  paid job.
+
+- **Audit Verification** re-crawls the same scope and separates resolved findings, persistent
+  findings, regressions and inconclusive pages in the UI, API and MCP. A page that could not be
+  re-fetched is reported as inconclusive rather than fixed.
+- **Site Audit rule registry**, now executable and 30 rules wide: redirect chains and loops,
+  canonical and robots conflicts, viewport and language, JSON-LD validity, social metadata,
+  mixed content and security headers.
+- **Outreach Workspace** inside Link Monitor: campaigns, evidence snapshots, stage history,
+  follow-ups, localized pitch drafts, Backlink liveness linkage and four local MCP actions.
+  It prepares outreach; it never sends it.
+- **Related Intent** as a second mode of the existing Cannibalization report — clusters different
+  query formulations, explains page roles, position gaps and daily winner changes, and recommends
+  review only. No LLM, live SERP or paid call. Exact-query stays the default.
+- **Content Operations**: an editorial queue above the existing generators with approval, review,
+  deterministic preflight, an encrypted fine-grained GitHub token, a diff you must confirm, and a
+  pull request that is never auto-merged.
+- **Post-deploy outcome**. A merged pull request is not a deployment: OpenGSC fetches the target
+  URL and starts measuring only on a real HTTP 200, then links the page into Indexing and, when a
+  keyword is set, into the Rank Tracker. Windows close at 7, 30 and 90 days against a 28-day
+  baseline, captured once each from your own Search Console rows, with the reporting lag accounted
+  for — an empty row means *not measured yet*, never zero traffic.
+- **Source Audit**, a read-only tab in Content Operations that checks a bounded snapshot of a
+  connected GitHub branch before deployment (80 files, 256 KiB per file, 4 MiB total, in memory).
+  It stores findings, never source bodies or secret values, and marks a truncated scan as
+  incomplete. Exposed read-only over MCP as `get_source_audit`.
+- **Public Free SEO Checker** at `/free-seo-checker`: one homepage, the shared audit registry and
+  SSRF-safe fetch, consequence-and-action wording, seven locales, an anonymous rate bucket, a
+  15-minute cache and optional Turnstile. No session, no stored report.
+- **Sitemap Inventory** in the Indexing tab: recursive sitemap index, gzip and image/video/news
+  extensions, source sitemap, `lastmod` reliability, first/last seen, and a disappearance rule that
+  needs two fully successful syncs — a failed child sitemap never marks a URL missing.
+- **`seo-production` agent skill**: task card, demand evidence, outline first, a claim ledger,
+  deterministic verification, and a package handed to Content Operations. It forbids inventing
+  first-hand experience and does not optimize for AI detectors.
+- **45 MCP tools** (37 local), including the Outreach and Source Audit contours.
 
 ### Security
 
-- User-controlled HTTP fetches now resolve and pin public addresses, re-check redirects, reject
-  private/reserved IPv4 and IPv6 targets, and cap time, redirects and response bytes.
+- **A Google sign-in that is not the owner's is now refused.** Previously any Google account that
+  reached the login page was attached to the instance as an additional Search Console connection —
+  no session was granted, but a stranger's properties and OAuth tokens landed in someone else's
+  database. Linking a new Google account now requires an active owner session, which is what the
+  "add account" button in Settings already provides.
+- Every API route resolves identity through one workspace resolver instead of reading the session
+  directly, and membership is re-read on each request, so revoking access is immediate despite
+  30-day JWT sessions.
+- User-controlled HTTP fetches resolve and pin public addresses, re-check every redirect, reject
+  private and reserved IPv4/IPv6 targets, and cap time, redirects and response bytes.
+- `OPENGSC_ALLOW_PRIVATE_TARGETS=1` is the one deliberate exception, for operators auditing a
+  staging site on their own machine or LAN. It is off by default and the public Free SEO Checker
+  ignores it regardless.
+- The updater now takes a verified SQLite backup **before** `git reset --hard`, not after. A local
+  install left on the template default (`file:./dev.db`) previously had that file restored from the
+  repository during an update; production installs point `DATABASE_URL` at `data/prod.db` and were
+  never affected.
+- `.gitignore` covers local databases, WAL sidecars and the updater's backup directory, so a real
+  database cannot be committed by accident.
 
 ### Changed
 
+- Job lifecycle and heartbeat fields are shared by audit and paid SEO jobs; an interrupted free
+  audit recovers, and a paid call is never retried automatically.
+- Settings → Members is a real feature now and no longer behind a flag. The remaining Teams and
+  Super Sites screens are still mockups and stay behind `NEXT_PUBLIC_EXPERIMENTAL_TEAM_UI=1`.
 - SQLite is documented as the supported database; MySQL/MariaDB remains experimental.
-- Team/Members/Super Sites mock UI is hidden unless `NEXT_PUBLIC_EXPERIMENTAL_TEAM_UI=1`.
+- `.env.template` ships with the repository again — `.gitignore` had been swallowing the file both
+  install guides tell you to copy.
+- New screens use the shared `globals.css` layer instead of component-scoped styles, so light and
+  dark themes follow the same tokens as the rest of the app.
+- `npm run check` also verifies release metadata and seven-locale key parity.
 
 ## [1.3.0] — 2026-08-09
 

@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { scrapeStructure } from "@/lib/seo/scrape";
 
 // POST /api/seo/structure — Landing-flow "under my page" import (fast, HTML-based).
 // body: { url, firecrawlKey? } -> { ok, title, nodes: [{level,text,words}], totalWords, error? }
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!(session?.user as any)?.id) {
+  const workspaceId = await workspaceUserId("spend");
+  if (!workspaceId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { workspaceUserId } from "@/lib/team/workspace";
 import { runGscSync, isSyncInProgress, getLastSyncResult, getSyncStartedAt } from '@/lib/gscSync';
 import { getSyncSchedule } from '@/lib/syncSchedule';
 
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) {
+    const workspaceId = await workspaceUserId();
+  if (!workspaceId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   const result = getLastSyncResult();
@@ -14,7 +14,7 @@ export async function GET() {
   // `lastSyncResult` is a module variable, so a restart or a deploy forgets a sync that really
   // happened. The database remembers it, so fall back to that rather than telling the user their
   // data is older than it is.
-  const userId = (session.user as { id?: string }).id;
+  const userId = workspaceId;
   const persisted = userId ? (await getSyncSchedule(userId)).lastCompletedAt ?? null : null;
   const completedAt = result.completedAt ?? persisted;
   return NextResponse.json({
@@ -38,8 +38,8 @@ export async function GET() {
 }
 
 export async function POST() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) {
+    const workspaceId = await workspaceUserId("act");
+  if (!workspaceId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

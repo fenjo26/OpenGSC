@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { spawn } from "child_process";
 import { existsSync, readFileSync } from "fs";
@@ -22,8 +22,7 @@ const DONE = "___OPENGSC_UPDATE_DONE___";
 const FAIL = "___OPENGSC_UPDATE_FAIL___";
 
 async function assertOwner(): Promise<boolean> {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = await workspaceUserId();
   if (!userId) return false;
   const owner = await prisma.user.findFirst({ orderBy: { id: "asc" }, select: { id: true } });
   return !!owner && owner.id === userId;

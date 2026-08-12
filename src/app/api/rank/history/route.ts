@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { getUserGoogleAccounts, queryGsc, isoDaysAgo } from "@/lib/gscQuery";
 
@@ -8,8 +8,7 @@ import { getUserGoogleAccounts, queryGsc, isoDaysAgo } from "@/lib/gscQuery";
 // Full position history for one tracked keyword: scraped SERP checks + the GSC
 // daily average position for the same query — merged by day for a two-line chart.
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = await workspaceUserId();
 
   const { searchParams } = new URL(req.url);
   const keywordId = searchParams.get("keywordId") || "";

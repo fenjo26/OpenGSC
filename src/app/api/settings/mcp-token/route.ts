@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
+import type { Capability } from "@/lib/team/roles";
 import { randomBytes } from "crypto";
 import { rawQuery, rawExec } from "@/lib/db/raw";
 
@@ -11,13 +12,12 @@ import { rawQuery, rawExec } from "@/lib/db/raw";
 // Raw SQL so it degrades gracefully on a DB that hasn't run `prisma db push` yet
 // (same convention as seo-sync / linkwatch).
 
-async function uid(): Promise<string | null> {
-  const session = await getServerSession(authOptions);
-  return ((session?.user as any)?.id as string) || null;
+async function uid(capability: Capability = "read"): Promise<string | null> {
+return workspaceUserId(capability);
 }
 
 export async function GET() {
-  const userId = await uid();
+  const userId = await uid("manageSecrets");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const rows: any[] = await rawQuery(`SELECT mcpToken FROM "User" WHERE id = ?`, userId);
@@ -28,7 +28,7 @@ export async function GET() {
 }
 
 export async function POST() {
-  const userId = await uid();
+  const userId = await uid("manageSecrets");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const token = "ogsc_" + randomBytes(24).toString("hex");
   try {
@@ -40,7 +40,7 @@ export async function POST() {
 }
 
 export async function DELETE() {
-  const userId = await uid();
+  const userId = await uid("manageSecrets");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     await rawExec(`UPDATE "User" SET mcpToken = NULL WHERE id = ?`, userId);

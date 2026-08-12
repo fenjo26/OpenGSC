@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { genByType } from "@/lib/seo/generate";
 import { failStaleSeoJobs, touchSeoJob, withSeoJobHeartbeat } from "@/lib/jobs/lifecycle";
@@ -35,8 +35,7 @@ function runJob(jobId: string, type: string, payload: any) {
 
 // POST /api/seo/jobs — start a background generation job. body: { type, keyword?, payload, meta? }
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id;
+  const userId = await workspaceUserId("spend");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const b = await req.json();
@@ -64,8 +63,7 @@ export async function POST(req: Request) {
 
 // GET /api/seo/jobs — list the current user's recent jobs (incl. result, so History can import).
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id;
+  const userId = await workspaceUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     // A dedicated heartbeat distinguishes a slow model call from a task lost during restart.
@@ -79,8 +77,7 @@ export async function GET() {
 
 // DELETE /api/seo/jobs?failed=1 — bulk-remove the user's failed jobs so the list stays clean.
 export async function DELETE(req: Request) {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id;
+  const userId = await workspaceUserId("write");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const failed = new URL(req.url).searchParams.get("failed");
   if (!failed) return NextResponse.json({ error: "bad_request" }, { status: 400 });

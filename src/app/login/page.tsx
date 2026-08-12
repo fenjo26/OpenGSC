@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { signIn } from "next-auth/react";
 import Link from "next/link";
 import { TrendingUp, Globe, Shield, Moon, Sun } from "lucide-react";
@@ -310,6 +311,8 @@ export default function LoginPage() {
             {c.signIn}
           </button>
 
+          <MemberSignIn t={t as (key: string) => string} />
+
           <Link href="/free-seo-checker" style={{ display: "flex", justifyContent: "center", marginTop: "13px", fontSize: "12px", fontWeight: 650, color: "var(--color-accent-blue)", textDecoration: "none" }}>
             {t("publicCheckLoginLink" as any)}
           </Link>
@@ -328,4 +331,58 @@ export default function LoginPage() {
       </div>
     </div>
   );
+}
+
+
+/**
+ * Password sign-in for team members. Collapsed by default because most instances have exactly one
+ * person, and that person uses Google — the workspace owner. A member's account has no Google
+ * connection at all, on purpose: their own Search Console properties must not end up in someone
+ * else's workspace.
+ */
+function MemberSignIn({ t }: { t: (key: string) => string }) {
+  const reason = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("error");
+  const [open, setOpen] = useState(reason === "use_password" || reason === "owner_only");
+  const [form, setForm] = useState({ email: "", password: "" });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    setBusy(true); setError("");
+    const result = await signIn("credentials", { ...form, redirect: false });
+    setBusy(false);
+    if (result?.error) { setError("invalid"); return; }
+    window.location.href = "/";
+  }
+
+  const notice = reason === "use_password" ? t("loginErrorUsePassword")
+    : reason === "owner_only" ? t("loginErrorOwnerOnly") : null;
+
+  if (!open) {
+    return <>
+      {notice && <p style={{ marginTop: 12, fontSize: 12, lineHeight: 1.5, color: "var(--color-accent-orange)", textAlign: "center" }}>{notice}</p>}
+      <button
+      onClick={() => setOpen(true)}
+      style={{ display: "block", width: "100%", marginTop: "13px", background: "transparent", border: 0, color: "var(--color-accent-blue)", fontSize: "12px", fontWeight: 650, cursor: "pointer" }}
+      >{t("loginMemberToggle")}</button>
+    </>;
+  }
+
+  return <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 14 }}>
+    {notice && <span style={{ fontSize: 12, lineHeight: 1.5, color: "var(--color-accent-orange)" }}>{notice}</span>}
+    <input
+      className="tool-input" type="email" required autoComplete="username" placeholder={t("teamEmail")}
+      value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+    />
+    <input
+      className="tool-input" type="password" required autoComplete="current-password" placeholder={t("teamPassword")}
+      value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+    />
+    {error && <span style={{ fontSize: 12, color: "var(--color-accent-red)" }}>{t("loginMemberFailed")}</span>}
+    <button type="submit" disabled={busy} style={{ padding: "10px 14px", borderRadius: 9, border: 0, background: "var(--color-accent-blue)", color: "#fff", fontSize: 14, fontWeight: 650, cursor: "pointer" }}>
+      {busy ? "…" : t("loginMemberSubmit")}
+    </button>
+    <span style={{ fontSize: 11, color: "var(--color-text-secondary)", textAlign: "center" }}>{t("loginMemberHint")}</span>
+  </form>;
 }

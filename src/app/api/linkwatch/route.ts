@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { workspaceUserId } from "@/lib/team/workspace";
+import type { Capability } from "@/lib/team/roles";
 import { rawQuery, rawExec, currentDialect } from "@/lib/db/raw";
 
 // Link Monitor brands + aggregated report (detailed.com/ai-backlinks-api workflow).
@@ -11,9 +12,8 @@ import { rawQuery, rawExec, currentDialect } from "@/lib/db/raw";
 const norm = (s: string) => s.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "");
 const rid = () => "lw" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
-async function uid(): Promise<string | null> {
-  const session = await getServerSession(authOptions);
-  return ((session?.user as any)?.id as string) || null;
+async function uid(capability: Capability = "read"): Promise<string | null> {
+return workspaceUserId(capability);
 }
 
 export async function GET() {
@@ -34,7 +34,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const userId = await uid();
+  const userId = await uid("write");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const b = await req.json().catch(() => ({}));
   const domains: string[] = ([...new Set((Array.isArray(b.domains) ? b.domains : []).map((d: any) => norm(String(d))).filter((d: string) => d.includes(".")))] as string[]).slice(0, 200);
@@ -58,7 +58,7 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  const userId = await uid();
+  const userId = await uid("write");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { searchParams } = new URL(req.url);
   const domain = norm(String(searchParams.get("domain") ?? ""));
