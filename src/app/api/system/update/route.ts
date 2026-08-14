@@ -3,7 +3,7 @@ import { authOptions } from "@/lib/auth";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { spawn } from "child_process";
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, statSync } from "fs";
 import path from "path";
 import os from "os";
 
@@ -32,16 +32,24 @@ function readLog(): string {
   try { return existsSync(LOG_PATH) ? readFileSync(LOG_PATH, "utf8") : ""; } catch { return ""; }
 }
 
+const STALE_MS = 15 * 60 * 1000; // matches this file's original intent — see the check in POST below
+
+function logAgeMs(): number {
+  try { return Date.now() - statSync(LOG_PATH).mtimeMs; } catch { return Infinity; }
+}
+
 export async function GET() {
   if (!(await assertOwner())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const log = readLog();
   const done = log.includes(DONE);
   const failed = log.includes(FAIL);
   const started = log.includes(START);
+  const stale = started && !done && !failed && logAgeMs() > STALE_MS;
   return NextResponse.json({
-    running: started && !done && !failed,
+    running: started && !done && !failed && !stale,
     done,
     failed,
+    stale,
     log: log.slice(-8000), // last chunk is enough for the UI
   });
 }
@@ -57,10 +65,13 @@ export async function POST() {
     return NextResponse.json({ error: "not_git", message: "This instance isn't a git checkout (e.g. Docker). Update via your normal deploy flow." }, { status: 400 });
   }
 
-  // Don't start a second run if one is already in progress.
+  // Don't start a second run if one is already in progress — unless that run's log hasn't
+  // moved in 15 minutes, which means the process behind it is dead (crashed, OOM-killed, or
+  // the box rebooted) without ever reaching a DONE/FAIL marker. Without this staleness check
+  // a single hung run wedges the updater permanently: every future click just re-reports
+  // alreadyRunning against a log nothing is writing to anymore.
   const log = readLog();
-  if (log.includes(START) && !log.includes(DONE) && !log.includes(FAIL)) {
-    // If the log is stale (>15 min) allow a restart, else block.
+  if (log.includes(START) && !log.includes(DONE) && !log.includes(FAIL) && logAgeMs() <= STALE_MS) {
     return NextResponse.json({ ok: true, alreadyRunning: true });
   }
 

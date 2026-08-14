@@ -318,14 +318,32 @@ curl -fsSL https://raw.githubusercontent.com/fenjo26/opengsc/main/install.sh | s
 ```
 Скрипт спросит домен, установит Node.js 24 LTS, PM2, Nginx, выпустит SSL Let's Encrypt, настроит файрвол и запустит приложение.
 
-Для обновления версии достаточно выполнить:
+Проще всего обновляться прямо из панели: **Настройки → баннер новой версии → «Обновить»**. Скрипт сам сделает бэкап SQLite, `git pull`, установку зависимостей, миграцию схемы, сборку и рестарт, с живым логом в интерфейсе.
+
+**Если обновление через UI зависло или упало** — зайдите по SSH и запустите тот же скрипт напрямую, так вы увидите полный вывод в своём терминале и не будете зависеть от стабильности стрима в браузере:
 ```bash
 cd /root/opengsc
-git pull
-npm install
+bash update.sh
+```
+У шага бэкапа SQLite есть жёсткий потолок в 10 минут — если он и правда завис, скрипт сам остановится с ошибкой и ничего не тронет (бэкап делается **до** `git reset --hard`, ваш `data/prod.db` при этом не трогается в любом случае).
+
+Если зависает именно на бэкапе дольше нескольких секунд — вероятная причина в размере базы: таблица `IndexerLog` (сырые логи индексатора/краулера) растёт без ограничений, а её ролап в дневную статистику (`scripts/rollup-logs.ts`) автоматически никогда не запускается. Прогоните его вручную перед повторной попыткой обновления:
+```bash
+cd /root/opengsc
+node scripts/rollup-logs.ts
+```
+⚠️ Скрипт необратимо удаляет все сырые записи `IndexerLog`, кроме последних 5 000 — агрегированная дневная статистика (`IndexerDailyStat`) при этом сохраняется, графики не пострадают.
+
+Ручная установка по шагам (то же самое, что делает `update.sh`, если сам скрипт по какой-то причине недоступен):
+```bash
+cd /root/opengsc
+git fetch origin
+node scripts/backup-sqlite.mjs   # бэкап перед изменением рабочей копии
+git reset --hard origin/main
+npm i --include=dev              # именно --include=dev: PM2 держит NODE_ENV=production, из-за чего обычный npm i пропустит Tailwind/TypeScript и сборка упадёт
 npx prisma db push
 npm run build
-pm2 restart opengsc
+pm2 restart opengsc --update-env
 ```
 
 Полная документация по архитектуре, GA4, Docker, MCP и индексатору доступна в папке [docs/](docs/). Как устроен слой метрик внутри — выбор провайдера, модель цены, кэширование и где всё подключено — описано в [docs/METRICS.md](docs/METRICS.md). Приоритеты дальнейшей разработки и разбор OSS-идей находятся в [docs/PRODUCT-ROADMAP.md](docs/PRODUCT-ROADMAP.md), риски Indexer и reseller API — в [docs/RESPONSIBLE-USE.md](docs/RESPONSIBLE-USE.md), а порядок выпуска версий — в [docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md).

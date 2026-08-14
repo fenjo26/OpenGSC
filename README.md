@@ -575,11 +575,27 @@ pm2 status             # status of all processes
 
 ```bash
 cd /root/opengsc
-git pull            # or: bash update.sh  (does everything below in one step)
-npm install
+bash update.sh
+```
+`update.sh` is the same script the UI button runs: it backs up the SQLite database first (before touching the working tree), fetches and hard-resets to `origin/main`, installs deps with `--include=dev` (plain `npm install` silently skips Tailwind/TypeScript when `NODE_ENV=production`, which PM2 sets — the build then fails on the first stylesheet), pushes the Prisma schema, builds, and restarts PM2.
+
+**If the update hangs or fails (UI or SSH):** the SQLite backup step has a hard 10-minute ceiling — a normal backup finishes in well under a second (`VACUUM INTO` on the live db), so if it's stuck there for minutes, the database has likely grown large because `IndexerLog` (raw indexer/crawler request logs) is never rolled up automatically. Roll it up by hand before retrying:
+```bash
+cd /root/opengsc
+node scripts/rollup-logs.ts
+```
+⚠️ This permanently deletes all raw `IndexerLog` rows except the latest 5,000 (the aggregated daily stats in `IndexerDailyStat` are kept, so charts aren't affected).
+
+If `update.sh` itself is unavailable, the equivalent steps by hand are:
+```bash
+cd /root/opengsc
+git fetch origin
+node scripts/backup-sqlite.mjs   # back up before touching the working tree
+git reset --hard origin/main
+npm i --include=dev
 npx prisma db push
 npm run build
-pm2 restart opengsc
+pm2 restart opengsc --update-env
 ```
 
 <br/>
