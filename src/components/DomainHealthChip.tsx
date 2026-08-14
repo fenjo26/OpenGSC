@@ -14,6 +14,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Loader2, Activity } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { getMetricsCreds } from "@/lib/seo/metricsClient";
+import { getAhrefsDrKey } from "@/lib/seo/keys";
 
 interface State {
   dr: number | null;
@@ -43,7 +44,7 @@ export default function DomainHealthChip({ domain, compact = false }: { domain: 
     if (!clean.includes(".")) return;
     try {
       const [drRes, mRes] = await Promise.all([
-        fetch(`/api/dr?domains=${encodeURIComponent(clean)}&cacheOnly=1`),
+        fetch(`/api/dr?domains=${encodeURIComponent(clean)}&cacheOnly=1`, { headers: { "x-ahrefs-dr-key": getAhrefsDrKey() } }),
         fetch("/api/metrics/domain", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ domains: [clean], fetch: false }),
@@ -69,7 +70,7 @@ export default function DomainHealthChip({ domain, compact = false }: { domain: 
     try {
       // The free DR call happens regardless; the paid one is skipped without a key rather than
       // erroring, so pressing this with no key still tells you something.
-      await fetch(`/api/dr?domains=${encodeURIComponent(clean)}`);
+      await fetch(`/api/dr?domains=${encodeURIComponent(clean)}`, { headers: { "x-ahrefs-dr-key": getAhrefsDrKey() } });
       if (creds.apiKey) {
         await fetch("/api/metrics/domain", {
           method: "POST", headers: { "Content-Type": "application/json" },

@@ -16,6 +16,7 @@ import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { useHealthStatus } from "@/components/SiteHealthPanel";
 import { loadSyncedAt, rememberSyncedAt, fetchSyncState, watchSync, type SyncState } from "@/lib/syncedAt";
 import { marketFor } from "@/lib/seo/market";
+import { getAhrefsDrKey } from "@/lib/seo/keys";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Metric = "clicks" | "impressions" | "ctr" | "position";
@@ -864,7 +865,7 @@ function PortfolioPageContent() {
     (async () => {
       for (let i = 0; i < domains.length; i += 100) {
         try {
-          const res = await fetch(`/api/dr?domains=${encodeURIComponent(domains.slice(i, i + 100).join(","))}`);
+          const res = await fetch(`/api/dr?domains=${encodeURIComponent(domains.slice(i, i + 100).join(","))}`, { headers: { "x-ahrefs-dr-key": getAhrefsDrKey() } });
           if (!res.ok) continue;
           const d = await res.json();
           const add: Record<string, number> = {};

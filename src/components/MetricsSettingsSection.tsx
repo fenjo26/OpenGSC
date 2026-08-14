@@ -12,7 +12,7 @@
 // reseller is something you *do* know, so the screen asks that and derives the host itself.
 
 import { useEffect, useMemo, useState } from "react";
-import { BarChart3, ExternalLink, FileUp } from "lucide-react";
+import { BarChart3, ExternalLink, FileUp, CheckCircle, Eye, X } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { SeoKeyCard, METRICS_PROVIDER_CARDS, METRICS_GATEWAY_URL } from "@/components/SeoToolsSettings";
 import MetricsImport from "@/components/MetricsImport";
@@ -22,7 +22,82 @@ import {
   getMetricsMode, setMetricsMode, metricsKeyStorage, RESELLER_BASE_URL,
   type MetricsMode,
 } from "@/lib/seo/metricsClient";
+import { getAhrefsDrKey, setAhrefsDrKey } from "@/lib/seo/keys";
 import type { MetricsProvider } from "@/lib/seo/metrics";
+
+// ─── Ahrefs free Domain Rating key ──────────────────────────────────────────────
+// Unrelated to the paid Site Explorer integration below: this key only unlocks the free
+// `domain-rating-free` endpoint that fills in the DR number shown on site cards across the app.
+// Ahrefs changed that endpoint from fully public to key-required (still free to generate, no
+// subscription needed) — this card is where a user goes to fix DR disappearing from cards.
+function AhrefsDrKeyCard() {
+  const { t } = useLanguage();
+  const [key, setKey] = useState("");
+  const [visible, setVisible] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const isConfigured = key.trim().length > 6;
+
+  useEffect(() => { setKey(getAhrefsDrKey()); }, []);
+
+  const handleSave = () => {
+    setAhrefsDrKey(key);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+  const handleClear = () => { setKey(""); setAhrefsDrKey(""); };
+
+  return (
+    <div className="panel" style={{ marginBottom: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+        <span style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)" }}>
+          {t("ahrefsDrKeyTitle") || "Ahrefs Domain Rating key (free)"}
+        </span>
+        {isConfigured && (
+          <span style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "11px", color: "#10B981", fontWeight: 600 }}>
+            <CheckCircle size={12} color="#10B981" /> {t("scConnected") || "Connected"}
+          </span>
+        )}
+      </div>
+      <p style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.6, margin: "0 0 10px" }}>
+        {t("ahrefsDrKeyDesc") ||
+          "Used only for the Domain Rating number shown on site cards — nothing else on this page needs it, and it's separate from the Ahrefs key below. Ahrefs now requires a key on this endpoint (it used to be fully public); the key is still free to generate, no paid subscription required."}
+      </p>
+      <ol style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.9, margin: "0 0 10px", paddingLeft: "18px" }}>
+        <li>{t("ahrefsDrKeyStep1") || "Sign up for a free Ahrefs account, if you don't already have one"}</li>
+        <li>{t("ahrefsDrKeyStep2") || "Generate a key under Account settings → API keys"}</li>
+        <li>{t("ahrefsDrKeyStep3") || "Paste it below"}</li>
+      </ol>
+      <a href="https://app.ahrefs.com/account/api-keys" target="_blank" rel="noreferrer"
+        style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "12px", color: "var(--color-accent-blue)", textDecoration: "none", marginBottom: "14px" }}>
+        {t("healthGetKey") || "Get key"} <ExternalLink size={11} />
+      </a>
+      <div style={{ display: "flex", gap: "8px", maxWidth: "460px" }}>
+        <div style={{ flex: 1, position: "relative" }}>
+          <input
+            type={visible ? "text" : "password"}
+            placeholder="Ahrefs API v3 key"
+            value={key}
+            onChange={e => setKey(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleSave()}
+            className="tool-input"
+            style={{ paddingRight: "36px", fontFamily: "monospace", width: "100%", boxSizing: "border-box" }}
+          />
+          <button onClick={() => setVisible(v => !v)} style={{ position: "absolute", right: "8px", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", padding: 0, display: "flex", alignItems: "center" }}>
+            <Eye size={14} style={{ opacity: visible ? 1 : 0.5 }} />
+          </button>
+        </div>
+        {isConfigured && (
+          <button onClick={handleClear} style={{ padding: "8px 10px", borderRadius: "8px", border: "1px solid rgba(239,68,68,0.25)", background: "rgba(239,68,68,0.08)", color: "#f87171", fontSize: "12px", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center" }} title={t("apiKeyDelete") || "Remove key"}>
+            <X size={13} />
+          </button>
+        )}
+        <button onClick={handleSave} disabled={!key.trim()} style={{ padding: "8px 14px", borderRadius: "8px", border: "none", background: saved ? "rgba(16,185,129,0.2)" : key.trim() ? "rgba(247,109,1,0.2)" : "rgba(255,255,255,0.06)", color: saved ? "#10B981" : key.trim() ? "#f76d01" : "var(--color-text-secondary)", fontSize: "12px", fontWeight: 600, cursor: key.trim() ? "pointer" : "not-allowed", flexShrink: 0, display: "flex", alignItems: "center", gap: "4px" }}>
+          {saved ? <><CheckCircle size={12} /> {t("apiKeySaved") || "✓ Saved"}</> : (t("apiKeySave") || "Save")}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 const OFFICIAL_DOCS: Record<MetricsProvider, string> = {
   ahrefs: "https://docs.ahrefs.com/",
@@ -111,6 +186,8 @@ export default function MetricsSettingsSection() {
         <FileUp size={16} style={{ flexShrink: 0, color: "var(--color-accent-blue)" }} />
         <span style={{ flex: 1 }}>{t("metricsNoKeyPath")}</span>
       </div>
+
+      <AhrefsDrKeyCard />
 
       <div className="panel">
         <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "4px" }}>

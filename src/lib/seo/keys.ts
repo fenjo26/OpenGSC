@@ -141,6 +141,22 @@ export function getDataForSeoKey(): string {
   return localStorage.getItem("seoKey_dataforseo") || "";
 }
 
+// Ahrefs' free public Domain Rating key (Settings → SEO Metrics). Separate from the paid Site
+// Explorer key above: `/v3/public/domain-rating-free` used to need no key at all, then Ahrefs
+// started requiring one on that endpoint too (still free to generate, no subscription needed).
+// Someone who only wants the DR number back on site cards shouldn't have to configure the whole
+// paid metrics integration just to get it, so this gets its own storage slot.
+export function getAhrefsDrKey(): string {
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem("ahrefsDrApiKey") || "";
+}
+export function setAhrefsDrKey(key: string) {
+  if (typeof window === "undefined") return;
+  const v = key.trim();
+  if (v) localStorage.setItem("ahrefsDrApiKey", v);
+  else localStorage.removeItem("ahrefsDrApiKey");
+}
+
 // ─── Keyword data source ────────────────────────────────────────────────────────
 //
 // The setting the app was missing. There was a selector for who scrapes the SERP

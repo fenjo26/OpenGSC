@@ -23,7 +23,7 @@ import {
 import { useParams, useRouter } from "next/navigation";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
-import { getTaskCreds } from "@/lib/seo/keys";
+import { getTaskCreds, getAhrefsDrKey } from "@/lib/seo/keys";
 import BacklinkProfile from "@/components/BacklinkProfile";
 import {
   ArrowLeft, Sparkles, Eye, Percent, MoveUp,
@@ -4391,7 +4391,7 @@ export default function SitePage({
   // Ahrefs Domain Rating (free public API, server-cached; attribution required by license).
   const [drValue, setDrValue] = useState<number | null>(null);
   useEffect(() => {
-    fetch(getUrl(`/api/dr?domains=${encodeURIComponent(domain)}`)).then(r => r.ok ? r.json() : null).then(d => {
+    fetch(getUrl(`/api/dr?domains=${encodeURIComponent(domain)}`), { headers: { "x-ahrefs-dr-key": getAhrefsDrKey() } }).then(r => r.ok ? r.json() : null).then(d => {
       const key = domain.toLowerCase().replace(/^www\./, "");
       const v = d?.ratings?.[key]?.dr;
       if (typeof v === "number") setDrValue(v);

@@ -4,17 +4,23 @@ import { prisma } from "@/lib/prisma";
 import { runUpsert } from "@/lib/db/upsert";
 import { rawQuery } from "@/lib/db/raw";
 
-// GET /api/dr?domains=a.com,b.com — Ahrefs Domain Rating via the free public endpoint
-// (no API key required). Cached in SQLite for 7 days so the dashboard doesn't hammer
-// Ahrefs on every load. License: https://ahrefs.com/legal/domain-rating-license — the UI
-// must show "Domain Rating by Ahrefs" attribution wherever DR is displayed.
+// GET /api/dr?domains=a.com,b.com — Ahrefs Domain Rating via the free public endpoint.
+// Cached in SQLite for 7 days so the dashboard doesn't hammer Ahrefs on every load. License:
+// https://ahrefs.com/legal/domain-rating-license — the UI must show "Domain Rating by Ahrefs"
+// attribution wherever DR is displayed.
+//
+// Ahrefs used to serve this endpoint with no key at all; they since started requiring an APIv3
+// key on it too (still free to generate, no paid subscription needed — see Settings → SEO
+// Metrics). The client sends its own key via the `x-ahrefs-dr-key` header, since keys in this
+// app live in the browser's localStorage, not server-side. Cached rows still serve fine with no
+// key configured — only fetching a *new* rating requires one.
 
 const TTL_MS = 7 * 24 * 3600 * 1000;
 
-async function fetchDr(domain: string): Promise<number | null> {
+async function fetchDr(domain: string, apiKey: string): Promise<number | null> {
   try {
     const res = await fetch(`https://api.ahrefs.com/v3/public/domain-rating-free?target=${encodeURIComponent(domain)}&output=json`, {
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) return null;
@@ -34,6 +40,8 @@ export async function GET(req: Request) {
   }
   if (!isAuthorized) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const apiKey = (req.headers.get("x-ahrefs-dr-key") || "").trim();
+
   const domains = [...new Set(String(searchParams.get("domains") ?? "").split(",")
     .map(s => s.trim().toLowerCase().replace(/^www\./, "")).filter(d => d && d.includes(".")))].slice(0, 250);
   if (!domains.length) return NextResponse.json({ ratings: {} });
@@ -51,12 +59,14 @@ export async function GET(req: Request) {
   }
 
   const cacheOnly = searchParams.get("cacheOnly") === "1";
-  const missing = cacheOnly ? [] : domains.filter(d => !fresh.has(d)).slice(0, 60); // bounded per request
+  // No key → nothing new to fetch (Ahrefs rejects the request anyway); cached rows still return
+  // above, untouched.
+  const missing = cacheOnly || !apiKey ? [] : domains.filter(d => !fresh.has(d)).slice(0, 60); // bounded per request
   let i = 0;
   await Promise.all(Array.from({ length: 4 }, async () => {
     while (i < missing.length) {
       const d = missing[i++];
-      const dr = await fetchDr(d);
+      const dr = await fetchDr(d, apiKey);
       if (dr == null) continue;
       out[d] = { dr, checkedAt: new Date().toISOString() };
       try {
@@ -70,5 +80,9 @@ export async function GET(req: Request) {
     }
   }));
 
-  return NextResponse.json({ ratings: out, attribution: "Domain Rating by Ahrefs — https://ahrefs.com/" });
+  return NextResponse.json({
+    ratings: out,
+    attribution: "Domain Rating by Ahrefs — https://ahrefs.com/",
+    keyConfigured: !!apiKey,
+  });
 }
