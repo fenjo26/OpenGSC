@@ -1364,6 +1364,7 @@ function AIProviderCard({ provider }: { provider: typeof AI_PROVIDERS[number] })
 }
 
 function AIConfigSection() {
+  const { t } = useLanguage();
   return (
     <SectionCard>
       <SectionTitle
