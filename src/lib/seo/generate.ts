@@ -372,16 +372,30 @@ export async function genOutline(b: any): Promise<GenResult> {
   const outlineTemp = b.temperature === undefined || b.temperature === null
     ? undefined : Math.min(0.8, Math.max(0, Number(b.temperature)));
 
-  let raw = await fetchLLM(prompt, provider, apiKey, 16000, model, baseUrl, outlineTemp);
+  // fetchLLMDetailed rather than fetchLLM: when the provider fails, its own reason is the only
+  // thing that makes the failure actionable, and fetchLLM throws that reason away. A bare
+  // "parse_failed" here cost real debugging time — it named the JSON parser for problems that
+  // were actually an empty completion, a safety block or a refusal upstream.
+  let res = await fetchLLMDetailed(prompt, provider, apiKey, 16000, model, baseUrl, outlineTemp);
+  let raw = res.text;
   let outline = extractJson(raw);
   if (!outline) {
     // Retry deterministically: if sampling is what mangled the JSON, repeating at the same
     // temperature just rolls the same dice again.
-    raw = await fetchLLM(prompt + (raw ? "\n\nПредыдущий ответ не распарсился. Верни ТОЛЬКО валидный JSON, без текста и без markdown-обёрток." : ""), provider, apiKey, 16000, model, baseUrl, outlineTemp === undefined ? undefined : 0);
+    res = await fetchLLMDetailed(prompt + (raw ? "\n\nПредыдущий ответ не распарсился. Верни ТОЛЬКО валидный JSON, без текста и без markdown-обёрток." : ""), provider, apiKey, 16000, model, baseUrl, outlineTemp === undefined ? undefined : 0);
+    raw = res.text;
     outline = extractJson(raw);
   }
-  // Distinguish provider failure/timeout (raw null) from an actual JSON parse problem.
-  if (!outline) return { ok: false, error: raw == null ? "generation_failed" : "parse_failed" };
+  // Three genuinely different failures, three different messages. They used to collapse into
+  // "generation_failed" / "parse_failed", which said nothing about which one had happened.
+  if (!outline) {
+    if (raw == null) return { ok: false, error: res.error ?? "generation_failed" };
+    // Reaching here means the model DID return text that is not JSON — quote the head of it,
+    // because that is the one piece of evidence needed to tell a wrapped//chatty answer apart
+    // from a truncated one, and it is otherwise never persisted anywhere.
+    const head = raw.trim().replace(/\s+/g, " ").slice(0, 300);
+    return { ok: false, error: `parse_failed — the model returned text that is not valid JSON. First 300 chars: ${head}` };
+  }
 
   // Knowledge-based fact scrub: actively correct wrong/fabricated specifics baked into the outline
   // (e.g. "8-inch" → "7.9-inch", invented colors → generalized) BEFORE the text inherits them.

@@ -24,6 +24,59 @@ function parseKieOutput(data: any): string {
   return typeof data?.output_text === 'string' ? data.output_text : '';
 }
 
+// ── Reading the assistant's text out of a provider response ──────────────────────────
+//
+// Each of these used to be a single optimistic `data.x?.[0]?.y ?? ''`, and that `?? ''` was
+// hiding a whole family of ordinary responses: an Anthropic reply whose FIRST content block is
+// a thinking block rather than text, a Gemini answer split across several parts or dropped by a
+// safety filter, a reasoning model that spent its entire token budget before emitting any
+// content, a refusal (content: null). All of them produced an empty string that was returned as
+// a successful completion — and downstream, genOutline saw a value that was "not null but did
+// not parse" and blamed the JSON, reporting `parse_failed` for a response that never contained
+// any JSON to fail on. Read every block, and let the caller tell EMPTY apart from MALFORMED.
+
+function anthropicText(data: any): string {
+  const blocks: any[] = Array.isArray(data?.content) ? data.content : [];
+  return blocks
+    .filter(b => (b?.type === 'text' || b?.type === undefined) && typeof b?.text === 'string')
+    .map(b => b.text)
+    .join('');
+}
+
+function geminiText(data: any): string {
+  const parts = data?.candidates?.[0]?.content?.parts;
+  if (!Array.isArray(parts)) return '';
+  return parts.map((p: any) => (typeof p?.text === 'string' ? p.text : '')).join('');
+}
+
+// OpenAI-compatible `message.content` is normally a string, but gateways in this provider list
+// also return the array-of-parts shape, and a refusal arrives as content:null + `refusal`.
+function openAiText(data: any): string {
+  const c = data?.choices?.[0]?.message?.content;
+  if (typeof c === 'string') return c;
+  if (Array.isArray(c)) {
+    return c.map((p: any) => (typeof p === 'string' ? p : typeof p?.text === 'string' ? p.text : '')).join('');
+  }
+  return '';
+}
+
+// A 200-OK response that carries no text is a real, diagnosable failure — not a parse problem.
+// Name the likely cause, because "parse_failed" sent users looking for a JSON bug that was never
+// there, and the reasons below are all things the user can actually act on.
+function emptyCompletionDetail(provider: string, finish: string | undefined, model: string | undefined, data: any): string {
+  const refusal = data?.choices?.[0]?.message?.refusal;
+  const blocked = data?.promptFeedback?.blockReason;
+  const why =
+    finish === 'length' || finish === 'max_tokens'
+      ? 'the token limit was reached before any text was produced — a reasoning model can spend the whole budget on hidden reasoning, so lower the reasoning effort or pick a non-reasoning model for the outline step'
+      : finish === 'content_filter' || finish === 'SAFETY' || blocked
+        ? `the provider's safety filter blocked it (${blocked ?? finish})`
+        : refusal
+          ? `the model refused: ${String(refusal).slice(0, 160)}`
+          : 'the response contained no text block';
+  return `${provider}${model ? ` (${model})` : ''}: empty completion — ${why}${finish ? ` [finish_reason: ${finish}]` : ''}`;
+}
+
 // Reasoning models (OpenAI gpt-5.x / o-series, kie's Codex endpoint) pin sampling internally and
 // reject an explicit `temperature` with a 400. Callers need to know that BEFORE dialling a value —
 // the humanize bench greys the slider out rather than firing a request that is guaranteed to fail.
@@ -121,6 +174,10 @@ async function fetchLLMOnce(
     t === undefined || !supportsTemperature(provider, model) ? {} : { temperature: clampTemp(provider, t) };
   try {
     let text = '';
+    // Kept alongside `text` so the empty-completion path below can explain ITSELF rather than
+    // handing the caller a bare '' and letting it guess what went wrong.
+    let finishReason: string | undefined;
+    let lastData: any = null;
     if (provider === 'anthropic' || provider === 'zai') {
       const baseUrl = provider === 'zai' ? 'https://api.z.ai/api/anthropic' : 'https://api.anthropic.com';
       const model = modelOverride ?? defaultModelFor(provider);
@@ -135,7 +192,9 @@ async function fetchLLMOnce(
         return { text: null, retryable: retryableStatus(res.status), errorDetail: extractErrorDetail(provider, res.status, bodyText) };
       }
       const data = await res.json();
-      text = data.content?.[0]?.text ?? '';
+      lastData = data;
+      finishReason = data?.stop_reason;
+      text = anthropicText(data);
     } else if (provider === 'openai' || provider === 'deepseek' || provider === 'qwen') {
       // GPT-5.x models reject the legacy `max_tokens` param — `max_completion_tokens` is the
       // replacement and is also accepted by every still-supported older model.
@@ -157,7 +216,9 @@ async function fetchLLMOnce(
         return { text: null, retryable: retryableStatus(res.status), errorDetail: extractErrorDetail(provider, res.status, bodyText) };
       }
       const data = await res.json();
-      text = data.choices?.[0]?.message?.content ?? '';
+      lastData = data;
+      finishReason = data?.choices?.[0]?.finish_reason;
+      text = openAiText(data);
     } else if (provider === 'gemini') {
       const gModel = modelOverride ?? defaultModelFor('gemini');
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${gModel}:generateContent?key=${apiKey}`, {
@@ -175,7 +236,9 @@ async function fetchLLMOnce(
         return { text: null, retryable: retryableStatus(res.status), errorDetail: extractErrorDetail('gemini', res.status, bodyText) };
       }
       const data = await res.json();
-      text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+      lastData = data;
+      finishReason = data?.candidates?.[0]?.finishReason;
+      text = geminiText(data);
     } else if (provider === 'openrouter') {
       const orModel = modelOverride ?? defaultModelFor('openrouter');
       const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -189,7 +252,9 @@ async function fetchLLMOnce(
         return { text: null, retryable: retryableStatus(res.status), errorDetail: extractErrorDetail('openrouter', res.status, bodyText) };
       }
       const data = await res.json();
-      text = data.choices?.[0]?.message?.content ?? '';
+      lastData = data;
+      finishReason = data?.choices?.[0]?.finish_reason;
+      text = openAiText(data);
     } else if (provider === 'kimi') {
       // Kimi (Moonshot AI) — OpenAI-compatible chat completions. Default: Kimi K3
       // (flagship, 1M context, vision). baseUrl override supported for the .cn endpoint.
@@ -206,7 +271,9 @@ async function fetchLLMOnce(
         return { text: null, retryable: retryableStatus(res.status), errorDetail: extractErrorDetail('kimi', res.status, bodyText) };
       }
       const data = await res.json();
-      text = data.choices?.[0]?.message?.content ?? '';
+      lastData = data;
+      finishReason = data?.choices?.[0]?.finish_reason;
+      text = openAiText(data);
     } else if (provider === 'kie') {
       // Kie.ai "Codex" (GPT-5.5) — Responses API, distinct from the "custom" chat-completions path.
       const root = (baseUrl || 'https://api.kie.ai').replace(/\/+$/, '');
@@ -252,7 +319,25 @@ async function fetchLLMOnce(
         return { text: null, retryable: retryableStatus(res.status), errorDetail: extractErrorDetail('custom', res.status, bodyText) };
       }
       const data = await res.json();
-      text = data.choices?.[0]?.message?.content ?? '';
+      lastData = data;
+      finishReason = data?.choices?.[0]?.finish_reason;
+      text = openAiText(data);
+    } else {
+      // No branch matched. This used to fall through to `return { text: '' }` — a *successful*
+      // empty completion for a provider that was never called at all, which the outline pipeline
+      // then reported as `parse_failed`. Say what actually happened instead.
+      console.error('[LLM] unknown provider:', provider);
+      return { text: null, retryable: false, errorDetail: `unknown AI provider "${provider}" — pick one in SEO Tools → Settings` };
+    }
+    // An empty body from a 200-OK call is a failure, and it must not be handed back as text.
+    // Returning '' here is what made a provider-side problem (token budget spent on hidden
+    // reasoning, safety filter, refusal, thinking-only reply) surface three layers away as a
+    // JSON parse error. Not retryable: the same request would burn the user's credits to
+    // produce the same empty answer.
+    if (!text.trim()) {
+      const detail = emptyCompletionDetail(provider, finishReason, modelOverride, lastData);
+      console.error('[LLM]', detail);
+      return { text: null, retryable: false, errorDetail: detail };
     }
     return { text, retryable: false };
   } catch (e) {
