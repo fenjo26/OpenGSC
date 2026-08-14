@@ -91,13 +91,19 @@ export function resolveTaskCreds(task: SeoTask): ResolvedTaskCreds {
   }
 
   const apiKey = localStorage.getItem(`aiKey_${provider}`) || localStorage.getItem("aiApiKey") || "";
-  const seoModel = localStorage.getItem("seoModel");
+  // `seoModel` is a model id belonging to `seoProvider`, so it only applies while we are still
+  // resolving for THAT provider. Applying it unconditionally sent one provider's model id to a
+  // different provider: a task switched to OpenAI while the SEO-wide model was a GLM id resolved,
+  // and displayed, as "OpenAI · glm-5.2" — a model OpenAI has never heard of, so every call on
+  // that task 404'd for a reason the settings screen actively denied.
+  const effectiveSeoModel =
+    provider === (seoProvider || globalProvider || "anthropic") ? localStorage.getItem("seoModel") : null;
   const providerDefaultModel = getProviderModel(provider);
   return {
     provider, apiKey,
-    model: taskModel || seoModel || providerDefaultModel,
+    model: taskModel || effectiveSeoModel || providerDefaultModel,
     providerFrom,
-    modelFrom: taskModel ? "task" : seoModel ? "seo" : providerDefaultModel ? "provider" : "default",
+    modelFrom: taskModel ? "task" : effectiveSeoModel ? "seo" : providerDefaultModel ? "provider" : "default",
   };
 }
 

@@ -158,10 +158,15 @@ export async function resolveAiCreds(userId: string, args: Json = {}, task?: Seo
   const apiKey = firstSet(args.aiApiKey, s[`aiKey_${provider}`], s.aiApiKey) ?? "";
   // Same order the UI uses once the provider is known: task model, then the SEO-wide model,
   // then whatever that provider defaults to.
+  //
+  // `seoModel` is only valid while we are still resolving for the provider it was chosen under.
+  // A per-task provider override changes that, and passing a GLM id to OpenAI (or the reverse)
+  // produces a 404 that reads as "the tool is broken" rather than "wrong model".
+  const seoWideProvider = firstSet(s.seoProvider, s.aiProvider) ?? "anthropic";
   const model = firstSet(
     args.model,
     task && s[`seoTaskModel_${task}`],
-    s.seoModel,
+    provider === seoWideProvider ? s.seoModel : undefined,
     s[`aiModel_${provider}`],
   );
   return {

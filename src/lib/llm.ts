@@ -37,15 +37,10 @@ function parseKieOutput(data: any): string {
 
 function anthropicText(data: any): string {
   const blocks: any[] = Array.isArray(data?.content) ? data.content : [];
-  const text = blocks
+  return blocks
     .filter(b => (b?.type === 'text' || b?.type === undefined) && typeof b?.text === 'string')
     .map(b => b.text)
     .join('');
-  if (text) return text;
-  const anyText = blocks.map(b => (typeof b?.text === 'string' ? b.text : '')).join('');
-  if (anyText) return anyText;
-  if (typeof data?.text === 'string') return data.text;
-  return '';
 }
 
 function geminiText(data: any): string {
@@ -93,6 +88,26 @@ export function supportsTemperature(provider: string, model?: string): boolean {
   return true;
 }
 
+/**
+ * Z.AI's GLM models think by default, and that default is incompatible with how this app calls them.
+ *
+ * Per Z.AI's own docs, GLM-5.2 / 5.1 / 5 / 4.7 have thinking ACTIVE out of the box, and GLM-5.2
+ * additionally defaults `reasoning_effort` to "max". The reasoning tokens come out of the same
+ * `max_tokens` budget as the answer, so a 16k budget — generous for an outline — was being spent
+ * entirely on hidden reasoning, and the request returned a 200 with no text at all. Every generation
+ * job on this instance failed that way, first disguised as `parse_failed` and then, once the empty
+ * completion was reported honestly, as `finish_reason: max_tokens`.
+ *
+ * So thinking is OFF by default for zai and callers opt back in, rather than the reverse. The shape
+ * is Anthropic's own (`{"type": "disabled"}`), which is what the /api/anthropic endpoint speaks.
+ * Scoped to zai deliberately: real Anthropic has thinking off by default, so sending the field there
+ * would be noise, and other gateways may reject an unknown key outright.
+ */
+function zaiThinking(provider: string, enableThinking: boolean): { thinking?: { type: string } } {
+  if (provider !== 'zai' || enableThinking) return {};
+  return { thinking: { type: 'disabled' } };
+}
+
 // Anthropic caps temperature at 1.0; the OpenAI-compatible family accepts up to 2.0. Clamping here
 // keeps a single UI slider honest across providers instead of surfacing provider-specific 400s.
 function clampTemp(provider: string, t: number): number {
@@ -114,8 +129,10 @@ export async function fetchLLM(
   modelOverride?: string,
   baseUrl?: string,
   temperature?: number,
+  /** Opt back into Z.AI's thinking mode; off by default because it eats the whole max_tokens budget. */
+  enableThinking = false,
 ): Promise<string | null> {
-  return (await fetchLLMDetailed(prompt, provider, apiKey, maxTokens, modelOverride, baseUrl, temperature)).text;
+  return (await fetchLLMDetailed(prompt, provider, apiKey, maxTokens, modelOverride, baseUrl, temperature, enableThinking)).text;
 }
 
 // Same retry loop as fetchLLM, but also surfaces the provider's error detail (status + message)
@@ -132,12 +149,14 @@ export async function fetchLLMDetailed(
   modelOverride?: string,
   baseUrl?: string,
   temperature?: number,
+  /** Opt back into Z.AI's thinking mode; off by default because it eats the whole max_tokens budget. */
+  enableThinking = false,
 ): Promise<{ text: string | null; error?: string }> {
   const delays = [0, 5_000, 20_000]; // 3 attempts total
   let lastError: string | undefined;
   for (let i = 0; i < delays.length; i++) {
     if (delays[i]) await new Promise(r => setTimeout(r, delays[i] + Math.floor(Math.random() * 4_000)));
-    const r = await fetchLLMOnce(prompt, provider, apiKey, maxTokens, modelOverride, baseUrl, temperature);
+    const r = await fetchLLMOnce(prompt, provider, apiKey, maxTokens, modelOverride, baseUrl, temperature, enableThinking);
     if (r.text != null) return { text: r.text };
     lastError = r.errorDetail;
     if (!r.retryable) return { text: null, error: lastError };
@@ -168,6 +187,8 @@ async function fetchLLMOnce(
   modelOverride?: string,
   baseUrl?: string,
   temperature?: number,
+  /** Opt back into Z.AI's thinking mode; off by default because it eats the whole max_tokens budget. */
+  enableThinking = false,
 ): Promise<{ text: string | null; retryable: boolean; errorDetail?: string }> {
   // Hard timeout so a stuck/over-long generation fails in minutes instead of hanging forever.
   const ctrl = new AbortController();
@@ -186,14 +207,14 @@ async function fetchLLMOnce(
     if (provider === 'anthropic' || provider === 'zai') {
       const baseUrl = provider === 'zai' ? 'https://api.z.ai/api/anthropic' : 'https://api.anthropic.com';
       const model = modelOverride ?? defaultModelFor(provider);
-      // For Z.AI / reasoning models (like glm-5.2 or claude-3-7-sonnet), constrain thinking tokens so they do not exhaust maxTokens before producing output text
-      const thinkingParam = (provider === 'zai' || /glm-5/i.test(model) || /claude-3-7-sonnet/i.test(model))
-        ? { thinking: { type: 'enabled', budget_tokens: Math.min(3072, Math.max(1024, Math.floor(maxTokens * 0.25))) } }
-        : {};
       const res = await fetch(`${baseUrl}/v1/messages`, {
         method: 'POST', signal: sig,
         headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-        body: JSON.stringify({ model, max_tokens: maxTokens, messages: [{ role: 'user', content: prompt }], ...thinkingParam, ...temp(temperature, model) }),
+        body: JSON.stringify({
+          model, max_tokens: maxTokens, messages: [{ role: 'user', content: prompt }],
+          ...temp(temperature, model),
+          ...zaiThinking(provider, enableThinking),
+        }),
       });
       if (!res.ok) {
         const bodyText = await res.text().catch(() => '');
