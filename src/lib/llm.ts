@@ -37,10 +37,16 @@ function parseKieOutput(data: any): string {
 
 function anthropicText(data: any): string {
   const blocks: any[] = Array.isArray(data?.content) ? data.content : [];
-  return blocks
+  const text = blocks
     .filter(b => (b?.type === 'text' || b?.type === undefined) && typeof b?.text === 'string')
     .map(b => b.text)
     .join('');
+  if (text) return text;
+  // Last resorts for gateways that label their blocks with something other than "text", and for
+  // the flat {text} shape some Anthropic-compatible proxies return instead of a content array.
+  const anyText = blocks.map(b => (typeof b?.text === 'string' ? b.text : '')).join('');
+  if (anyText) return anyText;
+  return typeof data?.text === 'string' ? data.text : '';
 }
 
 function geminiText(data: any): string {
