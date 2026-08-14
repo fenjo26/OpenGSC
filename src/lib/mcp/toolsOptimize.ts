@@ -20,7 +20,7 @@
 import { prisma } from "@/lib/prisma";
 import {
   McpTool, lim, pct, r1, sinceDate, resolveSite, siteArg,
-  resolveAiCreds, assertConfirmed, confirmArg, parseJson,
+  resolveAiCreds, resolveSerpCreds, assertConfirmed, confirmArg, parseJson,
 } from "./shared";
 import { scrapePage } from "@/lib/seo/scrape";
 import { maskAIPatterns, headingCounts } from "@/lib/seo/rewrite";
@@ -386,7 +386,16 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
       const creds = await resolveAiCreds(userId, args);
       if (!creds.aiApiKey) throw new Error("No AI key is configured on this instance (SEO Tools → Settings).");
 
-      const payload = { ...(args.payload as object ?? {}), ...creds };
+      // outline_auto and cluster run their own SERP call before ever touching the AI
+      // provider (see genOutlineAuto / the clustering path in lib/seo/generate.ts) — without
+      // this, resolveAiCreds alone left `payload.serpKey` empty and those two types failed
+      // with no_serp_key immediately, even for a user with a funded, working SERP provider,
+      // because the synced key was never read into the payload for this field.
+      const serpCreds = (type === "outline_auto" || type === "cluster")
+        ? await resolveSerpCreds(userId, args)
+        : null;
+
+      const payload = { ...(args.payload as object ?? {}), ...creds, ...(serpCreds ?? {}) };
       const keyword = String(args.keyword ?? (payload as any).keyword ?? "").slice(0, 300);
       let job: any;
       try {

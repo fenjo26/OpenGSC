@@ -142,6 +142,29 @@ export async function resolveAiCreds(userId: string, args: Json = {}): Promise<A
   };
 }
 
+export interface SerpCreds {
+  serpProvider: string;
+  serpKey: string;
+}
+
+/**
+ * Resolve the SERP credentials genOutlineAuto/genCluster need, the same way resolveAiCreds
+ * resolves the AI key: prefer whatever the agent passed explicitly, else fall back to the
+ * User.seoSettings snapshot SeoKeysSync backs up from the browser (`seoSerpProvider` +
+ * `seoKey_<provider>`, same naming convention as the SEO Tools settings UI).
+ *
+ * Before this existed, start_generation_job only called resolveAiCreds, so `outline_auto`
+ * and `cluster` jobs always got an empty serpKey and failed with `no_serp_key` even when
+ * the user had a paid, working SERP provider configured and synced — the key was sitting
+ * in the same settings blob the whole time, just never read for this field.
+ */
+export async function resolveSerpCreds(userId: string, args: Json = {}): Promise<SerpCreds> {
+  const s = await getUserSettings(userId);
+  const provider = String(args.serpProvider ?? s.seoSerpProvider ?? "serper");
+  const key = String(args.serpKey ?? s[`seoKey_${provider}`] ?? "");
+  return { serpProvider: provider, serpKey: key };
+}
+
 /**
  * Gate for every tool that spends the user's money.
  *
