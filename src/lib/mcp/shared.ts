@@ -123,16 +123,47 @@ export interface AiCreds {
   firecrawlKey?: string;
 }
 
+/** The per-task override slots the settings UI writes — see lib/seo/aiTasks.ts. */
+export type SeoTaskId = "outline" | "text" | "analysis" | "policy" | "landing" | "utility";
+
+// First non-blank wins. `??` is wrong for this chain: these values come out of a JSON blob where
+// "cleared in the UI" is stored as "", and `"" ?? next` keeps the empty string and stops the
+// fallback dead.
+const firstSet = (...vals: unknown[]): string | undefined => {
+  for (const v of vals) if (typeof v === "string" && v.trim()) return v;
+  return undefined;
+};
+
 /**
  * Resolve the AI credentials a paid tool should run on, preferring anything the agent
  * passed explicitly over the stored snapshot. Mirrors `aiSummary()` in lib/digest.ts —
  * the key naming convention (`aiKey_<provider>`) is set by the settings UI, not here.
+ *
+ * `task` matters more than it looks. The browser resolves creds through `resolveTaskCreds()`
+ * in lib/seo/keys.ts, whose chain is FOUR levels deep: per-task override → SEO-wide → global →
+ * provider default. This function only ever read the last three, so the per-task level — the one
+ * users actually reach for, because it is how you keep a reasoning model off a step whose output
+ * must be JSON — was invisible over MCP. The same job then ran on a different model here than in
+ * the UI, which is exactly as confusing as it sounds: the Outline page worked and the agent's
+ * outline_auto failed, on one instance, with one set of keys.
  */
-export async function resolveAiCreds(userId: string, args: Json = {}): Promise<AiCreds> {
+export async function resolveAiCreds(userId: string, args: Json = {}, task?: SeoTaskId): Promise<AiCreds> {
   const s = await getUserSettings(userId);
-  const provider = String(args.aiProvider ?? s.seoProvider ?? s.aiProvider ?? "anthropic");
-  const apiKey = String(args.aiApiKey ?? s[`aiKey_${provider}`] ?? s.aiApiKey ?? "");
-  const model = String(args.model ?? s.seoModel ?? s[`aiModel_${provider}`] ?? "") || undefined;
+  const provider = firstSet(
+    args.aiProvider,
+    task && s[`seoTaskProvider_${task}`],
+    s.seoProvider,
+    s.aiProvider,
+  ) ?? "anthropic";
+  const apiKey = firstSet(args.aiApiKey, s[`aiKey_${provider}`], s.aiApiKey) ?? "";
+  // Same order the UI uses once the provider is known: task model, then the SEO-wide model,
+  // then whatever that provider defaults to.
+  const model = firstSet(
+    args.model,
+    task && s[`seoTaskModel_${task}`],
+    s.seoModel,
+    s[`aiModel_${provider}`],
+  );
   return {
     aiProvider: provider,
     aiApiKey: apiKey,
@@ -140,6 +171,24 @@ export async function resolveAiCreds(userId: string, args: Json = {}): Promise<A
     aiBaseUrl: s.aiBaseUrl_custom || undefined,
     firecrawlKey: s.seoKey_firecrawl || s.firecrawlKey || undefined,
   };
+}
+
+/** Which per-task override slot a background job type should resolve against. */
+export function taskForJobType(type: string): SeoTaskId {
+  switch (type) {
+    case "outline":
+    case "outline_auto":
+    case "cluster":
+      return "outline";
+    case "landing":
+      return "landing";
+    case "analysis":
+      return "analysis";
+    // `text` and `rewrite` are both prose generation — the UI runs /seo-tools/rewrite on the
+    // `text` task too (see PATH_TASKS in lib/seo/aiTasks.ts).
+    default:
+      return "text";
+  }
 }
 
 export interface SerpCreds {

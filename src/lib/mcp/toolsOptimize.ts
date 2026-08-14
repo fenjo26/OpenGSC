@@ -20,7 +20,7 @@
 import { prisma } from "@/lib/prisma";
 import {
   McpTool, lim, pct, r1, sinceDate, resolveSite, siteArg,
-  resolveAiCreds, resolveSerpCreds, assertConfirmed, confirmArg, parseJson,
+  resolveAiCreds, resolveSerpCreds, taskForJobType, assertConfirmed, confirmArg, parseJson,
 } from "./shared";
 import { scrapePage } from "@/lib/seo/scrape";
 import { maskAIPatterns, headingCounts } from "@/lib/seo/rewrite";
@@ -302,7 +302,7 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
       const bad = urls.filter(u => !/^https?:\/\//i.test(u));
       if (bad.length) throw new Error(`These are not absolute URLs: ${bad.slice(0, 5).join(", ")}`);
 
-      const creds = await resolveAiCreds(userId, args);
+      const creds = await resolveAiCreds(userId, args, "text");
       if (!creds.aiApiKey) {
         throw new Error("No AI key is configured on this instance. The owner adds one in SEO Tools → Settings (it is mirrored server-side for background jobs). Meanwhile, get_optimization_brief gives you the material to write from yourself, for free.");
       }
@@ -383,7 +383,10 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
       if (!["outline", "outline_auto", "text", "analysis", "landing", "cluster"].includes(type)) {
         throw new Error(`Unknown job type: ${type}`);
       }
-      const creds = await resolveAiCreds(userId, args);
+      // Resolve against the SAME per-task override the equivalent SEO Tools page would use, so a
+      // job started by an agent runs on the model the user configured for that step rather than
+      // silently falling back to the SEO-wide one.
+      const creds = await resolveAiCreds(userId, args, taskForJobType(type));
       if (!creds.aiApiKey) throw new Error("No AI key is configured on this instance (SEO Tools → Settings).");
 
       // outline_auto and cluster run their own SERP call before ever touching the AI
