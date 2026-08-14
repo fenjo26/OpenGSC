@@ -37,10 +37,15 @@ function parseKieOutput(data: any): string {
 
 function anthropicText(data: any): string {
   const blocks: any[] = Array.isArray(data?.content) ? data.content : [];
-  return blocks
+  const text = blocks
     .filter(b => (b?.type === 'text' || b?.type === undefined) && typeof b?.text === 'string')
     .map(b => b.text)
     .join('');
+  if (text) return text;
+  const anyText = blocks.map(b => (typeof b?.text === 'string' ? b.text : '')).join('');
+  if (anyText) return anyText;
+  if (typeof data?.text === 'string') return data.text;
+  return '';
 }
 
 function geminiText(data: any): string {
@@ -181,10 +186,14 @@ async function fetchLLMOnce(
     if (provider === 'anthropic' || provider === 'zai') {
       const baseUrl = provider === 'zai' ? 'https://api.z.ai/api/anthropic' : 'https://api.anthropic.com';
       const model = modelOverride ?? defaultModelFor(provider);
+      // For Z.AI / reasoning models (like glm-5.2 or claude-3-7-sonnet), constrain thinking tokens so they do not exhaust maxTokens before producing output text
+      const thinkingParam = (provider === 'zai' || /glm-5/i.test(model) || /claude-3-7-sonnet/i.test(model))
+        ? { thinking: { type: 'enabled', budget_tokens: Math.min(3072, Math.max(1024, Math.floor(maxTokens * 0.25))) } }
+        : {};
       const res = await fetch(`${baseUrl}/v1/messages`, {
         method: 'POST', signal: sig,
         headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-        body: JSON.stringify({ model, max_tokens: maxTokens, messages: [{ role: 'user', content: prompt }], ...temp(temperature, model) }),
+        body: JSON.stringify({ model, max_tokens: maxTokens, messages: [{ role: 'user', content: prompt }], ...thinkingParam, ...temp(temperature, model) }),
       });
       if (!res.ok) {
         const bodyText = await res.text().catch(() => '');

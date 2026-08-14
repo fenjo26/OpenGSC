@@ -328,6 +328,9 @@ export async function genOutline(b: any): Promise<GenResult> {
   if (!apiKey) return { ok: false, error: "no_ai_key" };
 
   const competitors: CompetitorInput[] = Array.isArray(b.competitors) ? b.competitors : [];
+  if (!competitors.length && b.serpKey && b._autoFetched !== true) {
+    return genOutlineAuto({ ...b, _autoFetched: true });
+  }
   const model = b.model ? String(b.model) : undefined;
   const baseUrl = b.aiBaseUrl ? String(b.aiBaseUrl) : undefined;
 
