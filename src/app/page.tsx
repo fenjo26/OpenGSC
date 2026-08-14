@@ -576,6 +576,10 @@ function PortfolioPageContent() {
   // Ahrefs Domain Rating per domain (free public API, server-cached). License requires
   // visible "Domain Rating by Ahrefs" attribution wherever DR is shown.
   const [drMap, setDrMap] = useState<Record<string, number>>({});
+  // True while the background DR backfill (below) is still working through the site list —
+  // lets cards distinguish "still checking" from "checked, nothing found" instead of just
+  // popping in whenever their chunk finishes, which reads as broken rather than loading.
+  const [drLoading, setDrLoading] = useState(false);
   // Paid domain metrics, kept in a separate map from DR on purpose: DR is free and always
   // present, these are optional and may never arrive. Merging them would make one nullable
   // thing out of two with very different guarantees.
@@ -862,16 +866,23 @@ function PortfolioPageContent() {
   useEffect(() => {
     if (!sites.length) return;
     const domains = [...new Set(sites.map(s => getDomain(s.url).toLowerCase().replace(/^www\./, "")).filter(d => d.includes(".")))];
+    setDrLoading(true);
     (async () => {
-      for (let i = 0; i < domains.length; i += 100) {
-        try {
-          const res = await fetch(`/api/dr?domains=${encodeURIComponent(domains.slice(i, i + 100).join(","))}`, { headers: { "x-ahrefs-dr-key": getAhrefsDrKey() } });
-          if (!res.ok) continue;
-          const d = await res.json();
-          const add: Record<string, number> = {};
-          Object.entries(d.ratings || {}).forEach(([k, v]: [string, any]) => { add[k] = Number(v.dr); });
-          setDrMap(prev => ({ ...prev, ...add }));
-        } catch { /* best-effort */ }
+      try {
+        for (let i = 0; i < domains.length; i += 100) {
+          try {
+            const res = await fetch(`/api/dr?domains=${encodeURIComponent(domains.slice(i, i + 100).join(","))}`, { headers: { "x-ahrefs-dr-key": getAhrefsDrKey() } });
+            if (!res.ok) continue;
+            const d = await res.json();
+            const add: Record<string, number> = {};
+            Object.entries(d.ratings || {}).forEach(([k, v]: [string, any]) => { add[k] = Number(v.dr); });
+            setDrMap(prev => ({ ...prev, ...add }));
+          } catch { /* best-effort */ }
+        }
+      } finally {
+        // Whatever is still missing after this is a real "no rating", not a pending one — cards
+        // stop pulsing and fall back to showing nothing, same as before this loading state existed.
+        setDrLoading(false);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1422,7 +1433,12 @@ function PortfolioPageContent() {
               const key = domain.toLowerCase().replace(/^www\./,"");
               const dr = drMap[key];
               const dm = domMap[key];
-              if (dr == null && !dm) return null;
+              // While the dashboard-wide DR backfill is still running, an unloaded card pulses
+              // instead of just staying silent — otherwise cards popping in over the first
+              // minute or two (Ahrefs is rate-limited on purpose) reads as some sites being
+              // broken rather than everything still loading.
+              const drPending = dr == null && drLoading;
+              if (dr == null && !dm && !drPending) return null;
               const chip: React.CSSProperties = {fontSize:"10px",fontWeight:700,padding:"1px 6px",borderRadius:"6px",filter:blur?"blur(4px)":"none",transition:"filter 0.25s"};
               return (
                 <div style={{display:"flex",gap:"4px",alignSelf:"flex-start",marginLeft:"22px",flexWrap:"wrap"}}>
@@ -1432,6 +1448,11 @@ function PortfolioPageContent() {
                   {dr != null && (
                     <span title="Domain Rating by Ahrefs (ahrefs.com)" style={{...chip,background:"rgba(58,87,252,0.12)",color:"#3A57FC"}}>
                       DR {Math.round(dr)}
+                    </span>
+                  )}
+                  {drPending && (
+                    <span title="Domain Rating by Ahrefs — checking…" className="dr-pulse" style={{...chip,background:"rgba(58,87,252,0.06)",color:"var(--color-text-tertiary)"}}>
+                      DR
                     </span>
                   )}
                   {dm?.refDomains != null && (

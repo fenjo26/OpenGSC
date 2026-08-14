@@ -328,6 +328,19 @@ button {
   animation: spin 0.8s linear infinite;
 }
 
+@keyframes drPulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
+/* Site-card DR chip while the dashboard-wide backfill hasn't reached this domain yet — see
+   app/page.tsx. Distinguishes "still checking" from "checked, nothing found" (which shows
+   no chip at all), so cards popping in over the first minute or two after enabling a new
+   Ahrefs key don't read as some sites being broken. */
+.dr-pulse {
+  animation: drPulse 1.4s ease-in-out infinite;
+}
+
 /* ── SEO Tools shared primitives ───────────────────────────────────────────────
  * Same look as the SectionCard pattern used across the app (settings, etc.):
  * hairline border, 12px radius, no shadow. Centralised here so theme/geometry
