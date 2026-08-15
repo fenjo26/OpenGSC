@@ -819,7 +819,9 @@ export default function OutlinePage() {
               <textarea className={inputStyle} style={{ minHeight: "70px", resize: "vertical", fontSize: "13px" }} value={structureRules} onChange={e => setStructureRules(e.target.value)} placeholder={t("seoCfgStructureRulesPh")} />
             </div>
 
-            <div style={{ marginTop: "16px" }}><FingerprintControls {...fpc} /></div>
+            {/* 0.8 mirrors the cap genOutline applies to this step (lib/seo/generate.ts) — the
+                number is stated in the UI so a user who types 1.4 learns what will actually run. */}
+            <div style={{ marginTop: "16px" }}><FingerprintControls {...fpc} clampedTo={0.8} /></div>
 
             <button onClick={generate} disabled={loading === "outline"} style={{ ...btnDark, width: "100%", justifyContent: "center", marginTop: "12px", padding: "12px" }}>
               {loading === "outline" ? <Loader2 size={15} className="spin" /> : <Wand2 size={15} />}

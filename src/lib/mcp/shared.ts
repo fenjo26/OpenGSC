@@ -7,6 +7,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { rawQuery } from "@/lib/db/raw";
+import { normalizePolicy, type EditorialPolicy } from "@/lib/seo/policy";
 
 export type Json = Record<string, unknown>;
 
@@ -194,6 +195,33 @@ export function taskForJobType(type: string): SeoTaskId {
     default:
       return "text";
   }
+}
+
+/**
+ * Resolve the editorial policy a generation job should run under.
+ *
+ * The browser reads `seoPolicies` + `seoActivePolicy` from localStorage and puts the whole object
+ * in the request body, where `renderPolicy()` turns it into the `<editorial_policy>` block. Nothing
+ * on the MCP side did that, so every agent-started job ran with `policy: undefined` — and an absent
+ * policy is not a default one, it is NO policy block at all: no brand, no audience, no tone of
+ * voice, no words-to-avoid, and not even the compliance rule about never inventing licences.
+ * The user's whole editorial setup silently did not apply to anything an agent generated.
+ *
+ * Returns undefined when the instance has no policies stored, so the payload stays byte-identical
+ * to before in that case.
+ */
+export async function resolveActivePolicy(userId: string, args: Json = {}): Promise<EditorialPolicy | undefined> {
+  const s = await getUserSettings(userId);
+  let list: unknown;
+  try {
+    list = typeof s.seoPolicies === "string" ? JSON.parse(s.seoPolicies) : s.seoPolicies;
+  } catch {
+    return undefined;
+  }
+  if (!Array.isArray(list) || !list.length) return undefined;
+  const wanted = firstSet(args.policyName, s.seoActivePolicy);
+  const hit = (wanted && list.find((p: any) => p?.name === wanted)) || list[0];
+  return hit ? normalizePolicy(hit) : undefined;
 }
 
 export interface SerpCreds {

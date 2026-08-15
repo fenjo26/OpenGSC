@@ -54,8 +54,14 @@ export function useFingerprintControls() {
   return { fp, useBanned, setUseBanned, temp, setTemp, excluded, toggleWord, payload };
 }
 
-export function FingerprintControls(p: ReturnType<typeof useFingerprintControls>) {
-  const { fp, useBanned, setUseBanned, temp, setTemp, excluded, toggleWord } = p;
+export function FingerprintControls(
+  p: ReturnType<typeof useFingerprintControls> & {
+    /** Set on the outline step, whose caller caps temperature at 0.8 — say so instead of letting
+     *  the user type 1.4 and wonder why nothing changed. */
+    clampedTo?: number;
+  },
+) {
+  const { fp, useBanned, setUseBanned, temp, setTemp, excluded, toggleWord, clampedTo } = p;
   const { t } = useLanguage();
   const [open, setOpen] = useState(false);
 
@@ -101,6 +107,23 @@ export function FingerprintControls(p: ReturnType<typeof useFingerprintControls>
           {t("rwTemp" as never)}
           <input value={temp} onChange={e => setTemp(e.target.value)} placeholder={t("rwTempAuto" as never)} style={inputStyle} />
         </label>
+      </div>
+
+      {/* Both hints below used to live only in a `title` attribute. A control that is greyed out
+          with no visible reason reads as broken, and a free-form number field with no stated range
+          reads as a mystery — neither is discoverable by hovering. */}
+      {!fp && (
+        <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>
+          {t("hmNoModelHint" as never)}{" "}
+          <a href="/seo-tools/humanize" style={{ color: "var(--color-accent-blue)", fontWeight: 600, textDecoration: "none" }}>
+            {t("fpOpenLab" as never)}
+          </a>
+        </div>
+      )}
+
+      <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>
+        {t("rwTempHint" as never)}
+        {clampedTo ? ` ${t("fpTempClamped" as never).replace("{max}", String(clampedTo))}` : ""}
       </div>
 
       {tempLevel && (

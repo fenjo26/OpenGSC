@@ -20,7 +20,7 @@
 import { prisma } from "@/lib/prisma";
 import {
   McpTool, lim, pct, r1, sinceDate, resolveSite, siteArg,
-  resolveAiCreds, resolveSerpCreds, taskForJobType, assertConfirmed, confirmArg, parseJson,
+  resolveAiCreds, resolveSerpCreds, resolveActivePolicy, taskForJobType, assertConfirmed, confirmArg, parseJson,
 } from "./shared";
 import { scrapePage } from "@/lib/seo/scrape";
 import { maskAIPatterns, headingCounts } from "@/lib/seo/rewrite";
@@ -289,6 +289,7 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
         bannedWords: { type: "array", items: { type: "string" }, description: "Words the model must not use — the AI-Fingerprint Lab's marker export goes here" },
         temperature: { type: "number", description: "Sampling temperature; omit for the provider default" },
         snippet: { type: "boolean", description: "Also propose a refreshed title + meta description per page" },
+        policyName: { type: "string", description: "Editorial policy to write under, by name. Omit to use the instance's active policy." },
       },
       required: ["confirm"],
     },
@@ -350,6 +351,7 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
         bannedWords: Array.isArray(args.bannedWords) ? args.bannedWords.map(String) : undefined,
         temperature: args.temperature != null ? Number(args.temperature) : undefined,
         snippet: args.snippet === true,
+        policy: await resolveActivePolicy(userId, args),
         ...creds,
       }).catch(() => { /* runRewriteBatch records its own failures */ });
 
@@ -374,6 +376,7 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
         type: { type: "string", enum: ["outline", "outline_auto", "text", "analysis", "landing", "cluster"], description: "Which pipeline to run" },
         keyword: { type: "string", description: "The target keyword (required for outline/analysis/cluster)" },
         payload: { type: "object", description: "Pipeline payload, the same shape the /seo-tools UI posts — e.g. { keyword, language, wordCount, country } for outline, or { outline } for text" },
+        policyName: { type: "string", description: "Editorial policy to write under, by name. Omit to use the instance's active policy — it is applied either way." },
       },
       required: ["confirm", "type"],
     },
@@ -396,7 +399,13 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
         ? await resolveSerpCreds(userId, args)
         : null;
 
-      const payload = { ...(args.payload as object ?? {}), ...creds, ...(serpCreds ?? {}) };
+      // The tool pages send the active policy in the request body; nothing here did, so every
+      // agent-started job generated with no editorial policy whatsoever. An explicit `policy` in
+      // args still wins, and an instance with no policies stored resolves to undefined — same
+      // payload as before.
+      const policy = (args.payload as any)?.policy ?? (await resolveActivePolicy(userId, args));
+
+      const payload = { ...(args.payload as object ?? {}), ...creds, ...(serpCreds ?? {}), ...(policy ? { policy } : {}) };
       const keyword = String(args.keyword ?? (payload as any).keyword ?? "").slice(0, 300);
       let job: any;
       try {

@@ -3315,5 +3315,7 @@
   "crawlerMetrics_no_key": "Aucune clé API configurée dans SEO Tools → Réglages.",
   "crawlerMetrics_cap_exceeded": "Votre plafond mensuel d'unités serait dépassé.",
   "crawlerMetrics_failed": "La requête au fournisseur a échoué.",
-  "aiKeysHint": "Les clés sont enregistrées sur votre propre instance et envoyées directement au fournisseur d'IA lors du One Click Setup. Rien ne part ailleurs."
+  "aiKeysHint": "Les clés sont enregistrées sur votre propre instance et envoyées directement au fournisseur d'IA lors du One Click Setup. Rien ne part ailleurs.",
+  "fpOpenLab": "Ouvrir l'AI-Fingerprint Lab →",
+  "fpTempClamped": "Cette étape doit renvoyer du JSON valide : toute valeur supérieure à {max} est ramenée à {max}."
 }

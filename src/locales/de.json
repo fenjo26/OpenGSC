@@ -3315,5 +3315,7 @@
   "crawlerMetrics_no_key": "Kein API-Schlüssel in SEO Tools → Einstellungen hinterlegt.",
   "crawlerMetrics_cap_exceeded": "Ihr monatliches Einheitenlimit würde überschritten.",
   "crawlerMetrics_failed": "Die Anbieter-Anfrage ist fehlgeschlagen.",
-  "aiKeysHint": "Schlüssel werden auf Ihrer eigenen Instanz gespeichert und beim One Click Setup direkt an den KI-Anbieter gesendet. Sonst geht nichts irgendwohin."
+  "aiKeysHint": "Schlüssel werden auf Ihrer eigenen Instanz gespeichert und beim One Click Setup direkt an den KI-Anbieter gesendet. Sonst geht nichts irgendwohin.",
+  "fpOpenLab": "AI-Fingerprint Lab öffnen →",
+  "fpTempClamped": "Dieser Schritt muss gültiges JSON liefern, daher wird alles über {max} auf {max} begrenzt."
 }

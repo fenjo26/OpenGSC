@@ -3315,5 +3315,7 @@
   "crawlerMetrics_no_key": "未在 SEO Tools → 设置中配置 API 密钥。",
   "crawlerMetrics_cap_exceeded": "将超出你的每月额度上限。",
   "crawlerMetrics_failed": "服务商请求失败。",
-  "aiKeysHint": "密钥保存在你自己的实例上，运行 One Click Setup 时直接发送给 AI 服务商，不会去往任何其他地方。"
+  "aiKeysHint": "密钥保存在你自己的实例上，运行 One Click Setup 时直接发送给 AI 服务商，不会去往任何其他地方。",
+  "fpOpenLab": "打开 AI-Fingerprint Lab →",
+  "fpTempClamped": "此步骤必须返回有效 JSON，因此高于 {max} 的值会被限制为 {max}。"
 }

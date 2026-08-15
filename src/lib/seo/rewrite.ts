@@ -7,6 +7,7 @@ import { fetchLLM } from "@/lib/llm";
 import { scrapeMany } from "@/lib/seo/scrape";
 import { factDrift, criticalValues, type FactDrift } from "@/lib/seo/factDrift";
 import { uniquenessPct, wordCount, keywordCoverage, type KeywordCoverage } from "@/lib/seo/textMetrics";
+import { renderPolicy, type EditorialPolicy } from "@/lib/seo/policy";
 
 export interface RewriteBody {
   text?: string;
@@ -25,6 +26,12 @@ export interface RewriteBody {
    * turns that from an accident into a checked constraint — see `keywordCoverage` below.
    */
   targetKeywords?: { keyword: string; volume?: number | null; globalVolume?: number | null }[];
+  /**
+   * The editorial policy to write under. Rewrite was the one generator that ignored it entirely —
+   * outline, text and analysis all render it, this did not — while `start_rewrite_job` advertised
+   * "editorial policy ... applied" in its own description. Half of that promise was false.
+   */
+  policy?: EditorialPolicy;
   temperature?: number;     // sampling temperature; undefined = provider default
   autoRepair?: boolean;     // run a scoped fix pass when the value audit fails (default true)
   snippet?: boolean;        // also propose a refreshed title + meta description
@@ -213,7 +220,8 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
   const variants = Math.min(5, Math.max(1, Number(b.variants) || 1));
   const langName = (b.language || "").trim();
   const langLine = langName ? `Write the rewrite in ${langName}.` : `Write in the SAME language as the source.`;
-  const toneLine = b.tone ? `Tone: ${b.tone}.` : "";
+  // Omitted when a policy exists, because renderPolicy already carries the tone as its override.
+  const toneLine = b.tone && !b.policy ? `Tone: ${b.tone}.` : "";
 
   // Vocabulary constraint, when the caller supplies one from the local fingerprint model.
   // A CONCRETE list is the point: it removes specific high-signal tokens without telling the model
@@ -267,7 +275,14 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
       }).join(", ")}. `
     : "";
 
+  // Same block the outline and text steps render, in the same position — leading the prompt, so
+  // brand, audience, voice and the words-to-avoid list frame everything that follows. The tone
+  // argument is folded in as the override, exactly as buildTextPrompt does it, which is why
+  // `toneLine` below stays empty when a policy is present: one source of tone, never two.
+  const policyBlock = b.policy ? renderPolicy(b.policy, b.tone) + "\n\n" : "";
+
   const basePrompt = (i: number) =>
+    policyBlock +
     `You are an expert SEO copywriter. Rewrite the content below so it is UNIQUE and original, ` +
     `while preserving the exact meaning, all facts, numbers, named entities, and links. ` +
     `Keep the same format as the input (HTML stays HTML, Markdown stays Markdown, plain stays plain). ` +
