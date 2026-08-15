@@ -197,7 +197,8 @@ export async function fetchLLMDetailed(
   // header, or a gateway 5xx that has already exhausted its own routes. It overrides the generic
   // ladder, which is otherwise far too eager for both cases.
   let askedWait: number | undefined;
-  for (let i = 0; i < delays.length; i++) {
+  let cap = delays.length;
+  for (let i = 0; i < Math.min(cap, delays.length); i++) {
     const wait = i === 0 ? 0 : Math.max(delays[i], askedWait ?? 0);
     if (wait) await new Promise(r => setTimeout(r, wait + Math.floor(Math.random() * 4_000)));
     const r = await fetchLLMOnce(prompt, provider, apiKey, maxTokens, modelOverride, baseUrl, temperature, enableThinking);
@@ -205,7 +206,8 @@ export async function fetchLLMDetailed(
     lastError = r.errorDetail;
     askedWait = r.retryAfterMs;
     if (!r.retryable) return { text: null, error: lastError };
-    if (i < delays.length - 1) console.error(`[LLM] ${provider} transient failure — retrying (${i + 1}/${delays.length - 1}): ${lastError ?? ""}`);
+    cap = Math.min(cap, attemptCapFor(lastError) ?? delays.length);
+    if (i < Math.min(cap, delays.length) - 1) console.error(`[LLM] ${provider} transient failure — retrying (${i + 1}/${Math.min(cap, delays.length) - 1}): ${lastError ?? ""}`);
   }
   return { text: null, error: lastError };
 }
@@ -231,6 +233,23 @@ function retryAfterFrom(res: Response, status: number): number | undefined {
   return undefined;
 }
 
+// Some gateway failures are a property of the ROUTE the gateway chose, not of the request — and
+// repeating a request that takes minutes to generate, only to be discarded again, is the most
+// expensive way to learn nothing.
+//
+// The case this exists for: Cheaper Inference ranks upstream routes by price and settles billing
+// from the `usage` block the upstream returns. When the chosen route omits `usage`, the gateway
+// cannot charge for a generation it has already paid for and answers
+// `502 … did not include usage for billing` — AFTER the model finished writing. Three attempts of
+// that is a quarter of an hour spent producing three complete answers and throwing all of them
+// away. The gateway has already failed over between its own routes before returning the 502, so
+// one extra attempt is a fair bet and a second is not; what actually resolves it is choosing a
+// different model id, which is what the message now says.
+function attemptCapFor(detail: string | undefined): number | undefined {
+  if (detail && /\b50\d\b/.test(detail) && /usage\s+for\s+billing|did not include usage/i.test(detail)) return 2;
+  return undefined;
+}
+
 // Best-effort extraction of a short, human-readable reason from a failed provider response —
 // tries the common `{error:{message|type}}` JSON shape used by most providers, else falls back
 // to the raw body (truncated). Prefixed with provider+status so it's unambiguous in job.error.
@@ -240,7 +259,14 @@ function extractErrorDetail(provider: string, status: number, bodyText: string):
     const j = JSON.parse(bodyText);
     msg = j?.error?.message || j?.error?.type || j?.message || bodyText;
   } catch { /* not JSON — keep raw body */ }
-  return `${provider} ${status}: ${String(msg || "").slice(0, 300)}`;
+  const base = `${provider} ${status}: ${String(msg || "").slice(0, 300)}`;
+  // The one gateway failure whose fix is a settings change rather than a retry. Left raw, the
+  // message describes the GATEWAY's accounting problem and reads like a transient blip, which
+  // sends people into retry loops that each cost a full-length generation. Say what to do.
+  if (status >= 500 && /usage\s+for\s+billing|did not include usage/i.test(base)) {
+    return `${base} — the serving route returned no usage block, so the gateway discarded a generation it had already produced. This follows the MODEL, not the request: choose a different model for this task in SEO Tools → Settings.`;
+  }
+  return base;
 }
 
 async function fetchLLMOnce(
