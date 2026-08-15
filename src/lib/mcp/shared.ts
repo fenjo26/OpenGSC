@@ -174,7 +174,10 @@ export async function resolveAiCreds(userId: string, args: Json = {}, task?: Seo
     aiProvider: provider,
     aiApiKey: apiKey,
     model,
-    aiBaseUrl: s.aiBaseUrl_custom || undefined,
+    // Per-provider base URL, falling back to the custom-provider slot for backwards compatibility.
+    // zai needs its own: the default is now the general API endpoint, and a user on the Coding
+    // Plan points this at https://api.z.ai/api/anthropic to keep using that one.
+    aiBaseUrl: s[`aiBaseUrl_${provider}`] || s.aiBaseUrl_custom || undefined,
     firecrawlKey: s.seoKey_firecrawl || s.firecrawlKey || undefined,
   };
 }

@@ -119,6 +119,34 @@ function zaiThinking(provider: string, enableThinking: boolean): { thinking?: { 
   return { thinking: { type: 'disabled' } };
 }
 
+/**
+ * Which Z.AI product this instance is calling — and it is two different products.
+ *
+ * `https://api.z.ai/api/anthropic` is the GLM **Coding Plan** endpoint. Z.AI's own docs say that
+ * plan is "strictly limited to use within officially supported tools and products" — Claude Code,
+ * Cline, Cursor and the like. A self-hosted SEO app is not on that list, and its traffic there
+ * lands on the plan's 5-hour quota, which is why bulk generation came back as
+ * `zai 429: Rate limit reached for requests` while the standard API account showed no usage at all.
+ *
+ * The general-purpose endpoint is `https://api.z.ai/api/paas/v4`, it speaks OpenAI
+ * chat-completions, and it bills the ordinary API balance. That is the correct default for this
+ * app, so it is what a bare zai key now uses.
+ *
+ * Setting an explicit base URL still wins, including going back to the Coding Plan endpoint on
+ * purpose: any URL ending in `/api/anthropic` is routed through the Anthropic-shaped branch,
+ * anything else through the OpenAI-shaped one. Both accept the `thinking` field.
+ */
+const ZAI_DEFAULT_ROOT = 'https://api.z.ai/api/paas/v4';
+
+function zaiRoot(baseUrl?: string): string {
+  const b = (baseUrl || '').trim().replace(/\/+$/, '');
+  return b || ZAI_DEFAULT_ROOT;
+}
+
+function zaiAnthropicShape(baseUrl?: string): boolean {
+  return /\/api\/anthropic$/.test(zaiRoot(baseUrl));
+}
+
 // Anthropic caps temperature at 1.0; the OpenAI-compatible family accepts up to 2.0. Clamping here
 // keeps a single UI slider honest across providers instead of surfacing provider-specific 400s.
 function clampTemp(provider: string, t: number): number {
@@ -215,10 +243,12 @@ async function fetchLLMOnce(
     // handing the caller a bare '' and letting it guess what went wrong.
     let finishReason: string | undefined;
     let lastData: any = null;
-    if (provider === 'anthropic' || provider === 'zai') {
-      const baseUrl = provider === 'zai' ? 'https://api.z.ai/api/anthropic' : 'https://api.anthropic.com';
+    if (provider === 'anthropic' || (provider === 'zai' && zaiAnthropicShape(baseUrl))) {
+      // For zai this branch is now the OPT-IN path, reached only when the user points the base URL
+      // at the Coding Plan's Anthropic endpoint. See zaiRoot() for why that is no longer the default.
+      const root = provider === 'zai' ? zaiRoot(baseUrl) : 'https://api.anthropic.com';
       const model = modelOverride ?? defaultModelFor(provider);
-      const res = await fetch(`${baseUrl}/v1/messages`, {
+      const res = await fetch(`${root}/v1/messages`, {
         method: 'POST', signal: sig,
         headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -236,20 +266,25 @@ async function fetchLLMOnce(
       lastData = data;
       finishReason = data?.stop_reason;
       text = anthropicText(data);
-    } else if (provider === 'openai' || provider === 'deepseek' || provider === 'qwen') {
+    } else if (provider === 'openai' || provider === 'deepseek' || provider === 'qwen' || provider === 'zai') {
       // GPT-5.x models reject the legacy `max_tokens` param — `max_completion_tokens` is the
       // replacement and is also accepted by every still-supported older model.
       let url = 'https://api.openai.com/v1/chat/completions';
       if (provider === 'deepseek') url = 'https://api.deepseek.com/chat/completions';
       if (provider === 'qwen') url = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
+      if (provider === 'zai') url = `${zaiRoot(baseUrl)}/chat/completions`;
 
       const model = modelOverride ?? defaultModelFor(provider);
-      const tokenParam = (provider === 'deepseek' || provider === 'qwen') ? 'max_tokens' : 'max_completion_tokens';
+      const tokenParam = (provider === 'deepseek' || provider === 'qwen' || provider === 'zai') ? 'max_tokens' : 'max_completion_tokens';
 
       const res = await fetch(url, {
         method: 'POST', signal: sig,
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, [tokenParam]: maxTokens, messages: [{ role: 'user', content: prompt }], ...temp(temperature, model) }),
+        body: JSON.stringify({
+          model, [tokenParam]: maxTokens, messages: [{ role: 'user', content: prompt }],
+          ...temp(temperature, model),
+          ...zaiThinking(provider, enableThinking),
+        }),
       });
       if (!res.ok) {
         const bodyText = await res.text().catch(() => '');
