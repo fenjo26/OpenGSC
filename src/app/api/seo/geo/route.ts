@@ -3,7 +3,7 @@ import { authOptions } from "@/lib/auth";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { OPENAI_FALLBACK_MODELS } from "@/lib/seo/models";
 import { prisma } from "@/lib/prisma";
-import { runGeoAudit, type GeoEngine } from "@/lib/seo/geo";
+import { runGeoAudit, type GeoEngine, type GeoAnalysisCreds } from "@/lib/seo/geo";
 
 // GeoAudit isn't in the committed generated client until `prisma generate` re-runs on
 // build; access it via a loose handle so types resolve everywhere (mirrors SeoJob).
@@ -11,7 +11,7 @@ const audits = () => (prisma as any).geoAudit;
 
 // Detached background run — not awaited by the request, so the result is persisted even
 // if the client navigates away. The API key lives only in memory for the run.
-function runAudit(id: string, params: { query: string; language: string; country: string; model: string; apiKey: string; engine: GeoEngine; analysisModel?: string }) {
+function runAudit(id: string, params: { query: string; language: string; country: string; model: string; apiKey: string; engine: GeoEngine; analysisModel?: string; analysis?: GeoAnalysisCreds }) {
   runGeoAudit(params)
     .then(async (r) => {
       if (r.ok) await audits().update({ where: { id }, data: { status: "completed", report: JSON.stringify(r.data) } });
@@ -39,6 +39,23 @@ export async function POST(req: Request) {
   // Stage-2 model, sent by the client from the `utility` task setting. Optional: an older
   // client that does not send it falls back inside runGeoAudit rather than failing.
   const analysisModel = String(b.analysisModel ?? "") || undefined;
+  // Stage-2 provider + key, from the same `utility` task setting. The search pass needs a hosted
+  // web_search tool and so stays on OpenAI or kie.ai; the analysis pass only reads a trace and
+  // writes JSON, so it follows the user's per-task choice like every other analysis step — and
+  // can therefore run on a cheaper gateway than the one doing the searching.
+  //
+  // Validated field by field rather than spread from the body: this object reaches an outbound
+  // fetch, and `baseUrl` in particular decides where a key is sent.
+  const a = b.analysis;
+  const analysis: GeoAnalysisCreds | undefined =
+    a && typeof a.provider === "string" && a.provider.trim() && typeof a.apiKey === "string" && a.apiKey.trim()
+      ? {
+          provider: a.provider.trim(),
+          apiKey: a.apiKey.trim(),
+          model: typeof a.model === "string" && a.model.trim() ? a.model.trim() : undefined,
+          baseUrl: typeof a.baseUrl === "string" && a.baseUrl.trim() ? a.baseUrl.trim() : undefined,
+        }
+      : undefined;
 
   let rec: any;
   try {
@@ -47,7 +64,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: `db: ${String(e?.message ?? e)} (run: npx prisma db push)` }, { status: 500 });
   }
 
-  runAudit(rec.id, { query, language, country, model, apiKey, engine, analysisModel }); // fire-and-forget
+  runAudit(rec.id, { query, language, country, model, apiKey, engine, analysisModel, analysis }); // fire-and-forget
   return NextResponse.json({ id: rec.id });
 }
 

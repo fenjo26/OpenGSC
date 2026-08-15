@@ -14,6 +14,7 @@
 
 import { extractJson } from "@/lib/seo/prompts";
 import { OPENAI_FALLBACK_MODELS, OPENAI_FALLBACK_CHEAP } from "@/lib/seo/models";
+import { fetchLLMDetailed } from "@/lib/llm";
 import { defaultModelFor } from "@/lib/providerDefaults";
 
 export type GeoResult = { ok: true; data: GeoReport } | { ok: false; error: string };
@@ -300,11 +301,55 @@ Rules:
 - Keep every string short. Language of notes: ${language}.`;
 }
 
-async function runAnalysis(t: RawTrace, query: string, language: string, country: string, analysisModel: string, apiKey: string, engine: GeoEngine = "openai"): Promise<any> {
+/**
+ * Credentials for stage 2, when the user has configured a provider for the `utility` task.
+ *
+ * Stage 1 and stage 2 are different jobs and only one of them is fussy about who runs it. The
+ * search pass needs a provider-hosted `web_search` tool, which is why this module knows about
+ * OpenAI and kie.ai by name at all. The analysis pass just reads a trace and emits JSON — any
+ * model can do it, and pinning it to whoever happened to run the search meant the cheap
+ * mechanical half was billed at the searching provider's rates with no way to say otherwise.
+ */
+export interface GeoAnalysisCreds {
+  provider: string;
+  apiKey: string;
+  model?: string;
+  baseUrl?: string;
+}
+
+async function runAnalysis(
+  t: RawTrace, query: string, language: string, country: string,
+  analysisModel: string, apiKey: string, engine: GeoEngine = "openai",
+  creds?: GeoAnalysisCreds,
+): Promise<any> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 120_000);
   const prompt = buildAnalysisPrompt(t, query, language, country);
   try {
+    // Preferred path: the shared multi-provider client, so stage 2 obeys the per-task settings
+    // like every other analysis step in the app — and inherits the things that client learned
+    // the hard way, none of which the private fetch below has: retries on 429/5xx, and an empty
+    // 200 reported as the provider-side failure it is rather than returned as a successful
+    // empty answer for `extractJson` to blame on the JSON.
+    //
+    // `response_format: json_object` is not sent here, because it is an OpenAI-family parameter
+    // and this path may be talking to anyone. The prompt already demands JSON and `extractJson`
+    // already tolerates a fenced or prefixed reply — the same contract every other JSON step in
+    // this codebase runs on.
+    //
+    // One thing to watch when picking the model: a reasoning model can spend the whole budget
+    // thinking and return nothing. That now surfaces as a named error instead of a silent null,
+    // and the model picker marks which models reason.
+    if (creds?.provider && creds.apiKey) {
+      const r = await fetchLLMDetailed(
+        prompt, creds.provider, creds.apiKey, 8000, creds.model || undefined, creds.baseUrl, 0.2,
+      );
+      if (!r.text) {
+        console.error("[GEO] analysis failed:", r.error ?? "no text");
+        return null;
+      }
+      return extractJson(r.text);
+    }
     if (engine === "kie") {
       // kie.ai publishes no /models listing and exposes a single documented id, so there is
       // nothing to pick from and nothing to rank — the shared provider default is the answer.
@@ -585,6 +630,12 @@ export async function runGeoAudit(params: {
    * see, could not change, and which will eventually be retired out from under them.
    */
   analysisModel?: string;
+  /**
+   * Full stage-2 credentials, when the caller has them. Optional and additive: a client that
+   * sends only `analysisModel` — or nothing — keeps the previous behaviour exactly, which
+   * matters because this runs detached in the background for live users.
+   */
+  analysis?: GeoAnalysisCreds;
 }): Promise<GeoResult> {
   const query = String(params.query ?? "").trim();
   if (!query) return { ok: false, error: "no_query" };
@@ -602,7 +653,7 @@ export async function runGeoAudit(params: {
   }
 
   const analysisModel = String(params.analysisModel ?? "") || OPENAI_FALLBACK_CHEAP;
-  const analysis = await runAnalysis(trace, query, language, country, analysisModel, apiKey, engine);
+  const analysis = await runAnalysis(trace, query, language, country, analysisModel, apiKey, engine, params.analysis);
   const report = assembleReport({ query, language, country, model, trace, analysis });
   return { ok: true, data: report };
 }

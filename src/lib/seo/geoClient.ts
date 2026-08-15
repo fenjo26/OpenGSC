@@ -62,7 +62,20 @@ export function setGeoModel(m: string) {
   if (typeof window !== "undefined") localStorage.setItem(GEO_MODEL_KEY, m);
 }
 
-export async function startGeoAudit(payload: { query: string; language: string; country: string; model: string; apiKey: string; engine?: GeoEngineChoice; analysisModel?: string }): Promise<{ id?: string; error?: string }> {
+export async function startGeoAudit(payload: {
+  query: string; language: string; country: string; model: string; apiKey: string;
+  engine?: GeoEngineChoice;
+  analysisModel?: string;
+  /**
+   * Stage-2 provider, key and model from the `utility` task setting.
+   *
+   * `apiKey` is the GEO engine's (OpenAI or kie.ai) and pays for the web search; this pays for
+   * the structured pass that reads the trace afterwards. Two keys in one payload looks odd until
+   * you notice the two stages need different things: only the first needs a hosted web_search
+   * tool, and only the second is worth economising on.
+   */
+  analysis?: { provider: string; apiKey: string; model?: string; baseUrl?: string };
+}): Promise<{ id?: string; error?: string }> {
   try {
     const res = await fetch("/api/seo/geo", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),

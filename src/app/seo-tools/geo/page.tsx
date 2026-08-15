@@ -104,11 +104,32 @@ export default function GeoAuditPage() {
     setReport(null);
     setStage(t("geoStageSearching"));
 
-    // Stage 1 (search) uses the model picked above; stage 2 (structured pass over the trace)
-    // runs on the `utility` task, so a user who has chosen a cheap model for mechanical work
-    // gets it here instead of an id frozen into the server.
-    const analysisModel = getTaskCreds("utility").model || undefined;
-    const { id, error } = await startGeoAudit({ query: q, language, country, model, apiKey, engine, analysisModel });
+    // Stage 1 (search) uses the model picked above and must stay on a provider that hosts a
+    // `web_search` tool — OpenAI or kie.ai. Stage 2 only reads the resulting trace and writes
+    // JSON, so it runs on the `utility` task like every other mechanical pass in the app: the
+    // user's provider, the user's key, the user's model.
+    //
+    // Sending the whole cred set rather than just the model is what actually makes that true.
+    // Before, only the model id travelled, so choosing a `utility` provider other than the
+    // searching one asked OpenAI for a model id belonging to somebody else — the settings screen
+    // said one thing and the request did another.
+    const util = getTaskCreds("utility");
+    const analysis = util.provider && util.apiKey
+      ? { provider: util.provider, apiKey: util.apiKey, model: util.model || undefined, baseUrl: util.baseUrl }
+      : undefined;
+    // `analysisModel` is the legacy field and only reaches the searching provider, so it may only
+    // carry a model id that provider owns. Sending it unconditionally is what broke this before:
+    // a user whose SEO provider is Z.AI had `glm-5.2` posted to api.openai.com, which 404s — and
+    // a failed analysis is not an error here, it silently assembles a report with the whole
+    // qualitative half empty. Omitted when the utility provider is someone else, so the server
+    // falls back to its own cheap default instead of an id from the wrong vendor.
+    const engineProvider = engine === "kie" ? "kie" : "openai";
+    const legacyModel = util.provider === engineProvider ? (util.model || undefined) : undefined;
+    const { id, error } = await startGeoAudit({
+      query: q, language, country, model, apiKey, engine,
+      analysisModel: legacyModel,
+      analysis,
+    });
     if (error || !id) { setRunning(false); setErr(error || "audit_failed"); return; }
 
     // Poll until done.
