@@ -1203,12 +1203,15 @@ function AIProviderCard({ provider }: { provider: typeof AI_PROVIDERS[number] })
   const [models, setModels] = useState<{ id: string; label: string }[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsErr, setModelsErr] = useState(false);
+  // Only rendered for zai; "" means the general API endpoint (the default in lib/llm.ts).
+  const [endpoint, setEndpoint] = useState("");
   const isConfigured = key.trim().length > 6;
 
   useEffect(() => {
     setKey(localStorage.getItem(storageKey) || "");
     setModel(localStorage.getItem(modelKey) || "");
-  }, [storageKey, modelKey]);
+    setEndpoint(localStorage.getItem(`aiBaseUrl_${provider.id}`) || "");
+  }, [storageKey, modelKey, provider.id]);
 
   // Live model list from the provider's own API (server-side proxy avoids CORS).
   const loadModels = async (apiKey: string) => {
@@ -1356,6 +1359,31 @@ function AIProviderCard({ provider }: { provider: typeof AI_PROVIDERS[number] })
       )}
       {isConfigured && modelsErr && (
         <div style={{ fontSize: "11px", color: "#f87171", marginBottom: "8px" }}>{t("aiModelLoadFail")}</div>
+      )}
+
+      {/* Z.AI ships the same models behind two products on ONE account key, and the endpoint is
+          what decides which balance a request spends. Sending app traffic to the Coding Plan
+          endpoint burns that plan's 5-hour quota (and Z.AI limits the plan to supported coding
+          tools), while the general endpoint bills the pay-as-you-go balance. Nothing in the key
+          itself reveals the choice, so it has to be made here. */}
+      {provider.id === "zai" && (
+        <div style={{ marginBottom: "10px" }}>
+          <select
+            value={endpoint}
+            onChange={e => {
+              const v = e.target.value;
+              setEndpoint(v);
+              if (v) localStorage.setItem("aiBaseUrl_zai", v); else localStorage.removeItem("aiBaseUrl_zai");
+            }}
+            style={{ width: "100%", padding: "7px 10px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-bg)", color: "var(--color-text-primary)", fontSize: "12px" }}
+          >
+            <option value="">{t("zaiEndpointGeneral" as never)}</option>
+            <option value="https://api.z.ai/api/anthropic">{t("zaiEndpointCoding" as never)}</option>
+          </select>
+          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "5px", lineHeight: 1.5 }}>
+            {t("zaiEndpointHint" as never)}
+          </div>
+        </div>
       )}
 
       {/* Hint + link */}

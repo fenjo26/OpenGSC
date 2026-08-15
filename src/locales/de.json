@@ -3326,5 +3326,8 @@
   "trafficVisitsLabel": "Besuche/Mon.",
   "trafficAsOf": "geprüft",
   "trafficPeriod": "Monat",
-  "trafficGenAiTitle": "Anteil der Besuche aus KI-Assistenten — die andere Hälfte des AI-Visibility-Tabs"
+  "trafficGenAiTitle": "Anteil der Besuche aus KI-Assistenten — die andere Hälfte des AI-Visibility-Tabs",
+  "zaiEndpointGeneral": "Allgemeine API (api.z.ai/api/paas/v4) — belastet das API-Guthaben",
+  "zaiEndpointCoding": "GLM Coding Plan (api.z.ai/api/anthropic) — belastet das Tarifkontingent",
+  "zaiEndpointHint": "Ein Konto-Key, aber der Endpunkt entscheidet, welches Guthaben belastet wird. Der Coding Plan ist für unterstützte Coding-Tools gedacht und hat ein 5-Stunden-Kontingent, an das Massengenerierung stößt (429). Die allgemeine API belastet das separat aufzuladende API-Guthaben."
 }

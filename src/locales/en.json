@@ -3326,5 +3326,8 @@
   "trafficVisitsLabel": "visits/mo",
   "trafficAsOf": "checked",
   "trafficPeriod": "month",
-  "trafficGenAiTitle": "Share of visits arriving from AI assistants — the other half of the AI Visibility tab"
+  "trafficGenAiTitle": "Share of visits arriving from AI assistants — the other half of the AI Visibility tab",
+  "zaiEndpointGeneral": "General API (api.z.ai/api/paas/v4) — spends the API balance",
+  "zaiEndpointCoding": "GLM Coding Plan (api.z.ai/api/anthropic) — spends the plan quota",
+  "zaiEndpointHint": "One account key, but the endpoint decides which wallet a request draws on. The Coding Plan is meant for supported coding tools and has a 5-hour quota that bulk generation hits, returning 429. The general API bills the pay-as-you-go balance, topped up separately from the plan."
 }

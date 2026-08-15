@@ -3326,5 +3326,8 @@
   "trafficVisitsLabel": "次访问/月",
   "trafficAsOf": "检查于",
   "trafficPeriod": "月份",
-  "trafficGenAiTitle": "来自 AI 助手的访问占比——AI Visibility 标签页的另一半答案"
+  "trafficGenAiTitle": "来自 AI 助手的访问占比——AI Visibility 标签页的另一半答案",
+  "zaiEndpointGeneral": "通用 API (api.z.ai/api/paas/v4) — 扣除 API 余额",
+  "zaiEndpointCoding": "GLM Coding Plan (api.z.ai/api/anthropic) — 扣除套餐配额",
+  "zaiEndpointHint": "账号只有一个密钥，但端点决定这笔请求从哪个钱包扣费。Coding Plan 面向受支持的编程工具，并有 5 小时配额，批量生成会撞上它并返回 429。通用 API 从按量付费余额扣费，该余额需与套餐分开充值。"
 }

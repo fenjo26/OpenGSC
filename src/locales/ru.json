@@ -3326,5 +3326,8 @@
   "trafficVisitsLabel": "визитов/мес",
   "trafficAsOf": "проверено",
   "trafficPeriod": "месяц",
-  "trafficGenAiTitle": "Доля визитов из AI-ассистентов — вторая половина вкладки AI Visibility"
+  "trafficGenAiTitle": "Доля визитов из AI-ассистентов — вторая половина вкладки AI Visibility",
+  "zaiEndpointGeneral": "Обычный API (api.z.ai/api/paas/v4) — списывает баланс API",
+  "zaiEndpointCoding": "GLM Coding Plan (api.z.ai/api/anthropic) — списывает квоту тарифа",
+  "zaiEndpointHint": "Ключ у аккаунта один, а вот эндпоинт решает, из какого кошелька спишется запрос. Coding Plan рассчитан на поддерживаемые кодинг-инструменты и имеет 5-часовую квоту: массовая генерация упирается в неё и возвращает 429. Обычный API берёт деньги с баланса API, который пополняется отдельно от тарифа."
 }
