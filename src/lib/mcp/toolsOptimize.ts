@@ -18,6 +18,8 @@
 // confirm: true, and run on the key in User.seoSettings.
 
 import { prisma } from "@/lib/prisma";
+import { rawQuery } from "@/lib/db/raw";
+import { runUpsert } from "@/lib/db/upsert";
 import {
   McpTool, lim, pct, r1, sinceDate, resolveSite, siteArg,
   resolveAiCreds, resolveSerpCreds, resolveActivePolicy, taskForJobType, assertConfirmed, confirmArg, parseJson,
@@ -29,6 +31,7 @@ import { factDrift, driftSeverity } from "@/lib/seo/factDrift";
 import { uniquenessPct, wordCount } from "@/lib/seo/textMetrics";
 import { genByType } from "@/lib/seo/generate";
 import { failStaleSeoJobs, withSeoJobHeartbeat } from "@/lib/jobs/lifecycle";
+import { coerceOutline } from "./outlineShape";
 
 const jobs = () => (prisma as any).seoJob;
 
@@ -44,6 +47,69 @@ function urlMatches(stored: string, wanted: string): boolean {
 const CTR_BENCHMARKS: Record<number, number> = {
   1: 27.6, 2: 15.8, 3: 11.0, 4: 8.4, 5: 6.3, 6: 4.9, 7: 3.9, 8: 3.3, 9: 2.7, 10: 2.4,
 };
+
+// ─── outline resolution for text jobs ────────────────────────────────────────────
+// Everything below makes the wrong outline shape impossible to hand over silently; the shape
+// logic itself (what counts as an outline) lives in outlineShape.ts, pure and unit-tested.
+
+// outlineId → outline. Two stores, in the order an agent will reach for them: SeoHistory
+// (what get_generations lists — the same records the browser's structure picker syncs from),
+// then a completed outline/outline_auto SeoJob — so the jobId the agent just polled works as
+// the outlineId of the follow-up text job with zero extra calls.
+async function fetchSavedOutline(userId: string, outlineId: string): Promise<{ outline: any; keyword: string } | null> {
+  const id = outlineId.trim();
+  if (!id) return null;
+  try {
+    const rows: any[] = await rawQuery(
+      `SELECT keyword, data FROM "SeoHistory" WHERE id = ? AND userId = ?`, id, userId);
+    if (rows.length) {
+      const outline = coerceOutline(parseJson(rows[0].data));
+      if (outline) return { outline, keyword: String(rows[0].keyword ?? "") };
+    }
+  } catch { /* table not migrated → try the job row */ }
+  try {
+    const job = await jobs().findFirst({
+      where: { id, userId, status: "completed", type: { in: ["outline", "outline_auto"] } },
+    });
+    if (job) {
+      const outline = coerceOutline(parseJson(job.result));
+      if (outline) return { outline, keyword: String(job.keyword ?? "") };
+    }
+  } catch { /* not migrated either → caller reports the miss */ }
+  return null;
+}
+
+// ─── completed jobs → the shared History store ───────────────────────────────────
+// The browser imports finished jobs into localStorage History (and backs it up to SeoHistory,
+// which get_generations reads and the structure picker syncs from). MCP-started jobs used to
+// stop at the SeoJob row, so an outline an agent generated was invisible to the UI and to
+// get_generations — two stores, no bridge. This is the bridge, with importJob's exact
+// type/data mapping so both sides file the job identically.
+const HISTORY_TYPE: Record<string, string> = {
+  outline: "outline", outline_auto: "outline", text: "text",
+  analysis: "analysis", landing: "landing", cluster: "cluster",
+};
+async function saveJobToHistory(userId: string, job: any, result: unknown): Promise<void> {
+  const htype = HISTORY_TYPE[String(job.type)];
+  if (!htype || result == null) return;
+  const data = job.type === "text" ? ((result as any)?.text ?? result) : result;
+  try {
+    await runUpsert({
+      table: "SeoHistory",
+      conflict: ["id"],
+      values: {
+        id: job.id, userId, type: htype, keyword: job.keyword || "—",
+        status: "completed", data: JSON.stringify(data),
+        meta: JSON.stringify({ jobId: job.id }),
+        createdAt: new Date(job.createdAt ?? Date.now()).toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      // id never drifts, and createdAt keeps the original moment. The browser adopts this row
+      // through its history sync (missing ids merge in), so its later pushes refresh the copy.
+      update: { data: "set", meta: "set", status: "set", keyword: "set", updatedAt: "set" },
+    });
+  } catch { /* SeoHistory not migrated — the SeoJob row still carries the result */ }
+}
 
 export const OPTIMIZE_TOOLS: McpTool[] = [
   {
@@ -368,14 +434,25 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
     name: "start_generation_job",
     cost: "paid",
     description:
-      "PAID — spends the instance owner's own AI credits and needs confirm: true. Starts a background SEO Tools generation job and returns its id immediately; the pipeline runs for minutes (competitor scrape, MAP/REDUCE fact grounding, fact-scrub, chunked writing, volume guard), far longer than a tool call can wait. Poll get_generation_job for the result. Types: outline, outline_auto, text (needs the outline from a finished outline job), analysis, landing, cluster. Use this only when the user wants the app's full pipeline — for a straightforward rewrite, get_optimization_brief and your own writing is free.",
+      "PAID — spends the instance owner's own AI credits and needs confirm: true. Starts a background SEO Tools generation job and returns its id immediately; the pipeline runs for minutes (competitor scrape, MAP/REDUCE fact grounding, fact-scrub, chunked writing, volume guard), far longer than a tool call can wait. Poll get_generation_job for the result. Types: outline, outline_auto (SERP→scrape→outline in one unattended step), text (writes the article FROM an outline), analysis, landing, cluster. Completed results are saved to SEO Tools → History, so finished outlines appear in the UI Text generator's structure picker and in get_generations. Recommended article flow: outline job → text job with outlineId set to that jobId — the server loads the outline itself, with its facts bank, keyword and language. Top-level arguments mirror the UI forms (language, country, tone, sourceMode, promptType+custom, includeToc, targetWordCount, temperature, bannedWords); anything else the /seo-tools pages post (competitors, gl/hl, generate) goes in payload. Use this only when the user wants the app's full pipeline — for a straightforward rewrite, get_optimization_brief and your own writing is free.",
     inputSchema: {
       type: "object",
       properties: {
         confirm: confirmArg,
         type: { type: "string", enum: ["outline", "outline_auto", "text", "analysis", "landing", "cluster"], description: "Which pipeline to run" },
-        keyword: { type: "string", description: "The target keyword (required for outline/analysis/cluster)" },
-        payload: { type: "object", description: "Pipeline payload, the same shape the /seo-tools UI posts — e.g. { keyword, language, wordCount, country } for outline, or { outline } for text" },
+        keyword: { type: "string", description: "The target keyword (required for outline/outline_auto/analysis/cluster; for text it defaults to the outline's own keyword)" },
+        outlineId: { type: "string", description: "type=text: the structure to write from — the jobId of a finished outline/outline_auto job, or an id from get_generations. This is the server-side equivalent of the UI's structure picker; use it instead of passing the outline object around." },
+        language: { type: "string", description: "Language code, e.g. en, ru, el, fr. Outline jobs default to en; text jobs inherit the outline's own language when omitted." },
+        country: { type: "string", description: "Two-letter market code for outline/landing/cluster (default us) — drives SERP geo and the outline's country meta." },
+        tone: { type: "string", description: "Free-text tone hint, e.g. 'expert, friendly, no hype' (the UI maps its tone dropdown to the same kind of string)." },
+        promptType: { type: "string", enum: ["service", "custom"], description: "Service prompt (default) or a fully custom writing prompt — same radio as the UI Text generator." },
+        custom: { type: "string", description: "With promptType=custom: the whole writing prompt. With service: a short additional instruction appended to it (the UI's 'custom instruction' box)." },
+        sourceMode: { type: "string", enum: ["off", "facts", "cited"], description: "Competitor sourcing for the article (UI default off). off still grounds the text on the facts bank the outline was built on; facts/cited additionally scrape live SERP competitors — slower." },
+        includeToc: { type: "boolean", description: "Insert a table-of-contents block after H1 (default false)." },
+        targetWordCount: { type: "number", description: "Target article length in words — sets outline section budgets and drives the volume guard." },
+        temperature: { type: "number", description: "Sampling temperature; omit for the provider default. The outline phase caps it at 0.8 (JSON reliability)." },
+        bannedWords: { type: "array", items: { type: "string" }, description: "Words the model must not use — the AI-Fingerprint Lab's marker export goes here." },
+        payload: { type: "object", description: "Pipeline payload, the same shape the /seo-tools UI posts — e.g. { competitors, paa, related } for outline, { gl, hl, keywords } for cluster, { generate } for landing. The common knobs above are top-level arguments; payload wins when both are given." },
         policyName: { type: "string", description: "Editorial policy to write under, by name. Omit to use the instance's active policy — it is applied either way." },
       },
       required: ["confirm", "type"],
@@ -405,8 +482,40 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
       // payload as before.
       const policy = (args.payload as any)?.policy ?? (await resolveActivePolicy(userId, args));
 
-      const payload = { ...(args.payload as object ?? {}), ...creds, ...(serpCreds ?? {}), ...(policy ? { policy } : {}) };
-      const keyword = String(args.keyword ?? (payload as any).keyword ?? "").slice(0, 300);
+      // The Text page's form fields, hoisted to top-level args so an agent drives the same knobs
+      // the UI exposes. They land in the payload exactly as the browser posts them, and an
+      // explicit payload field still wins.
+      const knobs: Record<string, unknown> = {};
+      for (const k of ["language", "country", "tone", "promptType", "custom", "sourceMode", "includeToc", "targetWordCount", "temperature", "bannedWords"]) {
+        if (args[k] !== undefined && args[k] !== null) knobs[k] = args[k];
+      }
+      const payload: any = { ...knobs, ...((args.payload as object) ?? {}), ...creds, ...(serpCreds ?? {}), ...(policy ? { policy } : {}) };
+
+      // type=text: resolve the outline exactly as the UI's structure picker does — by id, from
+      // the saved structures. Whatever outline the agent passed directly is unwrapped to the
+      // outline object; if nothing outline-shaped remains, refuse rather than let genText write
+      // a fluent article about nothing (that failure mode is invisible AND paid).
+      if (type === "text") {
+        const saved = args.outlineId ? await fetchSavedOutline(userId, String(args.outlineId)) : null;
+        if (args.outlineId && !saved) {
+          throw new Error(
+            `outlineId "${args.outlineId}" matched no saved structure and no completed outline job. ` +
+            `Call get_generations with type=outline to list what exists, or run an outline job first.`,
+          );
+        }
+        const outline = saved ? saved.outline : coerceOutline(payload.outline);
+        if (!outline) {
+          throw new Error(
+            "A text job needs the outline itself, and nothing outline-shaped (an object with .sections) was found in outlineId or payload.outline. " +
+            "Pass outlineId — the jobId of the finished outline job, or an id from get_generations — and the server loads it with its facts bank, keyword and language.",
+          );
+        }
+        payload.outline = outline;
+        payload.keyword = String(payload.keyword ?? saved?.keyword ?? outline?.meta?.keyword ?? "");
+        payload.language = String(payload.language ?? outline?.meta?.language ?? "en");
+      }
+
+      const keyword = String(args.keyword ?? payload.keyword ?? "").slice(0, 300);
       let job: any;
       try {
         job = await jobs().create({
@@ -430,6 +539,11 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
               ? { status: "completed", stage: "completed", progress: 100, heartbeatAt: new Date(), result: JSON.stringify(r.data) }
               : { status: "error", stage: "error", heartbeatAt: new Date(), error: r.error },
           });
+          // The UI's History imports finished jobs and backs them up to SeoHistory; an
+          // agent-started job has no browser to do that, so the server files it itself.
+          // This is what makes a finished outline selectable in the Text generator's
+          // structure picker and listed by get_generations.
+          if (r.ok) await saveJobToHistory(userId, job, r.data);
         })
         .catch(async (e: any) => {
           try {
@@ -445,7 +559,9 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
         type,
         keyword,
         status: "processing",
-        next: "Poll get_generation_job with this jobId. Outlines usually take 1–3 minutes, full articles 3–10. Do not start another job for the same keyword while this one runs.",
+        next: type === "outline" || type === "outline_auto"
+          ? `Poll get_generation_job with this jobId. Outlines take 2–8 minutes (SERP scrape + fact grounding). When it completes the outline is saved as a structure — pass this same jobId as outlineId to the text job, no need to copy the outline around.`
+          : "Poll get_generation_job with this jobId. Full articles take 3–10 minutes. Do not start another job for the same keyword while this one runs.",
       };
     },
   },

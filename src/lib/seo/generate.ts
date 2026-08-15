@@ -423,6 +423,9 @@ export async function genOutline(b: any): Promise<GenResult> {
   const meta = ((outline as any).meta ||= {});
   meta.country = String(b.country ?? "us");
   meta.language = String(b.language ?? "en");
+  // Self-describing outline: genText and every later consumer fall back to this when no
+  // keyword was passed alongside (the UI posts keyword + outline as separate fields).
+  meta.keyword = keyword;
   if (b.narration === "first" || b.narration === "third") meta.narration = b.narration;
   if (b.structureRules && String(b.structureRules).trim()) meta.structureRules = String(b.structureRules).trim();
   // EXPAND pass (default on): if the outline is flat (most H2s have <2 child H3s — typical
@@ -858,6 +861,10 @@ export async function genText(b: any): Promise<GenResult> {
   if (!apiKey) return { ok: false, error: "no_ai_key" };
 
   const keyword = String(b.keyword ?? b.outline?.meta?.keyword ?? "");
+  // Language falls back to the outline's OWN stamped language (genOutline writes it into meta),
+  // not to a hard-coded one: a Greek outline that reaches genText without an explicit language
+  // must not be instructed to write Russian. Callers that pass a language always win.
+  const language = String(b.language ?? b.outline?.meta?.language ?? "en");
   const sourceMode = (b.sourceMode === "facts" || b.sourceMode === "cited") ? b.sourceMode : "off";
 
   let sources: { title: string; snippet: string; url: string; domain: string }[] = [];
@@ -975,7 +982,7 @@ export async function genText(b: any): Promise<GenResult> {
     try {
       text = await writeTextInChunks(slimOutline, {
         keyword: keyword || String(slimOutline.meta?.keyword ?? ""),
-        language: String(b.language ?? "ru"), tone: String(b.tone ?? "neutral, expert"),
+        language, tone: String(b.tone ?? "neutral, expert"),
         provider, apiKey, model, baseUrl,
         ragFacts, sources, sourceMode: effMode, includeToc: b.includeToc === true,
         temperature: b.temperature === undefined || b.temperature === null ? undefined : Number(b.temperature),
@@ -989,7 +996,7 @@ export async function genText(b: any): Promise<GenResult> {
       outlineJson: slimOutline,
       policy: b.policy,
       tone: String(b.tone ?? "neutral, expert"),
-      language: String(b.language ?? "ru"),
+      language,
       custom: b.custom ? String(b.custom) : undefined,
       promptType: b.promptType === "custom" ? "custom" : "service",
       sources,
@@ -1018,7 +1025,7 @@ export async function genText(b: any): Promise<GenResult> {
   let redacted = 0;
   if (b.hardRedact) { const r = redactBannedWords(text, banned); text = r.text; redacted = r.count; }
 
-  text = stripForeignScripts(text, String(b.language ?? "en"));
+  text = stripForeignScripts(text, language);
 
   // AUTO fact-clean: verify the finished article against the facts bank and fix contradictions /
   // fabrications / number mismatches in one pass — so the article ships clean (fact-check then just
@@ -1032,13 +1039,13 @@ export async function genText(b: any): Promise<GenResult> {
   if (b.autoFactCheck !== false && bank.length && text) {
     try {
       const bankText = bank.map((x: any, i: number) => `[${i + 1}]${x.official ? " (ОФИЦИАЛЬНЫЙ)" : ""} ${x.domain || x.source}\n${x.facts}`).join("\n\n");
-      let cleaned = await fetchLLM(buildAutoFactCleanPrompt({ article: text, factsBank: bankText, language: String(b.language ?? "en") }), provider, apiKey, 12000, model, baseUrl);
+      let cleaned = await fetchLLM(buildAutoFactCleanPrompt({ article: text, factsBank: bankText, language }), provider, apiKey, 12000, model, baseUrl);
       if (cleaned && cleaned.trim().length > text.length * 0.85) {
         cleaned = cleaned.trim().replace(/^```(?:markdown|md)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
         // Structure invariant: every heading (H2+H3, incl. FAQ questions) must survive.
         const heads = (s: string) => (s.match(/^#{2,3}\s/gm) || []).length;
         if (heads(cleaned) === heads(text)) {
-          text = stripForeignScripts(cleaned, String(b.language ?? "en"));
+          text = stripForeignScripts(cleaned, language);
           autoCleaned = true;
         }
       }
@@ -1049,14 +1056,14 @@ export async function genText(b: any): Promise<GenResult> {
   // fact-clean, so it's the final word on article length. Off with expandText:false.
   const finalTargetWc = Number(b.targetWordCount) || Number(slimOutline.meta?.target_word_count) || 0;
   if (b.expandText !== false && finalTargetWc >= 500) {
-    text = await enforceVolumeTarget(text, finalTargetWc, { language: String(b.language ?? "en"), provider, apiKey, model, baseUrl });
+    text = await enforceVolumeTarget(text, finalTargetWc, { language, provider, apiKey, model, baseUrl });
   }
 
   // Guarantee the SEO meta block is present (deterministic — don't trust the model to emit it).
   text = ensureMetaBlock(text, b.outline?.meta);
   // Guarantee the TOC label matches the article's language (deterministic — the writer, or any
   // later expand/trim/fact-clean pass, could otherwise leave/reintroduce a wrong-language word).
-  text = ensureTocLabel(text, String(b.language ?? "en"));
+  text = ensureTocLabel(text, language);
 
   return { ok: true, data: { text, usedSources: sources.length, redacted, autoCleaned } };
 }

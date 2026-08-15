@@ -195,7 +195,7 @@ create new data, and it is the one that costs money.
 | `get_generations` | local | The SEO Tools history — what has already been written, so you extend instead of duplicating |
 | `get_generation_job` | local | Poll a background generation job |
 | `start_rewrite_job` | **paid** | The app's own Content Rewriter over up to 20 pages, in the background; each page saved as it finishes |
-| `start_generation_job` | **paid** | The full outline/article pipeline as a background job |
+| `start_generation_job` | **paid** | The full outline/article pipeline as a background job. Finished results land in SEO Tools → History, so agent-generated outlines show up in the UI's structure picker and in `get_generations` |
 
 ### Live Google calls (quota)
 
@@ -257,6 +257,16 @@ agent's prose — its editorial policy, its banned-word list from the AI-Fingerp
 Casino RAG grounding. It takes up to 20 URLs and works through them in the background;
 `start_generation_job` (paid) runs the full outline/article pipeline the same way. Both
 return a job id immediately and are polled with `get_generation_job`.
+
+For articles, drive `start_generation_job` the way the UI does: an `outline` (or
+`outline_auto`) job first, then a `text` job with `outlineId` set to that job's id — the
+server loads the outline itself, with its facts bank, keyword and language, exactly like the
+Text generator's structure picker. Passing a raw outline in `payload.outline` also works
+(wrapped shapes from `get_generations`/`get_generation_job` are unwrapped), but anything
+without `.sections` is rejected instead of silently writing an article from an empty prompt.
+The text step's form fields — `language`, `tone`, `sourceMode`, `promptType` + `custom`,
+`includeToc`, `targetWordCount`, `temperature`, `bannedWords` — are top-level arguments with
+the UI's defaults.
 
 ### Why the paid tools never return text directly
 
