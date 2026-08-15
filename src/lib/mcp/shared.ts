@@ -250,6 +250,56 @@ export async function resolveSerpCreds(userId: string, args: Json = {}): Promise
   return { serpProvider: provider, serpKey: key };
 }
 
+export interface KeywordSourceCreds {
+  source: "ahrefs" | "semrush" | "dataforseo";
+  apiKey: string;
+  baseUrl?: string;
+  /** How many ideas one expansion may ask for — the ceiling on what it can cost. */
+  limit: number;
+  /** Monthly unit cap from Settings → SEO Metrics; 0 means no cap (same convention as withinCap). */
+  cap: number;
+}
+
+/**
+ * Server-side mirror of `getKeywordSource()` (lib/seo/keys.ts) — the keyword provider the
+ * Outline page's "load keywords" step uses. The browser reads localStorage; everything it
+ * reads is mirrored into User.seoSettings by SeoKeysSync under the same names, so this walks
+ * the same Ahrefs → Semrush → DataForSEO chain over the same keys: reseller mode suffix
+ * (`seoKey_<p>__reseller`), custom host (`seoMetricsBaseUrl_<p>`) and the idea limit
+ * (`seoKwLimit`, clamped exactly like the UI clamps it).
+ *
+ * Returns null when nothing is configured — callers should say "configure it in Settings →
+ * SEO Metrics", not silently skip the keyword grounding the user asked for.
+ */
+export async function resolveKeywordSource(userId: string): Promise<KeywordSourceCreds | null> {
+  const s = await getUserSettings(userId);
+  const setting = ["ahrefs", "semrush", "dataforseo", "off"].includes(String(s.seoKwSource))
+    ? String(s.seoKwSource) : "auto";
+  if (setting === "off") return null;
+  const limitRaw = parseInt(String(s.seoKwLimit ?? "100"), 10);
+  const limit = Number.isFinite(limitRaw) ? Math.max(50, Math.min(200, limitRaw)) : 100;
+  const candidates = setting === "auto" ? ["ahrefs", "semrush", "dataforseo"] : [setting];
+  for (const c of candidates) {
+    if (c === "dataforseo") {
+      const k = String(s.seoKey_dataforseo ?? "").trim();
+      if (k) return { source: "dataforseo", apiKey: k, limit, cap: 0 };
+      continue;
+    }
+    const mode = String(s[`seoMetricsMode_${c}`] ?? "");
+    const k = String(s[`seoKey_${c}__${mode}`] || s[`seoKey_${c}`] || "").trim();
+    if (k.length > 4) {
+      return {
+        source: c as "ahrefs" | "semrush",
+        apiKey: k,
+        baseUrl: String(s[`seoMetricsBaseUrl_${c}`] ?? "").trim() || undefined,
+        limit,
+        cap: Number(s[`seoMetricsCap_${c}`] ?? 0) || 0,
+      };
+    }
+  }
+  return null;
+}
+
 /**
  * Gate for every tool that spends the user's money.
  *

@@ -22,8 +22,11 @@ import { rawQuery } from "@/lib/db/raw";
 import { runUpsert } from "@/lib/db/upsert";
 import {
   McpTool, lim, pct, r1, sinceDate, resolveSite, siteArg,
-  resolveAiCreds, resolveSerpCreds, resolveActivePolicy, taskForJobType, assertConfirmed, confirmArg, parseJson,
+  resolveAiCreds, resolveSerpCreds, resolveKeywordSource, resolveActivePolicy, taskForJobType, assertConfirmed, confirmArg, parseJson,
 } from "./shared";
+import { expandKeywords } from "@/lib/seo/keywordSource";
+import { priceExpand } from "@/lib/seo/metrics";
+import { readUsage, recordUsage, withinCap, releaseUnusedUnits } from "@/lib/seo/metricsStore";
 import { scrapePage } from "@/lib/seo/scrape";
 import { maskAIPatterns, headingCounts } from "@/lib/seo/rewrite";
 import { runRewriteBatch } from "@/lib/seo/rewriteBatch";
@@ -434,14 +437,23 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
     name: "start_generation_job",
     cost: "paid",
     description:
-      "PAID — spends the instance owner's own AI credits and needs confirm: true. Starts a background SEO Tools generation job and returns its id immediately; the pipeline runs for minutes (competitor scrape, MAP/REDUCE fact grounding, fact-scrub, chunked writing, volume guard), far longer than a tool call can wait. Poll get_generation_job for the result. Types: outline, outline_auto (SERP→scrape→outline in one unattended step), text (writes the article FROM an outline), analysis, landing, cluster. Completed results are saved to SEO Tools → History, so finished outlines appear in the UI Text generator's structure picker and in get_generations. Recommended article flow: outline job → text job with outlineId set to that jobId — the server loads the outline itself, with its facts bank, keyword and language. Top-level arguments mirror the UI forms (language, country, tone, sourceMode, promptType+custom, includeToc, targetWordCount, temperature, bannedWords); anything else the /seo-tools pages post (competitors, gl/hl, generate) goes in payload. Use this only when the user wants the app's full pipeline — for a straightforward rewrite, get_optimization_brief and your own writing is free.",
+      "PAID — spends the instance owner's own AI credits and needs confirm: true. Starts a background SEO Tools generation job and returns its id immediately; the pipeline runs for minutes (competitor scrape, MAP/REDUCE fact grounding, fact-scrub, chunked writing, volume guard), far longer than a tool call can wait. Poll get_generation_job for the result. Types: outline, outline_auto (SERP→scrape→outline in one unattended step), text (writes the article FROM an outline), analysis, landing, cluster. Completed results are saved to SEO Tools → History, so finished outlines appear in the UI Text generator's structure picker and in get_generations. HOW TO WRITE AN ARTICLE (same clicks as the UI): 1) start_generation_job type=outline with the keyword, country, language and keywordIdeas:{} — that last one is the UI's 'load keywords' button: real ideas with volumes from the user's Ahrefs/Semrush/DataForSEO key, billed against the same monthly cap; 2) poll get_generation_job until completed; 3) start_generation_job type=text with outlineId set to that jobId — the server loads the outline itself, with its facts bank, keyword and language. The text step's form fields (language, tone, sourceMode, promptType+custom, includeToc, targetWordCount, temperature, bannedWords) are top-level arguments with the UI's defaults; anything else the /seo-tools pages post (competitors, gl/hl, generate) goes in payload. For a straightforward rewrite, get_optimization_brief and your own writing is free.",
     inputSchema: {
       type: "object",
       properties: {
         confirm: confirmArg,
         type: { type: "string", enum: ["outline", "outline_auto", "text", "analysis", "landing", "cluster"], description: "Which pipeline to run" },
-        keyword: { type: "string", description: "The target keyword (required for outline/outline_auto/analysis/cluster; for text it defaults to the outline's own keyword)" },
+        keyword: { type: "string", description: "The target keyword — top-level, exactly like the UI's keyword field (required for outline/outline_auto/analysis/cluster; for text it defaults to the outline's own keyword)" },
         outlineId: { type: "string", description: "type=text: the structure to write from — the jobId of a finished outline/outline_auto job, or an id from get_generations. This is the server-side equivalent of the UI's structure picker; use it instead of passing the outline object around." },
+        keywordIdeas: {
+          type: "object",
+          description: "outline/outline_auto/landing only — the UI's 'load keywords' step: fetch real keyword ideas with volumes from the instance's configured provider (Ahrefs/Semrush/DataForSEO, official or reseller) and ground the outline on them. Spends provider units against the same monthly cap as the UI button. Pass {} for the Settings defaults, or { limit: 50-200, withDifficulty: boolean, mode: 'matching'|'related' }. Requires country — the market is never guessed.",
+          properties: {
+            limit: { type: "number", description: "Max ideas to request — the ceiling on what this can cost (50–200, default from Settings)" },
+            withDifficulty: { type: "boolean", description: "Also fetch keyword difficulty (costs more units on Ahrefs)" },
+            mode: { type: "string", enum: ["matching", "related"], description: "matching = keywords containing the seed; related = semantic neighbours (default matching)" },
+          },
+        },
         language: { type: "string", description: "Language code, e.g. en, ru, el, fr. Outline jobs default to en; text jobs inherit the outline's own language when omitted." },
         country: { type: "string", description: "Two-letter market code for outline/landing/cluster (default us) — drives SERP geo and the outline's country meta." },
         tone: { type: "string", description: "Free-text tone hint, e.g. 'expert, friendly, no hype' (the UI maps its tone dropdown to the same kind of string)." },
@@ -484,12 +496,56 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
 
       // The Text page's form fields, hoisted to top-level args so an agent drives the same knobs
       // the UI exposes. They land in the payload exactly as the browser posts them, and an
-      // explicit payload field still wins.
+      // explicit payload field still wins. `keyword` belongs here too: the schema always
+      // documented it as a top-level argument, but it was only ever written to the job ROW —
+      // the pipeline read payload.keyword, so an agent following the docs got `no_keyword`
+      // unless it ALSO nested the keyword inside payload.
       const knobs: Record<string, unknown> = {};
-      for (const k of ["language", "country", "tone", "promptType", "custom", "sourceMode", "includeToc", "targetWordCount", "temperature", "bannedWords"]) {
+      for (const k of ["keyword", "language", "country", "tone", "promptType", "custom", "sourceMode", "includeToc", "targetWordCount", "temperature", "bannedWords"]) {
         if (args[k] !== undefined && args[k] !== null) knobs[k] = args[k];
       }
       const payload: any = { ...knobs, ...((args.payload as object) ?? {}), ...creds, ...(serpCreds ?? {}), ...(policy ? { policy } : {}) };
+
+      // The Outline page's "load keywords" step, server-side: pull real ideas with volumes
+      // from the provider the user configured (Ahrefs/Semrush/DataForSEO, resolved the same
+      // way getKeywordSource() resolves it in the browser) and ground the outline on them —
+      // the exact fields the form posts (keywordsData + keywordsSource). Opt-in, and billed
+      // against the same monthly cap through the same metricsStore the UI button uses, so the
+      // agent path is not a second, unaccounted billing path.
+      if ((type === "outline" || type === "outline_auto" || type === "landing") && args.keywordIdeas) {
+        const opts: any = args.keywordIdeas === true ? {} : (args.keywordIdeas as object ?? {});
+        const seed = String(args.keyword ?? payload.keyword ?? "").trim();
+        const country = String(payload.country ?? "").trim().toLowerCase();
+        if (!seed) throw new Error("keywordIdeas needs the keyword — pass it as the top-level keyword argument.");
+        // The market is never defaulted (same rule as keywordSource.ts): ideas filed under the
+        // wrong country are cache rows nobody will ever read again.
+        if (!country) throw new Error("keywordIdeas needs a country — pass the top-level country argument (e.g. \"gr\", \"us\").");
+        const kw = await resolveKeywordSource(userId);
+        if (!kw) throw new Error("No keyword provider configured. The user sets one in Settings → SEO Metrics (Ahrefs/Semrush, official or reseller) or a DataForSEO key in SEO Tools settings.");
+        const limit = Math.max(50, Math.min(200, Number(opts.limit ?? kw.limit) || kw.limit));
+        const withDifficulty = opts.withDifficulty === true;
+        const mode = opts.mode === "related" ? "related" as const : "matching" as const;
+        const price = priceExpand(kw.source, limit, withDifficulty, mode);
+        if (price.units && !(await withinCap(userId, kw.source, price.units, kw.cap))) {
+          throw new Error(`Monthly ${kw.source} cap would be exceeded (this call: ${price.units} units). Raise the cap in Settings → SEO Metrics or retry next month.`);
+        }
+        if (price.units) await recordUsage(userId, kw.source, price.units);
+        let res;
+        try {
+          res = await expandKeywords({ source: kw.source, apiKey: kw.apiKey, baseUrl: kw.baseUrl }, seed, {
+            country, language: String(payload.language ?? "en"), limit, withDifficulty, mode, fetch: true,
+          });
+        } catch (e: any) {
+          if (price.units) await releaseUnusedUnits(userId, kw.source, price.units, 0);
+          throw new Error(`Keyword ideas fetch failed: ${String(e?.message ?? e).slice(0, 300)}`);
+        }
+        // Ahrefs bills the rows returned, not the limit asked for — give the difference back,
+        // exactly as /api/seo/keyword-ideas does.
+        if (price.units) await releaseUnusedUnits(userId, kw.source, price.units, res.units || 0);
+        if (!res.rows.length) throw new Error(`Keyword ideas returned nothing${res.error ? `: ${res.error}` : ""}.`);
+        payload.keywordsData = res.rows;
+        payload.keywordsSource = res.source;
+      }
 
       // type=text: resolve the outline exactly as the UI's structure picker does — by id, from
       // the saved structures. Whatever outline the agent passed directly is unwrapped to the
@@ -561,7 +617,9 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
         status: "processing",
         next: type === "outline" || type === "outline_auto"
           ? `Poll get_generation_job with this jobId. Outlines take 2–8 minutes (SERP scrape + fact grounding). When it completes the outline is saved as a structure — pass this same jobId as outlineId to the text job, no need to copy the outline around.`
-          : "Poll get_generation_job with this jobId. Full articles take 3–10 minutes. Do not start another job for the same keyword while this one runs.",
+          : type === "text"
+            ? "Poll get_generation_job with this jobId. Full articles take 3–10 minutes; the result carries usedSources — 0 there means the article was NOT grounded on the outline's facts bank, re-check the outline. Do not start another job for the same keyword while this one runs."
+            : "Poll get_generation_job with this jobId. Do not start another job for the same keyword while this one runs.",
       };
     },
   },

@@ -259,14 +259,17 @@ Casino RAG grounding. It takes up to 20 URLs and works through them in the backg
 return a job id immediately and are polled with `get_generation_job`.
 
 For articles, drive `start_generation_job` the way the UI does: an `outline` (or
-`outline_auto`) job first, then a `text` job with `outlineId` set to that job's id — the
-server loads the outline itself, with its facts bank, keyword and language, exactly like the
-Text generator's structure picker. Passing a raw outline in `payload.outline` also works
-(wrapped shapes from `get_generations`/`get_generation_job` are unwrapped), but anything
-without `.sections` is rejected instead of silently writing an article from an empty prompt.
-The text step's form fields — `language`, `tone`, `sourceMode`, `promptType` + `custom`,
-`includeToc`, `targetWordCount`, `temperature`, `bannedWords` — are top-level arguments with
-the UI's defaults.
+`outline_auto`) job first — with `keyword`, `country`, `language` top-level, and
+`keywordIdeas: {}` to run the UI's "load keywords" step server-side (real ideas with
+volumes from the user's Ahrefs/Semrush/DataForSEO key, billed against the same monthly
+cap as the button) — then a `text` job with `outlineId` set to that job's id — the
+server loads the outline itself, with its facts bank, keyword and language, exactly like
+the Text generator's structure picker. Passing a raw outline in `payload.outline` also
+works (wrapped shapes from `get_generations`/`get_generation_job` are unwrapped), but
+anything without `.sections` is rejected instead of silently writing an article from an
+empty prompt. The text step's form fields — `language`, `tone`, `sourceMode`,
+`promptType` + `custom`, `includeToc`, `targetWordCount`, `temperature`, `bannedWords` —
+are top-level arguments with the UI's defaults.
 
 ### Why the paid tools never return text directly
 
