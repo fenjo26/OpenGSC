@@ -1125,6 +1125,17 @@ const AI_PROVIDERS = [
     logo: "R",
   },
   {
+    id: "cheaperinference",
+    name: "Cheaper Inference",
+    model: "GPT-5.6 Luna",
+    placeholder: "ir_live_...",
+    hint: "Wallet-backed gateway that routes each request to the cheapest available provider for that model; one key for Claude, GPT, Gemini, GLM and Kimi ids",
+    docsUrl: "https://cheaperinference.com/docs",
+    docsLabel: "cheaperinference.com",
+    color: "#0F9D58",
+    logo: "C",
+  },
+  {
     id: "zai",
     name: "Z.AI",
     model: "GLM-4.5-Air",

@@ -91,6 +91,11 @@ export function supportsTemperature(provider: string, model?: string): boolean {
   const m = (model || '').toLowerCase();
   if (provider === 'openai' && /^(gpt-5|o[1-9])/.test(m)) return false;
   if (provider === 'openrouter' && /(openai\/)?(gpt-5|o[1-9])/.test(m)) return false;
+  // Cheaper Inference publishes bare ids with no vendor prefix (`gpt-5.4`, not `openai/gpt-5.4`),
+  // so the openrouter pattern above never matches them. Without this line the slider happily sent
+  // `temperature` to a GPT-5.x route and got a 400 back that named a parameter the user never
+  // typed — the same class of failure the openrouter check exists to prevent.
+  if (provider === 'cheaperinference' && /^(gpt-5|o[1-9])/.test(m)) return false;
   return true;
 }
 
@@ -291,6 +296,39 @@ async function fetchLLMOnce(
       lastData = data;
       finishReason = data?.choices?.[0]?.finish_reason;
       text = openAiText(data);
+    } else if (provider === 'cheaperinference') {
+      // Cheaper Inference — an OpenAI-compatible gateway that ranks provider routes by price and
+      // fails over down that ranking, so one id can be served by several upstreams.
+      //
+      // Two consequences worth knowing about here. First, `max_tokens` rather than
+      // `max_completion_tokens`: the gateway forwards both, but the models behind a single id are
+      // not all OpenAI's, and `max_tokens` is the parameter every route in the catalogue accepts.
+      // Second, no `reasoning` field is sent. Roughly half the catalogue is reasoning-capable and
+      // several members (glm-5.2, kimi-k3) think by default — the failure mode this app already
+      // has a scar from — but effort levels are per-model there (Kimi K3 takes low/high/max and
+      // rejects `medium`), and an unsupported parameter can be rejected outright by the serving
+      // provider. Guessing one for an id whose upstream can change between calls trades a known
+      // problem for an unpredictable 400. The model picker labels reasoning models instead, so
+      // the outline step can be kept off them deliberately.
+      const ciModel = modelOverride ?? defaultModelFor('cheaperinference');
+      const ciRoot = (baseUrl || 'https://api.cheaperinference.com/v1').replace(/\/+$/, '');
+      const res = await fetch(`${ciRoot}/chat/completions`, {
+        method: 'POST', signal: sig,
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: ciModel, max_tokens: maxTokens, messages: [{ role: 'user', content: prompt }], ...temp(temperature, ciModel) }),
+      });
+      if (!res.ok) {
+        const bodyText = await res.text().catch(() => '');
+        console.error('[LLM] cheaperinference', res.status, bodyText);
+        // 402 is this gateway's own signal and deserves to survive the trip: it means the wallet
+        // is empty, not that the request was wrong, and retrying it burns three attempts on a
+        // condition only the account owner can clear.
+        return { text: null, retryable: retryableStatus(res.status), errorDetail: extractErrorDetail('cheaperinference', res.status, bodyText) };
+      }
+      const data = await res.json();
+      lastData = data;
+      finishReason = data?.choices?.[0]?.finish_reason;
+      text = openAiText(data);
     } else if (provider === 'kimi') {
       // Kimi (Moonshot AI) — OpenAI-compatible chat completions. Default: Kimi K3
       // (flagship, 1M context, vision). baseUrl override supported for the .cn endpoint.
@@ -431,7 +469,7 @@ export async function fetchLLMVision(
       if (!res.ok) { console.error('[LLM vision] gemini', res.status); return null; }
       const data = await res.json();
       text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-    } else if (provider === 'openai' || provider === 'openrouter' || provider === 'custom' || provider === 'kimi' || provider === 'deepseek' || provider === 'qwen') {
+    } else if (provider === 'openai' || provider === 'openrouter' || provider === 'custom' || provider === 'kimi' || provider === 'deepseek' || provider === 'qwen' || provider === 'cheaperinference') {
       const dataUrl = `data:${mimeType};base64,${b64}`;
       const content = [
         { type: 'text', text: prompt },
@@ -443,6 +481,7 @@ export async function fetchLLMVision(
       if (provider === 'deepseek') { url = 'https://api.deepseek.com/chat/completions'; model = modelOverride ?? defaultModelFor('deepseek', 'vision'); tokenParam = 'max_tokens'; }
       if (provider === 'qwen') { url = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions'; model = modelOverride ?? defaultModelFor('qwen', 'vision'); tokenParam = 'max_tokens'; }
       if (provider === 'openrouter') { url = 'https://openrouter.ai/api/v1/chat/completions'; model = modelOverride ?? defaultModelFor('openrouter', 'vision'); tokenParam = 'max_tokens'; }
+      if (provider === 'cheaperinference') { url = `${(baseUrl || 'https://api.cheaperinference.com/v1').replace(/\/+$/, '')}/chat/completions`; model = modelOverride ?? defaultModelFor('cheaperinference', 'vision'); tokenParam = 'max_tokens'; }
       if (provider === 'kimi') { url = `${(baseUrl || 'https://api.moonshot.ai/v1').replace(/\/+$/, '')}/chat/completions`; model = modelOverride ?? defaultModelFor('kimi', 'vision'); tokenParam = 'max_tokens'; }
       if (provider === 'custom') {
         const root = (baseUrl || '').replace(/\/+$/, '');

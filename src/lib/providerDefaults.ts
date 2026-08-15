@@ -26,6 +26,10 @@ const DEFAULTS: Record<string, ProviderDefault> = {
   openai:     { chat: "gpt-5.6-luna",              vision: "gpt-5.6-luna" },
   gemini:     { chat: "gemini-3-flash",            vision: "gemini-3-flash" },
   openrouter: { chat: "anthropic/claude-haiku-4.5", vision: "anthropic/claude-haiku-4.5" },
+  // Cheaper Inference is a price-routing gateway, so its ids are bare (no vendor prefix) and
+  // the same id can be served by different upstreams call to call. Luna is its cheapest
+  // vision-capable text model, which is what a default is for.
+  cheaperinference: { chat: "gpt-5.6-luna", vision: "gpt-5.6-luna" },
   kimi:       { chat: "kimi-k3",                   vision: "kimi-k3" },
   kie:        { chat: "gpt-5-5",                   vision: "gpt-5-5" },
   deepseek:   { chat: "deepseek-v4-flash",         vision: "deepseek-v4-flash" },

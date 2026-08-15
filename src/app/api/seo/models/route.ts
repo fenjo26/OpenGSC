@@ -60,11 +60,38 @@ async function listModels(provider: string, apiKey: string): Promise<M[]> {
   }
 
   if (provider === "openrouter") {
-    const res = await fetch("https://openrouter.ai/api/v1/models", { signal: timeout });
-    if (!res.ok) throw new Error(`openrouter ${res.status}`);
+    // The catalogue is ~400 models and this list gets truncated, so WHICH 400 arrive matters.
+    // Unfiltered and unsorted it came back in the API's own order and was cut at 300 — which
+    // quietly dropped real models off the end of the picker, and kept image- and embedding-only
+    // ids that `fetchLLM` cannot call at all. Asking for text output, newest first, means the
+    // truncation now only ever loses the oldest models, and everything listed is callable.
+    const url = "https://openrouter.ai/api/v1/models?output_modalities=text&sort=newest";
+    let arr: any[] = [];
+    const res = await fetch(url, { signal: timeout });
+    if (res.ok) {
+      arr = (await res.json()).data ?? [];
+    } else {
+      // The filter params are newer than the endpoint; an older/proxied deployment that rejects
+      // them should still produce a usable list rather than an empty picker.
+      const plain = await fetch("https://openrouter.ai/api/v1/models", { signal: timeout });
+      if (!plain.ok) throw new Error(`openrouter ${res.status}`);
+      arr = (await plain.json()).data ?? [];
+    }
+    return arr.map((m) => ({ id: m.id as string, label: orLabel(m) })).filter((m) => m.id).slice(0, 300);
+  }
+
+  if (provider === "cheaperinference") {
+    // A price-routing gateway: same public id, cheapest eligible upstream, so the catalogue is
+    // the only honest source for what an id costs today and what it can do. `type=text` keeps the
+    // image-generation ids out — they are served by /v1/images/generations and are rejected by
+    // the chat endpoint this app calls, so listing them would only produce 400s.
+    const res = await fetch("https://api.cheaperinference.com/v1/models?type=text", {
+      headers: { Authorization: `Bearer ${apiKey}` }, signal: timeout,
+    });
+    if (!res.ok) throw new Error(`cheaperinference ${res.status}`);
     const data = await res.json();
-    const arr: any[] = data.data ?? [];
-    return arr.map((m) => ({ id: m.id as string, label: m.name || m.id })).filter((m) => m.id).slice(0, 300);
+    const arr: any[] = data.data ?? data.models ?? [];
+    return arr.map((m) => ({ id: String(m.id), label: ciLabel(m) })).filter((m) => m.id);
   }
 
   if (provider === "gemini") {
@@ -120,6 +147,48 @@ async function listModels(provider: string, apiKey: string): Promise<M[]> {
   }
 
   return [];
+}
+
+// ─── Labels ─────────────────────────────────────────────────────────────────────
+//
+// The picker is where a user decides what every generation job will cost and whether the outline
+// step is about to run on a model that thinks. Both facts are in the catalogue response and were
+// being thrown away, leaving a bare id — so the answer to "is glm-5.2 a reasoning model" lived
+// only in whatever the user happened to remember. This instance has already lost a night to that
+// exact question (a reasoning model spent a 16k budget on hidden reasoning and returned nothing),
+// which is why the marker is in the label rather than a tooltip.
+
+const perMillion = (v: unknown): string | null => {
+  const n = typeof v === "string" ? parseFloat(v) : typeof v === "number" ? v : NaN;
+  if (!isFinite(n) || n <= 0) return null;
+  // OpenRouter prices per token, Cheaper Inference per million — callers pass the per-million value.
+  return n >= 1 ? `$${n.toFixed(2)}` : `$${n.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")}`;
+};
+
+function orLabel(m: any): string {
+  const name = m.name || m.id;
+  const bits: string[] = [];
+  const inPrice = perMillion(parseFloat(m?.pricing?.prompt) * 1e6);
+  const outPrice = perMillion(parseFloat(m?.pricing?.completion) * 1e6);
+  if (inPrice && outPrice) bits.push(`${inPrice}/${outPrice} per 1M`);
+  else if (inPrice === null && outPrice === null && m?.pricing) bits.push("free");
+  const ctx = Number(m?.context_length);
+  if (isFinite(ctx) && ctx > 0) bits.push(`${Math.round(ctx / 1000)}k ctx`);
+  if ((m?.supported_parameters ?? []).includes("reasoning")) bits.push("reasoning");
+  return bits.length ? `${name} — ${bits.join(" · ")}` : name;
+}
+
+function ciLabel(m: any): string {
+  const bits: string[] = [];
+  const inPrice = perMillion(m?.pricing?.input_per_million);
+  const outPrice = perMillion(m?.pricing?.output_per_million);
+  if (inPrice && outPrice) bits.push(`${inPrice}/${outPrice} per 1M`);
+  const caps = m?.capabilities ?? {};
+  if (caps.reasoning) bits.push("reasoning");
+  if (caps.vision) bits.push("vision");
+  const vendor = m?.provider || m?.owned_by;
+  const head = vendor ? `${m.id} (${vendor})` : String(m.id);
+  return bits.length ? `${head} — ${bits.join(" · ")}` : head;
 }
 
 const KIMI_FALLBACK: M[] = [

@@ -11,9 +11,18 @@ export function getAiCreds(): { provider: string; apiKey: string } {
   return { provider, apiKey };
 }
 
-export const AI_PROVIDER_IDS = ["anthropic", "openai", "gemini", "openrouter", "zai", "kimi", "kie", "custom"] as const;
+// Every provider `fetchLLM` can actually call, in the order the pickers show them.
+//
+// This list is what `getConfiguredProviders()` walks, so anything missing here is invisible to
+// the SEO Tools per-task provider selector — even with a key saved and a working branch in
+// lib/llm.ts. That is exactly what had happened to `deepseek` and `qwen`: Settings → AI has a
+// card for each, the key mirrors and restores fine, llm.ts routes them, and the only thing
+// stopping a user from choosing one for the outline step was their absence from this array.
+export const AI_PROVIDER_IDS = ["anthropic", "openai", "gemini", "openrouter", "cheaperinference", "zai", "kimi", "kie", "deepseek", "qwen", "custom"] as const;
 export const AI_PROVIDER_NAMES: Record<string, string> = {
-  anthropic: "Anthropic", openai: "OpenAI", gemini: "Google Gemini", openrouter: "OpenRouter", zai: "Z.AI", kimi: "Kimi (Moonshot AI)", kie: "Kie.ai (GPT-5.5)", custom: "Custom (OpenAI-compatible)",
+  anthropic: "Anthropic", openai: "OpenAI", gemini: "Google Gemini", openrouter: "OpenRouter",
+  cheaperinference: "Cheaper Inference", zai: "Z.AI", kimi: "Kimi (Moonshot AI)", kie: "Kie.ai (GPT-5.5)",
+  deepseek: "DeepSeek", qwen: "Qwen (Alibaba Cloud)", custom: "Custom (OpenAI-compatible)",
 };
 
 // Per-provider model chosen in Settings → API Keys (aiModel_<provider>); empty = provider default.
