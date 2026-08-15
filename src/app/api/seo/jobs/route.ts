@@ -3,6 +3,7 @@ import { authOptions } from "@/lib/auth";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { genByType } from "@/lib/seo/generate";
+import { resolveAiFallbacks } from "@/lib/mcp/shared";
 import { failStaleSeoJobs, touchSeoJob, withSeoJobHeartbeat } from "@/lib/jobs/lifecycle";
 
 // SeoJob model isn't in the committed generated client until `prisma generate` re-runs
@@ -55,6 +56,17 @@ export async function POST(req: Request) {
     });
   } catch (e: any) {
     return NextResponse.json({ error: `db: ${String(e?.message ?? e)} (run: npx prisma db push)` }, { status: 500 });
+  }
+
+  // Standby providers for the outline step, resolved SERVER-side from the user's stored keys.
+  // The browser posts only the one credential set it resolved for this task, so a job started
+  // from the UI had no way to survive that provider being down — even on an instance with three
+  // other keys configured. An explicit `aiFallbacks` in the payload still wins.
+  if (!payload.aiFallbacks) {
+    try {
+      const alts = await resolveAiFallbacks(userId, payload.aiProvider ? String(payload.aiProvider) : undefined);
+      if (alts.length) payload.aiFallbacks = alts;
+    } catch { /* fallbacks are a safety net, never a reason to refuse the job */ }
   }
 
   runJob(job.id, type, payload); // fire-and-forget

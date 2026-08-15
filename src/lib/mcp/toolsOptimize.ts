@@ -22,7 +22,7 @@ import { rawQuery } from "@/lib/db/raw";
 import { runUpsert } from "@/lib/db/upsert";
 import {
   McpTool, lim, pct, r1, sinceDate, resolveSite, siteArg,
-  resolveAiCreds, resolveSerpCreds, resolveKeywordSource, resolveActivePolicy, taskForJobType, assertConfirmed, confirmArg, parseJson,
+  resolveAiCreds, resolveAiFallbacks, resolveSerpCreds, resolveKeywordSource, resolveActivePolicy, taskForJobType, assertConfirmed, confirmArg, parseJson,
 } from "./shared";
 import { expandKeywords } from "@/lib/seo/keywordSource";
 import { priceExpand } from "@/lib/seo/metrics";
@@ -505,6 +505,17 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
         if (args[k] !== undefined && args[k] !== null) knobs[k] = args[k];
       }
       const payload: any = { ...knobs, ...((args.payload as object) ?? {}), ...creds, ...(serpCreds ?? {}), ...(policy ? { policy } : {}) };
+
+      // Standby providers for the outline step. An agent-started job is the LEAST supervised
+      // path in the product — nobody is watching a progress bar to notice the configured
+      // provider has started discarding finished generations — so it is the path that most
+      // needs to be able to finish on a different one.
+      if (!payload.aiFallbacks) {
+        try {
+          const alts = await resolveAiFallbacks(userId, creds.aiProvider);
+          if (alts.length) payload.aiFallbacks = alts;
+        } catch { /* a missing safety net must not block the job */ }
+      }
 
       // The Outline page's "load keywords" step, server-side: pull real ideas with volumes
       // from the provider the user configured (Ahrefs/Semrush/DataForSEO, resolved the same

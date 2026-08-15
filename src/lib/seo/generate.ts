@@ -412,16 +412,19 @@ async function enrichOutlineSections(outline: any, ctx: {
 export async function genOutline(b: any): Promise<GenResult> {
   const keyword = String(b.keyword ?? "").trim();
   if (!keyword) return { ok: false, error: "no_keyword" };
-  const provider = String(b.aiProvider ?? "anthropic");
-  const apiKey = String(b.aiApiKey ?? "");
+  // Mutable, because the head call may fall back to another provider (see below) and every
+  // later pass — scrub, expand, localize, enrich — must follow it rather than keep hammering
+  // the one that just failed.
+  let provider = String(b.aiProvider ?? "anthropic");
+  let apiKey = String(b.aiApiKey ?? "");
   if (!apiKey) return { ok: false, error: "no_ai_key" };
 
   const competitors: CompetitorInput[] = Array.isArray(b.competitors) ? b.competitors : [];
   if (!competitors.length && b.serpKey && b._autoFetched !== true) {
     return genOutlineAuto({ ...b, _autoFetched: true });
   }
-  const model = b.model ? String(b.model) : undefined;
-  const baseUrl = b.aiBaseUrl ? String(b.aiBaseUrl) : undefined;
+  let model = b.model ? String(b.model) : undefined;
+  let baseUrl = b.aiBaseUrl ? String(b.aiBaseUrl) : undefined;
 
   // MAP stage: extract compact facts per source (parallel) before assembling the outline.
   if (b.mapExtract !== false && competitors.length) {
@@ -476,8 +479,13 @@ export async function genOutline(b: any): Promise<GenResult> {
   // `entity_analysis`, and the word guard then spread the whole article target across whatever
   // sections had survived. So: a larger first ask, and one retry at a larger ceiling still when
   // the answer comes back cut off.
-  const OUTLINE_TOKENS = 24000;
-  const OUTLINE_TOKENS_RETRY = 32000;
+  //
+  // Overridable via `outlineMaxTokens` because the ceiling is also a DIAGNOSTIC. A gateway that
+  // fails to report usage on long generations but serves short ones fine cannot be told apart
+  // from a broken model without varying exactly this number, and recompiling to change a constant
+  // makes that a deploy per experiment.
+  const OUTLINE_TOKENS = Math.max(4000, Math.min(64000, Number(b.outlineMaxTokens) || 24000));
+  const OUTLINE_TOKENS_RETRY = Math.min(64000, Math.round(OUTLINE_TOKENS * 1.35));
   const wantSections = targetSectionCount(Number(b.targetWordCount) || 0);
   const sectionCount = (o: any) => (Array.isArray(o?.sections) ? o.sections.length : 0);
   // Two signals, both definitive, neither previously visible: the provider saying it stopped at
@@ -518,6 +526,40 @@ export async function genOutline(b: any): Promise<GenResult> {
       }
     } catch { /* keep the first attempt; the repair passes below still run */ }
   }
+  // PROVIDER FALLBACK: the outline is the one step whose failure wastes everything before it —
+  // the SERP call, the scrape and the per-source fact extraction are all already paid for by the
+  // time it runs. When the configured provider cannot produce it for a reason that is about the
+  // PROVIDER rather than the content (a gateway that discards a finished generation because it
+  // could not read usage for billing; an upstream that is simply down), another configured
+  // provider usually can, and the alternative to trying one is throwing the whole job away.
+  //
+  // Deliberately not attempted for content-policy refusals: every provider will refuse the same
+  // prompt, so retrying elsewhere just bills the user twice for the same "no".
+  let fellBackTo: string | undefined;
+  const fallbacks: any[] = Array.isArray(b.aiFallbacks) ? b.aiFallbacks : [];
+  const contentRefusal = /content|policy|safety|unsafe|sensitive|moderation/i.test(res.error ?? "");
+  if (!outline && fallbacks.length && !contentRefusal) {
+    for (const fb of fallbacks) {
+      const fbProvider = String(fb?.aiProvider ?? "").trim();
+      const fbKey = String(fb?.aiApiKey ?? "").trim();
+      if (!fbProvider || !fbKey || fbProvider === provider) continue;
+      console.error(`[outline] ${provider} failed (${res.error ?? "no parseable output"}) — retrying on ${fbProvider}`);
+      try {
+        const rf = await fetchLLMDetailed(prompt, fbProvider, fbKey, OUTLINE_TOKENS, fb.model ? String(fb.model) : undefined, fb.aiBaseUrl ? String(fb.aiBaseUrl) : undefined, outlineTemp);
+        const pf = extractJsonDetailed(rf.text);
+        if (!pf.data) continue;
+        // Everything downstream now runs on whichever provider actually answered.
+        res = rf; raw = rf.text; outline = pf.data;
+        wasCutOff = cutOff(pf.repaired, rf.finishReason);
+        provider = fbProvider; apiKey = fbKey;
+        model = fb.model ? String(fb.model) : undefined;
+        baseUrl = fb.aiBaseUrl ? String(fb.aiBaseUrl) : undefined;
+        fellBackTo = fbProvider;
+        break;
+      } catch { /* try the next one */ }
+    }
+  }
+
   // Three genuinely different failures, three different messages. They used to collapse into
   // "generation_failed" / "parse_failed", which said nothing about which one had happened.
   if (!outline) {
@@ -561,6 +603,9 @@ export async function genOutline(b: any): Promise<GenResult> {
   // whole again, but "this outline was rebuilt from a cut-off answer" is exactly the context
   // needed when someone later asks why a generation looks thin, and it costs one boolean.
   if (wasCutOff) { (outline as any)._truncated = true; meta.truncated = true; }
+  // Which provider actually wrote this, when it was not the configured one. Without it a
+  // successful job hides the fact that the primary provider is broken, and nobody fixes it.
+  if (fellBackTo) { (outline as any)._fallback_provider = fellBackTo; meta.fallback_provider = fellBackTo; }
   // EXPAND pass (default on): if the outline is flat (most H2s have <2 child H3s — typical
   // with user templates), graft model-proposed H3 subsections deterministically. Runs BEFORE
   // the volume guard so budgets are redistributed across the new sections too. Off with expand:false.

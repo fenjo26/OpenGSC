@@ -182,6 +182,42 @@ export async function resolveAiCreds(userId: string, args: Json = {}, task?: Seo
   };
 }
 
+/**
+ * Every OTHER provider this instance holds a key for, as ready-to-use credential sets.
+ *
+ * A generation job used to die outright when its one provider failed for a reason that had
+ * nothing to do with the request — a gateway that ranks upstream routes by price and picks one
+ * that cannot report token usage returns `502 … did not include usage for billing` AFTER the
+ * model has already written the answer, and retrying reproduces it. Fifteen minutes and a
+ * scraped SERP were thrown away because one hop misbehaved, while keys for two other providers
+ * sat unused in the same settings blob.
+ *
+ * Ordering is deliberate: providers the user has explicitly chosen a model for come first, since
+ * a configured model is evidence they use that provider, and an unconfigured one falls back to
+ * whatever `defaultModelFor` picks. Capped at three so a broken instance cannot bill its way
+ * through an entire catalogue.
+ */
+export async function resolveAiFallbacks(userId: string, primaryProvider?: string): Promise<AiCreds[]> {
+  const s = await getUserSettings(userId);
+  const out: AiCreds[] = [];
+  const skip = String(primaryProvider || "").trim();
+  for (const key of Object.keys(s)) {
+    if (!key.startsWith("aiKey_")) continue;
+    const p = key.slice("aiKey_".length);
+    if (!p || p === skip) continue;
+    const apiKey = firstSet(s[key]);
+    if (!apiKey) continue;
+    out.push({
+      aiProvider: p,
+      aiApiKey: apiKey,
+      model: firstSet(s[`aiModel_${p}`]),
+      aiBaseUrl: s[`aiBaseUrl_${p}`] || undefined,
+    });
+  }
+  out.sort((a, b) => (b.model ? 1 : 0) - (a.model ? 1 : 0));
+  return out.slice(0, 3);
+}
+
 /** Which per-task override slot a background job type should resolve against. */
 export function taskForJobType(type: string): SeoTaskId {
   switch (type) {

@@ -262,9 +262,13 @@ function extractErrorDetail(provider: string, status: number, bodyText: string):
   const base = `${provider} ${status}: ${String(msg || "").slice(0, 300)}`;
   // The one gateway failure whose fix is a settings change rather than a retry. Left raw, the
   // message describes the GATEWAY's accounting problem and reads like a transient blip, which
-  // sends people into retry loops that each cost a full-length generation. Say what to do.
+  // sends people into retry loops that each cost a full-length generation.
+  //
+  // Observed on this instance: the SAME provider and model id serve short rewrite calls all day
+  // and fail every long outline call, so the trigger is not the model on its own — it correlates
+  // with the size of the request. Both known levers are named rather than guessing between them.
   if (status >= 500 && /usage\s+for\s+billing|did not include usage/i.test(base)) {
-    return `${base} — the serving route returned no usage block, so the gateway discarded a generation it had already produced. This follows the MODEL, not the request: choose a different model for this task in SEO Tools → Settings.`;
+    return `${base} — the serving route returned no usage block, so the gateway discarded a generation it had already produced. Retrying reproduces it. Two levers: pick a different model for this task in SEO Tools → Settings, or lower this step's token budget (the same model/provider serves short calls on this instance and fails long ones).`;
   }
   return base;
 }
