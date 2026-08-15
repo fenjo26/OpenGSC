@@ -2463,6 +2463,7 @@
   "gbvCrossNote": "我们的工具从我们自己的 IP 伪装 Googlebot User-Agent。要确认某个差异是否是真正的 cloaking，请在 Google 自己的工具中打开 URL——它们以真实 Googlebot 从 Google IP 抓取，并展示给你 Google 实际得到的确切 HTML 和截图。如果那些与浏览器视图一致，则不是索引级的 cloaking。",
   "gbvOpenRRT": "Rich Results Test",
   "gbvOpenPSI": "PageSpeed Insights",
+  "seoBadgeRewrite": "改写",
   "seoBadgeGooglebot": "Googlebot 视角",
   "seoHistFilterGooglebot": "Googlebot",
   "gbvOptFirecrawl": "通过 Firecrawl 进行 JS 渲染（JS-cloaking）",

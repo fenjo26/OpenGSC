@@ -2463,6 +2463,7 @@
   "gbvCrossNote": "Nuestra herramienta falsifica el User-Agent de Googlebot desde nuestra propia IP. Para confirmar si una diferencia es cloaking real, abre la URL en las herramientas propias de Google — ellos hacen el fetch como el Googlebot real desde una IP de Google y te muestran el HTML exacto y una captura que Google obtuvo realmente. Si esas coinciden con la vista del navegador, no es cloaking a nivel de índice.",
   "gbvOpenRRT": "Rich Results Test",
   "gbvOpenPSI": "PageSpeed Insights",
+  "seoBadgeRewrite": "Reescritura",
   "seoBadgeGooglebot": "Vista de Googlebot",
   "seoHistFilterGooglebot": "Googlebot",
   "gbvOptFirecrawl": "Renderizado JS vía Firecrawl (cloaking por JS)",

@@ -2463,6 +2463,7 @@
   "gbvCrossNote": "Наш инструмент подделывает визитку Googlebot, но ходит с нашего IP. Чтобы понять, настоящая ли это клоака, открой URL в собственных тулзах Google — они заходят как реальный Googlebot с гугловского IP и показывают точный HTML и скриншот того, что получил именно Google. Если они совпадают с видом для браузера — это не клоака на уровне индекса.",
   "gbvOpenRRT": "Rich Results Test",
   "gbvOpenPSI": "PageSpeed Insights",
+  "seoBadgeRewrite": "Рерайт",
   "seoBadgeGooglebot": "Взгляд Googlebot",
   "seoHistFilterGooglebot": "Googlebot",
   "gbvOptFirecrawl": "JS-рендер через Firecrawl (JS-клоака)",

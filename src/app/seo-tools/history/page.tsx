@@ -2,21 +2,30 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Eye, Trash2, FileText, ScrollText, BarChart3, LayoutTemplate, Loader2, AlertTriangle, X, Boxes, Bot, Fingerprint } from "lucide-react";
+import { Search, Eye, Trash2, FileText, ScrollText, BarChart3, LayoutTemplate, Loader2, AlertTriangle, X, Boxes, Bot, Fingerprint, Wand2 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
-import { loadHistory, removeHistory, clearHistory, HistoryItem, HistoryType } from "@/lib/seo/history";
+import { loadHistory, removeHistory, clearHistory, HistoryItem } from "@/lib/seo/history";
 import { listJobs, importJob, deleteJob, clearFailedJobs, SeoJobRec } from "@/lib/seo/jobs";
 import { scoreText } from "@/lib/seo/aidetect";
 import { getActiveModel, type StoredModel } from "@/lib/seo/aidetectStore";
 
-const TYPE_META: Record<HistoryType, { labelKey: string; color: string; icon: any }> = {
+// Job rows come from the server, and the server accepts types this local table doesn't know
+// (outline_auto over the jobs API, rewrite inserted directly by MCP) — plus whatever a future
+// release adds. The lookup must stay total or one unknown row takes the whole page down.
+const TYPE_META: Record<string, { labelKey: string; color: string; icon: any }> = {
   outline: { labelKey: "seoBadgeOutline", color: "#2997ff", icon: FileText },
+  // batch SERP→scrape→outline; completes into History as a regular outline
+  outline_auto: { labelKey: "seoBadgeOutline", color: "#2997ff", icon: FileText },
   text: { labelKey: "seoBadgeText", color: "#bf5af2", icon: ScrollText },
   analysis: { labelKey: "seoBadgeAnalysis", color: "#ff9f0a", icon: BarChart3 },
   landing: { labelKey: "seoBadgeLanding", color: "#bf5af2", icon: LayoutTemplate },
   cluster: { labelKey: "seoBadgeCluster", color: "#34c759", icon: Boxes },
   googlebot: { labelKey: "seoBadgeGooglebot", color: "#4285F4", icon: Bot },
+  // MCP batch rewrites are not imported into History, but they surface here while running
+  rewrite: { labelKey: "seoBadgeRewrite", color: "#ff9f0a", icon: Wand2 },
 };
+const FALLBACK_META = { labelKey: "", color: "#8e8e93", icon: FileText };
+const metaFor = (type: string) => TYPE_META[type] ?? FALLBACK_META;
 
 type Filter = "all" | "done" | "progress" | "outline" | "text" | "analysis" | "landing" | "cluster" | "googlebot";
 
@@ -152,11 +161,11 @@ export default function HistoryPage() {
             <div style={{ padding: "32px 12px", textAlign: "center", fontSize: "13px", color: "var(--color-text-secondary)" }}>{t("seoHistEmpty")}</div>
           )}
           {visibleJobs.map(job => {
-            const m = TYPE_META[job.type]; const Icon = m.icon; const isErr = job.status === "error";
+            const m = metaFor(job.type); const Icon = m.icon; const isErr = job.status === "error";
             return (
               <div key={job.id} style={{ display: "flex", alignItems: "center", gap: "12px", padding: "13px 4px", borderBottom: "1px solid var(--color-border)", background: isErr ? "rgba(255,69,58,0.04)" : "rgba(41,151,255,0.04)" }}>
                 {isErr ? <AlertTriangle size={16} color="var(--color-accent-red)" style={{ flexShrink: 0 }} /> : <Loader2 size={16} className="spin" color="var(--color-accent-blue)" style={{ flexShrink: 0 }} />}
-                <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "11px", fontWeight: 700, padding: "3px 9px", borderRadius: "6px", color: m.color, background: `${m.color}1a`, flexShrink: 0 }}><Icon size={12} /> {t(m.labelKey as any)}</span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "11px", fontWeight: 700, padding: "3px 9px", borderRadius: "6px", color: m.color, background: `${m.color}1a`, flexShrink: 0 }}><Icon size={12} /> {m.labelKey ? t(m.labelKey as any) : job.type}</span>
                 <span style={{ flex: 1, minWidth: 0, fontSize: "14px", color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{job.keyword || "—"}</span>
                 <span style={{ fontSize: "12px", color: isErr ? "var(--color-accent-red)" : "var(--color-accent-blue)", flexShrink: 0, maxWidth: "260px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{isErr ? (job.error || t("seoStatusError")) : t("seoStatusGenerating")}</span>
                 {isErr && <button onClick={() => dismissJob(job.id)} title={t("seoDelete")} style={{ ...iconBtn, color: "var(--color-accent-red)" }}><X size={14} /></button>}
@@ -164,12 +173,12 @@ export default function HistoryPage() {
             );
           })}
           {filtered.map(item => {
-            const m = TYPE_META[item.type]; const Icon = m.icon;
+            const m = metaFor(item.type); const Icon = m.icon;
             return (
               <div key={item.id} style={{ display: "flex", alignItems: "center", gap: "12px", padding: "13px 4px", borderBottom: "1px solid var(--color-border)" }}>
                 <span style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, background: item.status === "processing" ? "var(--color-accent-blue)" : item.status === "error" ? "var(--color-accent-red)" : "var(--color-accent-green)" }} />
                 <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "11px", fontWeight: 700, padding: "3px 9px", borderRadius: "6px", color: m.color, background: `${m.color}1a`, flexShrink: 0 }}>
-                  <Icon size={12} /> {t(m.labelKey as any)}
+                  <Icon size={12} /> {m.labelKey ? t(m.labelKey as any) : item.type}
                 </span>
                 <span style={{ flex: 1, minWidth: 0, fontSize: "14px", color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.keyword}</span>
                 {scores[item.id] !== undefined && (
