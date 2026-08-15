@@ -193,18 +193,43 @@ export async function fetchLLMDetailed(
 ): Promise<{ text: string | null; error?: string; finishReason?: string }> {
   const delays = [0, 5_000, 20_000]; // 3 attempts total
   let lastError: string | undefined;
+  // Set from the previous attempt when the response told us how long to wait — a `Retry-After`
+  // header, or a gateway 5xx that has already exhausted its own routes. It overrides the generic
+  // ladder, which is otherwise far too eager for both cases.
+  let askedWait: number | undefined;
   for (let i = 0; i < delays.length; i++) {
-    if (delays[i]) await new Promise(r => setTimeout(r, delays[i] + Math.floor(Math.random() * 4_000)));
+    const wait = i === 0 ? 0 : Math.max(delays[i], askedWait ?? 0);
+    if (wait) await new Promise(r => setTimeout(r, wait + Math.floor(Math.random() * 4_000)));
     const r = await fetchLLMOnce(prompt, provider, apiKey, maxTokens, modelOverride, baseUrl, temperature, enableThinking);
     if (r.text != null) return { text: r.text, finishReason: r.finishReason };
     lastError = r.errorDetail;
+    askedWait = r.retryAfterMs;
     if (!r.retryable) return { text: null, error: lastError };
-    if (i < delays.length - 1) console.error(`[LLM] ${provider} transient failure — retrying (${i + 1}/${delays.length - 1})`);
+    if (i < delays.length - 1) console.error(`[LLM] ${provider} transient failure — retrying (${i + 1}/${delays.length - 1}): ${lastError ?? ""}`);
   }
   return { text: null, error: lastError };
 }
 
 const retryableStatus = (s: number) => s === 429 || s === 408 || s >= 500;
+
+// How long to wait before the next attempt, when the response itself says something useful.
+//
+// Two cases the generic 0/5s/20s ladder gets wrong. A 429 usually carries `Retry-After`, and
+// providers ask for it to be respected — retrying earlier just burns an attempt and can extend
+// the penalty. And a gateway 5xx arrives only AFTER that gateway has already failed over between
+// its own upstream routes and spent its own retry, so repeating five seconds later lands on the
+// same broken upstream; waiting longer is what actually gives the route time to come back.
+function retryAfterFrom(res: Response, status: number): number | undefined {
+  const h = res.headers.get("retry-after");
+  if (h) {
+    const secs = Number(h);
+    if (Number.isFinite(secs) && secs > 0) return Math.min(120_000, secs * 1000);
+    const when = Date.parse(h);
+    if (Number.isFinite(when)) return Math.min(120_000, Math.max(0, when - Date.now()));
+  }
+  if (status >= 500) return 15_000;
+  return undefined;
+}
 
 // Best-effort extraction of a short, human-readable reason from a failed provider response —
 // tries the common `{error:{message|type}}` JSON shape used by most providers, else falls back
@@ -228,7 +253,7 @@ async function fetchLLMOnce(
   temperature?: number,
   /** Opt back into Z.AI's thinking mode; off by default because it eats the whole max_tokens budget. */
   enableThinking = false,
-): Promise<{ text: string | null; retryable: boolean; errorDetail?: string; finishReason?: string }> {
+): Promise<{ text: string | null; retryable: boolean; errorDetail?: string; finishReason?: string; retryAfterMs?: number }> {
   // Hard timeout so a stuck/over-long generation fails in minutes instead of hanging forever.
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 280_000);
@@ -264,7 +289,7 @@ async function fetchLLMOnce(
       if (!res.ok) {
         const bodyText = await res.text().catch(() => '');
         console.error('[LLM]', provider, res.status, bodyText);
-        return { text: null, retryable: retryableStatus(res.status), errorDetail: extractErrorDetail(provider, res.status, bodyText) };
+        return { text: null, retryable: retryableStatus(res.status), retryAfterMs: retryAfterFrom(res, res.status), errorDetail: extractErrorDetail(provider, res.status, bodyText) };
       }
       const data = await res.json();
       lastData = data;
@@ -293,7 +318,7 @@ async function fetchLLMOnce(
       if (!res.ok) {
         const bodyText = await res.text().catch(() => '');
         console.error(`[LLM] ${provider}`, res.status, bodyText);
-        return { text: null, retryable: retryableStatus(res.status), errorDetail: extractErrorDetail(provider, res.status, bodyText) };
+        return { text: null, retryable: retryableStatus(res.status), retryAfterMs: retryAfterFrom(res, res.status), errorDetail: extractErrorDetail(provider, res.status, bodyText) };
       }
       const data = await res.json();
       lastData = data;
@@ -320,7 +345,7 @@ async function fetchLLMOnce(
       if (!res.ok) {
         const bodyText = await res.text().catch(() => '');
         console.error('[LLM] gemini', res.status, bodyText);
-        return { text: null, retryable: retryableStatus(res.status), errorDetail: extractErrorDetail('gemini', res.status, bodyText) };
+        return { text: null, retryable: retryableStatus(res.status), retryAfterMs: retryAfterFrom(res, res.status), errorDetail: extractErrorDetail('gemini', res.status, bodyText) };
       }
       const data = await res.json();
       lastData = data;
@@ -351,13 +376,13 @@ async function fetchLLMOnce(
           res = await orCall(true);
         } else {
           console.error('[LLM] openrouter', res.status, bodyText);
-          return { text: null, retryable: retryableStatus(res.status), errorDetail: extractErrorDetail('openrouter', res.status, bodyText) };
+          return { text: null, retryable: retryableStatus(res.status), retryAfterMs: retryAfterFrom(res, res.status), errorDetail: extractErrorDetail('openrouter', res.status, bodyText) };
         }
       }
       if (!res.ok) {
         const bodyText = await res.text().catch(() => '');
         console.error('[LLM] openrouter', res.status, bodyText);
-        return { text: null, retryable: retryableStatus(res.status), errorDetail: extractErrorDetail('openrouter', res.status, bodyText) };
+        return { text: null, retryable: retryableStatus(res.status), retryAfterMs: retryAfterFrom(res, res.status), errorDetail: extractErrorDetail('openrouter', res.status, bodyText) };
       }
       const data = await res.json();
       lastData = data;
@@ -390,7 +415,7 @@ async function fetchLLMOnce(
         // 402 is this gateway's own signal and deserves to survive the trip: it means the wallet
         // is empty, not that the request was wrong, and retrying it burns three attempts on a
         // condition only the account owner can clear.
-        return { text: null, retryable: retryableStatus(res.status), errorDetail: extractErrorDetail('cheaperinference', res.status, bodyText) };
+        return { text: null, retryable: retryableStatus(res.status), retryAfterMs: retryAfterFrom(res, res.status), errorDetail: extractErrorDetail('cheaperinference', res.status, bodyText) };
       }
       const data = await res.json();
       lastData = data;
@@ -409,7 +434,7 @@ async function fetchLLMOnce(
       if (!res.ok) {
         const bodyText = await res.text().catch(() => '');
         console.error('[LLM] kimi', res.status, bodyText);
-        return { text: null, retryable: retryableStatus(res.status), errorDetail: extractErrorDetail('kimi', res.status, bodyText) };
+        return { text: null, retryable: retryableStatus(res.status), retryAfterMs: retryAfterFrom(res, res.status), errorDetail: extractErrorDetail('kimi', res.status, bodyText) };
       }
       const data = await res.json();
       lastData = data;
@@ -435,7 +460,7 @@ async function fetchLLMOnce(
       if (!res.ok) {
         const bodyText = await res.text().catch(() => '');
         console.error('[LLM] kie', res.status, bodyText);
-        return { text: null, retryable: retryableStatus(res.status), errorDetail: extractErrorDetail('kie', res.status, bodyText) };
+        return { text: null, retryable: retryableStatus(res.status), retryAfterMs: retryAfterFrom(res, res.status), errorDetail: extractErrorDetail('kie', res.status, bodyText) };
       }
       const data = await res.json();
       lastData = data;
@@ -467,7 +492,7 @@ async function fetchLLMOnce(
       if (!res.ok) {
         const bodyText = await res.text().catch(() => '');
         console.error('[LLM] custom', res.status, bodyText);
-        return { text: null, retryable: retryableStatus(res.status), errorDetail: extractErrorDetail('custom', res.status, bodyText) };
+        return { text: null, retryable: retryableStatus(res.status), retryAfterMs: retryAfterFrom(res, res.status), errorDetail: extractErrorDetail('custom', res.status, bodyText) };
       }
       const data = await res.json();
       lastData = data;

@@ -759,20 +759,33 @@ function chunkTemp(base: number | undefined, i: number): number | undefined {
   return Math.max(0, Math.round((base + CHUNK_TEMP_OFFSETS[i % CHUNK_TEMP_OFFSETS.length]) * 100) / 100);
 }
 
+// What the chunked writer reports back. It is no longer just "the article or nothing": a chunk
+// that fails after retries costs the caller a decision, and the decision needs to know how much
+// of the article actually exists and why the rest does not.
+interface ChunkedTextResult {
+  text: string | null;
+  wroteChunks: number;
+  totalChunks: number;
+  /** Headings whose chunk never came back — what the shipped article is missing. */
+  missingHeadings: string[];
+  /** The provider's own reason for the last failed chunk, for the error the user finally sees. */
+  lastError?: string;
+}
+
 async function writeTextInChunks(outline: any, ctx: {
   keyword: string; language: string; tone: string; provider: string; apiKey: string;
   model?: string; baseUrl?: string; ragFacts?: string;
   sources?: { title: string; snippet: string; url: string; domain: string }[];
   sourceMode?: "off" | "facts" | "cited"; includeToc?: boolean; temperature?: number;
   bannedWords?: string[];
-}): Promise<string | null> {
+}): Promise<ChunkedTextResult> {
   // FAQ-like sections[] entries are dropped up front (defensive — outlines saved before the
   // sanitizer existed still carry the template's "H2: FAQ" duplicate): the FAQ is rendered
   // exclusively from the faq[] array by the dedicated call below.
   const hasFaqArr = Array.isArray(outline?.faq) && outline.faq.length > 0;
   const secs: any[] = (Array.isArray(outline?.sections) ? outline.sections : [])
     .filter((s: any) => !(hasFaqArr && FAQ_LIKE_RE.test(String(s?.heading || ""))));
-  if (!secs.length) return null;
+  if (!secs.length) return { text: null, wroteChunks: 0, totalChunks: 0, missingHeadings: [] };
   const meta = outline.meta || {};
 
   // Per-section spec with a SINGLE word_count = the section's OWN contribution (a parent's
@@ -856,7 +869,8 @@ async function writeTextInChunks(outline: any, ctx: {
   const verdictRe = /verdict|вердикт|итог|conclusion|заключение|avis final|final|raisons|choisir|pourquoi|почему|avantages|преимуществ/i;
 
   const parts: (string | null)[] = new Array(chunks.length).fill(null);
-  await runPool(chunks.map((c, i) => ({ c, i })), 2, async ({ c, i }) => {
+  let lastChunkError: string | undefined;
+  const writeChunk = async ({ c, i }: { c: any[]; i: number }) => {
     const lo = c.reduce((a: number, s: any) => a + (s.word_count?.[0] || 0), 0);
     const hi = c.reduce((a: number, s: any) => a + (s.word_count?.[1] || 0), 0);
     const prompt = buildSectionTextPrompt({
@@ -870,8 +884,11 @@ async function writeTextInChunks(outline: any, ctx: {
       chunkBudget: hi > 0 ? [lo, hi] : undefined,
       bannedWords: ctx.bannedWords,
     });
-    const raw = await fetchLLM(prompt, ctx.provider, ctx.apiKey, 6000, ctx.model, ctx.baseUrl, chunkTemp(ctx.temperature, i));
-    if (!raw) return;
+    // Detailed rather than plain: when a chunk fails, the provider's own reason is what makes the
+    // final error actionable ("cheaperinference 502: …" instead of a bare generation_failed).
+    const attempt = await fetchLLMDetailed(prompt, ctx.provider, ctx.apiKey, 6000, ctx.model, ctx.baseUrl, chunkTemp(ctx.temperature, i));
+    const raw = attempt.text;
+    if (!raw) { if (attempt.error) lastChunkError = attempt.error; return; }
     let md = raw.trim().replace(/^```(?:markdown|md)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
     // Models sometimes prefix a stray H1 / meta block despite instructions — strip anything
     // before the first H2/H3 (the assembler owns H1, TOC and meta).
@@ -900,8 +917,29 @@ async function writeTextInChunks(outline: any, ctx: {
     // Sanity: the chunk must contain at least its first section heading.
     const first = String(c[0]?.heading || "").trim();
     if (first && md.toLowerCase().includes(first.slice(0, Math.min(30, first.length)).toLowerCase())) parts[i] = md;
-  });
-  if (parts.some(p => p == null)) return null; // a chunk failed even after retries → single-shot fallback
+  };
+  await runPool(chunks.map((c, i) => ({ c, i })), 2, writeChunk);
+
+  // A failed chunk is retried ON ITS OWN, and this is the whole point of the change. One null
+  // part used to discard every sibling chunk that had already been written AND paid for; the
+  // caller then paid a third time for a single-shot rewrite of the entire article. A quarter of
+  // an hour of work and real credits could be lost to one transient gateway error on one chunk.
+  // The common causes — 429, gateway 5xx — clear on their own, so the missing chunks are simply
+  // re-run, sequentially so the retry cannot re-trip the rate limit that caused the failure.
+  for (let round = 0; round < 2; round++) {
+    const missing = parts.map((p, i) => (p == null ? i : -1)).filter(i => i >= 0);
+    if (!missing.length) break;
+    console.error(`[text] ${missing.length}/${chunks.length} chunks missing — retry round ${round + 1}${lastChunkError ? ` (last: ${lastChunkError})` : ""}`);
+    await new Promise(r => setTimeout(r, 10_000 * (round + 1)));
+    for (const i of missing) await writeChunk({ c: chunks[i], i });
+  }
+
+  // Frozen BEFORE the FAQ pass, which rewrites `parts` in place and would otherwise turn a
+  // still-missing chunk into an empty string indistinguishable from a written one.
+  const missingIdx = parts.map((p, i) => (p == null ? i : -1)).filter(i => i >= 0);
+  const missingHeadings = missingIdx.flatMap(i => chunks[i].map((s: any) => String(s.heading || "")).filter(Boolean));
+  const wroteChunks = chunks.length - missingIdx.length;
+  if (!wroteChunks) return { text: null, wroteChunks: 0, totalChunks: chunks.length, missingHeadings, lastError: lastChunkError };
 
   // FAQ: single, deterministic path. (1) Strip ANY FAQ-ish section a chunk may have written
   // anyway — matched by meaning, not by the literal "## FAQ" heading (models localize it:
@@ -919,7 +957,7 @@ async function writeTextInChunks(outline: any, ctx: {
   const canonFaq = (md: string) => md
     .replace(/^(##\s*FAQ[^\n]*)\n+[\s\S]*?(?=^###\s)/m, "$1\n\n"); // strip prose between H2 and 1st question
   if (faq.length) {
-    for (let i = 0; i < parts.length; i++) parts[i] = stripFaqSection(parts[i] || "");
+    for (let i = 0; i < parts.length; i++) if (parts[i] != null) parts[i] = stripFaqSection(parts[i] as string);
     try {
       const faqPrompt = `Сегодня ${new Date().toISOString().slice(0, 10)} — если уместен год, только текущий (${new Date().getFullYear()}). Ты пишешь FAQ-секцию статьи по теме "${ctx.keyword}" на языке ${ctx.language}. Верни ТОЛЬКО markdown секции строго такой формы: первая строка — ровно «## FAQ», затем СРАЗУ первый вопрос — НИКАКОГО вводного абзаца между ними. Каждый вопрос — «### Вопрос», под ним ответ 40-60 слов по answer_guideline (конкретика, без воды). Все ${faq.length} вопросов, СТРОГО В ЗАДАННОМ ПОРЯДКЕ. Заголовок секции НЕ переименовывай — ровно «## FAQ». Без преамбулы и \`\`\`-обёрток.\nВОПРОСЫ: ${JSON.stringify(faq)}`;
       const faqRaw = await fetchLLM(faqPrompt, ctx.provider, ctx.apiKey, 2500, ctx.model, ctx.baseUrl);
@@ -944,7 +982,11 @@ async function writeTextInChunks(outline: any, ctx: {
   const toc = ctx.includeToc
     ? `<div class="toc"><strong>${tocLabel}</strong><ul>${secs.filter((s: any) => s.h_level === "H2").map((s: any) => `<li><a href="#${slug(String(s.heading))}">${s.heading}</a></li>`).join("")}${faq.length && !hasFaqH2 ? `<li><a href="#faq">FAQ</a></li>` : ""}</ul></div>\n\n`
     : "";
-  return `# ${h1}\n\n${toc}${parts.join("\n\n")}`;
+  const body = parts.filter((p): p is string => p != null && p.trim().length > 0).join("\n\n");
+  return {
+    text: `# ${h1}\n\n${toc}${body}`,
+    wroteChunks, totalChunks: chunks.length, missingHeadings, lastError: lastChunkError,
+  };
 }
 
 // ─── Volume guard (final word on article length) ──────────────────────────────────
@@ -1128,10 +1170,13 @@ export async function genText(b: any): Promise<GenResult> {
   // written 3-5 sections per call — one giant prompt degrades mid-generation (prose decays
   // into lists, tables get invented values). Falls back to single-shot if any chunk fails.
   let text: string | null = null;
+  let incomplete = false;
+  let missingHeadings: string[] = [];
+  let chunked: ChunkedTextResult | null = null;
   const secCount = Array.isArray(slimOutline.sections) ? slimOutline.sections.length : 0;
   if (b.chunkedText !== false && b.promptType !== "custom" && secCount >= 10) {
     try {
-      text = await writeTextInChunks(slimOutline, {
+      chunked = await writeTextInChunks(slimOutline, {
         keyword: keyword || String(slimOutline.meta?.keyword ?? ""),
         language, tone: String(b.tone ?? "neutral, expert"),
         provider, apiKey, model, baseUrl,
@@ -1139,10 +1184,31 @@ export async function genText(b: any): Promise<GenResult> {
         temperature: b.temperature === undefined || b.temperature === null ? undefined : Number(b.temperature),
         bannedWords: Array.isArray(b.bannedWords) ? b.bannedWords : undefined,
       });
-    } catch { text = null; }
+    } catch { chunked = null; }
+  }
+
+  if (chunked?.text) {
+    if (chunked.wroteChunks >= chunked.totalChunks) {
+      text = chunked.text;
+    } else if (chunked.wroteChunks >= Math.ceil(chunked.totalChunks * 0.7)) {
+      // Most of the article exists and has already been paid for. Rewriting it single-shot would
+      // spend the budget a second time AND produce worse prose — one giant prompt is precisely
+      // the degradation the chunked writer exists to avoid. Ship what was written, name what was
+      // not, and let the caller regenerate just the gap.
+      text = chunked.text;
+      incomplete = true;
+      missingHeadings = chunked.missingHeadings;
+      console.error(`[text] shipping incomplete article: ${chunked.wroteChunks}/${chunked.totalChunks} chunks, missing: ${missingHeadings.join(" | ")}`);
+    }
   }
 
   if (!text) {
+    // Errors the provider has already told us not to retry — an empty wallet, a bad key, an
+    // oversized body. A single-shot attempt after those spends minutes to fail identically, so
+    // the chunk failures' own reason is returned instead.
+    if (/\b(401|402|403|413)\b|insufficient_balance|invalid_api_key/i.test(chunked?.lastError || "")) {
+      return { ok: false, error: `generation_failed: ${chunked!.lastError}` };
+    }
     const prompt = buildTextPrompt({
       outlineJson: slimOutline,
       policy: b.policy,
@@ -1163,7 +1229,10 @@ export async function genText(b: any): Promise<GenResult> {
     const r = await fetchLLMDetailed(prompt, provider, apiKey, 12000, model, baseUrl,
       b.temperature === undefined || b.temperature === null ? undefined : Number(b.temperature));
     text = r.text;
-    if (!text) return { ok: false, error: r.error ? `generation_failed: ${r.error}` : "generation_failed" };
+    // Prefer the single-shot's own reason, but fall back to the chunk writer's — when the
+    // chunked path is the one that did the real work, its error is the informative one.
+    const why = r.error || chunked?.lastError;
+    if (!text) return { ok: false, error: why ? `generation_failed: ${why}` : "generation_failed" };
   }
   if (!text) return { ok: false, error: "generation_failed" };
 
@@ -1205,8 +1274,10 @@ export async function genText(b: any): Promise<GenResult> {
 
   // VOLUME guard (default on, symmetric) — see enforceVolumeTarget() above. Runs LAST, after
   // fact-clean, so it's the final word on article length. Off with expandText:false.
+  // Skipped when sections are missing: the guard would read the gap as "the writer undershot"
+  // and pad the surviving sections to cover words that belong to text nobody wrote.
   const finalTargetWc = Number(b.targetWordCount) || Number(slimOutline.meta?.target_word_count) || 0;
-  if (b.expandText !== false && finalTargetWc >= 500) {
+  if (b.expandText !== false && finalTargetWc >= 500 && !incomplete) {
     text = await enforceVolumeTarget(text, finalTargetWc, { language, provider, apiKey, model, baseUrl });
   }
 
@@ -1216,7 +1287,15 @@ export async function genText(b: any): Promise<GenResult> {
   // later expand/trim/fact-clean pass, could otherwise leave/reintroduce a wrong-language word).
   text = ensureTocLabel(text, language);
 
-  return { ok: true, data: { text, usedSources: sources.length, redacted, autoCleaned } };
+  return {
+    ok: true,
+    data: {
+      text, usedSources: sources.length, redacted, autoCleaned,
+      // Present only when sections are genuinely absent, so existing consumers see the same
+      // shape they always did for a complete article.
+      ...(incomplete ? { incomplete: true, missingHeadings, chunkError: chunked?.lastError } : {}),
+    },
+  };
 }
 
 // Safety net: models occasionally leak characters from another writing system into the article
