@@ -9,7 +9,8 @@ import {
   buildOutlinePrompt, buildTextPrompt, buildAnalysisPrompt, buildFactScrubPrompt, buildSourceExtractPrompt,
   buildAutoFactCleanPrompt, buildWireframePrompt, buildSectionEnrichPrompt, buildStructureExpandPrompt,
   buildHeadingLocalizePrompt, buildTextExpandPrompt, buildTextTrimPrompt, buildSectionTextPrompt,
-  enforceLinkPolicy, redactBannedWords, extractJson, CompetitorInput,
+  buildFaqBackfillPrompt,
+  enforceLinkPolicy, redactBannedWords, extractJson, extractJsonDetailed, CompetitorInput,
 } from "@/lib/seo/prompts";
 import { findRagFacts } from "@/lib/seo/rag";
 import { decodeHtmlEntities } from "@/lib/seo/outlineFormat";
@@ -155,20 +156,57 @@ export function normalizeWordBudgets(outline: any, target: number): boolean {
   return true;
 }
 
-// ─── Structure-expansion pass: deterministically graft model-proposed H3s under thin H2s ──
-// Runs when the outline is flat (H2s with <2 child H3s) — typical with user templates, where
-// models are too conservative to add their own subsections despite instructions.
+// How many sections a word target calls for (~100 words each): more than that and every section
+// becomes a 70-word stub, fewer and each one swells into walls of text the copywriter can only
+// answer with 400-word blocks. Shared by the expansion pass and genOutline's completeness check
+// so the two cannot disagree about what "enough structure" means.
+export function targetSectionCount(targetWc?: number): number {
+  return targetWc && targetWc >= 500
+    ? Math.max(10, Math.min(34, Math.round(targetWc / 100)))
+    : 26;
+}
+
+// Sub-intent labels ("H2 Τιμές Καθαρισμού…", "H3 Guarantees") that no heading in the outline
+// covers. The model plans its sub-intents BEFORE it writes the sections, so when the response is
+// cut short this list is the record of what the outline was supposed to contain — the cheapest
+// possible brief for rebuilding the missing part.
+function uncoveredSubIntents(outline: any, sections: any[]): string[] {
+  const subs: any[] = Array.isArray(outline?.sub_intents) ? outline.sub_intents : [];
+  if (!subs.length) return [];
+  const norm = (s: string) => String(s || "").replace(/^\s*H[1-4]\s*[:.\-—]?\s*/i, "").replace(/\s+/g, " ").trim().toLowerCase();
+  const have = sections.map((s: any) => norm(s?.heading));
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const si of subs) {
+    const label = norm(si?.section) || norm(si?.intent);
+    if (!label || seen.has(label)) continue;
+    // "Covered" is deliberately loose — the heading rarely matches the sub-intent label word for
+    // word, so a containment test either way is what tells a rephrasing apart from an absence.
+    if (have.some(h => h && (h.includes(label) || label.includes(h)))) continue;
+    seen.add(label);
+    out.push(String(si?.section || si?.intent).replace(/^\s*H[1-4]\s*[:.\-—]?\s*/i, "").trim());
+  }
+  return out;
+}
+
+// ─── Structure-expansion pass: deterministically graft model-proposed sections into the outline ──
+// Two defects land here, and they need different repairs:
+//   • FLAT   — enough sections, but H2s carry <2 child H3s. Typical with user templates, where
+//              models are too conservative to add their own subsections despite instructions.
+//   • DEFICIT — too few sections for the word target, whatever their depth. This is what a
+//              response cut off mid-`sections` leaves behind, and the flatness test alone MISSES
+//              it: the H2s that made it into the response can be perfectly deep, so the pass
+//              declared the outline healthy and returned without adding anything, while the word
+//              guard spread 2500 words across the 7 surviving sections.
+// Deficit mode may append whole H2 blocks; flat mode stays H3-only, so template skeletons keep
+// their exact shape.
 async function expandOutlineStructure(outline: any, ctx: {
   keyword: string; language: string; country: string; provider: string; apiKey: string;
   model?: string; baseUrl?: string; pageGoal?: "informational" | "commercial" | "mixed"; paa?: string[];
   targetWc?: number;
 }): Promise<boolean> {
   const sections: any[] = Array.isArray(outline?.sections) ? outline.sections : [];
-  // Section count is BOUND to the word target (~100 words/section): more sections than the
-  // budget supports = every section becomes a 70-word stub and the article overshoots.
-  const maxSections = ctx.targetWc && ctx.targetWc >= 500
-    ? Math.max(10, Math.min(34, Math.round(ctx.targetWc / 100)))
-    : 26;
+  const maxSections = targetSectionCount(ctx.targetWc);
   if (!sections.length || sections.length >= maxSections) return false;
   // Count H3 children per H2; skip expansion when the outline is already deep.
   let thinH2 = 0, h2Count = 0;
@@ -179,45 +217,96 @@ async function expandOutlineStructure(outline: any, ctx: {
     for (let j = i + 1; j < sections.length && sections[j]?.h_level !== "H2"; j++) kids++;
     if (kids < 2) thinH2++;
   }
-  if (!h2Count || thinH2 < Math.ceil(h2Count / 2)) return false;
+  if (!h2Count) return false;
+  const isFlat = thinH2 >= Math.ceil(h2Count / 2);
+  const isShort = sections.length < Math.round(maxSections * 0.7);
+  if (!isFlat && !isShort) return false;
 
+  const missingTopics = isShort ? uncoveredSubIntents(outline, sections) : [];
   const prompt = buildStructureExpandPrompt({
     keyword: ctx.keyword, language: ctx.language, country: ctx.country,
     pageGoal: ctx.pageGoal, paa: ctx.paa,
     maxAdd: maxSections - sections.length,
     sections: sections.map((s: any) => ({ h_level: s.h_level, heading: s.heading })),
+    allowNewH2: isShort,
+    missingTopics,
+    targetSections: maxSections,
   });
-  const raw = await fetchLLM(prompt, ctx.provider, ctx.apiKey, 4000, ctx.model, ctx.baseUrl);
+  const raw = await fetchLLM(prompt, ctx.provider, ctx.apiKey, 6000, ctx.model, ctx.baseUrl);
   const parsed: any = extractJson(raw);
   const insertions: any[] = Array.isArray(parsed?.insertions) ? parsed.insertions : [];
   if (!insertions.length) return false;
 
   const have = new Set(sections.map((s: any) => String(s.heading || "").trim().toLowerCase()));
+  const blank = (n: any, level: "H2" | "H3") => {
+    const wc = toWcRange(n.word_count_total) || (level === "H2" ? [40, 80] : [80, 160]);
+    return {
+      h_level: level, heading: String(n.heading).trim(),
+      word_count_total: wc, word_count_self: wc,
+      entities_to_cover: [], keywords: [], summary: String(n.summary || ""),
+      visual_elements: [], copywriter_notes: "", entity_connections: [],
+      needs_real_experience: false,
+    };
+  };
   let added = 0;
   for (const ins of insertions) {
-    const anchor = String(ins?.after_heading || "").trim().toLowerCase();
-    const idx = sections.findIndex((s: any) => String(s.heading || "").trim().toLowerCase() === anchor && s.h_level === "H2");
-    if (idx === -1) continue;
-    // Insert AFTER the anchor H2's existing H3 block (i.e. right before the next H2).
-    let at = idx + 1;
-    while (at < sections.length && sections[at]?.h_level !== "H2") at++;
+    const anchorRaw = String(ins?.after_heading || "").trim();
+    const anchor = anchorRaw.toLowerCase();
+    // "END" appends a whole new block after everything else — the only way to restore an H2 the
+    // truncated response never got to, since there is no surviving heading to hang it under.
+    const atEnd = isShort && (anchor === "end" || anchor === "«end»" || anchor === '"end"');
+    let at: number;
+    if (atEnd) {
+      at = sections.length;
+    } else {
+      const idx = sections.findIndex((s: any) => String(s.heading || "").trim().toLowerCase() === anchor && s.h_level === "H2");
+      if (idx === -1) continue;
+      // Insert AFTER the anchor H2's existing H3 block (i.e. right before the next H2).
+      at = idx + 1;
+      while (at < sections.length && sections[at]?.h_level !== "H2") at++;
+    }
     const newbies = (Array.isArray(ins.sections) ? ins.sections : [])
       .filter((n: any) => n?.heading && !have.has(String(n.heading).trim().toLowerCase()))
-      .slice(0, 4)
-      .map((n: any) => ({
-        h_level: "H3", heading: String(n.heading).trim(),
-        word_count_total: toWcRange(n.word_count_total) || [80, 160],
-        word_count_self: toWcRange(n.word_count_total) || [80, 160],
-        entities_to_cover: [], keywords: [], summary: String(n.summary || ""),
-        visual_elements: [], copywriter_notes: "", entity_connections: [],
-        needs_real_experience: false,
-      }));
+      .slice(0, 6)
+      // An H2 is only honoured in deficit mode; otherwise everything grafts in as H3 exactly as
+      // before, so a template skeleton can never sprout a top-level heading it did not ask for.
+      .map((n: any) => blank(n, isShort && String(n?.h_level || "").toUpperCase() === "H2" ? "H2" : "H3"));
     newbies.forEach((n: any) => have.add(n.heading.trim().toLowerCase()));
-    sections.splice(at, 0, ...newbies.slice(0, Math.max(0, maxSections - sections.length)));
-    added += newbies.length;
+    const room = Math.max(0, maxSections - sections.length);
+    sections.splice(at, 0, ...newbies.slice(0, room));
+    added += Math.min(newbies.length, room);
     if (sections.length >= maxSections) break;
   }
   return added > 0;
+}
+
+// ─── FAQ backfill: regenerate the FAQ block when the outline arrived without one ────
+// Cheap, and it repairs two things at once: the article gets its question block back, and the
+// word-budget guard downstream once again has something to reserve words FOR — without a `faq`
+// array it reserves nothing and pushes the entire article target into the body sections.
+async function backfillOutlineFaq(outline: any, ctx: {
+  keyword: string; language: string; country: string; provider: string; apiKey: string;
+  model?: string; baseUrl?: string; pageGoal?: "informational" | "commercial" | "mixed"; paa?: string[];
+}): Promise<boolean> {
+  if (Array.isArray(outline?.faq) && outline.faq.length >= 3) return false;
+  const sections: any[] = Array.isArray(outline?.sections) ? outline.sections : [];
+  const prompt = buildFaqBackfillPrompt({
+    keyword: ctx.keyword, language: ctx.language, country: ctx.country, pageGoal: ctx.pageGoal,
+    count: 8,
+    headings: sections.map((s: any) => String(s?.heading || "")).filter(Boolean),
+    subIntents: (Array.isArray(outline?.sub_intents) ? outline.sub_intents : [])
+      .map((si: any) => String(si?.intent || "")).filter(Boolean),
+    paa: ctx.paa,
+  });
+  const raw = await fetchLLM(prompt, ctx.provider, ctx.apiKey, 4000, ctx.model, ctx.baseUrl);
+  const parsed: any = extractJson(raw);
+  const faq = (Array.isArray(parsed?.faq) ? parsed.faq : [])
+    .filter((f: any) => f && String(f.question || "").trim())
+    .slice(0, 10)
+    .map((f: any) => ({ question: String(f.question).trim(), answer_guideline: String(f.answer_guideline || "").trim() }));
+  if (faq.length < 3) return false;
+  outline.faq = faq;
+  return true;
 }
 
 // ─── Heading localization pass: apply model-proposed renames deterministically ─────
@@ -379,15 +468,55 @@ export async function genOutline(b: any): Promise<GenResult> {
   // thing that makes the failure actionable, and fetchLLM throws that reason away. A bare
   // "parse_failed" here cost real debugging time — it named the JSON parser for problems that
   // were actually an empty completion, a safety block or a refusal upstream.
-  let res = await fetchLLMDetailed(prompt, provider, apiKey, 16000, model, baseUrl, outlineTemp);
+  // Output budget for the outline call. 16000 was one flat number covering both the answer AND
+  // whatever hidden reasoning the model does, and a 20-30 section EAV structure does not fit
+  // underneath it once a reasoning model has taken its cut. What made that expensive rather than
+  // merely annoying is that nothing NOTICED: the cut-off response was salvaged into valid JSON,
+  // shipped as a finished outline missing the tail of its own section list plus `faq` and
+  // `entity_analysis`, and the word guard then spread the whole article target across whatever
+  // sections had survived. So: a larger first ask, and one retry at a larger ceiling still when
+  // the answer comes back cut off.
+  const OUTLINE_TOKENS = 24000;
+  const OUTLINE_TOKENS_RETRY = 32000;
+  const wantSections = targetSectionCount(Number(b.targetWordCount) || 0);
+  const sectionCount = (o: any) => (Array.isArray(o?.sections) ? o.sections.length : 0);
+  // Two signals, both definitive, neither previously visible: the provider saying it stopped at
+  // the ceiling, and our own JSON salvage admitting it had to re-close open containers. A merely
+  // THIN outline is not counted here — the expansion and FAQ passes below repair that far more
+  // cheaply than paying for the whole call again.
+  const cutOff = (repaired: boolean, finish?: string) => {
+    const f = String(finish || "").toLowerCase();
+    return repaired || f === "length" || f === "max_tokens" || f === "max_output_tokens";
+  };
+
+  let res = await fetchLLMDetailed(prompt, provider, apiKey, OUTLINE_TOKENS, model, baseUrl, outlineTemp);
   let raw = res.text;
-  let outline = extractJson(raw);
+  let parsed0 = extractJsonDetailed(raw);
+  let outline = parsed0.data;
+  let wasCutOff = !!outline && cutOff(parsed0.repaired, res.finishReason);
   if (!outline) {
     // Retry deterministically: if sampling is what mangled the JSON, repeating at the same
     // temperature just rolls the same dice again.
-    res = await fetchLLMDetailed(prompt + (raw ? "\n\nПредыдущий ответ не распарсился. Верни ТОЛЬКО валидный JSON, без текста и без markdown-обёрток." : ""), provider, apiKey, 16000, model, baseUrl, outlineTemp === undefined ? undefined : 0);
+    res = await fetchLLMDetailed(prompt + (raw ? "\n\nПредыдущий ответ не распарсился. Верни ТОЛЬКО валидный JSON, без текста и без markdown-обёрток." : ""), provider, apiKey, OUTLINE_TOKENS, model, baseUrl, outlineTemp === undefined ? undefined : 0);
     raw = res.text;
-    outline = extractJson(raw);
+    parsed0 = extractJsonDetailed(raw);
+    outline = parsed0.data;
+    wasCutOff = !!outline && cutOff(parsed0.repaired, res.finishReason);
+  } else if (wasCutOff) {
+    // Repeating the request at the SAME ceiling would reproduce the same truncation — the point
+    // of this retry is the higher ceiling, not the reroll. Whichever attempt is more complete
+    // wins, so a second truncation can only ever gain sections, never lose them.
+    console.error(`[outline] response cut off (finish_reason: ${res.finishReason ?? "n/a"}, sections: ${sectionCount(outline)}/${wantSections}) — retrying with a larger token budget`);
+    try {
+      const res2 = await fetchLLMDetailed(prompt, provider, apiKey, OUTLINE_TOKENS_RETRY, model, baseUrl, outlineTemp);
+      const parsed2 = extractJsonDetailed(res2.text);
+      if (parsed2.data) {
+        const cut2 = cutOff(parsed2.repaired, res2.finishReason);
+        if (!cut2 || sectionCount(parsed2.data) > sectionCount(outline)) {
+          res = res2; raw = res2.text; outline = parsed2.data; wasCutOff = cut2;
+        }
+      }
+    } catch { /* keep the first attempt; the repair passes below still run */ }
   }
   // Three genuinely different failures, three different messages. They used to collapse into
   // "generation_failed" / "parse_failed", which said nothing about which one had happened.
@@ -428,6 +557,10 @@ export async function genOutline(b: any): Promise<GenResult> {
   meta.keyword = keyword;
   if (b.narration === "first" || b.narration === "third") meta.narration = b.narration;
   if (b.structureRules && String(b.structureRules).trim()) meta.structureRules = String(b.structureRules).trim();
+  // Recorded rather than thrown away: the repair passes below usually make a truncated response
+  // whole again, but "this outline was rebuilt from a cut-off answer" is exactly the context
+  // needed when someone later asks why a generation looks thin, and it costs one boolean.
+  if (wasCutOff) { (outline as any)._truncated = true; meta.truncated = true; }
   // EXPAND pass (default on): if the outline is flat (most H2s have <2 child H3s — typical
   // with user templates), graft model-proposed H3 subsections deterministically. Runs BEFORE
   // the volume guard so budgets are redistributed across the new sections too. Off with expand:false.
@@ -456,6 +589,24 @@ export async function genOutline(b: any): Promise<GenResult> {
       });
       if (renamed) (outline as any)._localized = true;
     } catch { /* localization is best-effort */ }
+  }
+
+  // FAQ BACKFILL (default on): `faq` sits at the tail of the outline schema, so it is the first
+  // casualty of any short response — and its absence is not a cosmetic one. The article loses the
+  // block that earns People-Also-Ask and AI-answer citations, and the volume guard immediately
+  // below reserves words only for questions that exist, so an empty `faq` pushes the entire word
+  // target into the body and inflates every section. Runs BEFORE that guard for exactly that
+  // reason. Off with faqBackfill:false.
+  if (b.faqBackfill !== false) {
+    try {
+      const built = await backfillOutlineFaq(outline, {
+        keyword, language: String(b.language ?? "en"), country: String(b.country ?? "us"),
+        provider, apiKey, model, baseUrl,
+        pageGoal: b.pageGoal === "commercial" || b.pageGoal === "informational" ? b.pageGoal : "mixed",
+        paa: Array.isArray(b.paa) ? b.paa : undefined,
+      });
+      if (built) (outline as any)._faq_backfilled = true;
+    } catch { /* backfill is best-effort; an outline without FAQ is still usable */ }
   }
 
   // Volume guard: stamp the requested target and rescale section budgets if the model

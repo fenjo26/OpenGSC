@@ -190,13 +190,13 @@ export async function fetchLLMDetailed(
   temperature?: number,
   /** Opt back into Z.AI's thinking mode; off by default because it eats the whole max_tokens budget. */
   enableThinking = false,
-): Promise<{ text: string | null; error?: string }> {
+): Promise<{ text: string | null; error?: string; finishReason?: string }> {
   const delays = [0, 5_000, 20_000]; // 3 attempts total
   let lastError: string | undefined;
   for (let i = 0; i < delays.length; i++) {
     if (delays[i]) await new Promise(r => setTimeout(r, delays[i] + Math.floor(Math.random() * 4_000)));
     const r = await fetchLLMOnce(prompt, provider, apiKey, maxTokens, modelOverride, baseUrl, temperature, enableThinking);
-    if (r.text != null) return { text: r.text };
+    if (r.text != null) return { text: r.text, finishReason: r.finishReason };
     lastError = r.errorDetail;
     if (!r.retryable) return { text: null, error: lastError };
     if (i < delays.length - 1) console.error(`[LLM] ${provider} transient failure — retrying (${i + 1}/${delays.length - 1})`);
@@ -228,7 +228,7 @@ async function fetchLLMOnce(
   temperature?: number,
   /** Opt back into Z.AI's thinking mode; off by default because it eats the whole max_tokens budget. */
   enableThinking = false,
-): Promise<{ text: string | null; retryable: boolean; errorDetail?: string }> {
+): Promise<{ text: string | null; retryable: boolean; errorDetail?: string; finishReason?: string }> {
   // Hard timeout so a stuck/over-long generation fails in minutes instead of hanging forever.
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 280_000);
@@ -240,7 +240,11 @@ async function fetchLLMOnce(
   try {
     let text = '';
     // Kept alongside `text` so the empty-completion path below can explain ITSELF rather than
-    // handing the caller a bare '' and letting it guess what went wrong.
+    // handing the caller a bare '' and letting it guess what went wrong — and, since it is also
+    // RETURNED on success, so a caller can tell a finished answer from one the provider cut off
+    // at the token ceiling. A truncated answer used to be indistinguishable from a complete one:
+    // the outline step salvaged half a JSON document, shipped it as a finished outline, and the
+    // article was written from a structure that stopped mid-way through its own section list.
     let finishReason: string | undefined;
     let lastData: any = null;
     if (provider === 'anthropic' || (provider === 'zai' && zaiAnthropicShape(baseUrl))) {
@@ -302,8 +306,15 @@ async function fetchLLMOnce(
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          // Gemini nests sampling under generationConfig rather than at the top level.
-          ...(temperature !== undefined ? { generationConfig: { temperature: clampTemp('gemini', temperature) } } : {}),
+          // Gemini nests sampling under generationConfig rather than at the top level — and that
+          // is also the only place an output ceiling can be set. `maxTokens` used to be dropped
+          // on the floor here, so every caller silently got the model's own default instead of
+          // the budget it asked for. For the outline step that default is well under what a
+          // 25-section JSON structure needs, and the response came back cut in half.
+          generationConfig: {
+            maxOutputTokens: maxTokens,
+            ...(temperature !== undefined ? { temperature: clampTemp('gemini', temperature) } : {}),
+          },
         }),
       });
       if (!res.ok) {
@@ -317,11 +328,32 @@ async function fetchLLMOnce(
       text = geminiText(data);
     } else if (provider === 'openrouter') {
       const orModel = modelOverride ?? defaultModelFor('openrouter');
-      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      // Half of OpenRouter's catalogue reasons by default and bills those tokens against the same
+      // `max_tokens` ceiling as the answer, which is fatal for a step whose whole output is one
+      // long JSON document. `reasoning: { enabled: false }` is OpenRouter's own documented switch,
+      // but it is a gateway-level field and an individual upstream route can still reject it — so
+      // a 400 that names it is retried once without, rather than failing the user's generation.
+      const orBody = (withReasoning: boolean) => JSON.stringify({
+        model: orModel, max_tokens: maxTokens, messages: [{ role: 'user', content: prompt }],
+        ...temp(temperature, orModel),
+        ...(withReasoning ? {} : { reasoning: { enabled: false } }),
+      });
+      const orCall = (withReasoning: boolean) => fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST', signal: sig,
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: orModel, max_tokens: maxTokens, messages: [{ role: 'user', content: prompt }], ...temp(temperature, orModel) }),
+        body: orBody(withReasoning),
       });
+      let res = await orCall(enableThinking);
+      if (!res.ok) {
+        const bodyText = await res.text().catch(() => '');
+        if (res.status === 400 && !enableThinking && /reasoning/i.test(bodyText)) {
+          console.error('[LLM] openrouter: route rejected reasoning:{enabled:false} — retrying without it');
+          res = await orCall(true);
+        } else {
+          console.error('[LLM] openrouter', res.status, bodyText);
+          return { text: null, retryable: retryableStatus(res.status), errorDetail: extractErrorDetail('openrouter', res.status, bodyText) };
+        }
+      }
       if (!res.ok) {
         const bodyText = await res.text().catch(() => '');
         console.error('[LLM] openrouter', res.status, bodyText);
@@ -393,7 +425,11 @@ async function fetchLLMOnce(
           model: modelOverride ?? defaultModelFor('kie'),
           stream: false,
           input: [{ role: 'user', content: [{ type: 'input_text', text: prompt }] }],
-          reasoning: { effort: 'medium' },
+          // Reasoning tokens are drawn from the same output budget as the answer, so a step that
+          // has to return a long JSON document cannot afford "medium" — it thinks, runs out, and
+          // emits a half-written structure. Callers that need JSON pass enableThinking=false
+          // (the default) and get the cheapest effort; prose callers opt back in.
+          reasoning: { effort: enableThinking ? 'medium' : 'low' },
         }),
       });
       if (!res.ok) {
@@ -402,6 +438,12 @@ async function fetchLLMOnce(
         return { text: null, retryable: retryableStatus(res.status), errorDetail: extractErrorDetail('kie', res.status, bodyText) };
       }
       const data = await res.json();
+      lastData = data;
+      // Responses API reports an exhausted budget as an `incomplete` status rather than a
+      // finish_reason, so normalise it to the same vocabulary the other branches use.
+      finishReason = data?.status === 'incomplete'
+        ? (data?.incomplete_details?.reason ?? 'incomplete')
+        : data?.status;
       text = parseKieOutput(data);
     } else if (provider === 'custom') {
       // Any OpenAI-compatible endpoint. baseUrl is the API root; we call /chat/completions.
@@ -448,7 +490,7 @@ async function fetchLLMOnce(
       console.error('[LLM]', detail);
       return { text: null, retryable: false, errorDetail: detail };
     }
-    return { text, retryable: false };
+    return { text, retryable: false, finishReason };
   } catch (e) {
     // AbortError = our 280s timeout; TypeError "fetch failed" = transient network — both retryable.
     const isTimeout = (e as any)?.name === 'AbortError';

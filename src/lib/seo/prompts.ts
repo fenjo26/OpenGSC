@@ -266,23 +266,86 @@ export function buildStructureExpandPrompt(args: {
   paa?: string[];
   maxAdd?: number; // hard cap on new H3s (derived from the word-count target)
   sections: { h_level: string; heading: string }[];
+  /**
+   * Whole H2 topics the outline is missing — normally the `section` labels of sub-intents that
+   * no existing heading covers. Present only in deficit mode, where the outline is too SHORT
+   * overall rather than merely too flat, and grafting H3s under what survived cannot fix it.
+   */
+  missingTopics?: string[];
+  /** Deficit mode: the pass may append whole new H2 blocks, not just H3s under existing ones. */
+  allowNewH2?: boolean;
+  /** How many sections the word target calls for — quoted so the model aims at a real number. */
+  targetSections?: number;
 }): string {
   const goal = args.pageGoal === "commercial" ? "коммерческая (конверсионная)" : args.pageGoal === "informational" ? "информационная (справочная)" : "смешанная";
-  const paa = args.paa?.length ? `\n- вопросы пользователей из выдачи (покрой релевантные новыми H3): ${JSON.stringify(args.paa.slice(0, 10))}` : "";
-  return `Сегодня ${new Date().toISOString().slice(0, 10)} — если в формулировках уместен год, используй ТОЛЬКО текущий (${new Date().getFullYear()}); НИКОГДА не пиши 2023/2024/2025.\n\nТы — SEO-стратег. Ниже структура статьи по теме "${args.keyword}" (язык ${args.language}, регион ${args.country}, цель страницы: ${goal}). Она слишком ПЛОСКАЯ — крупным H2 не хватает H3-подсекций, покрывающих реальные под-интенты пользователей. Предложи ДОПОЛНИТЕЛЬНЫЕ H3 (только вставки — существующие заголовки НЕ трогай, НЕ переименовывай, НЕ переставляй). Верни СТРОГИЙ JSON без преамбулы и markdown-обёрток.
+  const paa = args.paa?.length ? `\n- вопросы пользователей из выдачи (покрой релевантные новыми подсекциями): ${JSON.stringify(args.paa.slice(0, 10))}` : "";
+  const missing = args.missingTopics?.length
+    ? `\n- ТЕМЫ, КОТОРЫХ В СТРУКТУРЕ НЕТ (их запланировали в под-интентах, но соответствующих секций нет — восстанови их В ПЕРВУЮ ОЧЕРЕДЬ): ${JSON.stringify(args.missingTopics.slice(0, 14))}`
+    : "";
+  // Two different defects, one pass. "Flat" = enough sections, not enough depth → H3s only.
+  // "Deficit" = the structure is simply too small for the article's word target, which is what a
+  // response cut off mid-`sections` leaves behind: the surviving H2s can look perfectly deep, so
+  // an H3-only repair reports success and changes nothing.
+  const diagnosis = args.allowNewH2
+    ? `Она НЕПОЛНАЯ: секций СЛИШКОМ МАЛО для заданного объёма статьи${args.targetSections ? ` (сейчас ${args.sections.length}, нужно ≈${args.targetSections})` : ""} — часть тем вообще не раскрыта. Дострой её: добавь НЕДОСТАЮЩИЕ H2-темы (каждую сразу с 2-4 своими H3) и H3 под существующие H2.`
+    : `Она слишком ПЛОСКАЯ — крупным H2 не хватает H3-подсекций, покрывающих реальные под-интенты пользователей. Предложи ДОПОЛНИТЕЛЬНЫЕ H3.`;
+  const placementRule = args.allowNewH2
+    ? `- "after_heading" — ТОЧНЫЙ текст существующего H2, ПОСЛЕ блока которого вставить (вставка идёт после всех его H3). Чтобы дописать блок в САМЫЙ КОНЕЦ статьи, поставь "after_heading": "END".
+- Новый H2 подавай ОДНОЙ вставкой вместе со своими H3: [{"h_level":"H2",...},{"h_level":"H3",...},{"h_level":"H3",...}] — H3 идут сразу за своим H2 в том же массиве.
+- word_count_total: для нового H2 — [40, 80] (это только его вступление, основной объём в H3), для нового H3 — [80, 160].
+- Порядок логичный: справочное выше, коммерческое и служебное (гарантии, безопасность, как заказать) ниже. Секцию FAQ НЕ создавай — она формируется отдельно.`
+    : `- "after_heading" — ТОЧНЫЙ текст существующего H2, под который вставить.
+- word_count_total для нового H3: [80, 160].
+- НЕ добавляй новых H2.`;
+  return `Сегодня ${new Date().toISOString().slice(0, 10)} — если в формулировках уместен год, используй ТОЛЬКО текущий (${new Date().getFullYear()}); НИКОГДА не пиши 2023/2024/2025.\n\nТы — SEO-стратег. Ниже структура статьи по теме "${args.keyword}" (язык ${args.language}, регион ${args.country}, цель страницы: ${goal}). ${diagnosis} Существующие заголовки НЕ трогай, НЕ переименовывай, НЕ переставляй — только вставки. Верни СТРОГИЙ JSON без преамбулы и markdown-обёрток.
 
 ПРАВИЛА:
 - Для КАЖДОГО содержательного H2, у которого меньше 2 своих H3, предложи 2-4 новых H3 (для мелких/служебных H2 вроде FAQ/поддержки — можно 0-1 или пропустить).
-- H3 — конкретные под-интенты: типы/варианты/шаги/сравнения/условия (напр. для секции ставок: «Ставки Live и стриминг», «Комбинированные ставки (Build-a-Bet)», «Ставки на игроков (props)»; для казино: «Джекпоты и настольные игры», «Демо-режим»; для бонусов: «Условия отыгрыша (wagering)»).
+- Подсекции — конкретные под-интенты: типы/варианты/шаги/сравнения/условия/цены/география (напр. для услуги: «Цены по типу помещения», «Что входит в базовый пакет», «Как записаться за 3 шага», «Районы обслуживания»; для казино: «Условия отыгрыша (wagering)», «Демо-режим»).
 - Заголовки — на языке ${args.language}, с НЧ-ключами, без дублей существующих.
-- "after_heading" — ТОЧНЫЙ текст существующего H2, под который вставить.
-- word_count_total для нового H3: [80, 160].
-- Суммарно добавь НЕ БОЛЬШЕ ${Math.max(2, args.maxAdd ?? 12)} H3 по всей статье — выбирай САМЫЕ важные под-интенты, остальные пропусти. НЕ добавляй новых H2.
+${placementRule}
+- Суммарно добавь НЕ БОЛЬШЕ ${Math.max(2, args.maxAdd ?? 12)} новых секций по всей статье — выбирай САМЫЕ важные под-интенты, остальные пропусти.
 
-СТРУКТУРА СЕЙЧАС: ${JSON.stringify(args.sections)}${paa}
+СТРУКТУРА СЕЙЧАС: ${JSON.stringify(args.sections)}${missing}${paa}
 
 ВЕРНИ JSON строго по схеме:
-{ "insertions": [ { "after_heading": "точный H2", "sections": [ { "h_level": "H3", "heading": "", "word_count_total": [80,160], "summary": "1-2 предложения — что раскрыть" } ] } ] }`;
+{ "insertions": [ { "after_heading": "точный H2${args.allowNewH2 ? ` или \\"END\\"` : ""}", "sections": [ { "h_level": "${args.allowNewH2 ? "H2|H3" : "H3"}", "heading": "", "word_count_total": [80,160], "summary": "1-2 предложения — что раскрыть" } ] } ] }`;
+}
+
+// ─── FAQ backfill: rebuild the FAQ block when the outline came back without one ────
+// `faq` sits near the END of the outline schema, so it is the first thing lost whenever the
+// model's response is cut short — and losing it is expensive twice over. The article loses its
+// question block (the part that wins People-Also-Ask and AI-answer citations), and the word-budget
+// guard reserves nothing for it, so the full article target gets pushed into the body sections,
+// inflating every one of them. Regenerating it costs one small call against material the outline
+// already produced.
+export function buildFaqBackfillPrompt(args: {
+  keyword: string;
+  language: string;
+  country: string;
+  pageGoal?: "informational" | "commercial" | "mixed";
+  count?: number;
+  headings?: string[];
+  subIntents?: string[];
+  paa?: string[];
+}): string {
+  const n = Math.max(3, Math.min(10, args.count ?? 8));
+  const goal = args.pageGoal === "commercial" ? "коммерческая" : args.pageGoal === "informational" ? "информационная" : "смешанная";
+  const heads = args.headings?.length ? `\n- заголовки статьи (НЕ дублируй их вопросами — FAQ закрывает то, что в них не поместилось): ${JSON.stringify(args.headings.slice(0, 40))}` : "";
+  const si = args.subIntents?.length ? `\n- под-интенты пользователей из анализа: ${JSON.stringify(args.subIntents.slice(0, 16))}` : "";
+  const paa = args.paa?.length ? `\n- People-Also-Ask из выдачи (приоритет — это РЕАЛЬНЫЕ вопросы): ${JSON.stringify(args.paa.slice(0, 12))}` : "";
+  return `Ты — SEO-стратег. Для статьи по теме "${args.keyword}" (язык ${args.language}, регион ${args.country}, цель страницы: ${goal}) собери блок FAQ. Верни СТРОГИЙ JSON без преамбулы и markdown-обёрток.
+
+ПРАВИЛА:
+- Ровно ${n} вопросов, на языке ${args.language}, сформулированных так, как их РЕАЛЬНО набирают в поиске (полные вопросительные фразы, а не темы).
+- Приоритет: сначала вопросы из People-Also-Ask, затем под-интенты, которые не закрыты основными секциями.
+- Для КАЖДОГО заполни answer_guideline (на РУССКОМ — это инструкция копирайтеру): 40-60 слов, какие конкретные сущности, цифры и ориентиры задействовать, чем закончить ответ.
+- Вопросы про цену/сроки/гарантию/географию обязательны, если тема их допускает — это самые кликаемые.
+- ${NO_FABRICATION}
+${heads}${si}${paa}
+
+ВЕРНИ JSON строго по схеме:
+{ "faq": [ { "question": "", "answer_guideline": "40-60 слов, конкретно" } ] }`;
 }
 
 // ─── Heading localization/styling: translate template headings into the article language ──
@@ -852,19 +915,34 @@ export function buildVisionStructurePrompt(): string {
 // ─── Strict-JSON extraction (spec §6) ───────────────────────────────────────────
 // Strips ```json fences and grabs the outermost {...} before JSON.parse.
 export function extractJson<T = any>(raw: string | null): T | null {
-  if (!raw) return null;
+  return extractJsonDetailed<T>(raw).data;
+}
+
+/**
+ * Same parse as `extractJson`, but says whether the result came from the SALVAGE path.
+ *
+ * The salvage exists so a response cut off at the token ceiling still yields something usable
+ * instead of nothing. What it must never do is pass that something off as a complete answer:
+ * a partial outline parses cleanly, looks well-formed in every view, and quietly lacks the tail
+ * of its own `sections` array plus every field the schema puts after it (`faq`,
+ * `entity_analysis`). Downstream that reads as "the model chose to write 7 sections", and the
+ * word-budget guard then spreads the full article target across those 7 — which is how a 2500-word
+ * brief ends up asking for 480-word subsections. Callers that care check `repaired` and retry.
+ */
+export function extractJsonDetailed<T = any>(raw: string | null): { data: T | null; repaired: boolean } {
+  if (!raw) return { data: null, repaired: false };
   let s = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
   const first = s.indexOf("{");
-  if (first === -1) return null;
+  if (first === -1) return { data: null, repaired: false };
   s = s.slice(first);
   // 1) Straight parse of the largest {...} slice (works for complete output).
   const last = s.lastIndexOf("}");
-  if (last > 0) { try { return JSON.parse(s.slice(0, last + 1)) as T; } catch { /* fall through */ } }
+  if (last > 0) { try { return { data: JSON.parse(s.slice(0, last + 1)) as T, repaired: false }; } catch { /* fall through */ } }
   // 2) Salvage TRUNCATED output (hit token limit mid-JSON): cut at the last fully-closed
   //    container and re-close the still-open parents, so we recover a valid partial outline.
   const repaired = repairTruncatedJson(s);
-  if (repaired) { try { return JSON.parse(repaired) as T; } catch { /* give up */ } }
-  return null;
+  if (repaired) { try { return { data: JSON.parse(repaired) as T, repaired: true }; } catch { /* give up */ } }
+  return { data: null, repaired: false };
 }
 
 // Cut a truncated JSON string at the last position where a nested object/array fully closed,
