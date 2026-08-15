@@ -10,7 +10,7 @@ import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { HistoryItem, getHistoryItem, updateHistory, patchHistory } from "@/lib/seo/history";
 import { outlineHeadings, articleHeadings, markdownToHtml, htmlDocument, countWords, splitArticleSections, hasVerifiableFacts } from "@/lib/seo/outlineFormat";
 import { getSeoGenCreds, getTaskCreds, getSerpCreds, getFirecrawlKey, getAutoFactcheck, getAutoImages, getFactSourceCount, getFactBearingOnly, getFactReuseCorpus, getKieKey } from "@/lib/seo/keys";
-import { IMAGE_MODELS, ImageModelId } from "@/lib/seo/kieImages";
+import { IMAGE_MODELS, imageModel, type ImageModelId } from "@/lib/seo/imageModels";
 
 export default function SeoTextDetail({ item: initial }: { item: HistoryItem }) {
   const { t } = useLanguage();
@@ -488,19 +488,45 @@ function Images({ item, setItem, outline, article, t, autoStart }: any) {
 
   // Create a kie.ai render task for one prompt (hero, or section index `s${i}`), poll it to
   // completion, then persist the resulting URL into item.meta.images so it survives a reload.
+  // Persist a finished URL into item.meta.images so it survives a reload. Shared by both the
+  // synchronous provider and the tail of the polling loop.
+  function saveGeneratedUrl(key: string, url: string) {
+    setGenState(s => ({ ...s, [key]: { status: "done", url } }));
+    const nextImages = { ...images };
+    if (key === "hero") {
+      nextImages.hero = typeof nextImages.hero === "string" ? { prompt: nextImages.hero, generatedUrl: url } : { ...nextImages.hero, generatedUrl: url };
+    } else {
+      const idx = Number(key.slice(1));
+      nextImages.sections = (nextImages.sections || []).map((sec: any, i: number) => i === idx ? { ...sec, generatedUrl: url } : sec);
+    }
+    patchHistory(item.id, { meta: { images: nextImages } });
+    setItem((prev: any) => ({ ...prev, meta: { ...prev.meta, images: nextImages } }));
+  }
+
   async function generateImage(key: string, prompt: string) {
-    const kieKey = getKieKey();
-    if (!kieKey) { setGenState(s => ({ ...s, [key]: { status: "error", error: t("seoImgNoKieKey") } })); return; }
+    // Each model names the key it needs — kie.ai and Z.AI are billed separately, and picking a
+    // Z.AI model with only a kie.ai key configured used to fail with kie.ai's error text.
+    const def = imageModel(imgModel);
+    const apiKey = (typeof window === "undefined" ? "" : localStorage.getItem(def?.keyName || "aiKey_kie") || "");
+    if (!apiKey) { setGenState(s => ({ ...s, [key]: { status: "error", error: t("seoImgNoKieKey") } })); return; }
     setGenState(s => ({ ...s, [key]: { status: "generating" } }));
     try {
       const input: Record<string, any> = { prompt, aspect_ratio: imgAspect, resolution: imgResolution };
       if (imgModel === "nano-banana-2") input.output_format = "jpg";
       const createRes = await fetch("/api/seo/image-gen", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: imgModel, input, apiKey: kieKey }),
+        body: JSON.stringify({
+          model: imgModel, input, apiKey,
+          baseUrl: def?.provider === "zai" ? (localStorage.getItem("aiBaseUrl_zai") || undefined) : undefined,
+        }),
       });
       const createData = await createRes.json();
-      if (!createRes.ok || !createData.taskId) { setGenState(s => ({ ...s, [key]: { status: "error", error: createData.error || "error" } })); return; }
+      if (!createRes.ok) { setGenState(s => ({ ...s, [key]: { status: "error", error: createData.error || "error" } })); return; }
+
+      // Z.AI renders synchronously and hands back the URL in this same response — nothing to poll.
+      if (Array.isArray(createData.urls) && createData.urls.length) { saveGeneratedUrl(key, createData.urls[0]); return; }
+
+      if (!createData.taskId) { setGenState(s => ({ ...s, [key]: { status: "error", error: createData.error || "error" } })); return; }
       const taskId = createData.taskId;
 
       const deadline = Date.now() + 5 * 60 * 1000; // kie.ai docs: stop polling after ~10-15min; 5min is plenty for stills
@@ -508,21 +534,11 @@ function Images({ item, setItem, outline, article, t, autoStart }: any) {
         await new Promise(r => setTimeout(r, 3000));
         const stRes = await fetch("/api/seo/image-gen/status", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ taskId, apiKey: kieKey }),
+          body: JSON.stringify({ taskId, apiKey }),
         });
         const st = await stRes.json();
         if (st.state === "success" && st.resultUrls?.length) {
-          const url = st.resultUrls[0];
-          setGenState(s => ({ ...s, [key]: { status: "done", url } }));
-          const nextImages = { ...images };
-          if (key === "hero") {
-            nextImages.hero = typeof nextImages.hero === "string" ? { prompt: nextImages.hero, generatedUrl: url } : { ...nextImages.hero, generatedUrl: url };
-          } else {
-            const idx = Number(key.slice(1));
-            nextImages.sections = (nextImages.sections || []).map((sec: any, i: number) => i === idx ? { ...sec, generatedUrl: url } : sec);
-          }
-          patchHistory(item.id, { meta: { images: nextImages } });
-          setItem((prev: any) => ({ ...prev, meta: { ...prev.meta, images: nextImages } }));
+          saveGeneratedUrl(key, st.resultUrls[0]);
           return;
         }
         if (st.state === "fail" || st.error) { setGenState(s => ({ ...s, [key]: { status: "error", error: st.error || "generation_failed" } })); return; }
@@ -555,7 +571,11 @@ function Images({ item, setItem, outline, article, t, autoStart }: any) {
         <select value={imgAspect} onChange={e => setImgAspect(e.target.value)} className="tool-input" style={{ width: "auto", padding: "6px 10px", fontSize: "12px" }}>
           {["auto", "1:1", "16:9", "9:16", "4:3", "3:4"].map(a => <option key={a} value={a}>{a}</option>)}
         </select>
-        {!getKieKey() && <span style={{ fontSize: "11px", color: "var(--color-accent-orange)" }}>{t("seoImgNoKieKey")}</span>}
+        {/* Warn about the key the SELECTED model needs, not always kie.ai's — the picker now spans
+            two providers with separate billing, and the old check called a working setup broken. */}
+        {typeof window !== "undefined" && !localStorage.getItem(imageModel(imgModel)?.keyName || "aiKey_kie") && (
+          <span style={{ fontSize: "11px", color: "var(--color-accent-orange)" }}>{t("seoImgNoKieKey")}</span>
+        )}
       </div>
 
       {images.hero && (() => {
