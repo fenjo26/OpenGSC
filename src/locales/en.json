@@ -1110,6 +1110,9 @@
   "seoSetInstrSerper": "Sign up at serper.dev → Dashboard → API Key. You get 2500 free requests to start.",
   "seoSetHintDfs": "SERP (Google + Bing) and Ahrefs-like metrics in one API. Paste the Base64 token from the dashboard, or login:password.",
   "seoSetInstrDfs": "Create an account at dataforseo.com → API Access. Easiest: copy the ready Base64 token and paste it here. Or paste login:password (your email and API password) — both work.",
+  "seoRoleGoAny": "Traffic + SERP + links",
+  "seoSetHintGoAny": "Pay-as-you-go credits for domain traffic, cached SERPs with DR/traffic per result, keyword difficulty, backlinks and Domain Rating.",
+  "seoSetInstrGoAny": "Create an account at goanyapi.com and copy the API key. Traffic is the reason to add it — nothing else in the app estimates visits, engagement or the GenAI share of a domain's traffic. Its SERPs are cached, so Rank Tracker will not use this provider.",
   "seoSetHintFc": "Paid scraper: bypasses anti-bot, returns clean markdown. Used when direct fetch fails.",
   "seoSetInstrFc": "Sign up at firecrawl.dev → Dashboard → API Keys. Without this key scraping uses direct fetch (fails on ~30–50% of sites).",
   "seoRoleSerp": "SERP API",
@@ -3317,5 +3320,11 @@
   "crawlerMetrics_failed": "The provider request failed.",
   "aiKeysHint": "Keys are saved on your own instance and sent straight to the AI provider when One Click Setup runs. Nothing goes anywhere else.",
   "fpOpenLab": "Open the AI-Fingerprint Lab →",
-  "fpTempClamped": "This step must return valid JSON, so anything above {max} is clamped to {max}."
+  "fpTempClamped": "This step must return valid JSON, so anything above {max} is clamped to {max}.",
+  "trafficCheckBtn": "Traffic",
+  "trafficCheckTitle": "Estimate monthly visits and channel mix for this domain (2 GoAnyAPI credits)",
+  "trafficVisitsLabel": "visits/mo",
+  "trafficAsOf": "checked",
+  "trafficPeriod": "month",
+  "trafficGenAiTitle": "Share of visits arriving from AI assistants — the other half of the AI Visibility tab"
 }

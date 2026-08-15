@@ -1110,6 +1110,9 @@
   "seoSetInstrSerper": "Regístrate en serper.dev → Panel → API Key. Obtienes 2500 solicitudes gratuitas para empezar.",
   "seoSetHintDfs": "SERP (Google + Bing) y métricas tipo Ahrefs en una sola API. Pega el token Base64 del panel, o login:password.",
   "seoSetInstrDfs": "Crea una cuenta en dataforseo.com → API Access. Lo más fácil: copia el token Base64 listo y pégalo aquí. O pega login:password (tu email y contraseña de API) — ambos funcionan.",
+  "seoRoleGoAny": "Tráfico + SERP + enlaces",
+  "seoSetHintGoAny": "Créditos de pago por uso: tráfico de dominio, SERP en caché con DR y tráfico por resultado, dificultad de palabras clave, backlinks y Domain Rating.",
+  "seoSetInstrGoAny": "Crea una cuenta en goanyapi.com y copia la clave API. El tráfico es la razón para añadirlo: nada más en la aplicación estima visitas, interacción ni la cuota de tráfico GenAI de un dominio. Sus SERP están en caché, así que Rank Tracker no usará este proveedor.",
   "seoSetHintFc": "Scraper de pago: evita anti-bot, devuelve markdown limpio. Se usa cuando el fetch directo falla.",
   "seoSetInstrFc": "Regístrate en firecrawl.dev → Panel → API Keys. Sin esta clave el scraping usa fetch directo (falla en ~30–50 % de los sitios).",
   "seoRoleSerp": "API SERP",
@@ -3317,5 +3320,11 @@
   "crawlerMetrics_failed": "La petición al proveedor falló.",
   "aiKeysHint": "Las claves se guardan en tu propia instancia y se envían directamente al proveedor de IA al ejecutar One Click Setup. No van a ningún otro sitio.",
   "fpOpenLab": "Abrir el AI-Fingerprint Lab →",
-  "fpTempClamped": "Este paso debe devolver JSON válido, así que cualquier valor por encima de {max} se limita a {max}."
+  "fpTempClamped": "Este paso debe devolver JSON válido, así que cualquier valor por encima de {max} se limita a {max}.",
+  "trafficCheckBtn": "Tráfico",
+  "trafficCheckTitle": "Estimar visitas mensuales y mezcla de canales para este dominio (2 créditos de GoAnyAPI)",
+  "trafficVisitsLabel": "visitas/mes",
+  "trafficAsOf": "comprobado",
+  "trafficPeriod": "mes",
+  "trafficGenAiTitle": "Porcentaje de visitas que llegan desde asistentes de IA — la otra mitad de la pestaña AI Visibility"
 }

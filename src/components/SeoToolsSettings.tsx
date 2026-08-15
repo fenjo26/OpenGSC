@@ -32,6 +32,7 @@ export const SEO_PROVIDERS: KeyCardProvider[] = [
   { id: "serper", storageKey: "seoKey_serper", name: "Serper.dev", roleKey: "seoRoleSerp", placeholder: "Serper API key", hintKey: "seoSetHintSerper", instrKey: "seoSetInstrSerper", docsUrl: "https://serper.dev", color: "#10A37F", logo: "S" },
   { id: "dataforseo", storageKey: "seoKey_dataforseo", name: "DataForSEO", roleKey: "seoRoleDfs", placeholder: "login:password или Base64-токен", hintKey: "seoSetHintDfs", instrKey: "seoSetInstrDfs", docsUrl: "https://app.dataforseo.com/api-access", color: "#2997ff", logo: "D" },
   { id: "scrapingrobot", storageKey: "seoKey_scrapingrobot", name: "ScrapingRobot", roleKey: "seoRoleSr", placeholder: "ScrapingRobot API token", hintKey: "seoSetHintSr", instrKey: "seoSetInstrSr", docsUrl: "https://scrapingrobot.com", color: "#8B5CF6", logo: "R" },
+  { id: "goanyapi", storageKey: "seoKey_goanyapi", name: "GoAnyAPI", roleKey: "seoRoleGoAny", placeholder: "GoAnyAPI key", hintKey: "seoSetHintGoAny", instrKey: "seoSetInstrGoAny", docsUrl: "https://goanyapi.com/docs", color: "#F59E0B", logo: "G" },
   { id: "firecrawl", storageKey: "seoKey_firecrawl", name: "Firecrawl", roleKey: "seoRoleFc", placeholder: "fc-...", hintKey: "seoSetHintFc", instrKey: "seoSetInstrFc", docsUrl: "https://www.firecrawl.dev/app/api-keys", color: "#ff9f0a", logo: "F" },
 ];
 
@@ -66,7 +67,7 @@ export function SeoKeyCard({ provider, hideDocsLink = false }: { provider: KeyCa
 
   const save = () => {
     localStorage.setItem(provider.storageKey, key.trim());
-    if (key.trim() && (provider.id === "serper" || provider.id === "dataforseo" || provider.id === "scrapingrobot")) {
+    if (key.trim() && (provider.id === "serper" || provider.id === "dataforseo" || provider.id === "scrapingrobot" || provider.id === "goanyapi")) {
       if (!localStorage.getItem("seoSerpProvider")) localStorage.setItem("seoSerpProvider", provider.id);
     }
     setSaved(true); setTimeout(() => setSaved(false), 2000);
@@ -429,7 +430,16 @@ function TaskModelField({ value, models, onChange }: { value: string; models: Mo
   );
 }
 
-const SERP_PROVIDER_LIST: [string, string][] = [["serper", "Serper.dev"], ["dataforseo", "DataForSEO"], ["scrapingrobot", "ScrapingRobot"]];
+const SERP_PROVIDER_LIST: [string, string][] = [["serper", "Serper.dev"], ["dataforseo", "DataForSEO"], ["scrapingrobot", "ScrapingRobot"], ["goanyapi", "GoAnyAPI"]];
+
+/**
+ * Providers Rank Tracker will not accept, mirroring `RANK_UNSUPPORTED` in lib/rank.ts.
+ *
+ * Duplicated on purpose rather than imported: this file is a client component and rank.ts pulls
+ * in Prisma. The server is the one that enforces it — this copy exists only so the dropdown can
+ * say so before the user picks, instead of after a week of empty charts.
+ */
+const RANK_UNSUPPORTED_PROVIDERS = new Set(["goanyapi"]);
 
 function providerPillStyle(isActive: boolean): React.CSSProperties {
   return {
@@ -527,10 +537,16 @@ export default function SeoToolsSettings() {
           <button onClick={() => setRankProvider("")} style={providerPillStyle(rankActive === "")}>
             {t("seoSetRankProviderInherit")} ({activeName})
           </button>
-          {SERP_PROVIDER_LIST.map(([id, name]) => (
+          {SERP_PROVIDER_LIST.filter(([id]) => !RANK_UNSUPPORTED_PROVIDERS.has(id)).map(([id, name]) => (
             <button key={id} onClick={() => setRankProvider(id)} style={providerPillStyle(rankActive === id)}>{name}</button>
           ))}
         </div>
+        {RANK_UNSUPPORTED_PROVIDERS.has(active) && (
+          <p style={{ fontSize: "12px", color: "var(--color-warning)", margin: "8px 0 0" }}>
+            {activeName} serves cached SERPs with no depth control, so Rank Tracker cannot use it —
+            it will fall back to another configured SERP key. Positions elsewhere in the app are unaffected.
+          </p>
+        )}
       </div>
 
     </div>

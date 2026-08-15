@@ -24,6 +24,7 @@ import { useParams, useRouter } from "next/navigation";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { getTaskCreds, getAhrefsDrKey } from "@/lib/seo/keys";
+import TrafficChip from "@/components/TrafficChip";
 import BacklinkProfile from "@/components/BacklinkProfile";
 import {
   ArrowLeft, Sparkles, Eye, Percent, MoveUp,
@@ -4775,6 +4776,10 @@ export default function SitePage({
                 <a href="https://ahrefs.com/" target="_blank" rel="noreferrer" style={{ fontSize: "10px", color: "var(--color-text-tertiary)", textDecoration: "none" }} title={t("drByAhrefs")}>{t("byAhrefs")}</a>
               </span>
             )}
+            {/* Traffic sits next to DR because they answer the same question from two sides:
+                how strong is this domain, and how many people actually arrive. Renders nothing
+                at all without a cached figure or a configured key. */}
+            <TrafficChip domain={domain} shareToken={shareToken} style={blurStyle} />
           </div>
           <span style={{ margin: "0 24px", color: "var(--color-border)" }}>|</span>
           {/* Tab nav */}

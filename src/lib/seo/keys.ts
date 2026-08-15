@@ -150,6 +150,20 @@ export function getKieKey(): string {
   return localStorage.getItem("aiKey_kie") || "";
 }
 
+/**
+ * GoAnyAPI key (Settings → SEO Tools).
+ *
+ * One key, several datasets: SERP, keyword difficulty, backlinks, Domain Rating and — the reason
+ * it earns its place — domain traffic, which this app has never had a provider for. Read by name
+ * rather than through `getSerpCreds()` because most of those uses have nothing to do with SERPs,
+ * and a user who wants traffic estimates should not have to make it their active SERP provider
+ * to get them.
+ */
+export function getGoAnyKey(): string {
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem("seoKey_goanyapi") || "";
+}
+
 // DataForSEO key specifically (Keywords Data / Labs need DataForSEO, regardless of active SERP provider).
 export function getDataForSeoKey(): string {
   if (typeof window === "undefined") return "";

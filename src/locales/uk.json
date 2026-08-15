@@ -1110,6 +1110,9 @@
   "seoSetInstrSerper": "Зареєструйся на serper.dev → Dashboard → API Key. Дається 2500 безкоштовних запитів на старті.",
   "seoSetHintDfs": "SERP (Google + Bing) та Ahrefs-подібні метрики в одному API. Встав Base64-токен з дашборда АБО login:password — обидва формати працюють.",
   "seoSetInstrDfs": "Створи акаунт на dataforseo.com → API Access. Найпростіше: скопіюй готовий Base64-токен і встав сюди. Або встав login:password (email та API-пароль) — працюють обидва формати.",
+  "seoRoleGoAny": "Трафік + SERP + посилання",
+  "seoSetHintGoAny": "Кредити за фактом використання: трафік домену, кешована видача з DR і трафіком по кожному результату, складність ключа, беклінки та Domain Rating.",
+  "seoSetInstrGoAny": "Створи акаунт на goanyapi.com і скопіюй ключ. Заради трафіку його й варто підключати — візити, залученість і частку GenAI-трафіку більше ніщо в застосунку не рахує. Видача в них кешована, тому Rank Tracker цього провайдера не використовує.",
   "seoSetHintFc": "Платний скрейпер: проходить антибот, віддає чистий markdown. Використовується коли прямий fetch падає.",
   "seoSetInstrFc": "Зареєструйся на firecrawl.dev → Dashboard → API Keys. Без цього ключа скрейп працює на прямому fetch (падає на ~30–50% сайтів).",
   "seoRoleSerp": "SERP API",
@@ -3317,5 +3320,11 @@
   "crawlerMetrics_failed": "Запит до провайдера не вдався.",
   "aiKeysHint": "Ключі зберігаються на вашому власному інстансі й надсилаються прямо AI-провайдеру під час One Click Setup. Більше нікуди нічого не йде.",
   "fpOpenLab": "Відкрити AI-Fingerprint Lab →",
-  "fpTempClamped": "На цьому кроці відповідь має бути валідним JSON, тому значення понад {max} обрізається до {max}."
+  "fpTempClamped": "На цьому кроці відповідь має бути валідним JSON, тому значення понад {max} обрізається до {max}.",
+  "trafficCheckBtn": "Трафік",
+  "trafficCheckTitle": "Оцінити візити за місяць і структуру джерел для цього домену (2 кредити GoAnyAPI)",
+  "trafficVisitsLabel": "візитів/міс",
+  "trafficAsOf": "перевірено",
+  "trafficPeriod": "місяць",
+  "trafficGenAiTitle": "Частка візитів з AI-асистентів — друга половина вкладки AI Visibility"
 }

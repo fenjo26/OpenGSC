@@ -1110,6 +1110,9 @@
   "seoSetInstrSerper": "在 serper.dev 注册 → Dashboard → API Key。你将获得 2500 次免费请求来开始。",
   "seoSetHintDfs": "一个 API 同时提供 SERP（Google + Bing）和类 Ahrefs 指标。粘贴仪表盘中的 Base64 令牌，或 login:password。",
   "seoSetInstrDfs": "在 dataforseo.com 创建账号 → API Access。最简单：复制现成的 Base64 令牌并粘贴到这里。或粘贴 login:password（你的邮箱和 API 密码）——两者都可用。",
+  "seoRoleGoAny": "流量 + SERP + 外链",
+  "seoSetHintGoAny": "按量计费的积分：域名流量、带 DR 与流量指标的缓存 SERP、关键词难度、外链和 Domain Rating。",
+  "seoSetInstrGoAny": "在 goanyapi.com 注册账号并复制 API 密钥。真正值得接入的是流量数据——应用中没有其他来源可以估算访问量、互动指标或域名流量中的 GenAI 占比。其 SERP 为缓存数据，因此排名追踪不会使用该提供方。",
   "seoSetHintFc": "付费抓取器：绕过反机器人，返回干净的 markdown。在直接抓取失败时使用。",
   "seoSetInstrFc": "在 firecrawl.dev 注册 → Dashboard → API Keys。没有此密钥，抓取将使用直接抓取（约 30–50% 的网站会失败）。",
   "seoRoleSerp": "SERP API",
@@ -3317,5 +3320,11 @@
   "crawlerMetrics_failed": "服务商请求失败。",
   "aiKeysHint": "密钥保存在你自己的实例上，运行 One Click Setup 时直接发送给 AI 服务商，不会去往任何其他地方。",
   "fpOpenLab": "打开 AI-Fingerprint Lab →",
-  "fpTempClamped": "此步骤必须返回有效 JSON，因此高于 {max} 的值会被限制为 {max}。"
+  "fpTempClamped": "此步骤必须返回有效 JSON，因此高于 {max} 的值会被限制为 {max}。",
+  "trafficCheckBtn": "流量",
+  "trafficCheckTitle": "估算该域名的月访问量与渠道构成（消耗 2 个 GoAnyAPI 积分）",
+  "trafficVisitsLabel": "次访问/月",
+  "trafficAsOf": "检查于",
+  "trafficPeriod": "月份",
+  "trafficGenAiTitle": "来自 AI 助手的访问占比——AI Visibility 标签页的另一半答案"
 }

@@ -227,4 +227,52 @@ export const METRICS_TOOLS: McpTool[] = [
       };
     },
   },
+
+  {
+    name: "get_domain_traffic",
+    description:
+      "Estimated monthly visits, engagement (bounce rate, time on site, pages per visit), global and country rank, " +
+      "the 3-month visit trend, traffic-source shares INCLUDING the GenAI channel, top countries and top keywords " +
+      "for any domain — including competitors, since this does not need Search Console access. " +
+      "Read-only from the local cache, filled when a human presses Traffic on a site page; this tool never calls " +
+      "the provider and never spends credits. Empty means nobody has checked that domain yet, not that it has no traffic. " +
+      "Pair the GenAI share with get_aeo_visibility: citations in AI answers only matter if they send sessions.",
+    cost: "local",
+    inputSchema: {
+      type: "object",
+      properties: {
+        domains: { type: "array", items: { type: "string" }, description: "Domains to look up (max 50)" },
+      },
+      required: ["domains"],
+    },
+    handler: async (_userId, args) => {
+      const domains = asStrings(args.domains).map(normDomain).filter(d => d.includes(".")).slice(0, 50);
+      if (!domains.length) throw new Error("Missing required argument: domains");
+
+      let rows: any[] = [];
+      try {
+        rows = await rawQuery(
+          `SELECT domain, payload, checkedAt FROM "TrafficCache" WHERE domain IN (${domains.map(() => "?").join(",")})`,
+          ...domains,
+        );
+      } catch { /* table missing until prisma db push — same as an empty cache */ }
+
+      const found = rows.map(r => {
+        try {
+          // `checkedAt` rides alongside the payload rather than inside it: these are estimates
+          // with a month's granularity, and an agent quoting them should be able to say how old
+          // the reading is.
+          return { ...JSON.parse(r.payload), checkedAt: r.checkedAt };
+        } catch { return null; }
+      }).filter(Boolean);
+
+      const have = new Set(found.map((f: any) => f.domain));
+      return {
+        domains: found,
+        notLoaded: domains.filter(d => !have.has(d)),
+        note: "Traffic figures are third-party estimates, not measured analytics. Treat them as scale, not truth.",
+      };
+    },
+  },
+
 ];

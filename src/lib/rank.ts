@@ -16,6 +16,24 @@ export const RANK_STALE_MS = 20 * 60 * 60 * 1000; // ~daily, resilient to restar
 const MAX_DEPTH: Record<string, number> = { serper: 50, dataforseo: 100, scrapingrobot: 50 };
 const SMART_BUFFER = 20;
 
+/**
+ * SERP providers this tracker will not use, and why refusing beats degrading.
+ *
+ * GoAnyAPI is a real SERP source and is wired into `runSerp` for content and competitor work.
+ * It cannot answer this question: it serves from a cache (its own responses carry a `lastUpdate`
+ * days behind), it takes no depth parameter, and it takes no language. A tracker running on it
+ * would still draw a chart — a chart of last week's positions, truncated at whatever depth the
+ * provider felt like returning, and indistinguishable on screen from a correct one. A wrong
+ * rank history is worse than a missing one, because the missing one gets fixed.
+ *
+ * The message names the setting rather than the failure, because the fix is one dropdown away.
+ */
+const RANK_UNSUPPORTED: Record<string, string> = {
+  goanyapi:
+    "GoAnyAPI serves cached SERPs with no depth or language control, so it cannot measure today's position. " +
+    "Pick Serper, DataForSEO or ScrapingRobot for Rank Tracker in Settings → SEO Tools (the Rank Tracker provider is set separately from the one used elsewhere).",
+};
+
 export interface SerpCreds { provider: string; apiKey: string }
 
 // Read the user's SERP provider + key from the server-side settings snapshot.
@@ -32,7 +50,11 @@ export async function getUserSerpCreds(userId: string): Promise<SerpCreds | null
     // back to the general active provider when unset.
     const provider = s.seoSerpProvider_rank || s.seoSerpProvider || "serper";
     const apiKey = s[`seoKey_${provider}`] || "";
-    if (!apiKey) {
+    // An unsupported provider is treated exactly like a missing key: fall through to whatever
+    // else is configured. Someone who set GoAnyAPI as their app-wide SERP source and never
+    // touched the Rank Tracker override should keep tracking on the key they already have,
+    // rather than have every scheduled check start failing at once.
+    if (!apiKey || RANK_UNSUPPORTED[provider]) {
       // Fall back to any configured SERP key
       for (const p of ["serper", "dataforseo", "scrapingrobot"]) {
         if (s[`seoKey_${p}`]) return { provider: p, apiKey: s[`seoKey_${p}`] };
@@ -83,6 +105,8 @@ export async function checkTrackedKeyword(
   creds: SerpCreds,
 ): Promise<CheckResult> {
   const siteHost = hostOf(kw.siteUrl);
+  const unsupported = RANK_UNSUPPORTED[creds.provider];
+  if (unsupported) return { position: null, url: null, depth: 0, error: unsupported };
   const max = MAX_DEPTH[creds.provider] ?? 50;
 
   // Smart strategy: known position → scan a window around it; unknown → full depth.

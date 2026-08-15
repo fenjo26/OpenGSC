@@ -1110,6 +1110,9 @@
   "seoSetInstrSerper": "Registriere dich unter serper.dev → Dashboard → API Key. Du bekommst 2500 kostenlose Anfragen zum Start.",
   "seoSetHintDfs": "SERP (Google + Bing) und Ahrefs-ähnliche Metriken in einer API. Füge das Base64-Token aus dem Dashboard ein, oder login:password.",
   "seoSetInstrDfs": "Erstelle ein Konto unter dataforseo.com → API Access. Am einfachsten: kopiere das fertige Base64-Token und füge es hier ein. Oder füge login:password ein (deine E-Mail und dein API-Passwort) — beides funktioniert.",
+  "seoRoleGoAny": "Traffic + SERP + Links",
+  "seoSetHintGoAny": "Guthaben nach Verbrauch: Domain-Traffic, gecachte SERPs mit DR und Traffic je Ergebnis, Keyword-Difficulty, Backlinks und Domain Rating.",
+  "seoSetInstrGoAny": "Erstelle ein Konto auf goanyapi.com und kopiere den API-Key. Der Traffic ist der eigentliche Grund: nichts sonst in der App schätzt Besuche, Engagement oder den GenAI-Anteil am Traffic einer Domain. Die SERPs sind gecacht, deshalb nutzt der Rank Tracker diesen Anbieter nicht.",
   "seoSetHintFc": "Bezahlter Scraper: umgeht Anti-Bot, liefert sauberes Markdown. Wird verwendet, wenn direktes Fetching scheitert.",
   "seoSetInstrFc": "Registriere dich unter firecrawl.dev → Dashboard → API Keys. Ohne diesen Key nutzt Scraping direktes Fetching (scheitert bei ~30–50 % der Seiten).",
   "seoRoleSerp": "SERP-API",
@@ -3317,5 +3320,11 @@
   "crawlerMetrics_failed": "Die Anbieter-Anfrage ist fehlgeschlagen.",
   "aiKeysHint": "Schlüssel werden auf Ihrer eigenen Instanz gespeichert und beim One Click Setup direkt an den KI-Anbieter gesendet. Sonst geht nichts irgendwohin.",
   "fpOpenLab": "AI-Fingerprint Lab öffnen →",
-  "fpTempClamped": "Dieser Schritt muss gültiges JSON liefern, daher wird alles über {max} auf {max} begrenzt."
+  "fpTempClamped": "Dieser Schritt muss gültiges JSON liefern, daher wird alles über {max} auf {max} begrenzt.",
+  "trafficCheckBtn": "Traffic",
+  "trafficCheckTitle": "Monatliche Besuche und Kanalmix für diese Domain schätzen (2 GoAnyAPI-Credits)",
+  "trafficVisitsLabel": "Besuche/Mon.",
+  "trafficAsOf": "geprüft",
+  "trafficPeriod": "Monat",
+  "trafficGenAiTitle": "Anteil der Besuche aus KI-Assistenten — die andere Hälfte des AI-Visibility-Tabs"
 }

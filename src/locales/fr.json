@@ -1110,6 +1110,9 @@
   "seoSetInstrSerper": "Inscrivez-vous sur serper.dev → Dashboard → API Key. Vous obtenez 2500 requêtes gratuites pour démarrer.",
   "seoSetHintDfs": "SERP (Google + Bing) et métriques type Ahrefs dans une seule API. Collez le jeton Base64 du tableau de bord, ou login:mot de passe.",
   "seoSetInstrDfs": "Créez un compte sur dataforseo.com → API Access. Le plus simple : copiez le jeton Base64 prêt à l’emploi et collez-le ici. Ou collez login:mot de passe (votre e-mail et mot de passe API) — les deux fonctionnent.",
+  "seoRoleGoAny": "Trafic + SERP + liens",
+  "seoSetHintGoAny": "Crédits à l’usage : trafic d’un domaine, SERP en cache avec DR et trafic par résultat, difficulté des mots-clés, backlinks et Domain Rating.",
+  "seoSetInstrGoAny": "Créez un compte sur goanyapi.com et copiez la clé API. Le trafic est la vraie raison de l’ajouter : rien d’autre dans l’application n’estime les visites, l’engagement ou la part de trafic GenAI d’un domaine. Ses SERP sont en cache, donc le Rank Tracker n’utilisera pas ce fournisseur.",
   "seoSetHintFc": "Scraper payant : contourne l’anti-bot, renvoie du markdown propre. Utilisé quand la récupération directe échoue.",
   "seoSetInstrFc": "Inscrivez-vous sur firecrawl.dev → Dashboard → API Keys. Sans cette clé, le scraping utilise la récupération directe (échoue sur ~30 à 50 % des sites).",
   "seoRoleSerp": "API SERP",
@@ -3317,5 +3320,11 @@
   "crawlerMetrics_failed": "La requête au fournisseur a échoué.",
   "aiKeysHint": "Les clés sont enregistrées sur votre propre instance et envoyées directement au fournisseur d'IA lors du One Click Setup. Rien ne part ailleurs.",
   "fpOpenLab": "Ouvrir l'AI-Fingerprint Lab →",
-  "fpTempClamped": "Cette étape doit renvoyer du JSON valide : toute valeur supérieure à {max} est ramenée à {max}."
+  "fpTempClamped": "Cette étape doit renvoyer du JSON valide : toute valeur supérieure à {max} est ramenée à {max}.",
+  "trafficCheckBtn": "Trafic",
+  "trafficCheckTitle": "Estimer les visites mensuelles et la répartition des canaux pour ce domaine (2 crédits GoAnyAPI)",
+  "trafficVisitsLabel": "visites/mois",
+  "trafficAsOf": "vérifié",
+  "trafficPeriod": "mois",
+  "trafficGenAiTitle": "Part des visites venant des assistants IA — l’autre moitié de l’onglet AI Visibility"
 }

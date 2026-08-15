@@ -2,6 +2,8 @@
 // Supports Serper.dev and DataForSEO (both Google and Bing engines).
 // Keys are passed in from the client (stored in the browser, never on the server).
 
+import { goanySerp } from "./goanyapi";
+
 export type SerpEngine = "google" | "bing";
 
 export interface SerpResultItem {
@@ -10,6 +12,16 @@ export interface SerpResultItem {
   title: string;
   snippet: string;
   domain: string;
+  /**
+   * Strength of the ranking page, when the provider happens to know it.
+   *
+   * Optional because only GoAnyAPI returns it inline — Serper and DataForSEO give you the ten
+   * URLs and nothing about them, so `serpAnalysis` has always had to buy these numbers
+   * separately or go without. Present means measured; absent means this provider did not say,
+   * which is not the same as zero.
+   */
+  domainRating?: number | null;
+  traffic?: number | null;
 }
 
 export interface SerpResponse {
@@ -20,6 +32,14 @@ export interface SerpResponse {
   // Extra SERP features useful for AI-visibility analysis
   peopleAlsoAsk?: string[];
   relatedSearches?: string[];
+  /**
+   * When the provider last refreshed this SERP, for the ones serving from a cache.
+   *
+   * Live scrapers leave it undefined. GoAnyAPI does not, and the gap is routinely days — which is
+   * fine for "who competes here" and disqualifying for "where do I rank today". Callers that care
+   * about freshness can now ask instead of assuming.
+   */
+  lastUpdate?: string;
   error?: string;
 }
 
@@ -349,6 +369,58 @@ async function scrapingRobotSearch(
   return { engine, provider: "scrapingrobot", keyword, results: results.slice(0, want) };
 }
 
+// ─── GoAnyAPI ─────────────────────────────────────────────────────────────────
+// Cached Google SERPs with Ahrefs-style strength metrics attached to every result. Two
+// parameters only (`keyword`, `country`) — no language, no depth, no device — so `hl`, `num` and
+// `location` are accepted and ignored rather than silently changing the answer.
+
+async function goAnySearch(
+  apiKey: string,
+  keyword: string,
+  opts: { gl?: string; hl?: string; location?: string; num?: number; engine?: SerpEngine },
+): Promise<SerpResponse> {
+  const engine: SerpEngine = "google"; // Google only; there is no Bing endpoint here.
+  const r = await goanySerp(apiKey, keyword, (opts.gl || "us").toLowerCase());
+  if (!r.data) {
+    return { engine, provider: "goanyapi", keyword, results: [], error: r.error ?? "goanyapi: no data" };
+  }
+
+  const want = opts.num || 10;
+  const results: SerpResultItem[] = [];
+  const paa: string[] = [];
+
+  for (const row of r.data.rows) {
+    // "questions" is this provider's People-Also-Ask block, and it arrives inside the same array
+    // as the organic rows rather than in a sibling field.
+    if (row.type === "questions") {
+      for (const q of row.questions ?? []) if (q?.title) paa.push(q.title);
+      continue;
+    }
+    if (row.type !== "organic" || !row.url) continue;
+    results.push({
+      // Their `position` is the absolute rank, counting SERP features — the same convention as
+      // the DataForSEO branch above, so the two structured providers stay comparable.
+      position: row.position ?? results.length + 1,
+      url: row.url,
+      title: row.title ?? "",
+      // No snippet in this response. Empty string rather than a fabricated one: `serpAnalysis`
+      // treats a missing snippet as missing, and inventing text from the title would be worse
+      // than saying nothing.
+      snippet: "",
+      domain: domainOf(row.url),
+      domainRating: row.metrics?.domainRating ?? null,
+      traffic: row.metrics?.traffic ?? null,
+    });
+  }
+
+  return {
+    engine, provider: "goanyapi", keyword,
+    results: results.slice(0, want),
+    peopleAlsoAsk: paa,
+    ...(r.data.lastUpdate ? { lastUpdate: r.data.lastUpdate } : {}),
+  };
+}
+
 export async function runSerp(
   provider: string,
   apiKey: string,
@@ -361,6 +433,7 @@ export async function runSerp(
   try {
     if (provider === "dataforseo") return await dataForSeoSearch(apiKey, keyword, opts);
     if (provider === "scrapingrobot") return await scrapingRobotSearch(apiKey, keyword, opts);
+    if (provider === "goanyapi") return await goAnySearch(apiKey, keyword, opts);
     return await serperSearch(apiKey, keyword, opts); // default: serper
   } catch (e: any) {
     return { engine: opts.engine ?? "google", provider, keyword, results: [], error: String(e?.message ?? e) };

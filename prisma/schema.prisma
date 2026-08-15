@@ -891,6 +891,20 @@ model DrCache {
   checkedAt DateTime @default(now())
 }
 
+// Domain traffic estimates (GoAnyAPI). Cached like DrCache and for the same reason — every call
+// costs credits — but with a much longer life: the upstream figures are monthly, so refetching
+// within the same month buys the identical numbers twice.
+//
+// The whole response is kept as JSON rather than split into columns. It is a wide, nested and
+// vendor-shaped object (monthly series, channel shares, country shares, top keywords), only ever
+// read whole, and pinning it to columns would mean a migration every time the vendor adds a
+// channel — which, given they added GenAI recently, is a live possibility.
+model TrafficCache {
+  domain    String   @id
+  payload   String
+  checkedAt DateTime @default(now())
+}
+
 // ─── Link Monitor (Ahrefs API v3) — track fresh quality backlinks to watched brands ──
 model LinkWatchBrand {
   id        String   @id @default(cuid())
