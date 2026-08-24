@@ -1,5 +1,0 @@
-{
-  "extends": "./tsconfig.json",
-  "compilerOptions": { "noEmit": true, "skipLibCheck": true, "incremental": false },
-  "include": ["src/lib/**/*.ts", "src/app/api/**/*.ts", "next-env.d.ts"]
-}
