@@ -11,9 +11,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link2, Loader2, RefreshCw, TrendingDown } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
-import { getMetricsCreds, estimateCostUsd, formatUsd } from "@/lib/seo/metricsClient";
+import {
+  getMetricsCreds, getMetricsMode, estimateCostUsd, formatUsd, type MetricsMode,
+} from "@/lib/seo/metricsClient";
 import { isGuestView, shareTokenFromPath } from "@/lib/shareParam";
-import { estimateProfileUnits } from "@/lib/seo/metrics";
+import {
+  estimateProfileUnits, DEFAULT_BASE_URL, gatewayStatusFromError, type SubscriptionInfo,
+} from "@/lib/seo/metrics";
+import { METRICS_GATEWAY_URL } from "@/components/SeoToolsSettings";
+
+/** `{host}` / `{n}` placeholders in locale strings — `t()` returns them verbatim by design. */
+const fill = (s: string, vars: Record<string, string>) =>
+  s.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? `{${k}}`);
 
 interface RefDomain {
   refDomain: string;
@@ -39,6 +48,14 @@ function drColor(dr: number) {
 const fmt = (n: number | null | undefined) =>
   n == null ? "—" : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(Math.round(n));
 
+/** Everything the source placard needs about where paid calls go, resolved once after mount. */
+interface SourceCfg {
+  provider: "ahrefs" | "semrush";
+  mode: MetricsMode;
+  host: string;
+  cap: number;
+}
+
 export default function BacklinkProfile({ siteDbId }: { siteDbId: string }) {
   const { t } = useLanguage();
   // A client opening a share link sees the profile and cannot refresh it. The server enforces
@@ -48,12 +65,52 @@ export default function BacklinkProfile({ siteDbId }: { siteDbId: string }) {
   const [rows, setRows] = useState<RefDomain[]>([]);
   const [history, setHistory] = useState<Snapshot[]>([]);
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState<React.ReactNode>("");
   const [hasKey, setHasKey] = useState(false);
   const [limit, setLimit] = useState(100);
   const [showLost, setShowLost] = useState(false);
 
-  useEffect(() => { setHasKey(!guest && getMetricsCreds().apiKey.length > 4); }, [guest]);
+  // Resolved in an effect, not during render: mode and host live in localStorage, and reading
+  // them during the first pass would make the server HTML disagree with the client's.
+  const [src, setSrc] = useState<SourceCfg | null>(null);
+  const [balance, setBalance] = useState<{ info: SubscriptionInfo | null; gatewayStatus: number | null } | null>(null);
+  const [localUsage, setLocalUsage] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (guest) return;
+    const creds = getMetricsCreds();
+    setHasKey(creds.apiKey.length > 4);
+    setSrc({
+      provider: creds.provider,
+      // Same resolution the settings screen uses — a second way of deriving the mode here
+      // would be able to disagree with it, and "mode" is exactly what a 401 message names.
+      mode: getMetricsMode(creds.provider),
+      host: creds.baseUrl || DEFAULT_BASE_URL[creds.provider],
+      cap: creds.cap,
+    });
+  }, [guest]);
+
+  // The provider's own balance — free, cached 10 minutes server-side, so a render never opens
+  // a gateway round-trip for it. Null `info` means "unavailable", and the placard then says so
+  // and falls back to our own spend estimate rather than presenting it as the balance.
+  const loadBalance = useCallback(async () => {
+    const creds = getMetricsCreds();
+    if (guest || creds.apiKey.length <= 4) return;
+    try {
+      const res = await fetch("/api/metrics/subscription", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: creds.provider, apiKey: creds.apiKey, baseUrl: creds.baseUrl }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (d.usage && typeof d.usage.units === "number") setLocalUsage(d.usage.units);
+      setBalance({
+        info: d.info ?? null,
+        gatewayStatus: typeof d.gatewayStatus === "number" ? d.gatewayStatus : null,
+      });
+    } catch { setBalance({ info: null, gatewayStatus: null }); }
+  }, [guest]);
+
+  useEffect(() => { loadBalance().catch(() => {}); }, [loadBalance]);
 
   const call = useCallback(async (doFetch: boolean) => {
     const creds = getMetricsCreds();
@@ -68,16 +125,34 @@ export default function BacklinkProfile({ siteDbId }: { siteDbId: string }) {
     const d = await res.json().catch(() => ({}));
     if (Array.isArray(d.refDomains)) setRows(d.refDomains);
     if (Array.isArray(d.history)) setHistory(d.history);
+    if (d.usage && typeof d.usage.units === "number") setLocalUsage(d.usage.units);
     if (!res.ok && doFetch) {
-      setNotice(d.error === "cap_exceeded" ? t("kwCapExceeded")
+      // Gateway refusals carry different diagnoses: 401 names the wrong key/host pair, 402 an
+      // empty wallet, 403 a product the key does not include. Flattening them into one "failed"
+      // is what made this screen undiagnosable, so each gets its own sentence here.
+      const gw = gatewayStatusFromError(typeof d.error === "string" ? d.error : "");
+      const host = creds.baseUrl || DEFAULT_BASE_URL[creds.provider];
+      setNotice(
+        d.error === "cap_exceeded" ? t("kwCapExceeded")
         : d.error === "provider_unsupported" ? t("blpAhrefsOnly")
-        : t("blpFailed"));
+        : gw === 401 ? fill(t("blsrcErr401"), { host })
+        : gw === 402 ? (<>
+            {fill(t("blsrcErr402"), { host })}{" "}
+            <a href={METRICS_GATEWAY_URL} target="_blank" rel="noreferrer noopener nofollow"
+              style={{ color: "var(--color-accent-blue)" }}>{t("blsrcTopUp")}</a>
+          </>)
+        : gw === 403 ? t("blsrcErr403")
+        : gw === 429 ? t("blsrcErr429")
+        : gw != null && gw >= 500 ? t("blsrcErr502")
+        : t("blpFailed")
+      );
     } else if (doFetch) {
       // A partial pull cannot prove a link is gone, so it does not mark anything lost. Saying
       // so is the difference between "no losses" and "we did not look".
       setNotice(d.complete === false ? t("blpPartial") : "");
+      loadBalance().catch(() => {});
     }
-  }, [siteDbId, limit, t]);
+  }, [siteDbId, limit, t, loadBalance]);
 
   // Free read of what is stored — never reaches a provider.
   useEffect(() => { call(false).catch(() => {}); }, [call]);
@@ -108,6 +183,21 @@ export default function BacklinkProfile({ siteDbId }: { siteDbId: string }) {
 
   const visible = showLost ? lost : live;
 
+  // ── Source placard values ──
+  const info = balance?.info ?? null;
+  // Reseller keys are per-key; workspace limits apply to official subscriptions. Prefer the
+  // pair that is actually present rather than summing or guessing between them.
+  const balLimit = info?.unitsLimitApiKey ?? info?.unitsLimitWorkspace ?? null;
+  const balUsed = info?.unitsUsageApiKey ?? info?.unitsUsageWorkspace ?? null;
+  const remaining = balLimit != null && balUsed != null ? Math.max(0, balLimit - balUsed) : null;
+  const updated = info
+    ? new Date(info.fetchedAt).toLocaleString(undefined, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+    : "";
+  const expDate = info?.apiKeyExpirationDate ?? "";
+  const expSoon = !!expDate && new Date(expDate).getTime() - Date.now() < 7 * 86_400_000;
+  const modeLabel = src?.mode === "official" ? t("blsrcHostOfficial")
+    : src?.mode === "reseller" ? t("blsrcHostReseller") : t("blsrcHostCustom");
+
   return (
     <div className="panel" style={{ marginBottom: "16px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "4px", flexWrap: "wrap" }}>
@@ -131,6 +221,43 @@ export default function BacklinkProfile({ siteDbId }: { siteDbId: string }) {
         </div>}
       </div>
       <p style={{ fontSize: "12px", color: "var(--color-text-secondary)", margin: "0 0 14px" }}>{t("blpSub")}</p>
+
+      {/* Source placard — always visible for the owner: whose key, which host, what is left.
+          A bare "5 000 units ≈ $0.13" cost chip answers none of the three questions a newcomer
+          actually has, and renders the same whether the pull will work or is doomed to 401. */}
+      {!guest && src && (
+        <div style={{ display: "flex", alignItems: "center", gap: "4px 10px", flexWrap: "wrap", marginBottom: "14px", padding: "8px 12px", fontSize: "12px", color: "var(--color-text-secondary)", background: "var(--color-bg)", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)" }}>
+          {hasKey ? (
+            <>
+              <span>{t("blsrcTitle")}: <strong style={{ color: "var(--color-text-primary)" }}>
+                {src.provider === "ahrefs" ? "Ahrefs API v3" : "Semrush API"}
+              </strong></span>
+              <code style={{ fontFamily: "monospace", fontSize: "11px" }}>{src.host.replace(/^https?:\/\//, "")}</code>
+              <span className="metric-chip" style={{ fontWeight: 500 }}>{modeLabel}</span>
+              {info && updated && <span>{t("blsrcUpdated")} {updated}</span>}
+              {remaining != null && balLimit != null ? (
+                <span>{t("blsrcRemaining")} <strong style={{ color: "var(--color-text-primary)" }}>{remaining.toLocaleString()}</strong> {t("blsrcOf")} {balLimit.toLocaleString()}</span>
+              ) : (
+                <span>
+                  {t("blsrcBalanceUnknown")}
+                  {localUsage != null && <> · {fill(t("blsrcUnitsLeft"), { n: (src.cap > 0 ? Math.max(0, src.cap - localUsage) : localUsage).toLocaleString() })}</>}
+                </span>
+              )}
+              {info?.usageResetDate && <span>{t("blsrcResetAt")} {info.usageResetDate}</span>}
+              {expDate && <span style={expSoon ? { color: "var(--color-warning)" } : undefined}>
+                {t("blsrcKeyExpires")} {expDate}
+              </span>}
+              {expSoon && <span style={{ color: "var(--color-warning)" }}>{t("blsrcKeyExpiringSoon")}</span>}
+            </>
+          ) : (
+            <>
+              <span style={{ fontWeight: 600, color: "var(--color-text-primary)" }}>{t("blsrcNoKey")}</span>
+              <span>{t("blsrcNoKeyHint")}</span>
+            </>
+          )}
+          <a href="/settings?tab=metrics" style={{ marginLeft: hasKey ? "auto" : undefined, color: "var(--color-accent-blue)", textDecoration: "none", whiteSpace: "nowrap" }}>{t("blsrcConfigure")}</a>
+        </div>
+      )}
 
       {notice && (
         <div style={{ marginBottom: "12px", fontSize: "12px", color: "var(--color-text-secondary)" }}>{notice}</div>

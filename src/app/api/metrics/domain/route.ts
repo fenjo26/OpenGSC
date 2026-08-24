@@ -3,7 +3,8 @@ import { authOptions } from "@/lib/auth";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { fetchDomainMetrics, DOMAIN_UNITS, MetricsProvider } from "@/lib/seo/metrics";
 import {
-  readDomainCache, writeDomainCache, readUsage, recordUsage, withinCap, DOMAIN_TTL_DAYS,
+  readDomainCache, writeDomainCache, readUsage, recordUsage, releaseUnusedUnits, withinCap,
+  DOMAIN_TTL_DAYS,
 } from "@/lib/seo/metricsStore";
 
 // POST /api/metrics/domain  { domains: string[], provider?, apiKey?, baseUrl?, cap?, fetch? }
@@ -72,6 +73,11 @@ export async function POST(req: Request) {
     await writeDomainCache(res.items, provider, "api");
     fetched++;
   }
+
+  // Reserved two floored calls per stale domain; the gateway billed only the domains that
+  // answered. `fetchDomainMetrics` reports 0 units on failure, so the failed share — or the
+  // whole reservation when nothing came back — returns to the month before the counter is read.
+  await releaseUnusedUnits(userId, provider, units, DOMAIN_UNITS * fetched);
 
   return NextResponse.json({
     metrics: await readDomainCache(domains, provider),

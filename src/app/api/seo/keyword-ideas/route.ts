@@ -73,8 +73,11 @@ export async function POST(req: Request) {
       country, language, limit, withDifficulty, mode, fetch: true,
     });
   } catch (e: any) {
-    // A thrown error here is a bug, not a provider refusal — providers return their errors inside
-    // the result. Surfacing it as JSON (rather than a bare 500) means the UI can show what broke
+    // A thrown error is a bug, not a provider refusal — but the reservation was already taken,
+    // and a throw is exactly the case where nothing was billed. Hand it back before answering
+    // or every internal error quietly eats `limit` rows' worth of the monthly cap.
+    if (provider && price.units) await releaseUnusedUnits(userId, provider, price.units, 0);
+    // Surfacing it as JSON (rather than a bare 500) means the UI can show what broke
     // instead of silently doing nothing.
     return NextResponse.json({
       items: [], source, units: 0, usd: 0,

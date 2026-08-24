@@ -5,8 +5,8 @@ import {
   fetchKeywordMetrics, estimateKeywordUnits, MetricsProvider,
 } from "@/lib/seo/metrics";
 import {
-  readKeywordCache, writeKeywordCache, staleKeywords, readUsage, recordUsage, withinCap,
-  normalizeKeyword,
+  readKeywordCache, writeKeywordCache, staleKeywords, readUsage, recordUsage, releaseUnusedUnits,
+  withinCap, normalizeKeyword,
 } from "@/lib/seo/metricsStore";
 
 // POST /api/metrics/keywords
@@ -81,12 +81,19 @@ export async function POST(req: Request) {
   );
 
   if (res.error) {
+    // Failed call, nothing billed by the gateway — hand the reservation back rather than
+    // charging the month for a 502 the provider never invoiced.
+    await releaseUnusedUnits(userId, provider, units, 0);
     return NextResponse.json({
       metrics: cache, units, usage: await readUsage(userId, provider), fetched: 0, error: res.error,
     }, { status: 502 });
   }
 
   await writeKeywordCache(res.items, country, provider, "api");
+  // Reserved every stale keyword, billed the rows the provider actually answered (Ahrefs drops
+  // keywords it has never seen). `res.units` is that billed figure — priced with the same
+  // formula the reservation used, so the refund is computed at the right rate.
+  await releaseUnusedUnits(userId, provider, units, res.units);
   const merged = await readKeywordCache(keywords, country, provider);
 
   return NextResponse.json({
