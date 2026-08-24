@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { workspaceUserId } from "@/lib/team/workspace";
 
-// POST /api/seo/models  { provider, apiKey }
+// POST /api/seo/models  { provider, apiKey, baseUrl? }
 // Fetches the live model list from the provider's API (server-side to avoid CORS).
 // Returns { models: [{ id, label }] }.
 export async function POST(req: Request) {
@@ -17,7 +17,7 @@ export async function POST(req: Request) {
   if (!provider || !apiKey) return NextResponse.json({ error: "missing", models: [] }, { status: 400 });
 
   try {
-    const models = await listModels(provider, apiKey);
+    const models = await listModels(provider, apiKey, String(b.baseUrl ?? "").trim() || undefined);
     return NextResponse.json({ models });
   } catch (e: any) {
     return NextResponse.json({ error: String(e?.message ?? e), models: [] }, { status: 502 });
@@ -26,10 +26,27 @@ export async function POST(req: Request) {
 
 type M = { id: string; label: string };
 
-async function listModels(provider: string, apiKey: string): Promise<M[]> {
+async function listModels(provider: string, apiKey: string, baseUrl?: string): Promise<M[]> {
   const timeout = AbortSignal.timeout(12000);
 
   if (provider === "anthropic" || provider === "zai") {
+    // A custom base for anthropic = a proxy gateway (NewAPI-style Claude resellers). Those
+    // expose the OpenAI-shaped /v1/models and REQUIRE Authorization: Bearer; the official
+    // /v1/models speaks x-api-key. Same normalization as lib/llm.ts: a trailing /v1 in the
+    // stored endpoint must not become /v1/v1/models.
+    const proxyRoot = provider === "anthropic" && baseUrl
+      ? baseUrl.replace(/\/+$/, "").replace(/\/v1$/, "")
+      : null;
+    if (proxyRoot) {
+      const res = await fetch(`${proxyRoot}/v1/models`, {
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'x-api-key': apiKey },
+        signal: timeout,
+      });
+      if (!res.ok) throw new Error(`anthropic proxy ${res.status}`);
+      const data = await res.json();
+      const arr: any[] = data.data ?? data.models ?? [];
+      return arr.map((m) => ({ id: String(m.id), label: String(m.id) })).filter((m) => m.id);
+    }
     const base = provider === "zai" ? "https://api.z.ai/api/anthropic" : "https://api.anthropic.com";
     const res = await fetch(`${base}/v1/models?limit=100`, {
       headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },

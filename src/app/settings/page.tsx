@@ -1213,14 +1213,16 @@ function AIProviderCard({ provider }: { provider: typeof AI_PROVIDERS[number] })
     setEndpoint(localStorage.getItem(`aiBaseUrl_${provider.id}`) || "");
   }, [storageKey, modelKey, provider.id]);
 
-  // Live model list from the provider's own API (server-side proxy avoids CORS).
+  // Live model list from the provider's own API (server-side proxy avoids CORS). The endpoint
+  // rides along so proxy gateways (anthropic + aiBaseUrl_) are queried at their own catalogue
+  // instead of the official one, where the proxy key is meaningless.
   const loadModels = async (apiKey: string) => {
     if (!apiKey.trim()) return;
     setModelsLoading(true); setModelsErr(false);
     try {
       const res = await fetch("/api/seo/models", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider: provider.id, apiKey: apiKey.trim() }),
+        body: JSON.stringify({ provider: provider.id, apiKey: apiKey.trim(), baseUrl: endpoint.trim() || undefined }),
       });
       const d = await res.json();
       const list = Array.isArray(d?.models) ? d.models : [];

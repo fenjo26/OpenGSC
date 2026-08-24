@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { RefreshCw, Loader2, AlertTriangle, Copy, Check, Download, Sparkles, Link2, FileText, Fingerprint, Search, Wrench, Pencil } from "lucide-react";
+import { RefreshCw, Loader2, AlertTriangle, Copy, Check, Download, Sparkles, Link2, FileText, Fingerprint, Search, Wrench, Pencil, Scale } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { getTaskCreds, getFirecrawlKey } from "@/lib/seo/keys";
 import { LANGUAGES } from "@/lib/seo/regions";
@@ -109,6 +109,10 @@ export default function RewritePage() {
   const [language, setLanguage] = useState("");   // "" = keep source
   const [tone, setTone] = useState("");
   const [maskAI, setMaskAI] = useState(true);
+  // Independent QA pass (see rewrite.ts): after the deterministic gate, a fresh-context model
+  // call answers one question — is this a complete, publishable article? Default on; it is the
+  // control that decides whether planning notes and truncated stubs get saved or rejected.
+  const [judge, setJudge] = useState(true);
   // Off by default: both options change the request in ways an existing user did not ask for.
   const [useBanned, setUseBanned] = useState(false);
   const [temp, setTemp] = useState("");
@@ -194,7 +198,7 @@ export default function RewritePage() {
         body: JSON.stringify({
           text: mode === "text" ? text : undefined,
           url: mode === "url" ? url.trim() : undefined,
-          variants, maskAI,
+          variants, maskAI, judge,
           language: langObj?.label || "",
           tone: toneObj?.prompt || "",
           // Concrete vocabulary from the fingerprint model — a constraint the model can act on,
@@ -212,10 +216,14 @@ export default function RewritePage() {
       const d = await res.json();
       if (!res.ok) {
         setErr(
-          d.error === "no_content" ? t("rwErrNoContent")
+          d.error === "no_content" ? t("rwNeedText")
             : d.error === "boilerplate_only" ? t("rwErrBoilerplate" as never)
             : d.error === "no_ai_key" ? t("seoErrNoAiKey")
             : d.error === "generation_failed" ? t("rwErrGen")
+            : /^(gate_|judge_)/.test(String(d.error))
+              // Server rejections carry a human-readable detail after the code — keep it, it is
+              // the actual reason ("94 words against a 1875-word source", judge blockers).
+              ? `${t("rwErrJudge" as never)} ${String(d.error).replace(/^(gate_|judge_)[a-z_]+:\s*/i, "")}`
             : String(d.error || t("rwErrGen")));
       } else {
         // Fact drift is computed server-side (it has the source in both paste and URL mode); the
@@ -293,6 +301,11 @@ export default function RewritePage() {
           <label title={t("rwMaskHint")} style={{ display: "inline-flex", alignItems: "center", gap: "8px", fontSize: "13px", color: maskAI ? "#8B5CF6" : "var(--color-text-secondary)", cursor: "pointer" }}>
             <input type="checkbox" checked={maskAI} onChange={e => setMaskAI(e.target.checked)} style={{ accentColor: "#8B5CF6" }} />
             <Sparkles size={14} /> {t("rwMask")}
+          </label>
+
+          <label title={t("rwJudgeHint" as never)} style={{ display: "inline-flex", alignItems: "center", gap: "8px", fontSize: "13px", color: judge ? "#10B981" : "var(--color-text-secondary)", cursor: "pointer" }}>
+            <input type="checkbox" checked={judge} onChange={e => setJudge(e.target.checked)} style={{ accentColor: "#10B981" }} />
+            <Scale size={14} /> {t("rwJudge" as never)}
           </label>
 
           <label title={fp ? t("rwBannedHint" as any) : t("hmNoModelHint" as any)}
