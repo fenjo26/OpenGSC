@@ -25,7 +25,7 @@ const ev = (o: Partial<BacklinkEventInput> = {}): BacklinkEventInput => ({
 
 const sync = (o: Partial<SyncWindow> = {}): SyncWindow => ({
   siteId: "s1", kind: "api", status: "completed", complete: true,
-  startedAt: ago(2), finishedAt: ago(1).getTime() > ago(2).getTime() ? new Date(NOW) : new Date(NOW), ...o,
+  startedAt: ago(2), finishedAt: new Date(NOW), ...o,
 });
 
 // ─── Задача 2: детектор аномалии ──────────────────────────────────────────────
