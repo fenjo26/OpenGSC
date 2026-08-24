@@ -9,11 +9,14 @@
 //   ssl_expiry    — a site's SSL certificate expires within N days (from Site Health data)
 //   audit_score   — a completed site audit came back with health score below N
 //   lost_link     — referring domains above a DR threshold disappeared from the stored profile
+//   backlink_loss — link losses ran far above this site's own baseline (no fixed threshold)
+//   favorite_link — a link marked favourite was lost, downgraded to nofollow or re-targeted
 
 import { prisma } from "@/lib/prisma";
 import { notifyUser } from "@/lib/notify";
 import { NOTIFY_L, normalizeLang, type NotifyLang } from "@/lib/notifyI18n";
 import { lostSince } from "@/lib/seo/backlinkStore";
+import { detectLossAnomaly, lossCountsForEvent, BASELINE_WINDOW_DAYS } from "@/lib/backlinkDigest";
 import { rawQuery } from "@/lib/db/raw";
 
 const TICK_MS = 60 * 60 * 1000; // hourly
@@ -24,6 +27,10 @@ export interface AlertSettings {
   ssl: { on: boolean; days: number };
   audit: { on: boolean; minScore: number };
   lostLink: { on: boolean; minDr: number };
+  // У этих двух порога нет: он вычисляется от базовой линии самого сайта (backlinkLoss)
+  // или отсутствует по смыслу (favoriteLink — одна испорченная избранная ссылка это уже повод).
+  backlinkLoss: { on: boolean };
+  favoriteLink: { on: boolean };
   lang: NotifyLang; // language of delivered alerts (saved from the UI language)
 }
 
@@ -35,6 +42,10 @@ export const DEFAULT_ALERT_SETTINGS: AlertSettings = {
   // Off by default: it can only fire once a backlink profile has been loaded, and turning it
   // on for users who never will would be a setting that does nothing.
   lostLink: { on: false, minDr: 50 },
+  // Включены по умолчанию, в отличие от lostLink: оба молчат сами, пока по сайту нет
+  // ни одной завершённой полной выгрузки, поэтому пустым шумом это не станет.
+  backlinkLoss: { on: true },
+  favoriteLink: { on: true },
   lang: "en",
 };
 
@@ -50,6 +61,8 @@ export async function getAlertSettings(userId: string): Promise<AlertSettings> {
       ssl: { ...DEFAULT_ALERT_SETTINGS.ssl, ...(s.ssl ?? {}) },
       audit: { ...DEFAULT_ALERT_SETTINGS.audit, ...(s.audit ?? {}) },
       lostLink: { ...DEFAULT_ALERT_SETTINGS.lostLink, ...(s.lostLink ?? {}) },
+      backlinkLoss: { ...DEFAULT_ALERT_SETTINGS.backlinkLoss, ...(s.backlinkLoss ?? {}) },
+      favoriteLink: { ...DEFAULT_ALERT_SETTINGS.favoriteLink, ...(s.favoriteLink ?? {}) },
       lang: normalizeLang(s.lang),
     };
   } catch {
@@ -180,6 +193,97 @@ async function checkUser(userId: string, s: AlertSettings): Promise<Pending[]> {
         dedupeKey: `lost_link:${site.id}:${isoDay()}`,
       });
     }
+  }
+
+  // ── backlink_loss + favorite_link. Оба правила читают одни и те же события, поэтому
+  // читаются одним заходом. Всё внутри try: пока Backlinks v2 не мигрированы, таблиц нет,
+  // и это не повод ронять остальные правила.
+  if (s.backlinkLoss.on || s.favoriteLink.on) {
+    try {
+      const since = new Date(Date.now() - 26 * 3600_000);
+      const targetOf = (url: string) =>
+        url.replace(/^https?:\/\//, "").replace(/^sc-domain:/, "").replace(/^www\./, "").split("/")[0];
+
+      const [events, syncs, completeSyncs] = await Promise.all([
+        prisma.siteBacklinkEvent.findMany({
+          where: { siteId: { in: siteIds }, createdAt: { gte: since }, kind: { in: ["lost", "rel_downgraded", "target_changed"] } },
+          orderBy: { createdAt: "desc" }, take: 20_000,
+        }),
+        prisma.siteBacklinkSync.findMany({
+          where: { siteId: { in: siteIds }, startedAt: { lte: new Date() }, OR: [{ finishedAt: null }, { finishedAt: { gte: since } }] },
+          select: { siteId: true, kind: true, status: true, complete: true, startedAt: true, finishedAt: true },
+        }),
+        prisma.siteBacklinkSync.findMany({
+          where: { siteId: { in: siteIds }, status: "completed", complete: true },
+          select: { siteId: true }, distinct: ["siteId"],
+        }),
+      ]);
+      const completeSites = new Set(completeSyncs.map(r => r.siteId));
+
+      const ids = [...new Set(events.map(e => e.backlinkId))];
+      const linkRows = ids.length
+        ? await prisma.siteBacklink.findMany({ where: { id: { in: ids } }, select: { id: true, urlFrom: true, favorite: true } })
+        : [];
+      const linkById = new Map(linkRows.map(r => [r.id, r]));
+
+      // Потеря — вывод, который имеет право сделать только завершённый полный прогон.
+      const countsAsLoss = (e: { siteId: string; kind: string; createdAt: Date }) =>
+        e.kind === "lost" && completeSites.has(e.siteId) && lossCountsForEvent(e, syncs);
+
+      // 1. Аномальная потеря ссылок — порог считается от базовой линии сайта, не фиксирован.
+      if (s.backlinkLoss.on) {
+        const baselineFrom = new Date(Date.now() - BASELINE_WINDOW_DAYS * 86_400_000).toISOString().slice(0, 10);
+        const targets = [...new Set(sites.map(x => targetOf(x.url)))];
+        const snapRows = targets.length
+          ? await prisma.backlinkSnapshot.findMany({
+              where: { target: { in: targets }, date: { gte: baselineFrom } },
+              select: { target: true, date: true, backlinks: true },
+            })
+          : [];
+        for (const site of sites) {
+          const lost = events.filter(e => e.siteId === site.id && countsAsLoss(e)).length;
+          if (!lost) continue;
+          // Один и тот же (target, date) может прийти от нескольких провайдеров — схлопываем.
+          const byDate = new Map<string, number>();
+          for (const r of snapRows) {
+            if (r.target !== targetOf(site.url) || typeof r.backlinks !== "number") continue;
+            byDate.set(r.date, Math.max(byDate.get(r.date) ?? 0, r.backlinks));
+          }
+          const snapshots = [...byDate.entries()].map(([date, backlinks]) => ({ date, backlinks }));
+          const verdict = detectLossAnomaly({ lost, periodDays: 1, snapshots });
+          if (!verdict.anomalous) continue;
+          out.push({
+            type: "backlink_loss", siteId: site.id,
+            title: L.alertBacklinkLossTitle(String(siteName.get(site.id))),
+            message: L.alertBacklinkLossBody(lost, verdict.timesLabel),
+            // Как у lost_link: сорок ссылок, снятых за раз, это одна новость, а не сорок.
+            dedupeKey: `backlink_loss:${site.id}:${isoDay()}`,
+          });
+        }
+      }
+
+      // 2. Порча избранной ссылки — порога нет, одна такая ссылка это уже повод.
+      if (s.favoriteLink.on) {
+        for (const e of events) {
+          const row = linkById.get(e.backlinkId);
+          if (!row?.favorite) continue;
+          // rel_downgraded и target_changed рождаются сравнением старого значения с новым
+          // на уже существующей строке — частичный прогон их не выдумает, поэтому гейт
+          // по полноте выгрузки нужен только для "lost".
+          if (e.kind === "lost" && !countsAsLoss(e)) continue;
+          const what = e.kind === "lost" ? L.dglWhatLost
+            : e.kind === "rel_downgraded" ? L.dglWhatDowngraded
+            : L.dglWhatTargetChanged;
+          out.push({
+            type: "favorite_link", siteId: e.siteId,
+            title: L.alertFavoriteLinkTitle(String(siteName.get(e.siteId))),
+            message: L.alertFavoriteLinkBody(row.urlFrom, what),
+            // Дедуп по id события, как audit_score по id аудита: один факт — одно письмо.
+            dedupeKey: `favorite_link:${e.id}`,
+          });
+        }
+      }
+    } catch { /* таблицы Backlinks v2 ещё не мигрированы */ }
   }
 
   return out;
