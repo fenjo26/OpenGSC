@@ -3,6 +3,77 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
+## [1.5.0] — 2026-08-24
+
+### Added
+
+- **Backlinks v2** — a rework of the backlinks tab around the question the money was spent on:
+  *is our link still standing on the page we paid for?* The old `check-alive` only answered
+  "does the donor page respond 200", so a donor that stripped the link but kept the page showed
+  a green check. The new `SiteBacklink` model stores the two answers in independent columns —
+  `pageStatus` (unknown/alive/dead/blocked for the donor page) and `checkStatus`
+  (unchecked/found/missing/blocked/error for our link on it) — and never derives one from the
+  other. A live page with the link gone is now a red row, not a green one; a 403/429 from a WAF
+  is amber "blocked", never a false "missing" that would send a client to fight with a donor
+  site over our user agent.
+
+- **Placement verification** (`Check placements`). A background runner that fetches every donor
+  page in the list — the whole filtered selection, not a silent first-200 like `check-alive` —
+  and looks for our link with a real HTML tokenizer (`linkPlacement.ts`, derived from
+  izzipizzy/backlink-finder, MIT): anchors with entities and nested tags, `rel` parsed into
+  nofollow/sponsored/ugc, image links via `alt`, `<base href>`, CP1251/UTF-16 bodies, punycode
+  domains. Concurrency 4 with per-host serialization and a 150 ms politeness delay, retries only
+  on transient failures, optional retry of expired-certificate donors without TLS verification
+  (rows fetched that way are visibly marked), and when Ahrefs found the link only via JS
+  rendering the row is flagged instead of being reported as gone.
+
+- **Full Ahrefs export** of your own backlinks into the new table, as a background job with
+  progress and heartbeat. The gateway's `offset` support is probed once per host per day
+  (~100 units) and offset or keyset paging is chosen from the answer; pages of 1000 rows at the
+  confirmed 20-fields/20-units price. Losses come from Ahrefs' own `is_lost` with
+  `history=all_time`, never computed locally from "did not arrive in this pull". The price is
+  estimated from the profile size and shown for confirmation before a single unit is spent, and
+  `complete=false` partial runs are refused the right to prove any link lost.
+
+- **The tab itself**: server-side pagination and filtering (status, rel, source, donor domain,
+  DR range, favourites, lost-per-Ahrefs) with stats counted over the whole selection rather
+  than the visible page; favourites live in the database, not the browser; import of a pasted
+  list or CSV/TSV with column detection, preview and invalid-URL reporting; mass actions operate
+  on the filter, and destructive ones say how many rows they will touch before running. CSV
+  export gains the anchor, rel, placement status, source and favourite columns.
+
+- **Data-source placard** above the profile table: provider, host, official/reseller/custom
+  mode, update time and the live unit balance from Ahrefs' free
+  `/v3/subscription-info/limits-and-usage` endpoint (cached 10 minutes), with the local
+  `ApiUsage` estimate shown and labelled as such when the provider balance is unreachable.
+  Provider errors stopped collapsing into one "failed": 401 names the host and the
+  reseller-key-on-official-host trap, 402 adds a top-up link, 403 says the product is not
+  enabled, 429 and 502 get their own wording.
+
+- **Digest and alerts**. The digest gains a Links section: appeared/lost/returned counts from
+  `SiteBacklinkEvent` for the window, favourite losses listed by name even when it is one link,
+  rel downgrades as their own line (invisible in a total link count, but the weight is gone),
+  and top donor domains by losses. Anomalous loss is judged against the site's own baseline
+  from `BacklinkSnapshot` — three times the usual rate or 5% of the profile, whichever bites
+  harder — and stays quiet while there is less than two weeks of history. Two new alert rules:
+  unusual backlink loss, and any `lost`/`rel_downgraded`/`target_changed` on a favourite link,
+  which has no threshold because one is already the story. Until a complete export has finished,
+  the digest reports losses not at all.
+
+### Fixed
+
+- Unit accounting no longer overcharges: routes that reserved units via `recordUsage` before the
+  request now release them on failure and reconcile to the rows actually returned, matching what
+  the gateway really bills (4xx/5xx answers cost nothing). `estimateUnits` learned the `_prev`
+  and `_merged` suffixes and the full 15/10/5/1 field tariff table, so `volume_prev` is no
+  longer priced at 1 unit.
+
+- Instances that manage schema with `prisma db push` (this repo's install.sh, update.sh and
+  Docker image) never run migration files. The old-link transfer now ships as
+  `scripts/backfill-site-backlinks.ts` as well — re-runnable, dry-run by default, `--apply` to
+  write — so those instances get their existing links carried into the new table instead of an
+  empty tab.
+
 ## [1.4.1] — 2026-08-12
 
 ### Added
