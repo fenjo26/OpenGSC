@@ -11,6 +11,7 @@ import { prisma } from "@/lib/prisma";
 import { buildEngineData, type EngineRow } from "@/lib/digestEngines";
 import { fetchLLM } from "@/lib/llm";
 import { NOTIFY_L, normalizeLang, type NotifyLang } from "@/lib/notifyI18n";
+import { buildBacklinkDigest, BASELINE_WINDOW_DAYS, type DigestBacklinks } from "@/lib/backlinkDigest";
 import { rawQuery, rawExec } from "@/lib/db/raw";
 
 export interface DigestSettings {
@@ -51,6 +52,8 @@ export interface DigestData {
   strikingCount: number;
   attention: DigestAttention[];
   rankMoves: DigestRankMove[];
+  /** null — модуль ссылок ничего не знает про этот портфель, секция не рисуется */
+  backlinks: DigestBacklinks | null;
   engines: { bing: EngineRow[]; yandex: EngineRow[] };
 }
 
@@ -90,7 +93,19 @@ const pctStr = (cur: number, prev: number) => (prev > 0 ? `${sign(pctNum(cur, pr
 
 // How many items each section keeps in the FULL structured data (the page shows these,
 // with "show more"). Markdown uses much smaller sub-slices to stay Telegram-sized.
-const FULL = { movers: 50, queries: 50, striking: 200, attention: 50, rankMoves: 60 };
+const FULL = {
+  movers: 50, queries: 50, striking: 200, attention: 50, rankMoves: 60,
+  // Ссылки: избранные держим поимённо, доноров — верхушкой. Событий берём с запасом,
+  // потому что счёт потерь должен быть точным, а не «первой страницей».
+  backlinkFavorites: 50, backlinkDomains: 25, backlinkEvents: 20_000,
+};
+
+// Какие виды событий вообще попадают в дайджест. target_changed сюда не входит:
+// это повод для алерта по избранной ссылке, а не строка в сводке за неделю.
+const DIGEST_EVENT_KINDS = ["appeared", "returned", "lost", "rel_downgraded"];
+
+// Домен-цель BacklinkSnapshot: там ключ — голый хост, а не URL сайта.
+const targetOf = (url: string) => url.replace(/^https?:\/\//, "").replace(/^sc-domain:/, "").replace(/^www\./, "").split("/")[0];
 
 // ─── Build the structured data ────────────────────────────────────────────────
 export async function buildDigestData(
@@ -113,6 +128,7 @@ export async function buildDigestData(
     period: { days, from: day(curStart), to: day(now), prevFrom: day(prevStart), prevTo: day(curStart), allTime: days === 0 },
     portfolio: { counted: 0, up: 0, down: 0, clicks: 0, prevClicks: 0, impr: 0, prevImpr: 0 },
     gainers: [], losers: [], topSites: [], winnersQ: [], losersQ: [], striking: [], strikingCount: 0, attention: [], rankMoves: [],
+    backlinks: null,
     engines: { bing: [], yandex: [] },
   };
   if (!siteIds.length) return base;
@@ -212,6 +228,76 @@ export async function buildDigestData(
     .sort((a, b) => Math.abs(b.d) - Math.abs(a.d))
     .slice(0, FULL.rankMoves);
 
+  // ── Links: what appeared and what went away.
+  // Counted from SiteBacklinkEvent rows inside the window — never from SiteBacklink itself,
+  // which holds a running total and would make every digest repeat the same losses forever.
+  try {
+    const baselineFrom = new Date(now.getTime() - BASELINE_WINDOW_DAYS * 86_400_000);
+    const targets = [...new Set(sites.map(x => targetOf(x.url)))];
+    const [rawEvents, syncs, completeSyncs, snapRows] = await Promise.all([
+      prisma.siteBacklinkEvent.findMany({
+        where: { siteId: { in: siteIds }, createdAt: { gte: effectiveCurStart, lte: now }, kind: { in: DIGEST_EVENT_KINDS } },
+        orderBy: { createdAt: "desc" }, take: FULL.backlinkEvents,
+      }),
+      // Прогоны, пересекающие окно: по ним событие привязывается к своему прогону
+      // и выясняется, была ли выгрузка полной.
+      prisma.siteBacklinkSync.findMany({
+        where: { siteId: { in: siteIds }, startedAt: { lte: now }, OR: [{ finishedAt: null }, { finishedAt: { gte: effectiveCurStart } }] },
+        select: { siteId: true, kind: true, status: true, complete: true, startedAt: true, finishedAt: true },
+      }),
+      // Был ли у сайта хоть один завершённый полный прогон — до этого о потерях молчим.
+      prisma.siteBacklinkSync.findMany({
+        where: { siteId: { in: siteIds }, status: "completed", complete: true },
+        select: { siteId: true }, distinct: ["siteId"],
+      }),
+      prisma.backlinkSnapshot.findMany({
+        where: { target: { in: targets }, date: { gte: day(baselineFrom) } },
+        select: { target: true, date: true, backlinks: true },
+      }),
+    ]);
+
+    // Один и тот же (target, date) может прийти от нескольких провайдеров — сначала
+    // схлопываем внутри цели, потом складываем цели в один портфельный ряд.
+    const perTargetDate = new Map<string, number>();
+    for (const r of snapRows) {
+      if (typeof r.backlinks !== "number") continue;
+      const k = `${r.target}|${r.date}`;
+      perTargetDate.set(k, Math.max(perTargetDate.get(k) ?? 0, r.backlinks));
+    }
+    const byDate = new Map<string, number>();
+    for (const [k, v] of perTargetDate) {
+      const date = k.slice(k.indexOf("|") + 1);
+      byDate.set(date, (byDate.get(date) ?? 0) + v);
+    }
+    const snapshots = [...byDate.entries()].map(([date, backlinks]) => ({ date, backlinks }));
+
+    // Событие знает только backlinkId; имя ссылки и признак «избранная» — в самой строке.
+    const ids = [...new Set(rawEvents.map(e => e.backlinkId))];
+    const linkRows = ids.length
+      ? await prisma.siteBacklink.findMany({ where: { id: { in: ids } }, select: { id: true, urlFrom: true, domainFrom: true, favorite: true } })
+      : [];
+    const linkById = new Map(linkRows.map(r => [r.id, r]));
+
+    const section = buildBacklinkDigest({
+      events: rawEvents.map(e => {
+        const r = linkById.get(e.backlinkId);
+        return {
+          id: e.id, siteId: e.siteId, kind: e.kind, origin: e.origin, createdAt: e.createdAt,
+          favorite: r?.favorite ?? false, urlFrom: r?.urlFrom ?? "", domainFrom: r?.domainFrom ?? "",
+        };
+      }),
+      syncs,
+      completeExportSites: completeSyncs.map(r => r.siteId),
+      snapshots,
+      periodDays: days || 1,
+      limits: { favorites: FULL.backlinkFavorites, lossDomains: FULL.backlinkDomains },
+    }, now);
+
+    // В режиме «всё время» окно накрывает всю историю: сравнивать такую сумму с суточной
+    // нормой бессмысленно, поэтому вердикт об аномалии там не выносится.
+    base.backlinks = section.hasData ? (showDelta ? section : { ...section, anomaly: null, baselineReady: false }) : null;
+  } catch { /* таблицы Backlinks v2 ещё не мигрированы — секции просто нет */ }
+
   // ── live Bing/Yandex (only when requested; bounded by cap)
   if (opts.engineCap && opts.engineCap > 0) {
     try { base.engines = await buildEngineData(userId, sites, days || 28, opts.engineCap); }
@@ -261,6 +347,35 @@ export function renderDigestMarkdown(data: DigestData): string {
   if (data.rankMoves.length) {
     lines.push("", L.rankMoves);
     for (const m of data.rankMoves.slice(0, 10)) lines.push(`  ${m.d > 0 ? "▲" : "▼"} ${m.keyword}: ${m.from} → ${m.to}`);
+  }
+
+  const B = data.backlinks;
+  if (B) {
+    lines.push("", L.dglSectionTitle);
+    // Потери показываем только когда их вообще позволено считать (CONTRACT §4).
+    if (B.lossesReported) {
+      // Минус здесь типографский (−), как и в остальной строке, а не дефис из sign().
+      const net = B.net > 0 ? `+${B.net}` : B.net < 0 ? `−${-B.net}` : "0";
+      lines.push(`  +${B.appeared} ${L.dglNew} · −${B.lost} ${L.dglLost} · ${net} ${L.dglNet}`);
+    } else {
+      lines.push(`  +${B.appeared} ${L.dglNew}`);
+      lines.push(L.dglNoFullExport);
+    }
+    // Избранные — всегда поимённо, даже если потеряна одна: дорогая ссылка не должна
+    // утонуть в агрегате.
+    if (B.favoriteLost.length) {
+      lines.push(L.dglFavoriteLost(B.favoriteLost.slice(0, 10).map(l => l.url).join(", ")));
+      if (B.favoriteLost.length > 10) lines.push(L.digestMore(B.favoriteLost.length - 10));
+    }
+    if (B.favoriteDowngraded.length) {
+      lines.push(L.dglFavoriteDowngraded(B.favoriteDowngraded.slice(0, 10).map(l => l.url).join(", ")));
+      if (B.favoriteDowngraded.length > 10) lines.push(L.digestMore(B.favoriteDowngraded.length - 10));
+    }
+    if (B.relDowngraded) lines.push(L.dglRelDowngrade(B.relDowngraded));
+    if (B.topLossDomains.length) lines.push(L.dglTopLossDomains(B.topLossDomains.slice(0, 5).map(d => `${d.domain} (${d.n})`).join(", ")));
+    if (B.lossesReported && !B.baselineReady) lines.push(L.dglBaselineBuilding);
+    if (B.anomaly?.anomalous) lines.push(L.dglAnomaly, L.dglAnomalyHint(B.anomaly.lost, B.anomaly.timesLabel));
+    if (!B.appeared && !B.lost && !B.relDowngraded) lines.push(L.dglNoChange);
   }
 
   for (const [name, rows] of [["Bing", data.engines.bing], ["Яндекс", data.engines.yandex]] as [string, EngineRow[]][]) {
