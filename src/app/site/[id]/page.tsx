@@ -26,10 +26,12 @@ import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { getTaskCreds, getAhrefsDrKey } from "@/lib/seo/keys";
 import TrafficChip from "@/components/TrafficChip";
 import BacklinkProfile from "@/components/BacklinkProfile";
+import BacklinkImportDialog from "@/components/BacklinkImportDialog";
+import type { BacklinkRow, BacklinkListStats } from "@/lib/seo/backlinkTypes";
 import {
   ArrowLeft, Sparkles, Eye, Percent, MoveUp,
   SlidersHorizontal, ChevronDown, Smartphone, Monitor, Tablet,
-  Users, Activity, Zap, DollarSign, Link2, Check,
+  Users, Activity, Zap, DollarSign, Link2, Check, Star,
   FileText, Globe, Search, ArrowLeftRight, BookmarkCheck, Calendar, X, Download,
   ChevronLeft, ChevronRight, ExternalLink, Pencil, Trash2,
 } from "lucide-react";
@@ -2008,119 +2010,298 @@ function timeAgo(date: string | Date): string {
 }
 
 // ─── BacklinksTab ─────────────────────────────────────────────────────────────
+// Backlinks v2 (T5): reads SiteBacklink through the paginated /api/backlinks list, so the
+// DOM never holds more than pageSize rows however large the profile is. Three opinions are
+// deliberately kept apart (CONTRACT §0) and no cell derives one from another:
+//   api*      — what Ahrefs says,
+//   checkStatus — whether our own fetch found the link on the page,
+//   pageStatus — whether the donor page answers at all.
 function BacklinksTab({ siteDbId }: { siteDbId: string }) {
   const { t } = useLanguage();
 
-  const [links,    setLinks]    = useState<any[]>([]);
-  const [stats,    setStats]    = useState<any>({});
-  const [loading,  setLoading]  = useState(false);
+  const [rows, setRows] = useState<BacklinkRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [stats, setStats] = useState<BacklinkListStats | null>(null);
+  const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  // Add URLs
-  const [showAdd,   setShowAdd]   = useState(false);
-  const [addText,   setAddText]   = useState("");
-  const [adding,    setAdding]    = useState(false);
+  // The filter object doubles as the bulk-action scope: "recheck everything the current
+  // filter matches" must mean everything, not the first 50 rows on screen.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSizeState] = useState(50);
+  const [sort, setSort] = useState("added_desc");
+  const [filters, setFilters] = useState({
+    status: "", rel: "", source: "", domain: "", drMin: "", drMax: "",
+    favorite: false, lost: false,
+  });
+  const [domainInput, setDomainInput] = useState("");
+  const [drInput, setDrInput] = useState({ min: "", max: "" });
 
-  // Check states
+  const [actionMsg, setActionMsg] = useState("");
+  const [importOpen, setImportOpen] = useState(false);
+
+  // Legacy checks (check-alive / check-xr) still run against the pre-v2 Backlink model and
+  // stay wired exactly as before per the task split; the visible list above them is v2.
   const [checking404, setChecking404] = useState(false);
-  const [checkingXr,  setCheckingXr]  = useState(false);
-  const [submitting2i, setSubmitting2i] = useState(false);
-  const [actionMsg,   setActionMsg]   = useState("");
+  const [checkingXr, setCheckingXr] = useState(false);
 
-  // Operations history
-  const [ops,       setOps]       = useState<any[]>([]);
-  const [showOps,   setShowOps]   = useState(false);
-  const [opsLoading, setOpsLoading] = useState(false);
+  // Placement verification progress (SiteBacklinkSync via /api/backlinks/verify, T4)
+  const [verify, setVerify] = useState<{ progress: number; stage: string; rowsSeen: number } | null>(null);
+  const verifyTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const loadSeq = useRef(0);
 
-  // ── Display limit ──
-  const [displayLimit, setDisplayLimit] = useState(50);
+  // Remembered per-browser preference (allowed); the data itself never lives in localStorage.
+  useEffect(() => {
+    const saved = Number(localStorage.getItem("blui:pageSize"));
+    if ([50, 100, 250, 500].includes(saved)) setPageSizeState(saved);
+  }, []);
+  const setPageSize = (n: number) => {
+    setPageSizeState(n); setPage(1);
+    try { localStorage.setItem("blui:pageSize", String(n)); } catch {}
+  };
 
-  const load = async () => {
+  // t() returns the raw string — {n}-style placeholders are substituted by hand.
+  const subst = (key: Parameters<typeof t>[0], vars: Record<string, string | number>) =>
+    Object.entries(vars).reduce((s, [k, v]) => s.split(`{${k}}`).join(String(v)), t(key));
+
+  const filtersToParams = (f: typeof filters) => {
+    const sp = new URLSearchParams();
+    if (f.status) sp.set("status", f.status);
+    if (f.rel) sp.set("rel", f.rel);
+    if (f.source) sp.set("source", f.source);
+    if (f.domain) sp.set("domain", f.domain);
+    if (f.drMin !== "") sp.set("drMin", f.drMin);
+    if (f.drMax !== "") sp.set("drMax", f.drMax);
+    if (f.favorite) sp.set("favorite", "1");
+    if (f.lost) sp.set("lost", "1");
+    return sp;
+  };
+  const filtersToBody = (f: typeof filters): Record<string, string | boolean> => {
+    const sp = filtersToParams(f);
+    return Object.fromEntries([...sp.entries()].map(([k, v]) => [k, v === "1" ? true : v]));
+  };
+  const updateFilters = (patch: Partial<typeof filters>) => {
+    setFilters(prev => ({ ...prev, ...patch }));
+    setPage(1);
+  };
+
+  const load = useCallback(async () => {
     setLoading(true);
+    const seq = ++loadSeq.current; // stale responses from quick filter flips are dropped
     try {
-      const res = await fetch(`/api/backlinks?siteDbId=${siteDbId}`);
+      const qs = filtersToParams(filters);
+      qs.set("siteDbId", siteDbId);
+      qs.set("page", String(page));
+      qs.set("pageSize", String(pageSize));
+      qs.set("sort", sort);
+      const res = await fetch(`/api/backlinks?${qs.toString()}`);
       const d = await res.json();
-      setLinks(d.links ?? []);
-      setStats(d.stats ?? {});
+      if (seq !== loadSeq.current) return;
+      setRows(d.rows ?? []);
+      setTotal(d.total ?? 0);
+      setStats(d.stats ?? null);
     } catch {}
-    setLoading(false);
+    if (seq === loadSeq.current) setLoading(false);
+  }, [siteDbId, page, pageSize, sort, filters]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // ── placement verification: kick off, then poll the background run ──
+
+  const stopVerifyPolling = () => {
+    if (verifyTimer.current) { clearInterval(verifyTimer.current); verifyTimer.current = null; }
+  };
+  const startVerifyPolling = useCallback(() => {
+    stopVerifyPolling();
+    verifyTimer.current = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/backlinks/verify?siteId=${siteDbId}`);
+        const d = await res.json();
+        if (d.running) {
+          setVerify({ progress: d.run?.progress ?? 0, stage: d.run?.stage ?? "", rowsSeen: d.run?.rowsSeen ?? 0 });
+        } else {
+          stopVerifyPolling();
+          setVerify(null);
+          if (d.run?.error) setActionMsg(`✗ ${d.run.error}`);
+          else if (d.run?.summary) setActionMsg(`✓ ${subst("blchkSummary", d.run.summary)}`);
+          await load();
+        }
+      } catch {}
+    }, 2000);
+  }, [siteDbId, load]);
+
+  useEffect(() => {
+    // A run started in another tab or before a reload keeps showing its progress here.
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/backlinks/verify?siteId=${siteDbId}`);
+        const d = await res.json();
+        if (!cancelled && d.running) {
+          setVerify({ progress: d.run?.progress ?? 0, stage: d.run?.stage ?? "", rowsSeen: d.run?.rowsSeen ?? 0 });
+          startVerifyPolling();
+        }
+      } catch {}
+    })();
+    return () => { cancelled = true; stopVerifyPolling(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [siteDbId]);
+
+  // T4's verify takes an enum scope, not the full filter object; map to the closest scope it
+  // can express. A filter it cannot express (domain, DR, rel…) widens to "all" — acceptable
+  // for a non-destructive check: the progress and summary report what actually ran.
+  const verifyScope = (f: typeof filters): string => {
+    if (f.status === "missing") return "missing";
+    if (f.status === "unchecked") return "unchecked";
+    const plain = !f.status && !f.rel && !f.source && !f.domain && f.drMin === "" && f.drMax === "" && !f.lost;
+    if (f.favorite && plain) return "favorites";
+    return "all";
   };
 
-  useEffect(() => { load(); }, [siteDbId]);
-
-  const handleAdd = async () => {
-    const urls = addText.split(/[\n,]+/).map(s => s.trim()).filter(s => s.startsWith('http'));
-    if (!urls.length) return;
-    setAdding(true);
+  const handleVerify = async () => {
+    if (verify) return;
+    const body = selected.size > 0
+      ? { siteId: siteDbId, ids: [...selected] }
+      : { siteId: siteDbId, filter: verifyScope(filters) };
     try {
-      await fetch('/api/backlinks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteDbId, urls }),
+      const res = await fetch("/api/backlinks/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
       });
-      setAddText(''); setShowAdd(false);
-      await load();
-    } catch {}
-    setAdding(false);
+      if (res.status === 409) {
+        // already running — attach to it rather than reporting an error
+        setVerify({ progress: 0, stage: "pull", rowsSeen: 0 });
+        startVerifyPolling();
+        return;
+      }
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setActionMsg(`✗ ${d.error ?? "verify failed"}`);
+        return;
+      }
+      setVerify({ progress: 0, stage: "pull", rowsSeen: 0 });
+      startVerifyPolling();
+    } catch (e: any) { setActionMsg(`✗ ${e.message}`); }
   };
 
-  const handleDelete = async (ids: string[]) => {
-    await fetch('/api/backlinks', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ siteDbId, ids }),
+  // ── favourites (DB column, not localStorage: survives a browser change, visible to the
+  //    second person in the workspace) ──
+
+  const toggleFavorite = async (row: BacklinkRow) => {
+    setRows(rs => rs.map(r => (r.id === row.id ? { ...r, favorite: !r.favorite } : r)));
+    await fetch("/api/backlinks", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ siteDbId, id: row.id, favorite: !row.favorite }),
+    });
+  };
+
+  const handleBulkFavorite = async () => {
+    if (selected.size === 0) return;
+    await fetch("/api/backlinks", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ siteDbId, ids: [...selected], favorite: true }),
     });
     setSelected(new Set());
     await load();
   };
 
-  const handleCheck404 = async (all = false) => {
-    setChecking404(true); setActionMsg('');
-    const ids = !all && selected.size > 0 ? [...selected] : [];
+  // ── destructive bulk delete: by ids when rows are picked, by the live filter otherwise;
+  //    the confirm always names the real number of affected rows ──
+
+  const handleDelete = async (ids?: string[]) => {
+    const effectiveIds = ids ?? (selected.size > 0 ? [...selected] : null);
+    const count = effectiveIds ? effectiveIds.length : (stats?.total ?? 0);
+    if (!window.confirm(subst("bluiBulkScope", { n: count }))) return;
+    await fetch("/api/backlinks", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(effectiveIds ? { siteDbId, ids: effectiveIds } : { siteDbId, filter: filtersToBody(filters) }),
+    });
+    setSelected(new Set());
+    await load();
+  };
+
+  // ── legacy checks, unchanged targets ──
+
+  const handleCheck404 = async () => {
+    setChecking404(true); setActionMsg("");
     try {
-      const res = await fetch('/api/backlinks/check-alive', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteDbId, ids, forceAll: all }),
+      const res = await fetch("/api/backlinks/check-alive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ siteDbId, ids: [], forceAll: true }),
       });
       const d = await res.json();
-      setActionMsg(`✓ ${t("idxChecked")} ${d.checked}: ${t("blAlive")} ${d.alive}, ${t("blDead")} ${d.dead}${d.blocked ? `, ${t("blBlocked")} ${d.blocked}` : ''}`);
-      await load();
+      setActionMsg(`✓ ${t("idxChecked")} ${d.checked}: ${t("blAlive")} ${d.alive}, ${t("blDead")} ${d.dead}${d.blocked ? `, ${t("blBlocked")} ${d.blocked}` : ""}`);
     } catch (e: any) { setActionMsg(`✗ ${e.message}`); }
     setChecking404(false);
   };
 
   const handleCheckXr = async () => {
-    setCheckingXr(true); setActionMsg('');
-    const ids = selected.size > 0 ? [...selected] : [];
+    setCheckingXr(true); setActionMsg("");
     try {
-      const res = await fetch('/api/backlinks/check-xr', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteDbId, ids }),
+      const res = await fetch("/api/backlinks/check-xr", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ siteDbId, ids: [] }),
       });
       const d = await res.json();
       setActionMsg(`✓ XML River: ${t("idxChecked")} ${d.checked}`);
-      await load();
     } catch (e: any) { setActionMsg(`✗ ${e.message}`); }
     setCheckingXr(false);
   };
 
-  const handleExport = () => {
-    const csv = ['url,title,alive,alive_status,xr_status,2index,added']
-      .concat(links.map(l => `"${l.url}","${l.title ?? ''}",${l.isAlive ?? ''},${l.aliveStatus ?? ''},${l.xrStatus ?? ''},${l.twoIndexStatus ?? ''},"${l.addedAt}"`))
-      .join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `backlinks-${siteDbId}.csv`; a.click();
+  // ── export: the current filter, not the visible page — that is what "export" means to
+  //    someone who filtered to "missing" and wants a work list for the contractor ──
+
+  const handleExport = async () => {
+    try {
+      const qs = filtersToParams(filters);
+      qs.set("siteDbId", siteDbId);
+      qs.set("pageSize", "all");
+      qs.set("sort", sort);
+      const res = await fetch(`/api/backlinks?${qs.toString()}`);
+      const d = await res.json();
+      const all: BacklinkRow[] = d.rows ?? [];
+      const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+      // rel follows the same precedence as the cell and the server-side filter: our check
+      // when it found the link, Ahrefs otherwise.
+      const relOf = (r: BacklinkRow) => {
+        if (r.checkStatus === "found") {
+          const parts = [r.checkNofollow && "nofollow", r.checkSponsored && "sponsored", r.checkUgc && "ugc"].filter(Boolean);
+          return parts.length ? parts.join("|") : "dofollow";
+        }
+        const parts = [!r.apiDofollow && "nofollow", r.apiSponsored && "sponsored", r.apiUgc && "ugc"].filter(Boolean);
+        return parts.length ? parts.join("|") : "dofollow";
+      };
+      const csv = ["url_from,url_to,domain,favorite,placement,anchor,rel,dr,page,xr_status,sources,added_at"]
+        .concat(all.map(r => [
+          r.urlFrom, r.urlTo, r.domainFrom, r.favorite ? "1" : "0", r.checkStatus,
+          r.checkAnchor || r.apiAnchor, relOf(r), r.apiDr ?? "", r.pageStatus, r.xrStatus,
+          r.sources.join("|"), r.addedAt,
+        ].map(esc).join(",")))
+        .join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `backlinks-${siteDbId}.csv`;
+      a.click();
+    } catch (e: any) { setActionMsg(`✗ ${e.message}`); }
   };
+
+  const [ops, setOps] = useState<any[]>([]);
+  const [showOps, setShowOps] = useState(false);
+  const [opsLoading, setOpsLoading] = useState(false);
 
   const loadOps = async () => {
     setOpsLoading(true);
     try {
       const res = await fetch(`/api/indexing/sitemap/operations?siteDbId=${siteDbId}&limit=30`);
       const d = await res.json();
-      setOps((d.ops ?? []).filter((o: any) => o.type.startsWith('backlink')));
+      setOps((d.ops ?? []).filter((o: any) => o.type.startsWith("backlink")));
     } catch {}
     setOpsLoading(false);
   };
@@ -2128,81 +2309,168 @@ function BacklinksTab({ siteDbId }: { siteDbId: string }) {
   const toggleSel = (id: string) => setSelected(prev => {
     const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n;
   });
-  const toggleAll = () => setSelected(prev =>
-    prev.size === links.length && links.length > 0 ? new Set() : new Set(links.map(l => l.id))
-  );
+  const toggleAll = () => setSelected(prev => {
+    const pageIds = rows.map(r => r.id);
+    const allOnPage = pageIds.length > 0 && pageIds.every(id => prev.has(id));
+    const n = new Set(prev);
+    pageIds.forEach(id => (allOnPage ? n.delete(id) : n.add(id)));
+    return n;
+  });
 
-  const displayed = links.slice(0, displayLimit);
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+
+  // rel precedence, shared by the cell and the export: our check's flags when it found the
+  // link, Ahrefs' otherwise.
+  const relParts = (r: BacklinkRow): { label: string; color: string }[] => {
+    if (r.checkStatus === "found") {
+      return [
+        ...(r.checkNofollow ? [{ label: "nofollow", color: "#94a3b8" }] : []),
+        ...(r.checkSponsored ? [{ label: "sponsored", color: "#a78bfa" }] : []),
+        ...(r.checkUgc ? [{ label: "ugc", color: "#22d3ee" }] : []),
+      ];
+    }
+    return [
+      ...(!r.apiDofollow ? [{ label: "nofollow", color: "#94a3b8" }] : []),
+      ...(r.apiSponsored ? [{ label: "sponsored", color: "#a78bfa" }] : []),
+      ...(r.apiUgc ? [{ label: "ugc", color: "#22d3ee" }] : []),
+    ];
+  };
+
+  const sel = <V extends string | number | boolean>(value: V, onChange: (v: string) => void, options: { v: string; l: string }[], title: string) => (
+    <select value={String(value)} title={title} onChange={e => onChange(e.target.value)}
+      style={{ padding: "5px 8px", borderRadius: "6px", border: "1px solid var(--color-border)", background: "var(--color-bg)", color: "var(--color-text-primary)", fontSize: "11px", cursor: "pointer" }}>
+      {options.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+    </select>
+  );
 
   return (
     <div style={{ padding: "24px 32px", display: "flex", flexDirection: "column", gap: "20px" }}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
 
-      {/* The provider's view of the link graph, above the manually tracked list. Kept separate
-          rather than merged: this one answers "what points at me", the list below answers "did
-          the link I built survive". Merging them would lose the second question. */}
+      {/* The provider's view of the link graph, above the tracked list. Kept separate rather
+          than merged: this one answers "what points at me", the list below answers "did the
+          link I built survive". Merging them would lose the second question. */}
       <BacklinkProfile siteDbId={siteDbId} />
 
       {/* ── Header ── */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "12px" }}>
         <h2 style={{ fontSize: "17px", fontWeight: 700, color: "var(--color-text-primary)" }}>{t("backlinksTitle")}</h2>
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-          <button onClick={() => handleCheck404(true)} disabled={checking404}
-            style={{ display: "flex", alignItems: "center", gap: "5px", padding: "7px 13px", borderRadius: "8px", border: "none", background: "#3B82F6", color: "#fff", fontSize: "12px", fontWeight: 600, cursor: checking404 ? "not-allowed" : "pointer", opacity: checking404 ? 0.6 : 1 }}>
+          <button onClick={() => setImportOpen(true)}
+            style={{ padding: "7px 13px", borderRadius: "8px", border: "none", background: "#3B82F6", color: "#fff", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>
+            {t("bluiImport")}
+          </button>
+          <button onClick={handleCheck404} disabled={checking404}
+            style={{ padding: "7px 13px", borderRadius: "8px", border: "none", background: "#64748B", color: "#fff", fontSize: "12px", fontWeight: 600, cursor: checking404 ? "not-allowed" : "pointer", opacity: checking404 ? 0.6 : 1 }}>
             {checking404 ? t("backlinksChecking") : t("backlinksCheck404")}
           </button>
           <button onClick={handleCheckXr} disabled={checkingXr}
-            style={{ display: "flex", alignItems: "center", gap: "5px", padding: "7px 13px", borderRadius: "8px", border: "none", background: "#10B981", color: "#fff", fontSize: "12px", fontWeight: 600, cursor: checkingXr ? "not-allowed" : "pointer", opacity: checkingXr ? 0.6 : 1 }}>
+            style={{ padding: "7px 13px", borderRadius: "8px", border: "none", background: "#10B981", color: "#fff", fontSize: "12px", fontWeight: 600, cursor: checkingXr ? "not-allowed" : "pointer", opacity: checkingXr ? 0.6 : 1 }}>
             {checkingXr ? t("backlinksChecking") : t("backlinksIndexXr")}
           </button>
           <button onClick={handleExport}
             style={{ padding: "7px 13px", borderRadius: "8px", border: "none", background: "#F59E0B", color: "#fff", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>
-            {t("backlinksExport")}
+            {t("bluiExport")}
           </button>
         </div>
       </div>
 
-      {/* ── Stats bar ── */}
-      <div style={{ display: "flex", gap: "20px", flexWrap: "wrap", fontSize: "13px" }}>
+      {/* ── Placement verification progress (background run) ── */}
+      {verify && (
+        <div style={{ background: "var(--color-card)", border: "1px solid rgba(59,130,246,0.3)", borderRadius: "10px", padding: "10px 14px", display: "flex", alignItems: "center", gap: "12px" }}>
+          <div style={{ width: 16, height: 16, border: "2px solid var(--color-border)", borderTopColor: "#3B82F6", borderRadius: "50%", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
+          <span style={{ fontSize: "12px", fontWeight: 600, color: "#60a5fa", whiteSpace: "nowrap" }}>{t("blchkRunning")}</span>
+          <div style={{ flex: 1, height: 6, borderRadius: 3, background: "var(--color-border)", overflow: "hidden" }}>
+            <div style={{ width: `${Math.min(100, verify.progress)}%`, height: "100%", background: "#3B82F6", transition: "width 0.5s" }} />
+          </div>
+          <span style={{ fontSize: "12px", color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>{verify.progress}% · {verify.rowsSeen}</span>
+        </div>
+      )}
+
+      {/* ── Stats bar — server-side over the whole filtered set, not the visible page ── */}
+      <div style={{ display: "flex", gap: "20px", flexWrap: "wrap", fontSize: "13px", alignItems: "center" }}>
         {[
-          { label: t("backlinksTotal"), value: stats.total ?? 0, color: "var(--color-text-primary)" },
-          { label: t("backlinksDead"),  value: stats.dead   ?? 0, color: "#F87171" },
-          { label: t("backlinksAlive"), value: stats.alive  ?? 0, color: "#4ADE80" },
-          { label: t("backlinksBlocked"), value: stats.blocked ?? 0, color: "#FBBF24" },
-          { label: t("backlinksXrIndexed"), value: stats.xrIndexed ?? 0, color: "#60a5fa" },
+          { label: t("backlinksTotal"), value: stats?.total ?? 0, color: "var(--color-text-primary)" },
+          { label: t("blchkFound"), value: stats?.found ?? 0, color: "#4ADE80" },
+          { label: t("blchkMissing"), value: stats?.missing ?? 0, color: "#F87171" },
+          { label: t("blchkBlocked"), value: stats?.blocked ?? 0, color: "#FBBF24" },
+          { label: t("blchkUnchecked"), value: stats?.unchecked ?? 0, color: "var(--color-text-secondary)" },
+          { label: t("bluiFilterLost"), value: stats?.apiLost ?? 0, color: "#a78bfa" },
         ].map(({ label, value, color }) => (
           <span key={label} style={{ fontWeight: 600 }}>
             {label} <span style={{ color }}>{value}</span>
           </span>
         ))}
-        {actionMsg && <span style={{ color: actionMsg.startsWith('✓') ? "#4ADE80" : "#F87171", fontWeight: 600 }}>{actionMsg}</span>}
+        <span style={{ fontWeight: 600 }}>
+          <Star size={12} color="#F59E0B" style={{ display: "inline", verticalAlign: "-1px" }} fill="#F59E0B" />{" "}
+          <span style={{ color: "#F59E0B" }}>{stats?.favorites ?? 0}</span>
+        </span>
+        {actionMsg && <span style={{ color: actionMsg.startsWith("✓") ? "#4ADE80" : "#F87171", fontWeight: 600 }}>{actionMsg}</span>}
       </div>
 
-      {/* ── Add URLs block ── */}
-      <div style={{ background: "var(--color-card)", borderRadius: "12px", border: "1px solid var(--color-border)", overflow: "hidden" }}>
-        <div style={{ padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <span style={{ fontSize: "13px", fontWeight: 600, color: "var(--color-text-primary)" }}>{t("backlinksAdd")}</span>
-          <button onClick={() => setShowAdd(o => !o)}
-            style={{ fontSize: "12px", padding: "4px 12px", borderRadius: "6px", border: "1px solid var(--color-border)", background: "transparent", color: "var(--color-text-secondary)", cursor: "pointer" }}>
-            {showAdd ? "▲" : "▼"}
+      {/* ── Filters ── */}
+      <div style={{ background: "var(--color-card)", borderRadius: "12px", border: "1px solid var(--color-border)", padding: "12px 16px", display: "flex", flexDirection: "column", gap: "10px" }}>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+          {sel(filters.status, v => updateFilters({ status: v }), [
+            { v: "", l: `${t("bluiFilterStatus")}: —` },
+            { v: "found", l: `✓ ${t("blchkFound")}` },
+            { v: "missing", l: `✗ ${t("blchkMissing")}` },
+            { v: "blocked", l: `⚠ ${t("blchkBlocked")}` },
+            { v: "error", l: `⚠ ${t("blchkError")}` },
+            { v: "unchecked", l: t("blchkUnchecked") },
+          ], t("bluiFilterStatus"))}
+          {sel(filters.rel, v => updateFilters({ rel: v }), [
+            { v: "", l: `${t("bluiFilterRel")}: —` },
+            { v: "dofollow", l: "dofollow" },
+            { v: "nofollow", l: "nofollow" },
+          ], t("bluiFilterRel"))}
+          {sel(filters.source, v => updateFilters({ source: v }), [
+            { v: "", l: `${t("bluiFilterSource")}: —` },
+            { v: "api", l: t("bluiSourceApi") },
+            { v: "csv", l: t("bluiSourceCsv") },
+            { v: "manual", l: t("bluiSourceManual") },
+          ], t("bluiFilterSource"))}
+          {sel(sort, v => { setSort(v); setPage(1); }, [
+            { v: "added_desc", l: t("bluiSortNewest") },
+            { v: "dr_desc", l: t("bluiColDr") },
+            { v: "first_seen_desc", l: t("bluiSortFirstSeen") },
+            { v: "last_seen_desc", l: t("bluiSortLastSeen") },
+            { v: "checked_desc", l: t("blchkLastCheck") },
+            { v: "domain_asc", l: t("bluiColDonor") },
+          ], t("bluiFilterReset"))}
+          <button onClick={() => { setFilters({ status: "", rel: "", source: "", domain: "", drMin: "", drMax: "", favorite: false, lost: false }); setDomainInput(""); setDrInput({ min: "", max: "" }); setPage(1); }}
+            style={{ padding: "5px 10px", borderRadius: "6px", border: "1px solid var(--color-border)", background: "transparent", color: "var(--color-text-secondary)", fontSize: "11px", cursor: "pointer" }}>
+            {t("bluiFilterReset")}
           </button>
         </div>
-        {showAdd && (
-          <div style={{ padding: "0 16px 14px", borderTop: "1px solid var(--color-border)", display: "flex", flexDirection: "column", gap: "8px" }}>
-            <textarea
-              value={addText} onChange={e => setAddText(e.target.value)}
-              placeholder={t("backlinksAddPlaceholder")}
-              rows={6}
-              style={{ width: "100%", fontSize: "12px", padding: "8px 10px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-bg)", color: "var(--color-text-primary)", resize: "vertical", fontFamily: "monospace", boxSizing: "border-box", marginTop: "10px" }}
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+          <input
+            value={domainInput} onChange={e => setDomainInput(e.target.value)}
+            onBlur={() => updateFilters({ domain: domainInput.trim().toLowerCase() })}
+            onKeyDown={e => { if (e.key === "Enter") updateFilters({ domain: domainInput.trim().toLowerCase() }); }}
+            placeholder={t("bluiFilterDomain")}
+            style={{ padding: "5px 8px", borderRadius: "6px", border: "1px solid var(--color-border)", background: "var(--color-bg)", color: "var(--color-text-primary)", fontSize: "11px", width: 160 }}
+          />
+          <span style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>{t("bluiFilterDr")}</span>
+          {(["min", "max"] as const).map(bound => (
+            <input
+              key={bound} type="number" value={drInput[bound]}
+              onChange={e => setDrInput(prev => ({ ...prev, [bound]: e.target.value }))}
+              onBlur={() => updateFilters({ drMin: drInput.min, drMax: drInput.max })}
+              onKeyDown={e => { if (e.key === "Enter") updateFilters({ drMin: drInput.min, drMax: drInput.max }); }}
+              placeholder={bound}
+              style={{ padding: "5px 8px", borderRadius: "6px", border: "1px solid var(--color-border)", background: "var(--color-bg)", color: "var(--color-text-primary)", fontSize: "11px", width: 64 }}
             />
-            <div style={{ display: "flex", gap: "8px" }}>
-              <button onClick={handleAdd} disabled={adding || !addText.trim()}
-                style={{ padding: "7px 18px", borderRadius: "8px", border: "none", background: "#3B82F6", color: "#fff", fontSize: "12px", fontWeight: 700, cursor: adding ? "not-allowed" : "pointer", opacity: adding ? 0.7 : 1 }}>
-                {adding ? t("backlinksChecking") : t("backlinksAddBtn")}
-              </button>
-            </div>
-          </div>
-        )}
+          ))}
+          <label style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "11px", color: "var(--color-text-secondary)", cursor: "pointer" }}>
+            <input type="checkbox" checked={filters.favorite} onChange={e => updateFilters({ favorite: e.target.checked })} style={{ width: 13, height: 13, accentColor: "#F59E0B", cursor: "pointer" }} />
+            {t("bluiFavoriteOnly")}
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "11px", color: "var(--color-text-secondary)", cursor: "pointer" }}>
+            <input type="checkbox" checked={filters.lost} onChange={e => updateFilters({ lost: e.target.checked })} style={{ width: 13, height: 13, accentColor: "#a78bfa", cursor: "pointer" }} />
+            {t("bluiFilterLost")}
+          </label>
+        </div>
       </div>
 
       {/* ── Loading ── */}
@@ -2213,95 +2481,158 @@ function BacklinksTab({ siteDbId }: { siteDbId: string }) {
       )}
 
       {/* ── Empty state ── */}
-      {!loading && links.length === 0 && (
+      {!loading && total === 0 && (
         <div style={{ textAlign: "center", padding: "50px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: "12px" }}>
           <Link2 size={36} color="var(--color-text-secondary)" style={{ opacity: 0.25 }} />
-          <p style={{ fontSize: "13px", color: "var(--color-text-secondary)", maxWidth: "360px", lineHeight: 1.6 }}>{t("backlinksEmpty")}</p>
+          <p style={{ fontSize: "13px", color: "var(--color-text-secondary)", maxWidth: "420px", lineHeight: 1.6 }}>{t("bluiEmpty")}</p>
+          <button onClick={() => setImportOpen(true)}
+            style={{ padding: "8px 18px", borderRadius: "8px", border: "none", background: "#3B82F6", color: "#fff", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}>
+            {t("bluiImport")}
+          </button>
         </div>
       )}
 
-      {/* ── Selection toolbar ── */}
-      {selected.size > 0 && (
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 12px", background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.25)", borderRadius: "8px", flexWrap: "wrap" }}>
-          <span style={{ fontSize: "12px", color: "#60a5fa", fontWeight: 600 }}>{selected.size} {t("backlinksSelected")}</span>
-          <button onClick={() => handleCheck404(false)} disabled={checking404}
-            style={{ padding: "4px 10px", borderRadius: "6px", border: "1px solid rgba(59,130,246,0.35)", background: "transparent", color: "#60a5fa", fontSize: "11px", fontWeight: 600, cursor: "pointer" }}>
-            Check 404
+      {/* ── Bulk actions: by selection when rows are picked, by the live filter otherwise ── */}
+      {!loading && total > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+          <span style={{ fontSize: "12px", color: selected.size > 0 ? "#60a5fa" : "var(--color-text-secondary)", fontWeight: 600 }}>
+            {selected.size > 0 ? `${selected.size} ${t("backlinksSelected")}` : `${stats?.total ?? 0} ${t("backlinksTotal").toLowerCase()}`}
+          </span>
+          <button onClick={handleVerify} disabled={!!verify}
+            style={{ padding: "5px 12px", borderRadius: "6px", border: "1px solid rgba(59,130,246,0.35)", background: "transparent", color: "#60a5fa", fontSize: "11px", fontWeight: 600, cursor: verify ? "not-allowed" : "pointer", opacity: verify ? 0.5 : 1 }}>
+            {verify ? t("blchkRunning") : t("bluiBulkVerify")}
           </button>
-          <button onClick={handleCheckXr} disabled={checkingXr}
-            style={{ padding: "4px 10px", borderRadius: "6px", border: "1px solid rgba(16,185,129,0.35)", background: "transparent", color: "#34d399", fontSize: "11px", fontWeight: 600, cursor: "pointer" }}>
-            {t("backlinksIndexXr")}
+          {selected.size > 0 && (
+            <button onClick={handleBulkFavorite}
+              style={{ padding: "5px 12px", borderRadius: "6px", border: "1px solid rgba(245,158,11,0.35)", background: "transparent", color: "#FBBF24", fontSize: "11px", fontWeight: 600, cursor: "pointer" }}>
+              {t("bluiBulkFavorite")}
+            </button>
+          )}
+          <button onClick={() => handleDelete()}
+            style={{ padding: "5px 12px", borderRadius: "6px", border: "1px solid rgba(239,68,68,0.35)", background: "transparent", color: "#f87171", fontSize: "11px", fontWeight: 600, cursor: "pointer" }}>
+            {t("bluiBulkDelete")}
           </button>
-          <button onClick={() => handleDelete([...selected])}
-            style={{ padding: "4px 10px", borderRadius: "6px", border: "1px solid rgba(239,68,68,0.35)", background: "transparent", color: "#f87171", fontSize: "11px", fontWeight: 600, cursor: "pointer" }}>
-            {t("backlinksDelete")}
-          </button>
-          <button onClick={() => setSelected(new Set())}
-            style={{ padding: "4px 8px", borderRadius: "6px", border: "1px solid var(--color-border)", background: "transparent", color: "var(--color-text-secondary)", fontSize: "11px", cursor: "pointer" }}>
-            {t("backlinksClearSel")}
-          </button>
+          {selected.size > 0 && (
+            <button onClick={() => setSelected(new Set())}
+              style={{ padding: "5px 10px", borderRadius: "6px", border: "1px solid var(--color-border)", background: "transparent", color: "var(--color-text-secondary)", fontSize: "11px", cursor: "pointer" }}>
+              {t("backlinksClearSel")}
+            </button>
+          )}
         </div>
       )}
 
       {/* ── Table ── */}
-      {links.length > 0 && (
+      {!loading && total > 0 && (
         <div style={{ background: "var(--color-card)", borderRadius: "12px", border: "1px solid var(--color-border)", overflow: "hidden" }}>
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", minWidth: "700px" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", minWidth: "1050px" }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--color-border)", background: "rgba(255,255,255,0.02)" }}>
                   <th style={{ padding: "9px 12px", width: 32 }}>
-                    <input type="checkbox" checked={selected.size === links.length && links.length > 0} onChange={toggleAll}
+                    <input type="checkbox" checked={rows.length > 0 && rows.every(r => selected.has(r.id))} onChange={toggleAll}
                       style={{ cursor: "pointer", width: 13, height: 13, accentColor: "#3B82F6" }} />
                   </th>
-                  {[t("backlinksColUrl"), t("backlinksColDate"), t("backlinksColTitle"), t("backlinksColAlive"), t("backlinksColXr"), t("backlinks2index"), t("backlinksColActions")].map(h => (
+                  <th style={{ width: 34 }} />
+                  {[t("bluiColDonor"), t("bluiColTarget"), t("bluiColPlacement"), t("bluiColAnchor"), t("bluiColRel"), t("bluiColDr"), t("bluiColPage"), t("backlinksColXr"), t("bluiColSource")].map(h => (
                     <th key={h} style={{ textAlign: "left", padding: "9px 12px", color: "var(--color-text-secondary)", fontWeight: 500, fontSize: "10px", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>{h}</th>
                   ))}
+                  <th style={{ padding: "9px 12px", width: 60 }} />
                 </tr>
               </thead>
               <tbody>
-                {displayed.map((link, i) => {
+                {rows.map((link, i) => {
                   const isSelected = selected.has(link.id);
-                  const path = link.url.replace(/^https?:\/\/[^/]+/, "") || "/";
-                  const host = (() => { try { return new URL(link.url).hostname; } catch { return link.url; } })();
+                  const donorHost = link.domainFrom || (() => { try { return new URL(link.urlFrom).hostname; } catch { return link.urlFrom; } })();
+                  const donorPath = link.urlFrom.replace(/^https?:\/\/[^/]+/, "") || "/";
+                  const targetHost = (() => { try { return link.urlTo ? new URL(link.urlTo).hostname : ""; } catch { return ""; } })();
+                  const targetPath = link.urlTo.replace(/^https?:\/\/[^/]+/, "") || "/";
+                  const rels = relParts(link);
                   return (
                     <tr key={link.id} style={{ borderBottom: "1px solid var(--color-border)", background: isSelected ? "rgba(59,130,246,0.05)" : i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.012)" }}>
                       <td style={{ padding: "8px 12px" }}>
                         <input type="checkbox" checked={isSelected} onChange={() => toggleSel(link.id)}
                           style={{ cursor: "pointer", width: 13, height: 13, accentColor: "#3B82F6" }} />
                       </td>
-                      {/* URL */}
-                      <td style={{ padding: "8px 12px", maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        <div style={{ fontWeight: 600, fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "1px" }}>{host}</div>
-                        <a href={link.url} target="_blank" rel="noreferrer" title={link.url}
+                      {/* ⭐ favourite — DB-backed, not localStorage */}
+                      <td style={{ padding: "8px 6px" }}>
+                        <button onClick={() => toggleFavorite(link)} title={t("bluiFavorite")}
+                          style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex" }}>
+                          <Star size={14} color={link.favorite ? "#F59E0B" : "var(--color-border)"} fill={link.favorite ? "#F59E0B" : "none"} />
+                        </button>
+                      </td>
+                      {/* Donor page */}
+                      <td style={{ padding: "8px 12px", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        <div style={{ fontWeight: 600, fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "1px" }}>{donorHost}</div>
+                        <a href={link.urlFrom} target="_blank" rel="noreferrer" title={link.urlFrom}
                           style={{ color: "#60a5fa", textDecoration: "none", fontSize: "11px" }}
                           onMouseOver={e => (e.currentTarget.style.textDecoration = "underline")}
-                          onMouseOut={e => (e.currentTarget.style.textDecoration = "none")}>{path || "/"}</a>
+                          onMouseOut={e => (e.currentTarget.style.textDecoration = "none")}>{donorPath || "/"}</a>
                       </td>
-                      {/* Date */}
-                      <td style={{ padding: "8px 12px", fontSize: "11px", color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>
-                        {timeAgo(new Date(link.addedAt))}
+                      {/* Our page */}
+                      <td style={{ padding: "8px 12px", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {link.urlTo ? (
+                          <span title={link.checkTargetOk === false ? t("blchkTargetMismatch") : link.urlTo} style={{ display: "flex", flexDirection: "column", gap: "1px" }}>
+                            {link.checkTargetOk === false && <span style={{ color: "#FBBF24", fontSize: "10px", fontWeight: 700 }}>⚠ {t("blchkTargetMismatch")}</span>}
+                            <a href={link.urlTo} target="_blank" rel="noreferrer"
+                              style={{ color: link.checkTargetOk === false ? "#FBBF24" : "#93c5fd", textDecoration: "none", fontSize: "11px" }}
+                              onMouseOver={e => (e.currentTarget.style.textDecoration = "underline")}
+                              onMouseOut={e => (e.currentTarget.style.textDecoration = "none")}>
+                              {targetHost}{targetPath === "/" ? "" : targetPath}
+                            </a>
+                          </span>
+                        ) : <span style={{ color: "rgba(255,255,255,0.2)", fontSize: "11px" }}>—</span>}
                       </td>
-                      {/* Title */}
-                      <td style={{ padding: "8px 12px", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "11px", color: "var(--color-text-primary)" }}>
-                        {link.title ?? <span style={{ color: "rgba(255,255,255,0.2)" }}>—</span>}
-                      </td>
-                      {/* Alive */}
+                      {/* Placement — our own check for the link itself. blocked is AMBER:
+                          the site refused our bot, which is not "the link was removed". */}
                       <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
                         {(() => {
-                          // aliveStatus is authoritative when present; isAlive is the legacy fallback.
-                          // "blocked" (amber) is neither alive nor dead — it means bot protection hid
-                          // the page, and must never be shown as a death.
-                          const st = link.aliveStatus === 'alive' || link.aliveStatus === 'dead' || link.aliveStatus === 'blocked'
-                            ? link.aliveStatus
-                            : link.isAlive === true ? 'alive' : link.isAlive === false ? 'dead' : 'unknown';
-                          if (st === 'alive')   return <span style={{ color: "#4ADE80", fontWeight: 600, fontSize: "11px" }}>✓ {t("blAliveFull")}</span>;
-                          if (st === 'dead')    return <span style={{ color: "#F87171", fontWeight: 600, fontSize: "11px" }}>✗ {t("blDeadFull")}</span>;
-                          if (st === 'blocked') return <span style={{ color: "#FBBF24", fontWeight: 600, fontSize: "11px" }}>⚠ {t("blBlockedFull")}</span>;
+                          const meta: Record<string, { c: string; m: string; l: string }> = {
+                            found: { c: "#4ADE80", m: "✓", l: t("blchkFound") },
+                            missing: { c: "#F87171", m: "✗", l: t("blchkMissing") },
+                            blocked: { c: "#FBBF24", m: "⚠", l: t("blchkBlocked") },
+                            error: { c: "#FBBF24", m: "⚠", l: t("blchkError") },
+                            unchecked: { c: "rgba(255,255,255,0.25)", m: "—", l: t("blchkUnchecked") },
+                          };
+                          const s = meta[link.checkStatus] ?? meta.unchecked;
+                          return (
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: "5px" }}>
+                              <span title={link.checkStatus === "error" ? link.checkError : s.l} style={{ color: s.c, fontWeight: 600, fontSize: "11px" }}>{s.m} {s.m === "—" ? "" : s.l}</span>
+                              {/* Ahrefs still sees it after JS runs: raw-HTML "missing" is not a removal */}
+                              {link.checkStatus === "missing" && link.apiSeen && link.apiJsCrawl && (
+                                <span title={t("blchkJsHint")} style={{ fontSize: "9px", fontWeight: 700, color: "#FBBF24", border: "1px solid rgba(251,191,36,0.4)", borderRadius: "4px", padding: "0 4px" }}>JS</span>
+                              )}
+                            </span>
+                          );
+                        })()}
+                      </td>
+                      {/* Anchor: our check first; Ahrefs' marked as such when it's all we have */}
+                      <td style={{ padding: "8px 12px", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "11px" }}>
+                        {link.checkAnchor ? <span style={{ color: "var(--color-text-primary)" }}>{link.checkAnchor}</span>
+                          : link.apiAnchor ? <span style={{ color: "var(--color-text-secondary)" }}>{link.apiAnchor} <span style={{ fontSize: "9px", opacity: 0.7 }}>({t("bluiAnchorFromApi")})</span></span>
+                          : <span style={{ color: "rgba(255,255,255,0.2)" }}>—</span>}
+                      </td>
+                      {/* rel */}
+                      <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
+                        {rels.length > 0 ? rels.map(b => (
+                          <span key={b.label} title={link.checkRel || undefined} style={{ display: "inline-block", fontSize: "9px", fontWeight: 700, color: b.color, border: `1px solid ${b.color}55`, borderRadius: "4px", padding: "0 4px", marginRight: "3px" }}>{b.label}</span>
+                        )) : <span style={{ color: "#4ADE80", fontSize: "10px", fontWeight: 600 }}>dofollow</span>}
+                      </td>
+                      {/* DR */}
+                      <td style={{ padding: "8px 12px", fontSize: "11px", color: "var(--color-text-primary)", fontWeight: 600, whiteSpace: "nowrap" }}>
+                        {link.apiDr != null ? Math.round(link.apiDr) : <span style={{ color: "rgba(255,255,255,0.2)", fontWeight: 400 }}>—</span>}
+                      </td>
+                      {/* Donor page availability — independent of placement: alive+missing is "they removed the link" */}
+                      <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
+                        {(() => {
+                          // Same palette rule as the old aliveStatus cell: blocked is amber,
+                          // a refusal to answer, never shown as a death.
+                          if (link.pageStatus === "alive") return <span style={{ color: "#4ADE80", fontWeight: 600, fontSize: "11px" }}>✓ {t("blAlive")}</span>;
+                          if (link.pageStatus === "dead") return <span style={{ color: "#F87171", fontWeight: 600, fontSize: "11px" }}>✗ {t("blDead")}</span>;
+                          if (link.pageStatus === "blocked") return <span style={{ color: "#FBBF24", fontWeight: 600, fontSize: "11px" }}>⚠ {t("blBlocked")}</span>;
                           return <span style={{ color: "rgba(255,255,255,0.2)", fontSize: "11px" }}>—</span>;
                         })()}
                       </td>
-                      {/* XR */}
+                      {/* Indexation */}
                       <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
                         {link.xrStatus
                           ? <span style={{ fontSize: "11px", color: link.xrStatus === "indexed" ? "#4ADE80" : link.xrStatus === "error" ? "#F87171" : "#FBBF24", fontWeight: 600 }}>
@@ -2310,18 +2641,20 @@ function BacklinksTab({ siteDbId }: { siteDbId: string }) {
                           : <span style={{ color: "rgba(255,255,255,0.2)", fontSize: "11px" }}>—</span>
                         }
                       </td>
-                      {/* 2index */}
-                      <td style={{ padding: "8px 12px" }}>
-                        {link.twoIndexStatus === "submitted"
-                          ? <span style={{ fontSize: "11px", color: "#34d399", fontWeight: 600 }}>✓ {t("idxSent")}</span>
-                          : <span style={{ color: "rgba(255,255,255,0.2)", fontSize: "11px" }}>—</span>
-                        }
+                      {/* Sources */}
+                      <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
+                        {link.sources.length > 0 ? link.sources.map(src => (
+                          <span key={src} style={{ display: "inline-block", fontSize: "9px", fontWeight: 700, borderRadius: "4px", padding: "0 5px", marginRight: "3px",
+                            ...(src === "api" ? { color: "#60a5fa", border: "1px solid rgba(96,165,250,0.4)" } : src === "csv" ? { color: "#a78bfa", border: "1px solid rgba(167,139,250,0.4)" } : { color: "var(--color-text-secondary)", border: "1px solid var(--color-border)" }) }}>
+                            {src === "api" ? t("bluiSourceApi") : src === "csv" ? t("bluiSourceCsv") : t("bluiSourceManual")}
+                          </span>
+                        )) : <span style={{ color: "rgba(255,255,255,0.2)", fontSize: "11px" }}>—</span>}
                       </td>
-                      {/* Actions */}
+                      {/* Row delete */}
                       <td style={{ padding: "8px 12px" }}>
                         <button onClick={() => handleDelete([link.id])}
                           style={{ padding: "3px 9px", borderRadius: "5px", border: "1px solid rgba(239,68,68,0.3)", background: "transparent", color: "#f87171", fontSize: "10px", fontWeight: 600, cursor: "pointer" }}>
-                          {t("backlinksDelete")}
+                          {t("bluiBulkDelete")}
                         </button>
                       </td>
                     </tr>
@@ -2330,18 +2663,30 @@ function BacklinksTab({ siteDbId }: { siteDbId: string }) {
               </tbody>
             </table>
           </div>
-          {links.length > displayLimit && (
-            <div style={{ padding: "12px", textAlign: "center", borderTop: "1px solid var(--color-border)" }}>
-              <button onClick={() => setDisplayLimit(n => n + 100)}
-                style={{ padding: "7px 20px", borderRadius: "20px", border: "1px solid var(--color-border)", background: "transparent", color: "var(--color-text-secondary)", fontSize: "12px", cursor: "pointer" }}>
-                {t("backlinksShowMore")} ({links.length - displayLimit})
+          {/* ── Server-side pagination ── */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", padding: "10px 12px", borderTop: "1px solid var(--color-border)", flexWrap: "wrap" }}>
+            <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))}
+              style={{ padding: "5px 8px", borderRadius: "6px", border: "1px solid var(--color-border)", background: "var(--color-bg)", color: "var(--color-text-primary)", fontSize: "11px", cursor: "pointer" }}>
+              {[50, 100, 250, 500].map(n => <option key={n} value={n}>{n} {t("bluiPerPage")}</option>)}
+            </select>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <button disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))}
+                style={{ display: "flex", padding: "4px", border: "1px solid var(--color-border)", background: "transparent", borderRadius: "6px", color: "var(--color-text-secondary)", cursor: page <= 1 ? "not-allowed" : "pointer", opacity: page <= 1 ? 0.4 : 1 }}>
+                <ChevronLeft size={14} />
+              </button>
+              <span style={{ fontSize: "12px", color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>
+                {t("bluiPage")} {page} {t("bluiOf")} {pages}
+              </span>
+              <button disabled={page >= pages} onClick={() => setPage(p => Math.min(pages, p + 1))}
+                style={{ display: "flex", padding: "4px", border: "1px solid var(--color-border)", background: "transparent", borderRadius: "6px", color: "var(--color-text-secondary)", cursor: page >= pages ? "not-allowed" : "pointer", opacity: page >= pages ? 0.4 : 1 }}>
+                <ChevronRight size={14} />
               </button>
             </div>
-          )}
+          </div>
         </div>
       )}
 
-      {/* ── Operations history ── */}
+      {/* ── Operations history (legacy) ── */}
       <div style={{ background: "var(--color-card)", borderRadius: "12px", border: "1px solid var(--color-border)", overflow: "hidden" }}>
         <div style={{ padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={{ fontSize: "13px", fontWeight: 600, color: "var(--color-text-primary)" }}>🕐 {t("backlinksOpsTitle")}</span>
@@ -2371,10 +2716,10 @@ function BacklinksTab({ siteDbId }: { siteDbId: string }) {
                   {ops.map((op: any, i: number) => (
                     <tr key={op.id} style={{ borderTop: "1px solid var(--color-border)", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.01)" }}>
                       <td style={{ padding: "8px 14px", fontWeight: 600, color: "var(--color-text-primary)" }}>
-                        {op.type === 'backlink_check_alive' ? t('opCheck404') : op.type === 'backlink_check_xr' ? t('opXmlRiver') : op.type}
+                        {op.type === "backlink_check_alive" ? t("opCheck404") : op.type === "backlink_check_xr" ? t("opXmlRiver") : op.type}
                       </td>
                       <td style={{ padding: "8px 14px" }}>
-                        <span style={{ color: op.result === 'success' ? "#4ADE80" : "#F87171", fontWeight: 600 }}>{op.result}</span>
+                        <span style={{ color: op.result === "success" ? "#4ADE80" : "#F87171", fontWeight: 600 }}>{op.result}</span>
                         {op.urlCount != null && <span style={{ color: "var(--color-text-secondary)", marginLeft: 4 }}>· {op.urlCount} URL</span>}
                         {op.detail && <span style={{ color: "var(--color-text-secondary)", marginLeft: 4 }}>· {op.detail}</span>}
                       </td>
@@ -2387,6 +2732,14 @@ function BacklinksTab({ siteDbId }: { siteDbId: string }) {
           </div>
         )}
       </div>
+
+      {importOpen && (
+        <BacklinkImportDialog
+          siteDbId={siteDbId}
+          onClose={() => setImportOpen(false)}
+          onImported={r => { setActionMsg(`✓ ${subst("bluiImportDone", r)}`); void load(); }}
+        />
+      )}
     </div>
   );
 }
