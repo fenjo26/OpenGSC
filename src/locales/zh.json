@@ -3451,6 +3451,9 @@
   "bluiAnchorFromApi": "据 Ahrefs",
   "bluiEmpty": "还没有链接。导入放置了你链接的页面，或从 Ahrefs 做一次完整导出。",
   "bluiExport": "导出 CSV",
+  "bluiSortNewest": "最新的优先",
+  "bluiSortFirstSeen": "首次发现",
+  "bluiSortLastSeen": "最近发现",
 
   "dglSectionTitle": "链接",
   "dglNew": "新增链接",

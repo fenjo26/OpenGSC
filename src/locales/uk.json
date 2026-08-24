@@ -3451,6 +3451,9 @@
   "bluiAnchorFromApi": "за даними Ahrefs",
   "bluiEmpty": "Посилань поки немає. Завантажте сторінки, де розміщено ваші посилання, або зробіть повне вивантаження з Ahrefs.",
   "bluiExport": "Експорт CSV",
+  "bluiSortNewest": "Спочатку нові",
+  "bluiSortFirstSeen": "Уперше",
+  "bluiSortLastSeen": "Останній раз",
 
   "dglSectionTitle": "Посилання",
   "dglNew": "нових посилань",

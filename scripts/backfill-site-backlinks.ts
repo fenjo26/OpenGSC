@@ -134,10 +134,12 @@ async function main() {
   }
 
   let written = 0;
+  // No `skipDuplicates` here on purpose: the SQLite client rejects it at runtime
+  // (and types it as `never`), and this repo's default database is SQLite. Re-run
+  // safety comes from the in-memory dedup above, which leaves nothing to duplicate.
   for (let i = 0; i < toCreate.length; i += 500) {
     const res = await prisma.siteBacklink.createMany({
       data: toCreate.slice(i, i + 500),
-      skipDuplicates: true,
     });
     written += res.count;
   }

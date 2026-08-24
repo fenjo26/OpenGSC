@@ -3451,6 +3451,9 @@
   "bluiAnchorFromApi": "selon Ahrefs",
   "bluiEmpty": "Aucun lien pour le moment. Importez les pages où vos liens ont été placés, ou lancez un export complet depuis Ahrefs.",
   "bluiExport": "Exporter CSV",
+  "bluiSortNewest": "Plus récentes d'abord",
+  "bluiSortFirstSeen": "Vu pour la 1re fois",
+  "bluiSortLastSeen": "Vu pour la dernière fois",
 
   "dglSectionTitle": "Liens",
   "dglNew": "nouveaux liens",
