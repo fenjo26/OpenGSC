@@ -22,7 +22,7 @@
     "lint": "next lint",
     "check:i18n": "node scripts/check-keys.js",
     "check:release": "node scripts/check-release.js",
-    "test:unit": "tsx --test src/lib/team/roles.test.ts src/lib/scanner/fingerprints.test.ts src/lib/security/safeFetch.test.ts src/lib/audit/verification.test.ts src/lib/audit/rules.test.ts src/lib/cannibalization/relatedIntent.test.ts src/lib/outreach/types.test.ts src/lib/contentOps/types.test.ts src/lib/contentOps/outcomeMath.test.ts src/lib/sitemap/inventory.test.ts src/lib/sitemap/metadata.test.ts src/lib/sitemap/diff.test.ts src/lib/sourceAudit/rules.test.ts src/lib/mcp/outlineShape.test.ts src/lib/seo/textSimilarity.test.ts src/lib/seo/googlebot.test.ts",
+    "test:unit": "tsx --test src/lib/team/roles.test.ts src/lib/scanner/fingerprints.test.ts src/lib/security/safeFetch.test.ts src/lib/audit/verification.test.ts src/lib/audit/rules.test.ts src/lib/cannibalization/relatedIntent.test.ts src/lib/outreach/types.test.ts src/lib/contentOps/types.test.ts src/lib/contentOps/outcomeMath.test.ts src/lib/sitemap/inventory.test.ts src/lib/sitemap/metadata.test.ts src/lib/sitemap/diff.test.ts src/lib/sourceAudit/rules.test.ts src/lib/mcp/outlineShape.test.ts src/lib/seo/textSimilarity.test.ts src/lib/seo/googlebot.test.ts src/lib/seo/placementRunner.test.ts",
     "check": "npm run check:i18n && npm run check:release && npm run test:unit",
     "postinstall": "prisma generate"
   },
