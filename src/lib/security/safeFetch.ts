@@ -30,6 +30,13 @@ export interface SafeFetchOptions {
    * `false` explicitly instead of inheriting the default.
    */
   allowPrivate?: boolean;
+  /**
+   * Skip TLS certificate verification for this call. Off by default. This relaxes ONLY the
+   * certificate check — the private-address guard runs exactly as before, and no other
+   * validation is affected. Callers taking this opt-in must mark the data they got as
+   * unauthenticated (it came over a connection whose peer was not verified).
+   */
+  allowInsecureTls?: boolean;
   headers?: HeadersInit;
   redirect?: "follow" | "manual";
   timeoutMs?: number;
@@ -271,6 +278,7 @@ function requestPinned(
   headers: Headers,
   timeoutMs: number,
   maxBytes: number,
+  rejectUnauthorized: boolean,
 ): Promise<RawResponse> {
   return new Promise((resolve, reject) => {
     const transport = url.protocol === "https:" ? https : http;
@@ -286,7 +294,9 @@ function requestPinned(
       method,
       headers: outgoingHeaders,
       agent: false,
-      ...(url.protocol === "https:" ? { servername: normalizedHostname(url), rejectUnauthorized: true } : {}),
+      // Only the certificate check is conditional; SNI and Host pinning to the resolved public
+      // address stay on regardless (see SafeFetchOptions.allowInsecureTls).
+      ...(url.protocol === "https:" ? { servername: normalizedHostname(url), rejectUnauthorized } : {}),
     }, incoming => {
       const headers = responseHeaders(incoming.headers);
       const declaredLength = Number(headers.get("content-length") || "0");
@@ -357,6 +367,7 @@ export async function safeFetch(input: string | URL, options: SafeFetchOptions =
   // Resolved once so every hop of one request shares the same decision, even if the environment
   // variable changes mid-flight.
   const allowPrivate = options.allowPrivate ?? privateTargetsAllowed();
+  const rejectUnauthorized = !options.allowInsecureTls;
   const deadline = Date.now() + timeoutMs;
   const headers = new Headers(options.headers);
   if (!headers.has("accept")) headers.set("accept", "*/*");
@@ -378,7 +389,7 @@ export async function safeFetch(input: string | URL, options: SafeFetchOptions =
       const remaining = deadline - Date.now();
       if (remaining <= 0) throw new SafeFetchError("request_timeout", "The request timed out.");
       try {
-        raw = await requestPinned(url, address, method, headers, remaining, maxBytes);
+        raw = await requestPinned(url, address, method, headers, remaining, maxBytes, rejectUnauthorized);
         break;
       } catch (error) {
         if (error instanceof SafeFetchError && error.code === "response_too_large") throw error;
