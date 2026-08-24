@@ -202,6 +202,7 @@ model Site {
   sitemapUrls           SitemapUrl[]
   indexingOperations    IndexingOperation[]
   backlinks             Backlink[]
+  siteBacklinks         SiteBacklink[]
   siteAudits            SiteAudit[]
   claritySnapshots      ClaritySnapshot[]
   trackedKeywords       TrackedKeyword[]
@@ -343,6 +344,167 @@ model Backlink {
 
   @@unique([siteId, url])
   @@index([siteId])
+}
+
+// ─── Backlinks v2 ────────────────────────────────────────────────────────────
+// SiteBacklink replaces nothing: the old `Backlink` above keeps working, keeps its rows and
+// keeps answering /api/backlinks/check-alive. This model exists because that check answers the
+// wrong question, and no amount of extra columns on it would have made the answer right.
+//
+// A row here is one (donor page → our page) pair, written by three independent parties that
+// must never overwrite each other: the Ahrefs export (api*), our own page fetch (check* and
+// page*), and the operator (urlTo, favorite, note, priceNote). The write rule lives in
+// docs/tasks/CONTRACT.md §1 and is worth repeating: an `update` names only its own group.
+// A blanket spread here erases a check the user paid for in time or in units.
+model SiteBacklink {
+  id            String   @id @default(cuid())
+  siteId        String
+
+  // --- identity ---
+  // urlFrom is kept exactly as it arrived (from an import or from the API) so a row can still be
+  // joined against the client's own spreadsheet, where the URL is whatever they typed.
+  // urlFromNorm is the normalized dedupe key; the two differ on purpose and neither is derivable
+  // from the other after the fact. urlTo is "" and not null when the target is unknown, because
+  // it takes part in @@unique and SQL treats every NULL as distinct — nullable here would let the
+  // same donor page be inserted an unbounded number of times.
+  urlFrom       String
+  urlFromNorm   String
+  urlTo         String   @default("")   // our page; "" when unknown
+  domainFrom    String   @default("")
+
+  // --- what the provider (Ahrefs) says ---
+  // Kept as its own group rather than merged into the check* answer: the provider's view is a
+  // crawl from days ago, ours is from seconds ago, and the whole product value is in the places
+  // where the two disagree (CONTRACT.md §0). Merging them would delete the signal.
+  apiSeen       Boolean   @default(false)
+  apiLost       Boolean   @default(false)
+  apiLostReason String    @default("")
+  apiAnchor     String    @default("")
+  apiAlt        String    @default("")
+  apiDofollow   Boolean   @default(true)
+  apiNofollow   Boolean   @default(false)
+  apiSponsored  Boolean   @default(false)
+  apiUgc        Boolean   @default(false)
+  apiContent    Boolean   @default(true)    // is_content: in the body, not in the footer
+  apiImage      Boolean   @default(false)
+  // Ahrefs only found the link after rendering JavaScript. A raw-HTML check cannot confirm such a
+  // link, so this flag is what stops the checker's "missing" from being read as a removed link.
+  apiJsCrawl    Boolean   @default(false)
+  apiDr         Float?
+  apiHttpCode   Int?
+  apiLinkType   String    @default("")
+  apiSnippet    String    @default("")      // snippet_left + snippet_right, truncated to 500
+  apiFirstSeen  String    @default("")      // YYYY-MM-DD, as the API returns it — no timezone to lose
+  apiLastSeen   String    @default("")
+  apiFetchedAt  DateTime?
+
+  // --- what our own page fetch says ---
+  // "Is our link still on that page?" — the question the old check never asked.
+  checkStatus        String   @default("unchecked") // unchecked|found|missing|blocked|error
+  checkAnchor        String   @default("")
+  checkRel           String   @default("")   // raw rel, exactly as it appeared in the HTML
+  // rel is stored raw *and* parsed: a boolean "nofollow" is not enough, because sponsored and ugc
+  // also stop weight from passing while nofollow itself may be absent.
+  checkNofollow      Boolean  @default(false)
+  checkSponsored     Boolean  @default(false)
+  checkUgc           Boolean  @default(false)
+  checkFoundUrl      String   @default("")   // absolute URL of the link that was found
+  checkMatchedDomain String   @default("")   // which of our domains matched
+  checkTargetOk      Boolean?                // link points at the promised urlTo; null = not judged
+  checkError         String   @default("")
+  // The page was only readable with certificate verification switched off. Kept on the row rather
+  // than in a log, because everything else in the check* group was derived from that content and
+  // the UI has to be able to say so.
+  checkInsecure      Boolean  @default(false)
+  checkedAt          DateTime?
+
+  // --- reachability of the donor page itself (heir to the old check-alive) ---
+  // pageStatus and checkStatus are two fields and not one, and this is the entire reason this
+  // wave exists. pageStatus answers "does the donor page respond?", checkStatus answers "is our
+  // link on it?". The old code had only the first and painted a green tick from it, so a site
+  // could quietly strip the link, leave the page up, and keep looking paid-for.
+  // pageStatus = "alive" together with checkStatus = "missing" is the headline case — the money
+  // was taken and the link is gone. Never derive one of these from the other.
+  pageStatus    String    @default("unknown") // unknown|alive|dead|blocked
+  pageTitle     String    @default("")
+  pageCheckedAt DateTime?
+
+  // --- indexation (carried over from the old Backlink model) ---
+  xrStatus       String    @default("")   // indexed|not_indexed|error
+  xrCheckedAt    DateTime?
+  twoIndexStatus String    @default("")   // submitted
+  twoIndexAt     DateTime?
+
+  // --- operator data ---
+  // source is who created the row; sources is every channel that has since confirmed it, so a
+  // link first pasted by hand and later seen by Ahrefs reads "manual,api" instead of losing its
+  // provenance to whichever writer touched it last.
+  source    String   @default("api")  // api|csv|manual
+  sources   String   @default("")     // comma-separated: "api,csv"
+  favorite  Boolean  @default(false)
+  priceNote String   @default("")
+  note      String   @default("")
+
+  addedAt   DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  // Identity is (site, normalized donor page, target) — the same donor page legitimately links to
+  // two different pages of ours and those are two placements, not a duplicate.
+  @@unique([siteId, urlFromNorm, urlTo])
+  @@index([siteId, checkStatus])
+  @@index([siteId, apiLost])
+  @@index([siteId, favorite])
+  @@index([siteId, domainFrom])
+  @@index([siteId, addedAt])
+}
+
+// Append-only history of what changed on a link. Kept separate from SiteBacklink because the row
+// there is a current-state record that all three writers overwrite; without this table a link
+// that was lost and came back before anyone looked leaves no trace, and the digest has nothing to
+// count. `origin` says which writer noticed, so a disagreement between Ahrefs and our own check
+// stays visible in the history instead of collapsing into one timeline.
+model SiteBacklinkEvent {
+  id         String   @id @default(cuid())
+  siteId     String
+  backlinkId String
+  // appeared | lost | returned | rel_downgraded | rel_upgraded | anchor_changed | target_changed
+  kind       String
+  detail     String   @default("")   // JSON: {"from":"...","to":"..."}
+  origin     String   @default("api") // api | check
+  createdAt  DateTime @default(now())
+
+  @@index([siteId, createdAt])
+  @@index([backlinkId, createdAt])
+}
+
+// One run — either an API export (kind = "api") or a placement check (kind = "verify").
+// Progress lives in the database rather than in memory because these runs outlive the request
+// that started them, and heartbeatAt is what lets a later request tell a slow run from a dead one.
+model SiteBacklinkSync {
+  id             String    @id @default(cuid())
+  siteId         String
+  kind           String    @default("api")      // api | verify
+  status         String    @default("running")  // running | completed | error
+  stage          String    @default("pull")     // pull | persist | completed | error
+  progress       Int       @default(0)          // 0..100
+  pagesPulled    Int       @default(0)
+  rowsSeen       Int       @default(0)
+  unitsSpent     Int       @default(0)
+  // Whether conclusions about *losses* may be drawn from this run (CONTRACT.md §4). A run that
+  // was filtered, capped or cut short may add rows but may never mark anything lost: the first
+  // partial export would otherwise announce "8000 links lost" that were never there and mail it
+  // out as an alert. Until one completed run has complete = true, the digest stays silent.
+  complete       Boolean   @default(false)
+  paginationMode String    @default("")         // offset | keyset
+  summary        String?                        // JSON, shape of SyncSummary in backlinkTypes.ts
+  error          String?
+  heartbeatAt    DateTime?
+  startedAt      DateTime  @default(now())
+  finishedAt     DateTime?
+
+  @@index([siteId, startedAt])
 }
 
 model IndexingOperation {
