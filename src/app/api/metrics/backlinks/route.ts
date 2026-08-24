@@ -3,7 +3,7 @@ import { authOptions } from "@/lib/auth";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { fetchBacklinkProfile, estimateProfileUnits, MetricsProvider } from "@/lib/seo/metrics";
-import { readUsage, recordUsage, withinCap } from "@/lib/seo/metricsStore";
+import { readUsage, recordUsage, releaseUnusedUnits, withinCap } from "@/lib/seo/metricsStore";
 import {
   readRefDomains, syncRefDomains, writeSnapshot, readSnapshots, normDomain,
 } from "@/lib/seo/backlinkStore";
@@ -67,10 +67,21 @@ export async function POST(req: Request) {
 
   const res = await fetchBacklinkProfile({ provider, apiKey, baseUrl }, target, { limit, minDr });
   if (res.error || !res.items.length) {
+    // The gateway charges nothing for a failed call, but the reservation above was taken in
+    // full. Without giving it back, every 502 eats a slice of the monthly cap that the provider
+    // never billed — and with a cap set, blocks real work on money that was never spent.
+    if (userId) await releaseUnusedUnits(userId, provider, units, 0);
     return respond({ error: res.error ?? "empty" }, 502);
   }
 
   const profile = res.items[0];
+
+  // Reserved `limit` refdomain rows, billed the rows that came back (plus the floored stats
+  // call, which `estimateProfileUnits` includes for any row count). Same reconciliation the
+  // gap and keyword-ideas routes do, so the month counter tracks the invoice, not the intent.
+  if (userId) {
+    await releaseUnusedUnits(userId, provider, units, estimateProfileUnits(profile.refDomains.length));
+  }
 
   // A pull is only allowed to conclude "this link is gone" when it could have seen everything.
   // A DR filter or a row cap makes absence meaningless, and marking those as lost would invent

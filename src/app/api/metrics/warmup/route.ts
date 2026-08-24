@@ -6,8 +6,8 @@ import {
   fetchKeywordMetrics, estimateKeywordUnits, MetricsProvider,
 } from "@/lib/seo/metrics";
 import {
-  readKeywordCache, writeKeywordCache, staleKeywords, readUsage, recordUsage, withinCap,
-  normalizeKeyword,
+  readKeywordCache, writeKeywordCache, staleKeywords, readUsage, recordUsage, releaseUnusedUnits,
+  withinCap, normalizeKeyword,
 } from "@/lib/seo/metricsStore";
 import { marketFor } from "@/lib/seo/market";
 
@@ -126,6 +126,7 @@ export async function POST(req: Request) {
   await recordUsage(userId, provider, units);
 
   let fetched = 0;
+  let billed = 0;
   const errors: string[] = [];
 
   // Sequential across markets on purpose. The client already caps itself at three concurrent
@@ -135,9 +136,18 @@ export async function POST(req: Request) {
     if (!stale.length) continue;
     const res = await fetchKeywordMetrics({ provider, apiKey, baseUrl }, stale, { country, withDifficulty });
     if (res.error) { errors.push(`${country}: ${res.error}`); continue; }
+    // `res.units` is what the provider billed for this market — the rows that came back, not
+    // the stale list reserved against the cap. Summed so the refund below returns exactly the
+    // unspent share of the reservation.
+    billed += res.units;
     await writeKeywordCache(res.items, country, provider, "api");
     fetched += res.items.length;
   }
+
+  // Reserved the full stale cohort up front; markets that failed billed nothing, and thin
+  // markets billed fewer rows than reserved. Both differences go back before the response
+  // re-reads the counter, or a partially failed warm-up would eat the cap twice over.
+  await releaseUnusedUnits(userId, provider, units, billed);
 
   return NextResponse.json({
     ...summary,

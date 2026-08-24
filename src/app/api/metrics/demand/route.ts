@@ -3,7 +3,7 @@ import { authOptions } from "@/lib/auth";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { fetchVolumeHistory, AHREFS_UNIT_FLOOR, MetricsProvider } from "@/lib/seo/metrics";
-import { readUsage, recordUsage, withinCap } from "@/lib/seo/metricsStore";
+import { readUsage, recordUsage, releaseUnusedUnits, withinCap } from "@/lib/seo/metricsStore";
 import { runUpsert } from "@/lib/db/upsert";
 import { rawQuery } from "@/lib/db/raw";
 
@@ -102,6 +102,9 @@ export async function POST(req: Request) {
 
   const res = await fetchVolumeHistory({ provider, apiKey, baseUrl }, keyword, { country });
   if (res.error || !res.items.length) {
+    // A failed call billed nothing — give the reserved floor back. An empty-but-successful
+    // response is NOT refunded: the gateway bills the 50-unit floor on any 200.
+    if (res.error) await releaseUnusedUnits(userId, provider, units, 0);
     return answer(cached?.points ?? null, { error: res.error ?? "empty" });
   }
 

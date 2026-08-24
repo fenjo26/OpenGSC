@@ -19,11 +19,11 @@ import MetricsImport from "@/components/MetricsImport";
 import MetricsWarmup from "@/components/MetricsWarmup";
 import KeywordSourceSettings from "@/components/KeywordSourceSettings";
 import {
-  getMetricsMode, setMetricsMode, metricsKeyStorage, RESELLER_BASE_URL,
+  getMetricsMode, setMetricsMode, metricsKeyStorage, getMetricsApiKey, RESELLER_BASE_URL,
   type MetricsMode,
 } from "@/lib/seo/metricsClient";
 import { getAhrefsDrKey, setAhrefsDrKey } from "@/lib/seo/keys";
-import type { MetricsProvider } from "@/lib/seo/metrics";
+import type { MetricsProvider, SubscriptionInfo } from "@/lib/seo/metrics";
 
 // ─── Ahrefs free Domain Rating key ──────────────────────────────────────────────
 // Unrelated to the paid Site Explorer integration below: this key only unlocks the free
@@ -118,6 +118,9 @@ export default function MetricsSettingsSection() {
   const [customUrl, setCustomUrl] = useState("");
   const [cap, setCap] = useState("");
   const [usage, setUsage] = useState<{ units: number; requests: number } | null>(null);
+  // The provider's own balance (free endpoint), so step 4 can show the real "left of" figure
+  // next to our own spend counter — and say when it is unavailable rather than stay silent.
+  const [sub, setSub] = useState<{ info: SubscriptionInfo | null } | null>(null);
 
   // localStorage after mount only — reading it during render would make the first client pass
   // disagree with the server-rendered HTML.
@@ -134,6 +137,24 @@ export default function MetricsSettingsSection() {
       .then(d => { if (d) setUsage({ units: Number(d.units || 0), requests: Number(d.requests || 0) }); })
       .catch(() => {});
   }, [provider]);
+
+  // Balance for the key of the *current* mode — the key slot is per-mode, so this must re-run
+  // when either changes or step 4 would quote one mode's wallet under another's heading.
+  useEffect(() => {
+    const m = getMetricsMode(provider);
+    const apiKey = getMetricsApiKey(provider, m);
+    if (apiKey.length <= 4) { setSub(null); return; }
+    const baseUrl = m === "reseller" ? RESELLER_BASE_URL[provider]
+      : m === "custom" ? (localStorage.getItem(`seoMetricsBaseUrl_${provider}`) || "").trim()
+      : "";
+    fetch("/api/metrics/subscription", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider, apiKey, baseUrl }),
+    })
+      .then(r => r.json())
+      .then(d => setSub({ info: d.info ?? null }))
+      .catch(() => setSub({ info: null }));
+  }, [provider, mode]);
 
   const chooseProvider = (p: MetricsProvider) => {
     setProvider(p);
@@ -160,6 +181,25 @@ export default function MetricsSettingsSection() {
     const base = METRICS_PROVIDER_CARDS.find(c => c.id === provider)!;
     return { ...base, storageKey: metricsKeyStorage(provider, mode) };
   }, [provider, mode]);
+
+  // Derived once: the provider's remaining/limit pair and key lifetime, or null while the
+  // gateway balance is unavailable. Prefers the per-key pair (reseller keys) over the workspace
+  // one (official subscriptions) — whichever exists is the wallet this key actually spends from.
+  const subBalance = useMemo(() => {
+    const info = sub?.info;
+    if (!info) return null;
+    const limit = info.unitsLimitApiKey ?? info.unitsLimitWorkspace ?? null;
+    const used = info.unitsUsageApiKey ?? info.unitsUsageWorkspace ?? null;
+    if (limit == null || used == null) return null;
+    return {
+      limit,
+      remaining: Math.max(0, limit - used),
+      reset: info.usageResetDate || null,
+      expires: info.apiKeyExpirationDate || null,
+      expiringSoon: !!info.apiKeyExpirationDate &&
+        new Date(info.apiKeyExpirationDate).getTime() - Date.now() < 7 * 86_400_000,
+    };
+  }, [sub]);
 
   const modeOption = (m: MetricsMode, title: string, desc: string) => (
     <button key={m} onClick={() => chooseMode(m)} style={{
@@ -287,6 +327,20 @@ export default function MetricsSettingsSection() {
           <div style={{ paddingBottom: "9px", fontSize: "12px", color: "var(--color-text-secondary)" }}>
             {t("metricsUsage")}: <strong style={{ color: "var(--color-text-primary)" }}>{(usage?.units ?? 0).toLocaleString()}</strong> {t("metricsUnits")}
             {usage?.requests ? <span style={{ color: "var(--color-text-tertiary)" }}> · {usage.requests} {t("metricsRequests")}</span> : null}
+            {/* The provider's own numbers beside ours: our counter refunds on failure and cannot
+                see top-ups made at the gateway, so it is an estimate and is labelled when the
+                real balance is missing rather than passed off as one. */}
+            {subBalance && (
+              <span> · {t("blsrcRemaining")} <strong style={{ color: "var(--color-text-primary)" }}>{subBalance.remaining.toLocaleString()}</strong> {t("blsrcOf")} {subBalance.limit.toLocaleString()}</span>
+            )}
+            {subBalance?.reset && <span style={{ color: "var(--color-text-tertiary)" }}> · {t("blsrcResetAt")} {subBalance.reset}</span>}
+            {subBalance?.expires && <span style={{ color: "var(--color-text-tertiary)" }}> · {t("blsrcKeyExpires")} {subBalance.expires}</span>}
+            {provider === "ahrefs" && sub && !sub.info && (
+              <div style={{ marginTop: "4px", color: "var(--color-text-tertiary)" }}>{t("blsrcBalanceUnknown")}</div>
+            )}
+            {subBalance?.expiringSoon && (
+              <div style={{ marginTop: "4px", color: "var(--color-warning)" }}>{t("blsrcKeyExpiringSoon")}</div>
+            )}
           </div>
         </div>
         <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "6px", lineHeight: 1.5, maxWidth: "620px" }}>

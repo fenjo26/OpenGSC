@@ -95,10 +95,39 @@ const AHREFS_PREMIUM_FIELDS: Record<string, Record<string, number>> = {
   },
 };
 
+/**
+ * Tier suffixes that do not change a field's price class: `volume_prev` bills exactly as
+ * `volume`, `traffic_merged` as `traffic`. Without stripping them, every `_prev`/`_merged`
+ * variant fell through to the 1-unit default and the estimate silently undercharged by 9 units
+ * a row on precisely the endpoints whose history columns are the expensive ones.
+ */
+const TIER_SUFFIX = /_(?:prev|merged)$/;
+
+/**
+ * Field prices that hold on every endpoint, consulted when the per-endpoint table above has no
+ * entry. Same gateway rate card, restated globally: AI-citation columns 15; traffic / volume /
+ * difficulty / value 10; ref-domain counters 5; everything else 1. Per-endpoint entries keep
+ * precedence, so a price documented for one endpoint's column is never shadowed by this table.
+ */
+const AHREFS_PREMIUM_GLOBAL: Record<string, number> = {
+  // 15 — AI citation (the gateway's per-engine brand-visibility columns)
+  chatgpt: 15, gemini: 15, perplexity: 15, copilot: 15, grok: 15,
+  // 10 — demand and traffic
+  volume: 10, difficulty: 10, value: 10, traffic: 10,
+  // 5 — ref-domain counters
+  refdomains: 5, refdomains_source: 5, refdomains_source_domain: 5, refdomains_target_domain: 5,
+  dofollow_refdomains: 5, class_c: 5, all_positions: 5,
+};
+
 /** Cost of one row for a given endpoint and field selection. */
 export function perRowCost(endpoint: string, select: string[]): number {
   const premium = AHREFS_PREMIUM_FIELDS[endpoint] ?? {};
-  return select.reduce((sum, f) => sum + (premium[f] ?? 1), 0);
+  return select.reduce((sum, f) => {
+    const direct = premium[f] ?? AHREFS_PREMIUM_GLOBAL[f];
+    if (direct != null) return sum + direct;
+    const base = f.replace(TIER_SUFFIX, "");
+    return sum + (premium[base] ?? AHREFS_PREMIUM_GLOBAL[base] ?? 1);
+  }, 0);
 }
 
 /**
@@ -275,6 +304,91 @@ async function requestWithRetry(url: string, init: RequestInit, poolKey: string)
   throw lastErr ?? new Error("request_failed");
 }
 
+// ─── Subscription balance (free endpoint) ──────────────────────────────────────
+
+export interface SubscriptionInfo {
+  unitsLimitApiKey: number | null;
+  unitsUsageApiKey: number | null;
+  unitsLimitWorkspace: number | null;
+  unitsUsageWorkspace: number | null;
+  /** YYYY-MM-DD, empty when the gateway did not say. */
+  usageResetDate: string;
+  apiKeyExpirationDate: string;
+  /** When this answer was obtained — the "updated HH:MM" a balance placard shows. */
+  fetchedAt: string;
+}
+
+export interface SubscriptionResult {
+  info: SubscriptionInfo | null;
+  /** HTTP status the gateway answered with; 0 when the request never completed. */
+  status: number;
+  error?: string;
+}
+
+/**
+ * `/v3/subscription-info/limits-and-usage` costs 0 units and is the only honest source for
+ * "how much is left": our own `ApiUsage` counter is an estimate that refunds on failure and
+ * cannot see top-ups made directly at the gateway. Cached in-process for 10 minutes — free, but
+ * a placard that re-asks on every render still spends a round-trip and a semaphore slot.
+ *
+ * Successes are cached, failures are not: a 401 cached for ten minutes would keep showing
+ * "key rejected" after the user has just fixed the key, which is the one screen where they
+ * would definitely re-check immediately.
+ */
+const SUBSCRIPTION_TTL_MS = 10 * 60 * 1000;
+const subscriptionCache = new Map<string, { at: number; info: SubscriptionInfo }>();
+
+export async function fetchSubscriptionInfo(creds: MetricsCreds): Promise<SubscriptionResult> {
+  if (!creds.apiKey) return { info: null, status: 0, error: "no_key" };
+  // Semrush's protocol has no equivalent report — the caller falls back to our own estimate.
+  if (creds.provider !== "ahrefs") return { info: null, status: 0, error: "provider_unsupported" };
+
+  const base = (creds.baseUrl || DEFAULT_BASE_URL.ahrefs).replace(/\/+$/, "");
+  const cacheKey = `${creds.apiKey}|${base}`;
+  const hit = subscriptionCache.get(cacheKey);
+  if (hit && Date.now() - hit.at < SUBSCRIPTION_TTL_MS) return { info: hit.info, status: 200 };
+
+  let res: Response;
+  try {
+    res = await requestWithRetry(
+      `${base}/v3/subscription-info/limits-and-usage`,
+      { headers: { Authorization: `Bearer ${creds.apiKey}`, Accept: "application/json" } },
+      creds.apiKey,
+    );
+  } catch (e: any) {
+    return { info: null, status: 0, error: String(e?.message ?? e) };
+  }
+  if (!res.ok) {
+    return { info: null, status: res.status, error: `ahrefs ${res.status}: ${(await res.text()).slice(0, 300)}` };
+  }
+
+  const d = await res.json().catch(() => null);
+  // The gateway wraps reports in a top-level key like every list endpoint; accepting a flat
+  // body too costs nothing and keeps a wrapper rename from reading as "no balance available".
+  const s = d?.subscription_info ?? d?.limits_and_usage ?? d ?? {};
+  const info: SubscriptionInfo = {
+    unitsLimitApiKey: num(s.units_limit_api_key),
+    unitsUsageApiKey: num(s.units_usage_api_key),
+    unitsLimitWorkspace: num(s.units_limit_workspace),
+    unitsUsageWorkspace: num(s.units_usage_workspace),
+    usageResetDate: String(s.usage_reset_date ?? "").slice(0, 10),
+    apiKeyExpirationDate: String(s.api_key_expiration_date ?? "").slice(0, 10),
+    fetchedAt: new Date().toISOString(),
+  };
+  subscriptionCache.set(cacheKey, { at: Date.now(), info });
+  return { info, status: 200 };
+}
+
+/**
+ * The HTTP status inside an error string this module produced ("ahrefs 502: …"), or null.
+ * The fetch layer turns gateway refusals into text errors long before a route can branch on
+ * them; this lets a caller distinguish "key rejected" from "gateway down" without re-fetching.
+ */
+export function gatewayStatusFromError(error: string | null | undefined): number | null {
+  const m = /^(?:ahrefs|semrush) (\d{3})/.exec(String(error ?? "").trim());
+  return m ? Number(m[1]) : null;
+}
+
 // ─── Normalized shapes ─────────────────────────────────────────────────────────
 
 export interface KeywordMetric {
@@ -358,7 +472,6 @@ async function ahrefsKeywords(
   const select = opts.withDifficulty
     ? [...KEYWORD_FIELDS_BASE, ...KEYWORD_FIELDS_KD]
     : [...KEYWORD_FIELDS_BASE];
-  const units = estimateUnits("keywords-explorer/overview", select, usable.length);
 
   const base = (creds.baseUrl || DEFAULT_BASE_URL.ahrefs).replace(/\/+$/, "");
   const params = new URLSearchParams({
@@ -380,8 +493,13 @@ async function ahrefsKeywords(
   const data = await res.json();
   const rows: any[] = Array.isArray(data?.keywords) ? data.keywords : [];
 
+  // Billed on the rows that came back, not the keywords asked for — the same reconciliation
+  // `ahrefsIdeas` does. A keyword the provider has never seen simply does not arrive, and
+  // reporting the reservation here would make the caller's refund compute ceiling − ceiling = 0.
+  const billed = estimateUnits("keywords-explorer/overview", select, rows.length);
+
   return {
-    units,
+    units: billed,
     items: rows.map(r => ({
       keyword: String(r.keyword ?? ""),
       volume: num(r.volume),
