@@ -3346,7 +3346,7 @@
   "trafficPeriod": "month",
   "trafficGenAiTitle": "Share of visits arriving from AI assistants — the other half of the AI Visibility tab",
   "zaiEndpointGeneral": "General API (api.z.ai/api/paas/v4) — spends the API balance",
-  "anthropicEndpointHint": "Optional proxy/gateway endpoint for the Anthropic API (e.g. a NewAPI-based Claude reseller). Empty = the official api.anthropic.com. Auth switches to Bearer automatically.",
+  "aiEndpointHint": "Optional endpoint override. Empty = the provider's official API (shown as the placeholder). A custom URL routes every call through that gateway — proxies and NewAPI-style resellers; paste it exactly as the gateway documents it (for OpenAI-compatible ones, including the /v1 root).",
   "zaiEndpointCoding": "GLM Coding Plan (api.z.ai/api/anthropic) — spends the plan quota",
   "zaiEndpointHint": "One account key, but the endpoint decides which wallet a request draws on. The Coding Plan is meant for supported coding tools and has a 5-hour quota that bulk generation hits, returning 429. The general API bills the pay-as-you-go balance, topped up separately from the plan.",
   "blsrcTitle": "Data source",

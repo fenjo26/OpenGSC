@@ -63,7 +63,10 @@ async function listModels(provider: string, apiKey: string, baseUrl?: string): P
   }
 
   if (provider === "openai") {
-    const res = await fetch("https://api.openai.com/v1/models", {
+    // Endpoint override (aiBaseUrl_openai) — same convention as everywhere else. The catalogue
+    // then comes from the gateway, where the proxy key is the one that works.
+    const root = (baseUrl || "").replace(/\/+$/, "") || "https://api.openai.com/v1";
+    const res = await fetch(`${root}/models`, {
       headers: { Authorization: `Bearer ${apiKey}` }, signal: timeout,
     });
     if (!res.ok) throw new Error(`openai ${res.status}`);
@@ -99,10 +102,11 @@ async function listModels(provider: string, apiKey: string, baseUrl?: string): P
 
   if (provider === "cheaperinference") {
     // A price-routing gateway: same public id, cheapest eligible upstream, so the catalogue is
-    // the only honest source for what an id costs today and what it can do. `type=text` keeps the
-    // image-generation ids out — they are served by /v1/images/generations and are rejected by
+    // the only honest source for what an id costs today and what it can do. `type=text` keeps
+    // the image-generation ids out — they are served by /v1/images/generations and are rejected by
     // the chat endpoint this app calls, so listing them would only produce 400s.
-    const res = await fetch("https://api.cheaperinference.com/v1/models?type=text", {
+    const root = (baseUrl || "").replace(/\/+$/, "") || "https://api.cheaperinference.com/v1";
+    const res = await fetch(`${root}/models?type=text`, {
       headers: { Authorization: `Bearer ${apiKey}` }, signal: timeout,
     });
     if (!res.ok) throw new Error(`cheaperinference ${res.status}`);
@@ -125,7 +129,8 @@ async function listModels(provider: string, apiKey: string, baseUrl?: string): P
   if (provider === "kimi") {
     // Moonshot AI — OpenAI-compatible /v1/models. Falls back to the known current lineup.
     try {
-      const res = await fetch("https://api.moonshot.ai/v1/models", {
+      const root = (baseUrl || "").replace(/\/+$/, "") || "https://api.moonshot.ai/v1";
+      const res = await fetch(`${root}/models`, {
         headers: { Authorization: `Bearer ${apiKey}` }, signal: timeout,
       });
       if (!res.ok) throw new Error(`kimi ${res.status}`);
@@ -146,7 +151,8 @@ async function listModels(provider: string, apiKey: string, baseUrl?: string): P
 
   if (provider === "deepseek") {
     try {
-      const res = await fetch("https://api.deepseek.com/models", {
+      const root = (baseUrl || "").replace(/\/+$/, "") || "https://api.deepseek.com";
+      const res = await fetch(`${root}/models`, {
         headers: { Authorization: `Bearer ${apiKey}` }, signal: timeout,
       });
       if (!res.ok) throw new Error(`deepseek ${res.status}`);

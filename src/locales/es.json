@@ -3346,7 +3346,7 @@
   "trafficPeriod": "mes",
   "trafficGenAiTitle": "Porcentaje de visitas que llegan desde asistentes de IA — la otra mitad de la pestaña AI Visibility",
   "zaiEndpointGeneral": "API general (api.z.ai/api/paas/v4) — consume el saldo de API",
-  "anthropicEndpointHint": "Endpoint de proxy/pasarela opcional para la API de Anthropic (p. ej., un revendedor de Claude basado en NewAPI). Vacío = api.anthropic.com oficial. La autenticación cambia a Bearer automáticamente.",
+  "aiEndpointHint": "Endpoint opcional. Vacío = la API oficial del proveedor (se muestra como placeholder). Una URL personalizada dirige cada llamada por esa pasarela — proxys y revendedores NewAPI; pégala tal como la documenta la pasarela (para las compatibles con OpenAI, incluyendo la raíz /v1).",
   "zaiEndpointCoding": "GLM Coding Plan (api.z.ai/api/anthropic) — consume la cuota del plan",
   "zaiEndpointHint": "Una sola clave de cuenta, pero el endpoint decide de qué monedero sale cada petición. El Coding Plan está pensado para herramientas de programación admitidas y tiene una cuota de 5 horas con la que choca la generación masiva (429). La API general cobra del saldo de pago por uso, que se recarga aparte del plan.",
   "blsrcTitle": "Fuente de datos",

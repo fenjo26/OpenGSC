@@ -1192,6 +1192,22 @@ const AI_PROVIDERS = [
   },
 ] as const;
 
+// Shown as the endpoint field's placeholder: the URL used when the field is EMPTY. Spelled per
+// provider the way its gateway override wants it — OpenAI-shaped roots include /v1 (that is
+// what a compatible gateway expects pasted), anthropic is the bare host (Claude-CLI convention;
+// lib/llm.ts appends /v1/messages itself).
+const OFFICIAL_ENDPOINTS: Record<string, string> = {
+  anthropic: "https://api.anthropic.com",
+  openai: "https://api.openai.com/v1",
+  gemini: "https://generativelanguage.googleapis.com",
+  openrouter: "https://openrouter.ai/api/v1",
+  cheaperinference: "https://api.cheaperinference.com/v1",
+  kimi: "https://api.moonshot.ai/v1",
+  kie: "https://api.kie.ai",
+  deepseek: "https://api.deepseek.com",
+  qwen: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+};
+
 function AIProviderCard({ provider }: { provider: typeof AI_PROVIDERS[number] }) {
   const { t } = useLanguage();
   const storageKey = `aiKey_${provider.id}`;
@@ -1363,21 +1379,23 @@ function AIProviderCard({ provider }: { provider: typeof AI_PROVIDERS[number] })
         <div style={{ fontSize: "11px", color: "#f87171", marginBottom: "8px" }}>{t("aiModelLoadFail")}</div>
       )}
 
-      {/* Claude-proxy gateways (NewAPI-style shops reselling Claude access) speak the Anthropic
-          Messages API but authenticate with a Bearer token instead of x-api-key. This optional
-          endpoint points the Anthropic provider at such a gateway; empty = official API.
-          lib/llm.ts switches the auth header automatically when a URL is set here. */}
-      {provider.id === "anthropic" && (
+      {/* Optional endpoint override — the same convention for every provider: EMPTY = the
+          provider's official API (shown as the placeholder); a custom URL routes every call
+          through that gateway (proxies, NewAPI-style resellers). lib/llm.ts picks the right
+          wire format per provider and the key mirrors server-side for background jobs.
+          zai is excluded: it has its own selector, because its two endpoints are a product
+          choice (which balance burns), not an arbitrary gateway. */}
+      {provider.id !== "zai" && (
         <div style={{ marginBottom: "10px" }}>
           <input
             value={endpoint}
             onChange={e => {
               const v = e.target.value.trim();
               setEndpoint(e.target.value);
-              if (v) localStorage.setItem("aiBaseUrl_anthropic", v);
-              else localStorage.removeItem("aiBaseUrl_anthropic");
+              if (v) localStorage.setItem(`aiBaseUrl_${provider.id}`, v);
+              else localStorage.removeItem(`aiBaseUrl_${provider.id}`);
             }}
-            placeholder="https://claude.your-proxy.shop"
+            placeholder={OFFICIAL_ENDPOINTS[provider.id] || "https://"}
             style={{
               width: "100%", padding: "8px 12px",
               borderRadius: "8px", border: "1px solid var(--color-border)",
@@ -1387,7 +1405,7 @@ function AIProviderCard({ provider }: { provider: typeof AI_PROVIDERS[number] })
             }}
           />
           <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "5px", lineHeight: 1.5 }}>
-            {t("anthropicEndpointHint" as never)}
+            {t("aiEndpointHint" as never)}
           </div>
         </div>
       )}

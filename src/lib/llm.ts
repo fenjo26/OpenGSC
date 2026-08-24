@@ -374,6 +374,14 @@ async function fetchLLMOnce(
       if (provider === 'deepseek') url = 'https://api.deepseek.com/chat/completions';
       if (provider === 'qwen') url = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
       if (provider === 'zai') url = `${zaiRoot(baseUrl)}/chat/completions`;
+      // Endpoint override (aiBaseUrl_<provider>) — same convention as the anthropic proxy path:
+      // empty = the official API above, a URL = every call goes through that gateway. Paste the
+      // root that serves /chat/completions (for OpenAI-compatible gateways that includes /v1);
+      // a full …/chat/completions URL is taken as-is so both spellings work.
+      if (provider !== 'zai' && baseUrl) {
+        const b = baseUrl.trim().replace(/\/+$/, '');
+        if (b) url = /\/chat\/completions$/.test(b) ? b : `${b}/chat/completions`;
+      }
 
       const model = modelOverride ?? defaultModelFor(provider);
       const tokenParam = (provider === 'deepseek' || provider === 'qwen' || provider === 'zai') ? 'max_tokens' : 'max_completion_tokens';
@@ -398,7 +406,10 @@ async function fetchLLMOnce(
       text = openAiText(data);
     } else if (provider === 'gemini') {
       const gModel = modelOverride ?? defaultModelFor('gemini');
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${gModel}:generateContent?key=${apiKey}`, {
+      // Endpoint override (aiBaseUrl_gemini) — Gemini-format gateways (NewAPI serves this shape
+      // too). Empty = Google's own API.
+      const gRoot = (baseUrl || '').trim().replace(/\/+$/, '') || 'https://generativelanguage.googleapis.com';
+      const res = await fetch(`${gRoot}/v1beta/models/${gModel}:generateContent?key=${apiKey}`, {
         method: 'POST', signal: sig,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -435,7 +446,13 @@ async function fetchLLMOnce(
         ...temp(temperature, orModel),
         ...(withReasoning ? {} : { reasoning: { enabled: false } }),
       });
-      const orCall = (withReasoning: boolean) => fetch('https://openrouter.ai/api/v1/chat/completions', {
+      // Endpoint override (aiBaseUrl_openrouter) — same convention as every other provider.
+      const orUrl = (() => {
+        const b = (baseUrl || '').trim().replace(/\/+$/, '');
+        if (!b) return 'https://openrouter.ai/api/v1/chat/completions';
+        return /\/chat\/completions$/.test(b) ? b : `${b}/chat/completions`;
+      })();
+      const orCall = (withReasoning: boolean) => fetch(orUrl, {
         method: 'POST', signal: sig,
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         body: orBody(withReasoning),
