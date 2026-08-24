@@ -125,7 +125,7 @@ export interface AiCreds {
 }
 
 /** The per-task override slots the settings UI writes — see lib/seo/aiTasks.ts. */
-export type SeoTaskId = "outline" | "text" | "analysis" | "policy" | "landing" | "utility";
+export type SeoTaskId = "outline" | "text" | "analysis" | "policy" | "landing" | "utility" | "judge";
 
 // First non-blank wins. `??` is wrong for this chain: these values come out of a JSON blob where
 // "cleared in the UI" is stored as "", and `"" ?? next` keeps the empty string and stops the

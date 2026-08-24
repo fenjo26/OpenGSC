@@ -1418,6 +1418,8 @@
   "seoTaskAnalysisDesc": "Lee páginas y SERPs y extrae conclusiones: análisis de contenido, sugerencias de enlazado interno.",
   "seoTaskPolicyDesc": "Deduce una política editorial a partir de tus propias páginas.",
   "seoTaskUtilityDesc": "Pasadas mecánicas cortas cuyo resultado se parsea, no se lee: la segunda pasada estructurada de la auditoría GEO. Aquí conviene un modelo barato.",
+  "seoTaskJudge": "Juez (control)",
+  "seoTaskJudgeDesc": "El control independiente del trabajo terminado: una llamada con contexto limpio decide si un artículo o esquema completado es publicable (rechaza esbozos truncados, notas de planificación, idioma incorrecto). Asigne un modelo DISTINTO al del redactor: un juez con el mismo modelo comparte sus puntos ciegos.",
   "seoTaskUsedBy": "Se usa en",
   "seoTaskNoProvider": "Sin proveedor configurado",
   "seoOriginTask": "definido para esta tarea",

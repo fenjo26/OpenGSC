@@ -392,6 +392,10 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
       }
 
       const items = urls.length ? urls.map(u => ({ url: u })) : [{ text, label: "(pasted text)" }];
+      // The QA judge runs on its own per-task slot ("judge" in SEO Tools settings) — the same
+      // resolution chain as the UI, so a server-side job judges with the model the owner picked
+      // for judging, not necessarily the writer's.
+      const judgeCreds = await resolveAiCreds(userId, {}, "judge");
       let job: any;
       try {
         job = await jobs().create({
@@ -422,6 +426,10 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
         temperature: args.temperature != null ? Number(args.temperature) : undefined,
         snippet: args.snippet === true,
         judge: args.judge !== false,
+        judgeProvider: judgeCreds.aiProvider,
+        judgeApiKey: judgeCreds.aiApiKey,
+        judgeModel: judgeCreds.model || undefined,
+        judgeBaseUrl: judgeCreds.aiBaseUrl || undefined,
         policy: await resolveActivePolicy(userId, args),
         ...creds,
       }).catch(() => { /* runRewriteBatch records its own failures */ });
@@ -466,6 +474,7 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
         targetWordCount: { type: "number", description: "Target article length in words — sets outline section budgets and drives the volume guard." },
         temperature: { type: "number", description: "Sampling temperature; omit for the provider default. The outline phase caps it at 0.8 (JSON reliability)." },
         bannedWords: { type: "array", items: { type: "string" }, description: "Words the model must not use — the AI-Fingerprint Lab's marker export goes here." },
+        judge: { type: "boolean", description: "Independent QA pass on the finished result (default true): a fresh-context model call — on the per-task 'judge' slot, which can be a DIFFERENT model than the writer — checks a finished article is complete and publishable (rejects truncated stubs, planning notes, wrong language) and an outline actually covers the keyword, before anything is saved as completed." },
         payload: { type: "object", description: "Pipeline payload, the same shape the /seo-tools UI posts — e.g. { competitors, paa, related } for outline, { gl, hl, keywords } for cluster, { generate } for landing. The common knobs above are top-level arguments; payload wins when both are given." },
         policyName: { type: "string", description: "Editorial policy to write under, by name. Omit to use the instance's active policy — it is applied either way." },
       },
@@ -503,10 +512,21 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
       // the pipeline read payload.keyword, so an agent following the docs got `no_keyword`
       // unless it ALSO nested the keyword inside payload.
       const knobs: Record<string, unknown> = {};
-      for (const k of ["keyword", "language", "country", "tone", "promptType", "custom", "sourceMode", "includeToc", "targetWordCount", "temperature", "bannedWords"]) {
+      for (const k of ["keyword", "language", "country", "tone", "promptType", "custom", "sourceMode", "includeToc", "targetWordCount", "temperature", "bannedWords", "judge"]) {
         if (args[k] !== undefined && args[k] !== null) knobs[k] = args[k];
       }
       const payload: any = { ...knobs, ...((args.payload as object) ?? {}), ...creds, ...(serpCreds ?? {}), ...(policy ? { policy } : {}) };
+
+      // The QA judge (outline/text/landing results) runs on its own per-task slot — the same
+      // "judge" resolution the tool pages use, so server jobs and browser runs judge with the
+      // same model. Fields are ignored by the pipelines that don't judge.
+      try {
+        const jc = await resolveAiCreds(userId, {}, "judge");
+        payload.judgeProvider = jc.aiProvider;
+        payload.judgeApiKey = jc.aiApiKey;
+        if (jc.model) payload.judgeModel = jc.model;
+        if (jc.aiBaseUrl) payload.judgeBaseUrl = jc.aiBaseUrl;
+      } catch { /* judging falls back to the writer's provider */ }
 
       // Standby providers for the outline step. An agent-started job is the LEAST supervised
       // path in the product — nobody is watching a progress bar to notice the configured

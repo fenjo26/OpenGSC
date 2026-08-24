@@ -1418,6 +1418,8 @@
   "seoTaskAnalysisDesc": "Reads pages and SERPs and extracts findings — content analysis, internal-link suggestions.",
   "seoTaskPolicyDesc": "Derives an editorial policy from your existing pages.",
   "seoTaskUtilityDesc": "Short mechanical passes whose output is parsed, not read — the GEO audit's structured second pass. A cheap model is the right choice here.",
+  "seoTaskJudge": "QA judge",
+  "seoTaskJudgeDesc": "The independent check on finished work: a fresh-context call that decides whether a completed article or outline is publishable (rejects truncated stubs, planning notes, wrong language). Give it a DIFFERENT model than the writer — a judge that shares the writer's model shares its blind spots.",
   "seoTaskUsedBy": "Used by",
   "seoTaskNoProvider": "No provider configured",
   "seoOriginTask": "set for this task",

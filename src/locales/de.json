@@ -1418,6 +1418,8 @@
   "seoTaskAnalysisDesc": "Liest Seiten und SERPs und zieht Erkenntnisse heraus — Content-Analyse, Vorschläge zur internen Verlinkung.",
   "seoTaskPolicyDesc": "Leitet eine Redaktionsrichtlinie aus deinen vorhandenen Seiten ab.",
   "seoTaskUtilityDesc": "Kurze mechanische Durchläufe, deren Ausgabe geparst statt gelesen wird — der strukturierte zweite Durchlauf des GEO-Audits. Hier ist ein günstiges Modell richtig.",
+  "seoTaskJudge": "Richter (Prüfung)",
+  "seoTaskJudgeDesc": "Die unabhängige Prüfung fertiger Arbeit: Ein Aufruf mit frischem Kontext entscheidet, ob ein fertiger Artikel oder Outline publizierbar ist (lehnt abgebrochene Stubs, Planungsnotizen, falsche Sprache ab). Wählen Sie ein ANDERES Modell als den Schreiber — ein Richter auf dem Modell des Schreibers erbt dessen Blindstellen.",
   "seoTaskUsedBy": "Verwendet von",
   "seoTaskNoProvider": "Kein Anbieter konfiguriert",
   "seoOriginTask": "für diese Aufgabe gesetzt",

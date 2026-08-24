@@ -94,6 +94,8 @@ export default function TextGenPage() {
       sourceMode, serpProvider: getSerpCreds().provider, serpKey: getSerpCreds().apiKey || undefined,
       firecrawlKey: getFirecrawlKey() || undefined, scrapeCount: getFactSourceCount(), hardRedact: getHardRedact(),
       aiProvider: provider, aiApiKey: apiKey, model: model || undefined, aiBaseUrl: baseUrl || undefined,
+      // QA judge slot — a separate judging model when configured, the writer's own otherwise.
+      ...(() => { const j = getTaskCreds("judge"); return { judgeProvider: j.provider, judgeApiKey: j.apiKey, judgeModel: j.model || undefined, judgeBaseUrl: j.baseUrl || undefined }; })(),
       ...fpc.payload(),
     }, { tone: tone || (policy as any)?.voice?.toneOfVoice || "", promptType: promptType === "custom" ? t("seoPromptCustom") : t("seoPromptService"), outlineId: outline.id });
     setLoading(false);

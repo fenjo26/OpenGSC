@@ -186,6 +186,9 @@ export default function RewritePage() {
     setErr(""); setResults(null); setSnippet(null);
     const creds = getTaskCreds("text");
     if (!creds.apiKey) { setErr(t("seoErrNoAiKey")); return; }
+    // The judge slot: a different model than the writer when configured (the whole point of an
+    // independent opinion), the writer's own provider when not.
+    const judgeCreds = getTaskCreds("judge");
     if (mode === "text" && !text.trim()) { setErr(t("rwNeedText")); return; }
     if (mode === "url" && !url.trim()) { setErr(t("rwNeedUrl")); return; }
     const toneObj = TONES.find(x => x.value === tone);
@@ -209,6 +212,8 @@ export default function RewritePage() {
             ? targetKeywords.split("\n").map(s => s.trim()).filter(Boolean).map(k => ({ keyword: k }))
             : undefined,
           snippet: wantSnippet && mode === "url",
+          judgeProvider: judgeCreds.provider, judgeApiKey: judgeCreds.apiKey,
+          judgeModel: judgeCreds.model || undefined, judgeBaseUrl: judgeCreds.baseUrl || undefined,
           aiProvider: creds.provider, aiApiKey: creds.apiKey, model: creds.model || undefined, aiBaseUrl: creds.baseUrl || undefined,
           firecrawlKey: getFirecrawlKey() || undefined,
         }),

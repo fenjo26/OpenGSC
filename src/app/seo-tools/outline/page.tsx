@@ -309,6 +309,9 @@ export default function OutlinePage() {
       const { jobId: jid, error } = await startJob("outline", {
         keyword, language, country, competitors,
         aiProvider: provider, aiApiKey: apiKey, model: model || undefined, aiBaseUrl: baseUrl || undefined,
+        // The QA judge runs on the finished outline — its own per-task slot, falling back to
+        // the writer's provider when the user has not picked a separate judging model.
+        ...(() => { const j = getTaskCreds("judge"); return { judgeProvider: j.provider, judgeApiKey: j.apiKey, judgeModel: j.model || undefined, judgeBaseUrl: j.baseUrl || undefined }; })(),
         policy: activePolicy, paa, related,
         tone: resolvedTone, persona: resolvedPersona,
         additionalKeywords: addKeywords.split(/[\n,]+/).map(s => s.trim()).filter(Boolean).join(", "),
@@ -335,7 +338,7 @@ export default function OutlinePage() {
     try {
       const res = await fetch("/api/seo/text", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ outline, policy: activePolicy, language, tone: resolveTone() || undefined, aiProvider: provider, aiApiKey: apiKey, model: model || undefined, aiBaseUrl: baseUrl || undefined }),
+        body: JSON.stringify({ outline, policy: activePolicy, language, tone: resolveTone() || undefined, aiProvider: provider, aiApiKey: apiKey, model: model || undefined, aiBaseUrl: baseUrl || undefined, ...(() => { const j = getTaskCreds("judge"); return { judgeProvider: j.provider, judgeApiKey: j.apiKey, judgeModel: j.model || undefined, judgeBaseUrl: j.baseUrl || undefined }; })() }),
       });
       const data = await res.json();
       if (!res.ok) { setErr(data.error || t("seoErrText")); setLoading(""); return; }

@@ -3,6 +3,7 @@
 
 import { fetchLLM, fetchLLMDetailed, contentTokens, isLengthCut, CONTENT_TOKENS_RETRY_MAX } from "@/lib/llm";
 import { stripModelScratch } from "@/lib/seo/textMetrics";
+import { judgeArticle, judgeOutline } from "@/lib/seo/judge";
 import { runSerp, heuristicIntent, heuristicSiteType } from "@/lib/seo/serp";
 import { enrichKeywords, type KwSource } from "@/lib/seo/keywordSource";
 import { scrapeMany } from "@/lib/seo/scrape";
@@ -758,6 +759,28 @@ export async function genOutline(b: any): Promise<GenResult> {
   if (rag?.bankEntry) factsBank.unshift(rag.bankEntry as any);
   if (factsBank.length) (meta as any).facts_bank = factsBank;
   if (b.useRag) (meta as any).use_rag = true;
+
+  // Independent QA judge (per-task "judge" slot; falls back to the writer's own provider).
+  // Runs on the FINAL outline, after expand/localize/FAQ backfill — those passes reshape the
+  // structure, so judging earlier would verdict on a draft nobody ships. A hollow outline
+  // poisons every step downstream (sections, FAQ, the article itself), and JSON that parses
+  // is not JSON that covers the keyword.
+  if (b.judge !== false) {
+    const verdict = await judgeOutline(
+      outline,
+      {
+        provider: String(b.judgeProvider || provider),
+        apiKey: String(b.judgeApiKey || apiKey),
+        model: b.judgeModel || model || undefined,
+        baseUrl: b.judgeBaseUrl || baseUrl || undefined,
+      },
+      { keyword, language: String(b.language ?? "en"), country: String(b.country ?? "us") },
+    );
+    if (verdict.verdict === "reject") {
+      return { ok: false, error: `judge_rejected: ${verdict.blockers?.join("; ") || "the QA reviewer rejected the outline"}` };
+    }
+  }
+
   return { ok: true, data: outline };
 }
 
@@ -1352,6 +1375,26 @@ export async function genText(b: any): Promise<GenResult> {
   // Guarantee the TOC label matches the article's language (deterministic — the writer, or any
   // later expand/trim/fact-clean pass, could otherwise leave/reintroduce a wrong-language word).
   text = ensureTocLabel(text, language);
+
+  // Independent QA judge (per-task "judge" slot; falls back to the writer's own provider).
+  // Skipped for the self-reported partial path: `incomplete` already names the missing sections
+  // — that result is an honest partial deliberately preserved with its paid-for chunks, and a
+  // judge rejecting it for being incomplete would destroy work the design chose to keep.
+  if (b.judge !== false && !incomplete) {
+    const verdict = await judgeArticle(
+      text,
+      {
+        provider: String(b.judgeProvider || provider),
+        apiKey: String(b.judgeApiKey || apiKey),
+        model: b.judgeModel || model || undefined,
+        baseUrl: b.judgeBaseUrl || baseUrl || undefined,
+      },
+      { language },
+    );
+    if (verdict.verdict === "reject") {
+      return { ok: false, error: `judge_rejected: ${verdict.blockers?.join("; ") || "the QA reviewer rejected the article"}` };
+    }
+  }
 
   return {
     ok: true,

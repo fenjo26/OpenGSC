@@ -9,6 +9,7 @@ import { factDrift, criticalValues, type FactDrift } from "@/lib/seo/factDrift";
 import { uniquenessPct, wordCount, keywordCoverage, type KeywordCoverage } from "@/lib/seo/textMetrics";
 import { renderPolicy, type EditorialPolicy } from "@/lib/seo/policy";
 import { contentGate } from "@/lib/seo/rewriteGate";
+import { judgeArticle, type JudgeOutcome } from "@/lib/seo/judge";
 
 export interface RewriteBody {
   text?: string;
@@ -44,6 +45,15 @@ export interface RewriteBody {
    */
   judge?: boolean;
   snippet?: boolean;        // also propose a refreshed title + meta description
+  /**
+   * Independent QA credentials — the per-task "judge" slot from SEO Tools settings. Absent
+   * everywhere in the body (older callers, local scripts), the writer's own provider judges
+   * the draft; same-model judging is weaker but still catches the non-article failures.
+   */
+  judgeProvider?: string;
+  judgeApiKey?: string;
+  judgeModel?: string;
+  judgeBaseUrl?: string;
   aiProvider?: string;
   aiApiKey?: string;
   model?: string;
@@ -319,38 +329,22 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
 
   const clean = (s: string) => s.trim().replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/i, "").trim();
 
-  // The QA judge. Fresh context — it has seen none of the prompts that produced the draft, so
-  // it cannot inherit the writer's confidence that the job went well. Its only job is the one
-  // question no measurement answers: is this a complete, publishable article? Verdicts:
-  // publish / reject (with blockers). If the CALL itself fails (network, provider), the verdict
-  // is "unavailable" and the page ships — infra flakiness must not burn a finished rewrite —
-  // but the state is reported so the poller knows the QA pass did not run.
-  const judgeVariant = async (
-    sourceText: string, draft: string,
-  ): Promise<{ verdict: "publish" | "reject" | "unavailable"; blockers?: string[] }> => {
-    const jPrompt =
-      `You are a strict QA reviewer. A tool rewrote a web page; you are given the SOURCE and the ` +
-      `finished REWRITE that is about to be saved as a completed page. Decide whether the rewrite ` +
-      `is a COMPLETE, PUBLISHABLE article.\n\nReject it if ANY of these hold:\n` +
-      `- it is not an article at all (planning notes, number lists, scratch, JSON, an outline)\n` +
-      `- it is truncated (ends mid-sentence or mid-word) or clearly missing large parts the source covers\n` +
-      `- it copies page furniture (menus, booking/contact-form confirmations, thank-you messages, buttons)\n` +
-      `- it is written in a different language than the source\n\n` +
-      `Do NOT judge style, quality or SEO — only completeness and publishability.\n` +
-      `Return STRICT JSON, nothing else: {"verdict":"publish"} or {"verdict":"reject","blockers":["short reason", "..."]}\n\n` +
-      `SOURCE (first 4000 characters):\n${sourceText.slice(0, 4000)}\n\nREWRITE (full):\n${draft}`;
-    try {
-      const raw = await fetchLLM(jPrompt, provider, apiKey, 700, b.model || undefined, b.aiBaseUrl || undefined);
-      const j = JSON.parse(clean(raw ?? "").replace(/^[^{]*/, "").replace(/[^}]*$/, ""));
-      if (j?.verdict === "reject") {
-        return { verdict: "reject", blockers: (Array.isArray(j.blockers) ? j.blockers : []).map(String).slice(0, 5) };
-      }
-      if (j?.verdict === "publish") return { verdict: "publish" };
-      return { verdict: "unavailable" };
-    } catch {
-      return { verdict: "unavailable" };
-    }
-  };
+  // The QA judge lives in lib/seo/judge.ts, shared with the text and outline pipelines.
+  // Fresh context — it has seen none of the prompts that produced the draft, so it cannot
+  // inherit the writer's confidence that the job went well. "unavailable" means the judge
+  // CALL failed; the page then still ships, but the state is reported so the poller knows
+  // the QA pass did not run.
+  const judgeVariant = (draft: string): Promise<JudgeOutcome> =>
+    judgeArticle(
+      draft,
+      {
+        provider: String(b.judgeProvider || provider),
+        apiKey: String(b.judgeApiKey || apiKey),
+        model: b.judgeModel || b.model || undefined,
+        baseUrl: b.judgeBaseUrl || b.aiBaseUrl || undefined,
+      },
+      { sourceExcerpt: source },
+    );
 
   // Why each variant was killed by the gate or the judge, so a batch where nothing survived
   // reports the actual reason instead of a bare "generation_failed".
@@ -415,7 +409,7 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
     }
     let judged: RewriteVariant["judge"];
     if (b.judge !== false) {
-      judged = await judgeVariant(source, content);
+      judged = await judgeVariant(content);
       if (judged.verdict === "reject") {
         rejectReasons.push(`judge_rejected: ${judged.blockers?.join("; ") || "the QA reviewer rejected the draft"}`);
         return null;

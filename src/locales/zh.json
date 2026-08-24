@@ -1418,6 +1418,8 @@
   "seoTaskAnalysisDesc": "阅读页面与搜索结果并提取结论——内容分析、内链建议。",
   "seoTaskPolicyDesc": "从你现有的页面中推导编辑规范。",
   "seoTaskUtilityDesc": "输出用于解析而非阅读的短小机械处理——GEO 审计的第二次结构化处理。这里适合用便宜的模型。",
+  "seoTaskJudge": "裁判（质检）",
+  "seoTaskJudgeDesc": "对成品独立把关：一次全新上下文的调用决定完成的文章或大纲是否可发布（拒收截断的残稿、规划笔记、错误语言）。请给它指定与写手不同的模型——与写手同模型的裁判会继承写手的盲区。",
   "seoTaskUsedBy": "使用于",
   "seoTaskNoProvider": "未配置服务商",
   "seoOriginTask": "为该任务单独设置",

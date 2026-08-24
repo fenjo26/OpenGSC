@@ -1418,6 +1418,8 @@
   "seoTaskAnalysisDesc": "Lit les pages et les SERP et en tire des conclusions — analyse de contenu, suggestions de maillage interne.",
   "seoTaskPolicyDesc": "Déduit une charte éditoriale à partir de tes propres pages.",
   "seoTaskUtilityDesc": "Passes mécaniques courtes dont la sortie est parsée, pas lue — la seconde passe structurée de l'audit GEO. Un modèle bon marché convient ici.",
+  "seoTaskJudge": "Juge (contrôle)",
+  "seoTaskJudgeDesc": "Le contrôle indépendant du travail fini : un appel à contexte vierge décide si un article ou un plan terminé est publiable (rejette les ébauches tronquées, les notes de planification, la mauvaise langue). Choisissez un modèle DIFFÉRENT de celui du rédacteur — un juge sur le même modèle partage ses angles morts.",
   "seoTaskUsedBy": "Utilisé par",
   "seoTaskNoProvider": "Aucun fournisseur configuré",
   "seoOriginTask": "défini pour cette tâche",

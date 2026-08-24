@@ -36,6 +36,11 @@ export const AI_TASKS: AiTaskDef[] = [
   { id: "analysis", labelKey: "seoTaskAnalysis", descKey: "seoTaskAnalysisDesc", tier: "balanced" },
   { id: "policy",   labelKey: "seoTaskPolicy",   descKey: "seoTaskPolicyDesc",   tier: "balanced" },
   { id: "utility",  labelKey: "seoTaskUtility",  descKey: "seoTaskUtilityDesc",  tier: "cheap" },
+  // The QA judge — a fresh-context model call that decides whether a finished article/outline
+  // is complete and publishable before it is saved. A deliberate slot of its own so it can be
+  // a DIFFERENT model than the writer: same-model judges share the writer's blind spots, which
+  // is the entire reason this check exists as an independent opinion.
+  { id: "judge",    labelKey: "seoTaskJudge",    descKey: "seoTaskJudgeDesc",    tier: "balanced" },
 ];
 
 export const AI_TASK_BY_ID: Record<string, AiTaskDef> =
@@ -45,10 +50,10 @@ export const AI_TASK_BY_ID: Record<string, AiTaskDef> =
 // first one. A page listing two tasks is not a mistake: the Outline tool drafts the structure on
 // `outline` and then writes the body on `text`, and those can legitimately be different models.
 export const PATH_TASKS: Record<string, SeoTask[]> = {
-  "/seo-tools/outline":  ["outline", "text"],
+  "/seo-tools/outline":  ["outline", "text", "judge"],
   "/seo-tools/cluster":  ["outline"],
-  "/seo-tools/text":     ["text"],
-  "/seo-tools/rewrite":  ["text"],
+  "/seo-tools/text":     ["text", "judge"],
+  "/seo-tools/rewrite":  ["text", "judge"],
   "/seo-tools/humanize": ["text"],
   "/seo-tools/landing":  ["landing"],
   "/seo-tools/analysis": ["analysis"],

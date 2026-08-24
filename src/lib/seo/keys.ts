@@ -51,7 +51,7 @@ export function getConfiguredProviders(): { id: string; key: string }[] {
 
 // SEO task IDs that can each have their own default provider/model.
 // The user-facing description of each one lives in lib/seo/aiTasks.ts.
-export type SeoTask = "outline" | "text" | "analysis" | "policy" | "landing" | "utility";
+export type SeoTask = "outline" | "text" | "analysis" | "policy" | "landing" | "utility" | "judge";
 
 /**
  * Where a resolved value came from.
