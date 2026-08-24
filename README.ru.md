@@ -8,7 +8,7 @@
 
 Развертывается на вашем собственном VPS. Никаких подписок, никаких лимитов на количество мест, третьи лица не имеют доступа к вашим данным.
 
-[![Version 1.5.0](https://img.shields.io/badge/version-1.5.0-brightgreen)](https://github.com/fenjo26/opengsc/releases)
+[![Version 1.5.1](https://img.shields.io/badge/version-1.5.1-brightgreen)](https://github.com/fenjo26/opengsc/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Next.js 16](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue?logo=typescript)](https://www.typescriptlang.org/)

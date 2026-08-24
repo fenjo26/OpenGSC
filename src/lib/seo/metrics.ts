@@ -588,10 +588,19 @@ export interface BacklinkProfile {
   refDomains: RefDomainItem[];
 }
 
-/** Cost of one profile pull, so the button can price itself the same way the server will. */
-export function estimateProfileUnits(limit: number): number {
-  // backlinks-stats is a single floored call; refdomains bills 5 units a row on the fields below.
-  return AHREFS_UNIT_FLOOR + estimateUnits("site-explorer/refdomains", REFDOMAIN_FIELDS, limit);
+/** One refdomains page. A full profile pull is several of these — there is no row ceiling. */
+export const REFDOMAIN_PAGE_SIZE = 1000;
+
+/**
+ * Cost of a full profile pull of `domains` referring domains, so the button can price itself the
+ * same way the server will. Two floored requests on top of the rows: the stats call the price is
+ * computed from, and one floor of slack for the short tail page or the one-per-host-per-day
+ * offset probe. Reconciled down to what the gateway actually billed after the pull.
+ */
+export function estimateProfileUnits(domains: number): number {
+  return AHREFS_UNIT_FLOOR
+    + estimateUnits("site-explorer/refdomains", REFDOMAIN_FIELDS, Math.max(1, domains))
+    + AHREFS_UNIT_FLOOR;
 }
 
 /**
@@ -601,58 +610,189 @@ export function estimateProfileUnits(limit: number): number {
  */
 const REFDOMAIN_FIELDS = ["domain", "domain_rating", "links_to_target", "dofollow_links", "first_seen"];
 
-async function ahrefsProfile(
+/**
+ * Params for one refdomains page. The first page keeps the DR-descending order the table shows;
+ * keyset pages must order by the cursor instead. `domain` is already in the select, so the
+ * keyset cursor adds nothing to the bill, and neither does a DR filter on `domain_rating`.
+ * Pure — unit-tested without a network.
+ */
+export function refdomainsPageParams(q: {
+  target: string; limit: number; minDr?: number; offset?: number; afterDomain?: string;
+}): URLSearchParams {
+  const params = new URLSearchParams({
+    target: q.target, mode: "domain", limit: String(q.limit),
+    select: REFDOMAIN_FIELDS.join(","),
+    order_by: q.afterDomain !== undefined ? "domain:asc" : "domain_rating:desc",
+  });
+  const conds: Array<{ field: string; is: unknown[] }> = [];
+  if (q.afterDomain !== undefined) conds.push({ field: "domain", is: ["gt", q.afterDomain] });
+  if (q.minDr && q.minDr > 0) conds.push({ field: "domain_rating", is: ["gte", q.minDr] });
+  if (conds.length) params.set("where", JSON.stringify({ and: conds }));
+  if (q.offset) params.set("offset", String(q.offset));
+  return params;
+}
+
+export interface BacklinkStatsTotals {
+  refDomainsTotal: number | null;
+  backlinksTotal: number | null;
+}
+
+/**
+ * The floored `backlinks-stats` call on its own. Split out so the route can price the whole pull
+ * from the real domain count before a single refdomains page is spent, and hand the same answer
+ * to `fetchBacklinkProfile` — paying for stats twice to save a function argument is not a trade.
+ */
+export async function fetchBacklinkStats(
   creds: MetricsCreds,
   domain: string,
-  opts: { limit?: number; minDr?: number },
-): Promise<MetricsResult<BacklinkProfile>> {
-  const limit = Math.max(10, Math.min(1000, opts.limit ?? 100));
+): Promise<{ ok: true; raw: any; totals: BacklinkStatsTotals } | { ok: false; error: string }> {
   const base = (creds.baseUrl || DEFAULT_BASE_URL.ahrefs).replace(/\/+$/, "");
   const auth = { headers: { Authorization: `Bearer ${creds.apiKey}`, Accept: "application/json" } };
   const date = new Date().toISOString().slice(0, 10);
-
-  // No `select` here either — backlinks-stats always returns all four of
+  // No `select` here — backlinks-stats always returns all four of
   // all_time / all_time_refdomains / live / live_refdomains.
-  const statsParams = new URLSearchParams({ target: domain, mode: "domain", date });
+  const params = new URLSearchParams({ target: domain, mode: "domain", date });
+  const res = await requestWithRetry(`${base}/v3/site-explorer/backlinks-stats?${params}`, auth, creds.apiKey);
+  if (!res.ok) return { ok: false, error: `ahrefs ${res.status}: ${(await res.text()).slice(0, 300)}` };
+  const metrics = (await res.json())?.metrics ?? {};
+  return {
+    ok: true,
+    raw: metrics,
+    totals: { refDomainsTotal: num(metrics?.live_refdomains), backlinksTotal: num(metrics?.live) },
+  };
+}
 
-  const rdParams = new URLSearchParams({
-    target: domain, mode: "domain", limit: String(limit),
-    select: REFDOMAIN_FIELDS.join(","),
-    order_by: "domain_rating:desc",
-  });
-  // `where` columns are billed even when not returned, and `domain_rating` is already in the
-  // select — so filtering by DR here is free rather than a hidden surcharge.
-  if (opts.minDr && opts.minDr > 0) {
-    rdParams.set("where", JSON.stringify({ and: [{ field: "domain_rating", is: ["gte", opts.minDr] }] }));
+/** Offset support is a gateway property, not a profile property — probed once per host per day. */
+const refdomainsModeCache = new Map<string, { mode: "offset" | "keyset"; at: number }>();
+const REFDOMAINS_MODE_CACHE_MS = 24 * 3600 * 1000;
+
+async function ahrefsProfile(
+  creds: MetricsCreds,
+  domain: string,
+  opts: { minDr?: number; stats?: any } = {},
+): Promise<MetricsResult<BacklinkProfile> & { sawEnd?: boolean; unitsSpent?: number }> {
+  const base = (creds.baseUrl || DEFAULT_BASE_URL.ahrefs).replace(/\/+$/, "");
+  const auth = { headers: { Authorization: `Bearer ${creds.apiKey}`, Accept: "application/json" } };
+
+  let stats = opts.stats ?? null;
+  if (!stats) {
+    const s = await fetchBacklinkStats(creds, domain);
+    if (!s.ok) return { items: [], units: 0, error: s.error, unitsSpent: 0 };
+    stats = s.raw;
+  }
+  // One floored stats call was spent on this pull, whoever fetched it.
+  let unitsSpent = AHREFS_UNIT_FLOOR;
+
+  const pageCost = (rows: number) =>
+    estimateUnits("site-explorer/refdomains", REFDOMAIN_FIELDS, rows);
+
+  const refDomains: RefDomainItem[] = [];
+  const seen = new Set<string>();
+  const addPage = (rawRows: any[]): number => {
+    let added = 0;
+    for (const r of rawRows) {
+      const refDomain = String(r.domain ?? "").toLowerCase().replace(/^www\./, "");
+      if (!refDomain.includes(".") || seen.has(refDomain)) continue;
+      seen.add(refDomain);
+      refDomains.push({
+        refDomain,
+        dr: num(r.domain_rating),
+        linksToTarget: num(r.links_to_target),
+        dofollow: Number(r.dofollow_links ?? 0) > 0,
+        firstSeen: String(r.first_seen ?? ""),
+      });
+      added++;
+    }
+    return added;
+  };
+
+  const fetchPage = async (params: URLSearchParams) => {
+    const res = await requestWithRetry(`${base}/v3/site-explorer/refdomains?${params}`, auth, creds.apiKey);
+    if (!res.ok) return { ok: false as const, error: `ahrefs ${res.status}: ${(await res.text()).slice(0, 300)}` };
+    return { ok: true as const, rows: ((await res.json())?.refdomains ?? []) as any[] };
+  };
+
+  // Paging only matters when the profile is bigger than one page. When it is, probe the gateway
+  // first (two ten-row calls, one floor each) so a keyset gateway never pays for a DR-ordered
+  // page it then has to re-fetch in cursor order. Same verdict rule as the all-backlinks probe
+  // in backlinksApi.ts: an honored offset can never revisit a row, so any overlap between the
+  // two windows means offset was ignored. Restated here rather than imported — backlinksApi
+  // imports this module, and the cycle would bite both.
+  const total = num(stats?.live_refdomains);
+  let mode: "offset" | "keyset" | null = null;
+  const cached = refdomainsModeCache.get(base);
+  if (cached && Date.now() - cached.at < REFDOMAINS_MODE_CACHE_MS) mode = cached.mode;
+
+  if ((total == null || total > REFDOMAIN_PAGE_SIZE) && !mode) {
+    const probeParams = (offset: number) => new URLSearchParams({
+      target: domain, mode: "domain", limit: "10", offset: String(offset),
+      select: "domain", order_by: "domain:asc",
+    });
+    const keyOf = (rows: any[]) => rows.map(r => String(r.domain ?? "").toLowerCase()).filter(Boolean);
+    const a = await fetchPage(probeParams(0));
+    // Only a definitive answer is cached for the day: a 400 means the gateway does not know
+    // `offset`, a clean comparison means it does. A transient 5xx or a 429 says nothing about
+    // offset support, and caching it would lock the wrong mode in for 24 hours.
+    if (!a.ok) {
+      mode = "keyset";
+      if (gatewayStatusFromError(a.error) === 400) refdomainsModeCache.set(base, { mode, at: Date.now() });
+    } else {
+      unitsSpent += AHREFS_UNIT_FLOOR;
+      const b = await fetchPage(probeParams(10));
+      if (!b.ok) {
+        mode = "keyset";
+        if (gatewayStatusFromError(b.error) === 400) refdomainsModeCache.set(base, { mode, at: Date.now() });
+      } else {
+        unitsSpent += AHREFS_UNIT_FLOOR;
+        const k1 = keyOf(a.rows), k2 = keyOf(b.rows);
+        mode = k2.length && k1.some(d => k2.includes(d)) ? "keyset" : "offset";
+        refdomainsModeCache.set(base, { mode, at: Date.now() });
+      }
+    }
   }
 
-  const [sRes, rRes] = await Promise.all([
-    requestWithRetry(`${base}/v3/site-explorer/backlinks-stats?${statsParams}`, auth, creds.apiKey),
-    requestWithRetry(`${base}/v3/site-explorer/refdomains?${rdParams}`, auth, creds.apiKey),
-  ]);
-
-  if (!rRes.ok) {
-    return { items: [], units: 0, error: `ahrefs ${rRes.status}: ${(await rRes.text()).slice(0, 300)}` };
+  // Page until the profile ends. `sawEnd` is what makes the pull complete: only a run that saw
+  // the last row may conclude that an absent domain is gone.
+  let sawEnd = false;
+  let partialError = "";
+  let offset = 0;
+  // In keyset mode even the first page goes out in cursor order: `domain > ""` matches every
+  // domain, and starting from a DR-ordered page would key the cursor off a row that is not the
+  // alphabetically last one, silently dropping everything after it.
+  let afterDomain: string | undefined = mode === "keyset" ? "" : undefined;
+  for (;;) {
+    const p = await fetchPage(refdomainsPageParams({
+      target: domain, limit: REFDOMAIN_PAGE_SIZE, minDr: opts.minDr, offset: offset || undefined, afterDomain,
+    }));
+    if (!p.ok) {
+      if (refDomains.length === 0) return { items: [], units: unitsSpent, error: p.error, unitsSpent };
+      partialError = p.error; // keep the pages already paid for, marked incomplete
+      break;
+    }
+    unitsSpent += pageCost(p.rows.length);
+    if (!p.rows.length) { sawEnd = true; break; }
+    const added = addPage(p.rows);
+    if (mode === "keyset") {
+      const last = String(p.rows[p.rows.length - 1].domain ?? "").toLowerCase();
+      if (last === afterDomain) break; // cursor not advancing — stop rather than re-bill the page
+      afterDomain = last;
+      if (added === 0 && p.rows.length >= REFDOMAIN_PAGE_SIZE) break; // safety: full page, nothing new
+    } else {
+      if (p.rows.length < REFDOMAIN_PAGE_SIZE) { sawEnd = true; break; }
+      if (added === 0) break; // offset drifting in place — same guard as above
+      offset += REFDOMAIN_PAGE_SIZE;
+    }
   }
-
-  const stats = sRes.ok ? ((await sRes.json())?.metrics ?? {}) : {};
-  const rows: any[] = (await rRes.json())?.refdomains ?? [];
-
-  const refDomains: RefDomainItem[] = rows.map(r => ({
-    refDomain: String(r.domain ?? "").toLowerCase().replace(/^www\./, ""),
-    dr: num(r.domain_rating),
-    linksToTarget: num(r.links_to_target),
-    dofollow: Number(r.dofollow_links ?? 0) > 0,
-    firstSeen: String(r.first_seen ?? ""),
-  })).filter(r => r.refDomain.includes("."));
 
   const live = num(stats?.live);
   const dofollowCount = refDomains.filter(r => r.dofollow).length;
 
-  return {
-    units: estimateProfileUnits(limit),
+  const result: MetricsResult<BacklinkProfile> & { sawEnd?: boolean; unitsSpent?: number } = {
+    units: unitsSpent,
+    unitsSpent,
+    sawEnd,
     items: [{
-      refDomainsTotal: num(stats?.live_refdomains),
+      refDomainsTotal: total,
       backlinksTotal: live,
       // Computed from the rows we actually pulled, not from the whole profile — labelled as
       // such in the UI, because paying 5 units a row for the true figure is not worth it.
@@ -660,13 +800,15 @@ async function ahrefsProfile(
       refDomains,
     }],
   };
+  if (partialError) result.error = partialError;
+  return result;
 }
 
 export async function fetchBacklinkProfile(
   creds: MetricsCreds,
   domain: string,
-  opts: { limit?: number; minDr?: number } = {},
-): Promise<MetricsResult<BacklinkProfile>> {
+  opts: { minDr?: number; stats?: any } = {},
+): Promise<MetricsResult<BacklinkProfile> & { sawEnd?: boolean; unitsSpent?: number }> {
   if (!creds.apiKey) return { items: [], units: 0, error: "no_key" };
   // Semrush charges 40 units a line for the same data against Ahrefs' 5. Rather than offer a
   // choice that is never the right one, this path is Ahrefs-only and says so.

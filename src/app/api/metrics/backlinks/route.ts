@@ -2,17 +2,26 @@ import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
-import { fetchBacklinkProfile, estimateProfileUnits, MetricsProvider } from "@/lib/seo/metrics";
+import {
+  fetchBacklinkProfile, fetchBacklinkStats, estimateProfileUnits,
+  REFDOMAIN_PAGE_SIZE, MetricsProvider,
+} from "@/lib/seo/metrics";
 import { readUsage, recordUsage, releaseUnusedUnits, withinCap } from "@/lib/seo/metricsStore";
 import {
   readRefDomains, syncRefDomains, writeSnapshot, readSnapshots, normDomain,
 } from "@/lib/seo/backlinkStore";
 
-// POST /api/metrics/backlinks { siteId, apiKey?, baseUrl?, cap?, limit?, minDr?, fetch? }
+// POST /api/metrics/backlinks { siteId, apiKey?, baseUrl?, cap?, minDr?, fetch? }
 //
 // Same two-shape contract as the other metrics routes: a free read of what is stored, and an
 // opt-in paid refresh. The stored side is what an imported CSV fills, so the whole tab works
 // with no key at all.
+//
+// There is no `limit` any more. A refresh pulls every referring domain the provider will return,
+// paging until the profile ends — a row ceiling here decides for an SEO how much of their own
+// link profile they are allowed to see, which is not the product's call to make. The real row
+// count is known from the stats call, so the price of "everything" is quoted before anything is
+// spent, and the only ceiling left is the monthly unit cap the owner configured themselves.
 
 export async function POST(req: Request) {
   const userId = await workspaceUserId("spend");
@@ -43,13 +52,12 @@ export async function POST(req: Request) {
   const apiKey = String(b.apiKey ?? "").trim();
   const baseUrl = String(b.baseUrl ?? "").trim() || undefined;
   const cap = Number(b.cap ?? 0);
-  const limit = Math.max(10, Math.min(1000, Number(b.limit ?? 100)));
   const minDr = Math.max(0, Math.min(90, Number(b.minDr ?? 0)));
 
   const respond = async (extra: Record<string, unknown> = {}, status = 200) =>
     NextResponse.json({
       target,
-      refDomains: await readRefDomains(target, { provider, includeLost: true, limit: 1000 }),
+      refDomains: await readRefDomains(target, { provider, includeLost: true, limit: 100000 }),
       history: await readSnapshots(target, 90, provider),
       usage: userId ? await readUsage(userId, provider) : null,
       ...extra,
@@ -58,35 +66,39 @@ export async function POST(req: Request) {
   if (!wantFetch || !apiKey) {
     return respond(wantFetch && !apiKey ? { error: "no_key" } : {});
   }
+  if (provider === "semrush") return respond({ error: "provider_unsupported" }, 400);
 
-  const units = estimateProfileUnits(limit);
+  // Price the real pull first: stats is one floored call and returns the live refdomain count,
+  // so the reservation matches the profile's actual size instead of a made-up row count.
+  const stats = await fetchBacklinkStats({ provider, apiKey, baseUrl }, target);
+  if (!stats.ok) return respond({ error: stats.error }, 502);
+
+  const units = estimateProfileUnits(stats.totals.refDomainsTotal ?? REFDOMAIN_PAGE_SIZE);
   if (!userId || !(await withinCap(userId, provider, units, cap))) {
     return respond({ error: "cap_exceeded", wouldSpend: units }, 429);
   }
   await recordUsage(userId, provider, units);
 
-  const res = await fetchBacklinkProfile({ provider, apiKey, baseUrl }, target, { limit, minDr });
-  if (res.error || !res.items.length) {
-    // The gateway charges nothing for a failed call, but the reservation above was taken in
-    // full. Without giving it back, every 502 eats a slice of the monthly cap that the provider
-    // never billed — and with a cap set, blocks real work on money that was never spent.
-    if (userId) await releaseUnusedUnits(userId, provider, units, 0);
+  // The pull reuses the stats answer it was priced from — paying for backlinks-stats twice to
+  // save an argument is not a trade either.
+  const res = await fetchBacklinkProfile({ provider, apiKey, baseUrl }, target, { minDr, stats: stats.raw });
+
+  // Whatever the gateway really billed is what stays on the meter — pages that never happened
+  // (or were refused, which the gateway does not charge for) come back off the reservation.
+  const spent = res.unitsSpent ?? 0;
+  if (userId) await releaseUnusedUnits(userId, provider, units, spent);
+
+  // A pull that stopped midway keeps its fresh pages: they sync with complete=false, which is
+  // the flag that stops a partial view from proving any domain lost. Only a run with no pages
+  // at all is a failure.
+  if (!res.items.length) {
     return respond({ error: res.error ?? "empty" }, 502);
   }
 
   const profile = res.items[0];
-
-  // Reserved `limit` refdomain rows, billed the rows that came back (plus the floored stats
-  // call, which `estimateProfileUnits` includes for any row count). Same reconciliation the
-  // gap and keyword-ideas routes do, so the month counter tracks the invoice, not the intent.
-  if (userId) {
-    await releaseUnusedUnits(userId, provider, units, estimateProfileUnits(profile.refDomains.length));
-  }
-
-  // A pull is only allowed to conclude "this link is gone" when it could have seen everything.
-  // A DR filter or a row cap makes absence meaningless, and marking those as lost would invent
-  // link losses — and then alert the user about them.
-  const complete = minDr === 0 && profile.refDomains.length < limit;
+  // complete = saw the last row with no DR filter. A DR-filtered run is a deliberate subset and
+  // can never prove an absent domain gone — same rule as everywhere else in this wave.
+  const complete = minDr === 0 && res.sawEnd === true;
   const sync = await syncRefDomains(target, profile.refDomains, { provider, source: "api", complete });
 
   await writeSnapshot(target, {
@@ -95,7 +107,7 @@ export async function POST(req: Request) {
     dofollowPct: profile.dofollowPct,
   }, { provider, source: "api" });
 
-  return respond({ units, sync, complete, summary: {
+  return respond({ units: spent, sync, complete, partialError: res.error || undefined, summary: {
     refDomainsTotal: profile.refDomainsTotal,
     backlinksTotal: profile.backlinksTotal,
     dofollowPct: profile.dofollowPct,

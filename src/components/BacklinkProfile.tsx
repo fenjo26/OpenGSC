@@ -24,6 +24,10 @@ import { METRICS_GATEWAY_URL } from "@/components/SeoToolsSettings";
 const fill = (s: string, vars: Record<string, string>) =>
   s.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? `{${k}}`);
 
+/** Client-side pages of the domain table. The rows are all in memory already; this only keeps
+ *  the DOM at a sane size instead of deciding how many domains the user may look at. */
+const TABLE_ROWS_PER_PAGE = 100;
+
 interface RefDomain {
   refDomain: string;
   dr: number | null;
@@ -67,8 +71,8 @@ export default function BacklinkProfile({ siteDbId }: { siteDbId: string }) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<React.ReactNode>("");
   const [hasKey, setHasKey] = useState(false);
-  const [limit, setLimit] = useState(100);
   const [showLost, setShowLost] = useState(false);
+  const [tablePage, setTablePage] = useState(1);
 
   // Resolved in an effect, not during render: mode and host live in localStorage, and reading
   // them during the first pass would make the server HTML disagree with the client's.
@@ -112,12 +116,30 @@ export default function BacklinkProfile({ siteDbId }: { siteDbId: string }) {
 
   useEffect(() => { loadBalance().catch(() => {}); }, [loadBalance]);
 
+  // Gateway refusals carry different diagnoses: 401 names the wrong key/host pair, 402 an
+  // empty wallet, 403 a product the key does not include. Flattening them into one "failed"
+  // is what made this screen undiagnosable, so each gets its own sentence. Shared by the
+  // hard-failure notice and the "partial pull" notice for the same reason.
+  const gatewayNotice = useCallback((raw: string, host: string): React.ReactNode => {
+    const gw = gatewayStatusFromError(raw);
+    return gw === 401 ? fill(t("blsrcErr401"), { host })
+      : gw === 402 ? (<>
+          {fill(t("blsrcErr402"), { host })}{" "}
+          <a href={METRICS_GATEWAY_URL} target="_blank" rel="noreferrer noopener nofollow"
+            style={{ color: "var(--color-accent-blue)" }}>{t("blsrcTopUp")}</a>
+        </>)
+      : gw === 403 ? t("blsrcErr403")
+      : gw === 429 ? t("blsrcErr429")
+      : gw != null && gw >= 500 ? t("blsrcErr502")
+      : null;
+  }, [t]);
+
   const call = useCallback(async (doFetch: boolean) => {
     const creds = getMetricsCreds();
     const body: Record<string, unknown> = { siteId: siteDbId, provider: creds.provider, fetch: doFetch };
     const token = shareTokenFromPath();
     if (token) body.shareToken = token;
-    if (doFetch) Object.assign(body, { apiKey: creds.apiKey, baseUrl: creds.baseUrl, cap: creds.cap, limit });
+    if (doFetch) Object.assign(body, { apiKey: creds.apiKey, baseUrl: creds.baseUrl, cap: creds.cap });
 
     const res = await fetch("/api/metrics/backlinks", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
@@ -127,32 +149,25 @@ export default function BacklinkProfile({ siteDbId }: { siteDbId: string }) {
     if (Array.isArray(d.history)) setHistory(d.history);
     if (d.usage && typeof d.usage.units === "number") setLocalUsage(d.usage.units);
     if (!res.ok && doFetch) {
-      // Gateway refusals carry different diagnoses: 401 names the wrong key/host pair, 402 an
-      // empty wallet, 403 a product the key does not include. Flattening them into one "failed"
-      // is what made this screen undiagnosable, so each gets its own sentence here.
-      const gw = gatewayStatusFromError(typeof d.error === "string" ? d.error : "");
       const host = creds.baseUrl || DEFAULT_BASE_URL[creds.provider];
       setNotice(
         d.error === "cap_exceeded" ? t("kwCapExceeded")
         : d.error === "provider_unsupported" ? t("blpAhrefsOnly")
-        : gw === 401 ? fill(t("blsrcErr401"), { host })
-        : gw === 402 ? (<>
-            {fill(t("blsrcErr402"), { host })}{" "}
-            <a href={METRICS_GATEWAY_URL} target="_blank" rel="noreferrer noopener nofollow"
-              style={{ color: "var(--color-accent-blue)" }}>{t("blsrcTopUp")}</a>
-          </>)
-        : gw === 403 ? t("blsrcErr403")
-        : gw === 429 ? t("blsrcErr429")
-        : gw != null && gw >= 500 ? t("blsrcErr502")
-        : t("blpFailed")
+        : gatewayNotice(typeof d.error === "string" ? d.error : "", host) ?? t("blpFailed")
       );
     } else if (doFetch) {
       // A partial pull cannot prove a link is gone, so it does not mark anything lost. Saying
-      // so is the difference between "no losses" and "we did not look".
-      setNotice(d.complete === false ? t("blpPartial") : "");
+      // so is the difference between "no losses" and "we did not look" — and when it stopped
+      // for a gateway reason, that reason rides along instead of hiding behind "partial".
+      const reason = typeof d.partialError === "string" && d.partialError
+        ? gatewayNotice(d.partialError, creds.baseUrl || DEFAULT_BASE_URL[creds.provider]) ?? d.partialError
+        : null;
+      setNotice(d.complete === false
+        ? <>{t("blpPartial")}{reason ? <> · {reason}</> : null}</>
+        : "");
       loadBalance().catch(() => {});
     }
-  }, [siteDbId, limit, t, loadBalance]);
+  }, [siteDbId, t, loadBalance, gatewayNotice]);
 
   // Free read of what is stored — never reaches a provider.
   useEffect(() => { call(false).catch(() => {}); }, [call]);
@@ -168,8 +183,12 @@ export default function BacklinkProfile({ siteDbId }: { siteDbId: string }) {
   const lost = useMemo(() => rows.filter(r => r.lost), [rows]);
   const latest = history[history.length - 1];
   const previous = history.length > 1 ? history[0] : null;
-  const units = estimateProfileUnits(limit);
-  const usd = estimateCostUsd(units, getMetricsCreds().provider);
+  // Priced from the last pull's real domain count — the same figure the server reserves when it
+  // refreshes. Before the first pull there is no count to price from, and the chip hides rather
+  // than guessing: the discovery pull costs one floored stats call and nothing more.
+  const estDomains = latest?.refDomains ?? null;
+  const units = estDomains != null ? estimateProfileUnits(estDomains) : null;
+  const usd = units != null ? estimateCostUsd(units, getMetricsCreds().provider) : null;
 
   const chip = (label: string, value: string, hint?: string) => (
     <div key={label} title={hint} style={{ padding: "10px 14px", borderRadius: "var(--radius-md)", background: "var(--color-bg)", border: "1px solid var(--color-border)", minWidth: "104px" }}>
@@ -182,6 +201,9 @@ export default function BacklinkProfile({ siteDbId }: { siteDbId: string }) {
   const th: React.CSSProperties = { ...cell, fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "left" };
 
   const visible = showLost ? lost : live;
+  const tablePages = Math.max(1, Math.ceil(visible.length / TABLE_ROWS_PER_PAGE));
+  const pageNo = Math.min(tablePage, tablePages);
+  const pageRows = visible.slice((pageNo - 1) * TABLE_ROWS_PER_PAGE, pageNo * TABLE_ROWS_PER_PAGE);
 
   // ── Source placard values ──
   const info = balance?.info ?? null;
@@ -205,13 +227,8 @@ export default function BacklinkProfile({ siteDbId }: { siteDbId: string }) {
         <h3 className="title-sm" style={{ margin: 0 }}>{t("blpTitle")}</h3>
 
         {!guest && <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-          {hasKey && (
-            <>
-              <select className="tool-input inline" value={limit} onChange={e => setLimit(Number(e.target.value))}>
-                {[50, 100, 250, 500, 1000].map(n => <option key={n} value={n}>{n} {t("blpRefDomains")}</option>)}
-              </select>
-              <span className="metric-cost">{units.toLocaleString()} {t("metricsUnits")} · ≈ {formatUsd(usd)}</span>
-            </>
+          {hasKey && units != null && usd != null && (
+            <span className="metric-cost">{units.toLocaleString()} {t("metricsUnits")} · ≈ {formatUsd(usd)}</span>
           )}
           <button className="metric-action" onClick={refresh} disabled={busy || !hasKey}
             title={!hasKey ? t("blpNoKey") : undefined}>
@@ -297,7 +314,7 @@ export default function BacklinkProfile({ siteDbId }: { siteDbId: string }) {
                 </tr>
               </thead>
               <tbody>
-                {visible.slice(0, 200).map(r => (
+                {pageRows.map(r => (
                   <tr key={r.refDomain} style={{ borderBottom: "1px solid var(--color-border)" }}>
                     <td style={cell}>
                       <a href={`https://${r.refDomain}`} target="_blank" rel="noreferrer noopener nofollow"
@@ -323,6 +340,16 @@ export default function BacklinkProfile({ siteDbId }: { siteDbId: string }) {
               </tbody>
             </table>
           </div>
+
+          {tablePages > 1 && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "10px", paddingTop: "10px", fontSize: "12px", color: "var(--color-text-secondary)" }}>
+              <button className="pill" disabled={pageNo <= 1} onClick={() => setTablePage(pageNo - 1)}
+                style={{ cursor: pageNo <= 1 ? "default" : "pointer", opacity: pageNo <= 1 ? 0.5 : 1 }}>‹</button>
+              <span>{t("bluiPage")} {pageNo} {t("bluiOf")} {tablePages}</span>
+              <button className="pill" disabled={pageNo >= tablePages} onClick={() => setTablePage(pageNo + 1)}
+                style={{ cursor: pageNo >= tablePages ? "default" : "pointer", opacity: pageNo >= tablePages ? 0.5 : 1 }}>›</button>
+            </div>
+          )}
         </>
       )}
     </div>

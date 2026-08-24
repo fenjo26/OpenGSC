@@ -40,7 +40,9 @@ export async function readRefDomains(
   opts: { provider?: string; includeLost?: boolean; limit?: number } = {},
 ): Promise<RefDomainRecord[]> {
   const provider = opts.provider ?? "ahrefs";
-  const limit = Math.max(1, Math.min(2000, opts.limit ?? 500));
+  // High on purpose: full profile pulls stopped having a row ceiling, and this read is what the
+  // profile tab renders — clamping it here would bring the ceiling back through the back door.
+  const limit = Math.max(1, Math.min(100000, opts.limit ?? 500));
   try {
     const rows: any[] = await rawQuery(
       `SELECT refDomain, dr, linksToTarget, dofollow, firstSeen, lost, lostAt, source, fetchedAt
@@ -93,7 +95,9 @@ export async function syncRefDomains(
   const at = new Date().toISOString();
   const day = today();
 
-  const before = await readRefDomains(t, { provider, includeLost: true, limit: 2000 });
+  // Read every stored row, not a window: the lost-marking pass below compares against this set,
+  // and a truncated `before` would let domains outside the window escape being marked lost.
+  const before = await readRefDomains(t, { provider, includeLost: true, limit: 100000 });
   const knownLive = new Set(before.filter(r => !r.lost).map(r => r.refDomain));
   const seenNow = new Set<string>();
   let added = 0;

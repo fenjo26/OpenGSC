@@ -3,6 +3,22 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
+## [1.5.1] — 2026-08-24
+
+### Changed
+
+- The referring-domains pull no longer has a row ceiling. The 50–1000 "domains" selector is
+  gone: a refresh now pages through every referring domain the provider will return, offset or
+  keyset — whichever the gateway actually supports, probed once per host per day exactly like
+  the full backlink export. The product stopped deciding how much of a link profile an SEO is
+  allowed to look at; the only ceiling left is the monthly unit cap the owner configured
+  themselves. The price of the whole pull is computed from the profile's real domain count
+  (one floored `backlinks-stats` call) before a single page is spent, shown where the selector
+  used to be, and the meter is reconciled to what the gateway actually billed — a pull that
+  stops midway keeps its fresh pages, is flagged partial, and still cannot prove a link lost.
+  The domain table renders everything stored now too, paginated 100 rows at a page instead of
+  a silent first-200 slice.
+
 ## [1.5.0] — 2026-08-24
 
 ### Added
