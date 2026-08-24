@@ -147,6 +147,18 @@ function zaiAnthropicShape(baseUrl?: string): boolean {
   return /\/api\/anthropic$/.test(zaiRoot(baseUrl));
 }
 
+/**
+ * Anthropic root for provider 'anthropic'. A custom base URL turns the branch into a proxy
+ * call — NewAPI-style gateways that resell Claude access (claude.nyxos.shop & friends).
+ * Claude-CLI convention is the bare host; an SDK-style root already ending in /v1 must not
+ * become /v1/v1/messages.
+ */
+function anthropicRoot(baseUrl?: string): { root: string; proxied: boolean } {
+  const b = (baseUrl || '').trim().replace(/\/+$/, '');
+  if (!b) return { root: 'https://api.anthropic.com', proxied: false };
+  return { root: b.replace(/\/v1$/, ''), proxied: true };
+}
+
 // ─── Content-sized output budgets ────────────────────────────────────────────────
 // Fixed small ceilings (4–8K tokens) truncated long rewrites and articles mid-sentence:
 // the drift panel then reported dozens of "lost" numbers for text the model never got to
@@ -326,11 +338,20 @@ async function fetchLLMOnce(
     if (provider === 'anthropic' || (provider === 'zai' && zaiAnthropicShape(baseUrl))) {
       // For zai this branch is now the OPT-IN path, reached only when the user points the base URL
       // at the Coding Plan's Anthropic endpoint. See zaiRoot() for why that is no longer the default.
-      const root = provider === 'zai' ? zaiRoot(baseUrl) : 'https://api.anthropic.com';
+      // For provider 'anthropic' a custom baseUrl selects a proxy/gateway (see anthropicRoot).
+      // Proxies REQUIRE Authorization: Bearer — their setup guides say so explicitly ("use
+      // ANTHROPIC_AUTH_TOKEN, not ANTHROPIC_API_KEY") — so it is added when proxied. x-api-key
+      // stays in both modes: some gateways read either header, and real Anthropic (no baseUrl)
+      // keeps its exact old wire format.
+      const proxy = provider === 'anthropic' ? anthropicRoot(baseUrl) : null;
+      const root = provider === 'zai' ? zaiRoot(baseUrl) : proxy ? proxy.root : 'https://api.anthropic.com';
       const model = modelOverride ?? defaultModelFor(provider);
       const res = await fetch(`${root}/v1/messages`, {
         method: 'POST', signal: sig,
-        headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+        headers: {
+          ...(proxy?.proxied ? { 'Authorization': `Bearer ${apiKey}` } : {}),
+          'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json',
+        },
         body: JSON.stringify({
           model, max_tokens: maxTokens, messages: [{ role: 'user', content: prompt }],
           ...temp(temperature, model),

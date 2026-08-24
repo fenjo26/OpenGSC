@@ -3341,9 +3341,9 @@
   "trafficPeriod": "mes",
   "trafficGenAiTitle": "Porcentaje de visitas que llegan desde asistentes de IA — la otra mitad de la pestaña AI Visibility",
   "zaiEndpointGeneral": "API general (api.z.ai/api/paas/v4) — consume el saldo de API",
+  "anthropicEndpointHint": "Endpoint de proxy/pasarela opcional para la API de Anthropic (p. ej., un revendedor de Claude basado en NewAPI). Vacío = api.anthropic.com oficial. La autenticación cambia a Bearer automáticamente.",
   "zaiEndpointCoding": "GLM Coding Plan (api.z.ai/api/anthropic) — consume la cuota del plan",
   "zaiEndpointHint": "Una sola clave de cuenta, pero el endpoint decide de qué monedero sale cada petición. El Coding Plan está pensado para herramientas de programación admitidas y tiene una cuota de 5 horas con la que choca la generación masiva (429). La API general cobra del saldo de pago por uso, que se recarga aparte del plan.",
-
   "blsrcTitle": "Fuente de datos",
   "blsrcProvider": "Proveedor",
   "blsrcHostOfficial": "clave oficial",
@@ -3366,7 +3366,6 @@
   "blsrcErr429": "Demasiadas solicitudes — inténtalo de nuevo en un minuto.",
   "blsrcErr502": "El proveedor de datos no está disponible temporalmente.",
   "blsrcTopUp": "Recargar",
-
   "blsyncTitle": "Exportación completa de backlinks",
   "blsyncStart": "Exportar todos los backlinks",
   "blsyncRunning": "Exportando…",
@@ -3387,7 +3386,6 @@
   "blsyncNever": "nunca",
   "blsyncModeOffset": "paginación por offset",
   "blsyncModeKeyset": "paginación por cursor",
-
   "blchkTitle": "Comprobación de la colocación",
   "blchkRun": "Comprobar colocaciones",
   "blchkRunning": "Comprobando…",
@@ -3409,7 +3407,6 @@
   "blchkLastCheck": "última comprobación",
   "blchkSummary": "{scanned} comprobadas · {withLink} con nuestro enlace · {zero} sin él · {errors} con error",
   "blchkBlockedHint": "Un 403 o 429 significa que el sitio rechazó nuestra solicitud, no que se haya retirado el enlace.",
-
   "bluiImport": "Importar enlaces",
   "bluiImportPaste": "Pegar una lista",
   "bluiImportCsv": "Subir CSV / TSV",
@@ -3454,7 +3451,6 @@
   "bluiSortNewest": "Más recientes primero",
   "bluiSortFirstSeen": "Visto por primera vez",
   "bluiSortLastSeen": "Visto por última vez",
-
   "dglSectionTitle": "Enlaces",
   "dglNew": "enlaces nuevos",
   "dglLost": "enlaces perdidos",

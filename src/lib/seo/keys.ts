@@ -100,6 +100,11 @@ export function resolveTaskCreds(task: SeoTask): ResolvedTaskCreds {
   }
 
   const apiKey = localStorage.getItem(`aiKey_${provider}`) || localStorage.getItem("aiApiKey") || "";
+  // Any provider can carry its own endpoint override under aiBaseUrl_<provider> — the same
+  // key the MCP resolver already reads server-side (lib/mcp/shared.ts). zai uses it for its
+  // endpoint choice, anthropic for Claude-proxy gateways. Returned for every provider so
+  // UI flows never have to know which providers support an override.
+  const providerBaseUrl = localStorage.getItem(`aiBaseUrl_${provider}`) || undefined;
   // `seoModel` is a model id belonging to `seoProvider`, so it only applies while we are still
   // resolving for THAT provider. Applying it unconditionally sent one provider's model id to a
   // different provider: a task switched to OpenAI while the SEO-wide model was a GLM id resolved,
@@ -109,7 +114,7 @@ export function resolveTaskCreds(task: SeoTask): ResolvedTaskCreds {
     provider === (seoProvider || globalProvider || "anthropic") ? localStorage.getItem("seoModel") : null;
   const providerDefaultModel = getProviderModel(provider);
   return {
-    provider, apiKey,
+    provider, apiKey, baseUrl: providerBaseUrl,
     model: taskModel || effectiveSeoModel || providerDefaultModel,
     providerFrom,
     modelFrom: taskModel ? "task" : effectiveSeoModel ? "seo" : providerDefaultModel ? "provider" : "default",

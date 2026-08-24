@@ -3341,9 +3341,9 @@
   "trafficPeriod": "month",
   "trafficGenAiTitle": "Share of visits arriving from AI assistants — the other half of the AI Visibility tab",
   "zaiEndpointGeneral": "General API (api.z.ai/api/paas/v4) — spends the API balance",
+  "anthropicEndpointHint": "Optional proxy/gateway endpoint for the Anthropic API (e.g. a NewAPI-based Claude reseller). Empty = the official api.anthropic.com. Auth switches to Bearer automatically.",
   "zaiEndpointCoding": "GLM Coding Plan (api.z.ai/api/anthropic) — spends the plan quota",
   "zaiEndpointHint": "One account key, but the endpoint decides which wallet a request draws on. The Coding Plan is meant for supported coding tools and has a 5-hour quota that bulk generation hits, returning 429. The general API bills the pay-as-you-go balance, topped up separately from the plan.",
-
   "blsrcTitle": "Data source",
   "blsrcProvider": "Provider",
   "blsrcHostOfficial": "official key",
@@ -3366,7 +3366,6 @@
   "blsrcErr429": "Too many requests — try again in a minute.",
   "blsrcErr502": "The data provider is temporarily unavailable.",
   "blsrcTopUp": "Top up",
-
   "blsyncTitle": "Full backlink export",
   "blsyncStart": "Export all backlinks",
   "blsyncRunning": "Exporting…",
@@ -3387,7 +3386,6 @@
   "blsyncNever": "never",
   "blsyncModeOffset": "paging by offset",
   "blsyncModeKeyset": "paging by cursor",
-
   "blchkTitle": "Placement check",
   "blchkRun": "Check placements",
   "blchkRunning": "Checking…",
@@ -3409,7 +3407,6 @@
   "blchkLastCheck": "last checked",
   "blchkSummary": "{scanned} scanned · {withLink} with our link · {zero} without · {errors} failed",
   "blchkBlockedHint": "A 403 or 429 means the site refused our request, not that the link was removed.",
-
   "bluiImport": "Import links",
   "bluiImportPaste": "Paste a list",
   "bluiImportCsv": "Upload CSV / TSV",
@@ -3454,7 +3451,6 @@
   "bluiSortNewest": "Newest first",
   "bluiSortFirstSeen": "First seen",
   "bluiSortLastSeen": "Last seen",
-
   "dglSectionTitle": "Links",
   "dglNew": "new links",
   "dglLost": "lost links",

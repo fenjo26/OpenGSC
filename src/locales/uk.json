@@ -3341,9 +3341,9 @@
   "trafficPeriod": "місяць",
   "trafficGenAiTitle": "Частка візитів з AI-асистентів — друга половина вкладки AI Visibility",
   "zaiEndpointGeneral": "Звичайний API (api.z.ai/api/paas/v4) — списує баланс API",
+  "anthropicEndpointHint": "Необов'язковий ендпоінт проксі/шлюзу для Anthropic API (наприклад, NewAPI-реселер Claude). Порожньо = офіційний api.anthropic.com. Автентифікація автоматично перемкнеться на Bearer.",
   "zaiEndpointCoding": "GLM Coding Plan (api.z.ai/api/anthropic) — списує квоту тарифу",
   "zaiEndpointHint": "Ключ в акаунта один, але саме ендпоінт вирішує, з якого гаманця спишеться запит. Coding Plan призначений для підтримуваних кодинг-інструментів і має 5-годинну квоту: масова генерація впирається в неї та повертає 429. Звичайний API бере кошти з балансу API, який поповнюється окремо від тарифу.",
-
   "blsrcTitle": "Джерело даних",
   "blsrcProvider": "Провайдер",
   "blsrcHostOfficial": "офіційний ключ",
@@ -3366,7 +3366,6 @@
   "blsrcErr429": "Забагато запитів — спробуйте за хвилину.",
   "blsrcErr502": "Провайдер даних тимчасово недоступний.",
   "blsrcTopUp": "Поповнити",
-
   "blsyncTitle": "Повне вивантаження посилань",
   "blsyncStart": "Вивантажити всі посилання",
   "blsyncRunning": "Вивантажую…",
@@ -3387,7 +3386,6 @@
   "blsyncNever": "жодного разу",
   "blsyncModeOffset": "посторінково через offset",
   "blsyncModeKeyset": "посторінково через курсор",
-
   "blchkTitle": "Перевірка розміщення",
   "blchkRun": "Перевірити розміщення",
   "blchkRunning": "Перевірка…",
@@ -3409,7 +3407,6 @@
   "blchkLastCheck": "остання перевірка",
   "blchkSummary": "перевірено {scanned} · з нашим посиланням {withLink} · без нього {zero} · з помилкою {errors}",
   "blchkBlockedHint": "403 або 429 означає, що майданчик відмовив у запиті, а не що посилання зняли.",
-
   "bluiImport": "Імпорт посилань",
   "bluiImportPaste": "Вставити список",
   "bluiImportCsv": "Завантажити CSV / TSV",
@@ -3454,7 +3451,6 @@
   "bluiSortNewest": "Спочатку нові",
   "bluiSortFirstSeen": "Уперше",
   "bluiSortLastSeen": "Останній раз",
-
   "dglSectionTitle": "Посилання",
   "dglNew": "нових посилань",
   "dglLost": "втрачених посилань",

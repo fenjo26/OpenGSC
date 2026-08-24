@@ -3341,9 +3341,9 @@
   "trafficPeriod": "月份",
   "trafficGenAiTitle": "来自 AI 助手的访问占比——AI Visibility 标签页的另一半答案",
   "zaiEndpointGeneral": "通用 API (api.z.ai/api/paas/v4) — 扣除 API 余额",
+  "anthropicEndpointHint": "Anthropic API 的可选代理/网关端点（例如基于 NewAPI 的 Claude 转售商）。留空 = 官方 api.anthropic.com。认证会自动切换为 Bearer。",
   "zaiEndpointCoding": "GLM Coding Plan (api.z.ai/api/anthropic) — 扣除套餐配额",
   "zaiEndpointHint": "账号只有一个密钥，但端点决定这笔请求从哪个钱包扣费。Coding Plan 面向受支持的编程工具，并有 5 小时配额，批量生成会撞上它并返回 429。通用 API 从按量付费余额扣费，该余额需与套餐分开充值。",
-
   "blsrcTitle": "数据来源",
   "blsrcProvider": "服务商",
   "blsrcHostOfficial": "官方密钥",
@@ -3366,7 +3366,6 @@
   "blsrcErr429": "请求过多——请一分钟后重试。",
   "blsrcErr502": "数据服务商暂时不可用。",
   "blsrcTopUp": "充值",
-
   "blsyncTitle": "完整外链导出",
   "blsyncStart": "导出全部外链",
   "blsyncRunning": "导出中…",
@@ -3387,7 +3386,6 @@
   "blsyncNever": "从未",
   "blsyncModeOffset": "按 offset 分页",
   "blsyncModeKeyset": "按游标分页",
-
   "blchkTitle": "放置检查",
   "blchkRun": "检查放置",
   "blchkRunning": "检查中…",
@@ -3409,7 +3407,6 @@
   "blchkLastCheck": "上次检查",
   "blchkSummary": "已检查 {scanned} · 含我们的链接 {withLink} · 不含 {zero} · 失败 {errors}",
   "blchkBlockedHint": "403 或 429 表示站点拒绝了我们的请求，而不是链接被撤下。",
-
   "bluiImport": "导入链接",
   "bluiImportPaste": "粘贴列表",
   "bluiImportCsv": "上传 CSV / TSV",
@@ -3454,7 +3451,6 @@
   "bluiSortNewest": "最新的优先",
   "bluiSortFirstSeen": "首次发现",
   "bluiSortLastSeen": "最近发现",
-
   "dglSectionTitle": "链接",
   "dglNew": "新增链接",
   "dglLost": "丢失链接",

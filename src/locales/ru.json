@@ -3341,9 +3341,9 @@
   "trafficPeriod": "месяц",
   "trafficGenAiTitle": "Доля визитов из AI-ассистентов — вторая половина вкладки AI Visibility",
   "zaiEndpointGeneral": "Обычный API (api.z.ai/api/paas/v4) — списывает баланс API",
+  "anthropicEndpointHint": "Необязательный эндпоинт прокси/шлюза для Anthropic API (например, NewAPI-реселлер Claude). Пусто = официальный api.anthropic.com. Авторизация сама переключится на Bearer.",
   "zaiEndpointCoding": "GLM Coding Plan (api.z.ai/api/anthropic) — списывает квоту тарифа",
   "zaiEndpointHint": "Ключ у аккаунта один, а вот эндпоинт решает, из какого кошелька спишется запрос. Coding Plan рассчитан на поддерживаемые кодинг-инструменты и имеет 5-часовую квоту: массовая генерация упирается в неё и возвращает 429. Обычный API берёт деньги с баланса API, который пополняется отдельно от тарифа.",
-
   "blsrcTitle": "Источник данных",
   "blsrcProvider": "Провайдер",
   "blsrcHostOfficial": "официальный ключ",
@@ -3366,7 +3366,6 @@
   "blsrcErr429": "Слишком много запросов — попробуйте через минуту.",
   "blsrcErr502": "Провайдер данных временно недоступен.",
   "blsrcTopUp": "Пополнить",
-
   "blsyncTitle": "Полная выгрузка ссылок",
   "blsyncStart": "Выгрузить все ссылки",
   "blsyncRunning": "Выгружаю…",
@@ -3387,7 +3386,6 @@
   "blsyncNever": "ни разу",
   "blsyncModeOffset": "постранично через offset",
   "blsyncModeKeyset": "постранично через курсор",
-
   "blchkTitle": "Проверка размещения",
   "blchkRun": "Проверить размещения",
   "blchkRunning": "Проверка…",
@@ -3409,7 +3407,6 @@
   "blchkLastCheck": "последняя проверка",
   "blchkSummary": "проверено {scanned} · с нашей ссылкой {withLink} · без неё {zero} · с ошибкой {errors}",
   "blchkBlockedHint": "403 или 429 означает, что площадка отказала в запросе, а не что ссылку сняли.",
-
   "bluiImport": "Импорт ссылок",
   "bluiImportPaste": "Вставить список",
   "bluiImportCsv": "Загрузить CSV / TSV",
@@ -3454,7 +3451,6 @@
   "bluiSortNewest": "Сначала новые",
   "bluiSortFirstSeen": "Впервые",
   "bluiSortLastSeen": "Последний раз",
-
   "dglSectionTitle": "Ссылки",
   "dglNew": "новых ссылок",
   "dglLost": "потерянных ссылок",

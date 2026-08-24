@@ -3341,9 +3341,9 @@
   "trafficPeriod": "mois",
   "trafficGenAiTitle": "Part des visites venant des assistants IA — l’autre moitié de l’onglet AI Visibility",
   "zaiEndpointGeneral": "API générale (api.z.ai/api/paas/v4) — débite le solde API",
+  "anthropicEndpointHint": "Endpoint proxy/passelle optionnel pour l'API Anthropic (ex. revendeur Claude basé sur NewAPI). Vide = api.anthropic.com officiel. L'auth bascule automatiquement en Bearer.",
   "zaiEndpointCoding": "GLM Coding Plan (api.z.ai/api/anthropic) — débite le quota du forfait",
   "zaiEndpointHint": "Une seule clé de compte, mais c'est l'endpoint qui détermine le portefeuille débité. Le Coding Plan vise les outils de codage pris en charge et impose un quota de 5 heures que la génération en masse atteint (429). L'API générale débite le solde à l'usage, rechargé séparément du forfait.",
-
   "blsrcTitle": "Source des données",
   "blsrcProvider": "Fournisseur",
   "blsrcHostOfficial": "clé officielle",
@@ -3366,7 +3366,6 @@
   "blsrcErr429": "Trop de requêtes — réessayez dans une minute.",
   "blsrcErr502": "Le fournisseur de données est temporairement indisponible.",
   "blsrcTopUp": "Recharger",
-
   "blsyncTitle": "Export complet des backlinks",
   "blsyncStart": "Exporter tous les backlinks",
   "blsyncRunning": "Export en cours…",
@@ -3387,7 +3386,6 @@
   "blsyncNever": "jamais",
   "blsyncModeOffset": "pagination par offset",
   "blsyncModeKeyset": "pagination par curseur",
-
   "blchkTitle": "Vérification du placement",
   "blchkRun": "Vérifier les placements",
   "blchkRunning": "Vérification…",
@@ -3409,7 +3407,6 @@
   "blchkLastCheck": "dernière vérification",
   "blchkSummary": "{scanned} vérifiées · {withLink} avec notre lien · {zero} sans · {errors} en échec",
   "blchkBlockedHint": "Un 403 ou 429 signifie que le site a refusé notre requête, pas que le lien a été supprimé.",
-
   "bluiImport": "Importer des liens",
   "bluiImportPaste": "Coller une liste",
   "bluiImportCsv": "Téléverser un CSV / TSV",
@@ -3454,7 +3451,6 @@
   "bluiSortNewest": "Plus récentes d'abord",
   "bluiSortFirstSeen": "Vu pour la 1re fois",
   "bluiSortLastSeen": "Vu pour la dernière fois",
-
   "dglSectionTitle": "Liens",
   "dglNew": "nouveaux liens",
   "dglLost": "liens perdus",

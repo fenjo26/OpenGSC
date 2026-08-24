@@ -1361,6 +1361,35 @@ function AIProviderCard({ provider }: { provider: typeof AI_PROVIDERS[number] })
         <div style={{ fontSize: "11px", color: "#f87171", marginBottom: "8px" }}>{t("aiModelLoadFail")}</div>
       )}
 
+      {/* Claude-proxy gateways (NewAPI-style shops reselling Claude access) speak the Anthropic
+          Messages API but authenticate with a Bearer token instead of x-api-key. This optional
+          endpoint points the Anthropic provider at such a gateway; empty = official API.
+          lib/llm.ts switches the auth header automatically when a URL is set here. */}
+      {provider.id === "anthropic" && (
+        <div style={{ marginBottom: "10px" }}>
+          <input
+            value={endpoint}
+            onChange={e => {
+              const v = e.target.value.trim();
+              setEndpoint(e.target.value);
+              if (v) localStorage.setItem("aiBaseUrl_anthropic", v);
+              else localStorage.removeItem("aiBaseUrl_anthropic");
+            }}
+            placeholder="https://claude.your-proxy.shop"
+            style={{
+              width: "100%", padding: "8px 12px",
+              borderRadius: "8px", border: "1px solid var(--color-border)",
+              background: "var(--color-card)", color: "var(--color-text-primary)",
+              fontSize: "12px", outline: "none", boxSizing: "border-box",
+              fontFamily: "monospace",
+            }}
+          />
+          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "5px", lineHeight: 1.5 }}>
+            {t("anthropicEndpointHint" as never)}
+          </div>
+        </div>
+      )}
+
       {/* Z.AI ships the same models behind two products on ONE account key, and the endpoint is
           what decides which balance a request spends. Sending app traffic to the Coding Plan
           endpoint burns that plan's 5-hour quota (and Z.AI limits the plan to supported coding
