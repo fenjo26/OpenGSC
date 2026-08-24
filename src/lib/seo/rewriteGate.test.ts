@@ -100,3 +100,33 @@ test("legitimate prose containing 'total' or 'section' is not stripped", () => {
   const prose = "The total price includes VAT. This section of the report covers windows.\n\nTotal: everything above.";
   assert.equal(stripModelScratch(prose), prose.trim());
 });
+
+// ─── stripPageFurniture: the scrape-side fix for the judge/rewriter conflict ──────
+// 2026-08-24, skgclean.gr/katharismos-tzamion: a faithful rewrite was rejected twice by
+// the judge for "page furniture" — booking-form confirmations and WhatsApp buttons that
+// the SCRAPER put in the source and the "preserve structure EXACTLY" instruction copied.
+// The strip removes furniture before it can become part of the contract.
+import { stripPageFurniture } from "./textMetrics";
+
+test("booking-form confirmation lines are stripped from scraped sources", () => {
+  const scraped = [
+    "Κλείστε ραντεβού από 50€",
+    "Ευχαριστούμε!",
+    "Ευχαριστούμε! Θα έρθετε σε επαφή μαζί σας το ταχύτερο δυνατόν.",
+    "WhatsApp Νέα αίτηση",
+    "## Καθαρισμός Τζαμιών",
+    "Επαγγελματικός καθαρισμός τζαμιών με πιστοποιημένο εξοπλισμό.",
+  ].join("\n");
+  const out = stripPageFurniture(scraped);
+  assert.ok(!/Ευχαριστούμε/.test(out), "thank-you confirmations must be gone");
+  assert.ok(!/WhatsApp/i.test(out), "contact widget lines must be gone");
+  assert.ok(out.includes("Κλείστε ραντεβού"), "a price CTA in the source is kept — not this stripper's call");
+  assert.ok(out.includes("## Καθαρισμός Τζαμιών"), "article headings must survive");
+});
+
+test("cross-sell arrow links are stripped, prose arrows are not", () => {
+  const scraped = "Γενικός καθαρισμός σπιτιού\nαπό 45€ Δείτε την υπηρεσία →\nΟ καθαρισμός γίνεται → σύμφωνα με το πρόγραμμα.";
+  const out = stripPageFurniture(scraped);
+  assert.ok(!/Δείτε την υπηρεσία/.test(out), "arrow-terminated link line must be gone");
+  assert.ok(out.includes("σύμφωνα με το πρόγραμμα"), "an arrow inside prose must survive");
+});

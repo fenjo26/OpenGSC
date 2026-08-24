@@ -58,6 +58,14 @@ export function judgeArticle(
   const sourceBlock = opts.sourceExcerpt
     ? `\n\nSOURCE (first 4000 characters, for comparison):\n${opts.sourceExcerpt.slice(0, 4000)}`
     : "";
+  // With a source present this is a REWRITE: fidelity is the contract, so furniture the source
+  // itself contains (the site's own CTA buttons, booking blocks the scraper kept) is not a
+  // blocker — the rewriter was told to preserve the source. Only furniture the draft introduced
+  // on its own is a rejection. Without a source this is a generated article: the strict rule
+  // below applies in full.
+  const furnitureLine = opts.sourceExcerpt
+    ? `- it introduces page furniture (menus, form confirmations, buttons) that does NOT appear in the source\n`
+    : `- it copies page furniture (menus, booking/contact-form confirmations, thank-you messages, buttons)\n`;
   const langLine = opts.language ? `The article must be written in: ${opts.language}. Reject if it is in another language.\n` : "";
   return callJudge(
     `You are a strict QA reviewer. A tool generated a web article; below is the finished draft ` +
@@ -65,7 +73,7 @@ export function judgeArticle(
     `Reject it if ANY of these hold:\n` +
     `- it is not an article at all (planning notes, number lists, scratch, JSON, an outline)\n` +
     `- it is truncated (ends mid-sentence or mid-word) or clearly missing sections it announced\n` +
-    `- it copies page furniture (menus, booking/contact-form confirmations, thank-you messages, buttons)\n` +
+    `${furnitureLine}` +
     `- it contains the generator's own self-check or planning lines (word counts, section budgets)\n` +
     `- it is written in a different language than required\n\n` +
     `Do NOT judge style, quality or SEO — only completeness and publishability.\n` +

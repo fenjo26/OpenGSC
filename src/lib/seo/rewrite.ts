@@ -6,7 +6,7 @@
 import { fetchLLM, fetchLLMDetailed, contentTokens, isLengthCut, CONTENT_TOKENS_RETRY_MAX } from "@/lib/llm";
 import { scrapeMany } from "@/lib/seo/scrape";
 import { factDrift, criticalValues, type FactDrift } from "@/lib/seo/factDrift";
-import { uniquenessPct, wordCount, keywordCoverage, type KeywordCoverage } from "@/lib/seo/textMetrics";
+import { uniquenessPct, wordCount, keywordCoverage, stripPageFurniture, type KeywordCoverage } from "@/lib/seo/textMetrics";
 import { renderPolicy, type EditorialPolicy } from "@/lib/seo/policy";
 import { contentGate } from "@/lib/seo/rewriteGate";
 import { judgeArticle, type JudgeOutcome } from "@/lib/seo/judge";
@@ -234,6 +234,11 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
     } catch { /* fall through to no_content */ }
   }
   if (!text) return { ok: false, error: "no_content" };
+  // A scraped page carries its own furniture — booking-form confirmations, WhatsApp widgets,
+  // cross-sell arrows. Left in, the "preserve the structure EXACTLY" instruction copies it all
+  // into the rewrite, and the QA judge then (correctly) rejects the draft for containing
+  // buttons and form text. The article the rewriter should see starts one strip earlier.
+  if (fromUrl) text = stripPageFurniture(text);
   const cap = fromUrl ? MAX_CHARS_URL : MAX_CHARS;
   const truncated = text.length > cap;
   const source = truncated ? text.slice(0, cap) : text;

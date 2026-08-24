@@ -125,3 +125,27 @@ export function stripModelScratch(md: string): string {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
+
+/**
+ * Strips page furniture a URL scrape drags into the rewrite source: contact widgets
+ * (WhatsApp/Viber/Telegram lines), booking-form confirmation lines ("Ευχαριστούμε! Θα
+ * επικοινωνήσουμε…", "Thank you! We will contact…"), and cross-sell links ending in "→".
+ *
+ * Why this matters: the rewrite prompt demands the source's structure be preserved EXACTLY,
+ * so every furniture line in the source comes back in the rewrite — and the QA judge then
+ * correctly rejects the draft for containing buttons and form confirmations (observed on
+ * skgclean.gr, 2026-08-24: a faithful rewrite rejected twice for furniture the SCRAPER
+ * included). Patterns are deliberately conservative and language-independent: brand tokens,
+ * thank-you line openers, and arrow-terminated lines. Applied to URL-mode sources only.
+ */
+export function stripPageFurniture(md: string): string {
+  return md
+    // Contact widgets — brand tokens are the same in every language.
+    .replace(/^[^\n]{0,80}\b(whats\s?app|viber|telegram|messenger)\b[^\n]{0,80}$/gim, "")
+    // Booking-form confirmations: the line OPENS with a thank-you word, whatever the locale.
+    .replace(/^(ευχαριστ[oο]ύμε|ευχαριστώ|thank you|merci|gracias|danke|спасибо|дякую|teşekkürler|dziękujemy|obrigad[oa])[^\n]{0,140}$/gim, "")
+    // Cross-sell / "see service" links that end in an arrow, whatever the label.
+    .replace(/^[^\n]{0,100}→[^\n]{0,20}$/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
