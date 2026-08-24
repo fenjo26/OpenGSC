@@ -345,7 +345,7 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
     name: "start_rewrite_job",
     cost: "paid",
     description:
-      "PAID — spends the instance owner's own AI credits and needs confirm: true. Rewrites up to 20 pages with OpenGSC's Content Rewriter, in the BACKGROUND: returns a jobId immediately, then poll get_generation_job. One page takes minutes (fetch, then a long model call, then a repair pass when the value audit fails), which is far longer than any MCP client will hold a tool call open — so this never returns the text directly. Each page is saved the moment it finishes, so a timeout, a closed client or a server restart costs at most the page in flight and never the ones already paid for. Prefer get_optimization_brief + your own writing + analyze_text, which costs the owner nothing; use this when they want the app's own pipeline, editorial policy or banned-word list applied.",
+      "PAID — spends the instance owner's own AI credits and needs confirm: true. Rewrites up to 20 pages with OpenGSC's Content Rewriter, in the BACKGROUND: returns a jobId immediately, then poll get_generation_job. One page takes minutes (fetch, a model call on a length-scaled token budget, a repair pass when the value audit fails, then a publication gate and an independent QA judge that rejects non-articles instead of saving them as completed). MCP clients cut a tool call off at 30–60s, which is far shorter than the run — so this never returns the text directly. Each page is saved the moment it finishes, so a timeout, a closed client or a server restart costs at most the page in flight and never the ones already paid for. Prefer get_optimization_brief + your own writing + analyze_text, which costs the owner nothing; use this when they want the app's own pipeline, editorial policy or banned-word list applied.",
     inputSchema: {
       type: "object",
       properties: {
@@ -358,6 +358,7 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
         bannedWords: { type: "array", items: { type: "string" }, description: "Words the model must not use — the AI-Fingerprint Lab's marker export goes here" },
         temperature: { type: "number", description: "Sampling temperature; omit for the provider default" },
         snippet: { type: "boolean", description: "Also propose a refreshed title + meta description per page" },
+        judge: { type: "boolean", description: "Independent QA pass (default true): after the deterministic gate, a fresh-context model call checks the draft is a complete publishable article — rejects planning notes, truncated stubs and copied page furniture instead of saving them as completed pages" },
         policyName: { type: "string", description: "Editorial policy to write under, by name. Omit to use the instance's active policy." },
       },
       required: ["confirm"],
@@ -420,6 +421,7 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
         bannedWords: Array.isArray(args.bannedWords) ? args.bannedWords.map(String) : undefined,
         temperature: args.temperature != null ? Number(args.temperature) : undefined,
         snippet: args.snippet === true,
+        judge: args.judge !== false,
         policy: await resolveActivePolicy(userId, args),
         ...creds,
       }).catch(() => { /* runRewriteBatch records its own failures */ });

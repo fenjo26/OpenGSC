@@ -1,7 +1,8 @@
 // Core SEO generation logic, factored out of the API routes so it can be reused by both
 // the synchronous routes and the background-job runner. No HTTP / auth here — pure work.
 
-import { fetchLLM, fetchLLMDetailed } from "@/lib/llm";
+import { fetchLLM, fetchLLMDetailed, contentTokens, isLengthCut, CONTENT_TOKENS_RETRY_MAX } from "@/lib/llm";
+import { stripModelScratch } from "@/lib/seo/textMetrics";
 import { runSerp, heuristicIntent, heuristicSiteType } from "@/lib/seo/serp";
 import { enrichKeywords, type KwSource } from "@/lib/seo/keywordSource";
 import { scrapeMany } from "@/lib/seo/scrape";
@@ -918,6 +919,10 @@ async function writeTextInChunks(outline: any, ctx: {
   const writeChunk = async ({ c, i }: { c: any[]; i: number }) => {
     const lo = c.reduce((a: number, s: any) => a + (s.word_count?.[0] || 0), 0);
     const hi = c.reduce((a: number, s: any) => a + (s.word_count?.[1] || 0), 0);
+    // The last chunk also carries the FAQ (~55 words/question) — include that in its budget
+    // and allowance so neither the ceiling nor the scoped trim squeezes the sections to
+    // make room for FAQ.
+    const hiEff = hi + (i === chunks.length - 1 ? faq.length * 55 : 0);
     const prompt = buildSectionTextPrompt({
       keyword: ctx.keyword, language: ctx.language, country: meta.country,
       tone: ctx.tone, narration: meta.narration === "first" ? "first" : meta.narration === "third" ? "third" : undefined,
@@ -929,27 +934,38 @@ async function writeTextInChunks(outline: any, ctx: {
       chunkBudget: hi > 0 ? [lo, hi] : undefined,
       bannedWords: ctx.bannedWords,
     });
-    // Detailed rather than plain: when a chunk fails, the provider's own reason is what makes the
-    // final error actionable ("cheaperinference 502: …" instead of a bare generation_failed).
-    const attempt = await fetchLLMDetailed(prompt, ctx.provider, ctx.apiKey, 6000, ctx.model, ctx.baseUrl, chunkTemp(ctx.temperature, i));
+    // Scaled ceiling, not a fixed 6000: Greek and other token-hungry languages ran past the
+    // old cap and the truncated chunk still passed the first-heading sanity check below, so
+    // articles shipped with sections that stopped mid-word. If the provider reports the
+    // answer was cut by the ceiling, one immediate retry at double — cheaper and more
+    // precise than waiting for the round-based retries with the same too-small budget.
+    const chunkBudget = contentTokens(hiEff, 10_000);
+    let attempt = await fetchLLMDetailed(prompt, ctx.provider, ctx.apiKey, chunkBudget, ctx.model, ctx.baseUrl, chunkTemp(ctx.temperature, i));
+    if (attempt.text != null && isLengthCut(attempt.finishReason)) {
+      console.error(`[text] chunk ${i + 1}/${chunks.length} hit the ${chunkBudget}-token ceiling (finish: ${attempt.finishReason}) — retrying wider`);
+      const wider = await fetchLLMDetailed(prompt, ctx.provider, ctx.apiKey, Math.min(CONTENT_TOKENS_RETRY_MAX, chunkBudget * 2), ctx.model, ctx.baseUrl, chunkTemp(ctx.temperature, i));
+      if (wider.text != null) attempt = wider;
+    }
     const raw = attempt.text;
     if (!raw) { if (attempt.error) lastChunkError = attempt.error; return; }
     let md = raw.trim().replace(/^```(?:markdown|md)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
+    // The writer sometimes narrates its own volume check into the answer ("Double check
+    // word count: / Section 1: 121 words. / Total: 211 words. (201-225 range met
+    // perfectly)") — observed verbatim inside a completed article. Line-anchored strip;
+    // see stripModelScratch for why it cannot eat real prose.
+    md = stripModelScratch(md);
     // Models sometimes prefix a stray H1 / meta block despite instructions — strip anything
     // before the first H2/H3 (the assembler owns H1, TOC and meta).
     const firstH = md.search(/^#{2,3}\s/m);
     if (firstH > 0) md = md.slice(firstH);
     // Per-chunk volume guard: a small chunk trims reliably (unlike a whole article). If the
     // chunk overshot its summed budget by >25%, one scoped trim pass brings it back.
-    // The last chunk also carries the FAQ (~55 words/question) — include that in its allowance
-    // so the scoped trim doesn't squeeze the sections to make room for FAQ.
-    const hiEff = hi + (i === chunks.length - 1 ? faq.length * 55 : 0);
     const cw = md.split(/\s+/).filter(Boolean).length;
     if (hiEff > 0 && cw > hiEff * 1.15) {
       try {
         const cut = await fetchLLM(
           buildTextTrimPrompt({ article: md, targetWords: Math.round((lo + hiEff) / 2), currentWords: cw, language: ctx.language }),
-          ctx.provider, ctx.apiKey, 6000, ctx.model, ctx.baseUrl,
+          ctx.provider, ctx.apiKey, Math.max(chunkBudget, contentTokens(cw, 10_000)), ctx.model, ctx.baseUrl,
         );
         if (cut) {
           const cmd = cut.trim().replace(/^```(?:markdown|md)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
@@ -1052,7 +1068,7 @@ async function enforceVolumeTarget(text: string, targetWc: number, ctx: {
     try {
       let expanded = await fetchLLM(
         buildTextExpandPrompt({ article: text, targetWords: targetWc, currentWords: words, language: ctx.language }),
-        ctx.provider, ctx.apiKey, 14000, ctx.model, ctx.baseUrl,
+        ctx.provider, ctx.apiKey, contentTokens(targetWc), ctx.model, ctx.baseUrl,
       );
       if (expanded) {
         expanded = expanded.trim().replace(/^```(?:markdown|md)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
@@ -1073,7 +1089,7 @@ async function enforceVolumeTarget(text: string, targetWc: number, ctx: {
       try {
         let trimmed = await fetchLLM(
           buildTextTrimPrompt({ article: text, targetWords: targetWc, currentWords: cur, language: ctx.language }),
-          ctx.provider, ctx.apiKey, 14000, ctx.model, ctx.baseUrl,
+          ctx.provider, ctx.apiKey, contentTokens(targetWc), ctx.model, ctx.baseUrl,
         );
         if (!trimmed) break;
         trimmed = trimmed.trim().replace(/^```(?:markdown|md)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
@@ -1247,6 +1263,10 @@ export async function genText(b: any): Promise<GenResult> {
     }
   }
 
+  // The article's own target, computed once and reused by the single-shot ceiling and the
+  // volume guard below — a fixed token budget truncated long articles mid-sentence.
+  const targetWc = Number(b.targetWordCount) || Number(slimOutline.meta?.target_word_count) || 0;
+
   if (!text) {
     // Errors the provider has already told us not to retry — an empty wallet, a bad key, an
     // oversized body. A single-shot attempt after those spends minutes to fail identically, so
@@ -1271,7 +1291,8 @@ export async function genText(b: any): Promise<GenResult> {
     // single-shot attempt — if it also fails, its error detail (e.g. a provider content-policy
     // rejection like z.ai's "potentially unsafe or sensitive content") is what we surface below,
     // instead of a bare "generation_failed" that sends users digging through server logs.
-    const r = await fetchLLMDetailed(prompt, provider, apiKey, 12000, model, baseUrl,
+    // The ceiling scales with the article's own target (targetWc above).
+    const r = await fetchLLMDetailed(prompt, provider, apiKey, contentTokens(targetWc), model, baseUrl,
       b.temperature === undefined || b.temperature === null ? undefined : Number(b.temperature));
     text = r.text;
     // Prefer the single-shot's own reason, but fall back to the chunk writer's — when the
@@ -1304,7 +1325,7 @@ export async function genText(b: any): Promise<GenResult> {
   if (b.autoFactCheck !== false && bank.length && text) {
     try {
       const bankText = bank.map((x: any, i: number) => `[${i + 1}]${x.official ? " (ОФИЦИАЛЬНЫЙ)" : ""} ${x.domain || x.source}\n${x.facts}`).join("\n\n");
-      let cleaned = await fetchLLM(buildAutoFactCleanPrompt({ article: text, factsBank: bankText, language }), provider, apiKey, 12000, model, baseUrl);
+      let cleaned = await fetchLLM(buildAutoFactCleanPrompt({ article: text, factsBank: bankText, language }), provider, apiKey, contentTokens(text.split(/\s+/).filter(Boolean).length), model, baseUrl);
       if (cleaned && cleaned.trim().length > text.length * 0.85) {
         cleaned = cleaned.trim().replace(/^```(?:markdown|md)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
         // Structure invariant: every heading (H2+H3, incl. FAQ questions) must survive.
@@ -1318,10 +1339,10 @@ export async function genText(b: any): Promise<GenResult> {
   }
 
   // VOLUME guard (default on, symmetric) — see enforceVolumeTarget() above. Runs LAST, after
-  // fact-clean, so it's the final word on article length. Off with expandText:false.
+  // fact-clean, so it is the final word on article length. Off with expandText:false.
   // Skipped when sections are missing: the guard would read the gap as "the writer undershot"
   // and pad the surviving sections to cover words that belong to text nobody wrote.
-  const finalTargetWc = Number(b.targetWordCount) || Number(slimOutline.meta?.target_word_count) || 0;
+  const finalTargetWc = targetWc;
   if (b.expandText !== false && finalTargetWc >= 500 && !incomplete) {
     text = await enforceVolumeTarget(text, finalTargetWc, { language, provider, apiKey, model, baseUrl });
   }

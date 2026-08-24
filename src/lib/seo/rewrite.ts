@@ -3,11 +3,12 @@
 // variant it can mask common "AI tells" and reports a uniqueness score vs the source. Built to
 // refresh decaying pages and avoid duplicate content across a large affiliate network.
 
-import { fetchLLM } from "@/lib/llm";
+import { fetchLLM, fetchLLMDetailed, contentTokens, isLengthCut, CONTENT_TOKENS_RETRY_MAX } from "@/lib/llm";
 import { scrapeMany } from "@/lib/seo/scrape";
 import { factDrift, criticalValues, type FactDrift } from "@/lib/seo/factDrift";
 import { uniquenessPct, wordCount, keywordCoverage, type KeywordCoverage } from "@/lib/seo/textMetrics";
 import { renderPolicy, type EditorialPolicy } from "@/lib/seo/policy";
+import { contentGate } from "@/lib/seo/rewriteGate";
 
 export interface RewriteBody {
   text?: string;
@@ -34,6 +35,14 @@ export interface RewriteBody {
   policy?: EditorialPolicy;
   temperature?: number;     // sampling temperature; undefined = provider default
   autoRepair?: boolean;     // run a scoped fix pass when the value audit fails (default true)
+  /**
+   * Independent QA pass (default true). After the deterministic gate, a fresh-context model
+   * call looks at the finished draft and answers one question: is this a complete, publishable
+   * article? Catches what no measurement can — a draft that copies the page's booking-form
+   * boilerplate, ends mid-sentence, or came back in the wrong language. A "reject" verdict
+   * fails the variant instead of saving it as completed.
+   */
+  judge?: boolean;
   snippet?: boolean;        // also propose a refreshed title + meta description
   aiProvider?: string;
   aiApiKey?: string;
@@ -55,6 +64,8 @@ export interface RewriteVariant {
    * report and "nothing to check" are different states and must not render the same.
    */
   coverage?: KeywordCoverage;
+  /** Outcome of the independent QA pass; absent when `judge` is disabled. */
+  judge?: { verdict: "publish" | "reject" | "unavailable"; blockers?: string[] };
 }
 
 /** Refreshed search snippet alongside the current one, so the change is judged by comparison. */
@@ -308,9 +319,56 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
 
   const clean = (s: string) => s.trim().replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/i, "").trim();
 
+  // The QA judge. Fresh context — it has seen none of the prompts that produced the draft, so
+  // it cannot inherit the writer's confidence that the job went well. Its only job is the one
+  // question no measurement answers: is this a complete, publishable article? Verdicts:
+  // publish / reject (with blockers). If the CALL itself fails (network, provider), the verdict
+  // is "unavailable" and the page ships — infra flakiness must not burn a finished rewrite —
+  // but the state is reported so the poller knows the QA pass did not run.
+  const judgeVariant = async (
+    sourceText: string, draft: string,
+  ): Promise<{ verdict: "publish" | "reject" | "unavailable"; blockers?: string[] }> => {
+    const jPrompt =
+      `You are a strict QA reviewer. A tool rewrote a web page; you are given the SOURCE and the ` +
+      `finished REWRITE that is about to be saved as a completed page. Decide whether the rewrite ` +
+      `is a COMPLETE, PUBLISHABLE article.\n\nReject it if ANY of these hold:\n` +
+      `- it is not an article at all (planning notes, number lists, scratch, JSON, an outline)\n` +
+      `- it is truncated (ends mid-sentence or mid-word) or clearly missing large parts the source covers\n` +
+      `- it copies page furniture (menus, booking/contact-form confirmations, thank-you messages, buttons)\n` +
+      `- it is written in a different language than the source\n\n` +
+      `Do NOT judge style, quality or SEO — only completeness and publishability.\n` +
+      `Return STRICT JSON, nothing else: {"verdict":"publish"} or {"verdict":"reject","blockers":["short reason", "..."]}\n\n` +
+      `SOURCE (first 4000 characters):\n${sourceText.slice(0, 4000)}\n\nREWRITE (full):\n${draft}`;
+    try {
+      const raw = await fetchLLM(jPrompt, provider, apiKey, 700, b.model || undefined, b.aiBaseUrl || undefined);
+      const j = JSON.parse(clean(raw ?? "").replace(/^[^{]*/, "").replace(/[^}]*$/, ""));
+      if (j?.verdict === "reject") {
+        return { verdict: "reject", blockers: (Array.isArray(j.blockers) ? j.blockers : []).map(String).slice(0, 5) };
+      }
+      if (j?.verdict === "publish") return { verdict: "publish" };
+      return { verdict: "unavailable" };
+    } catch {
+      return { verdict: "unavailable" };
+    }
+  };
+
+  // Why each variant was killed by the gate or the judge, so a batch where nothing survived
+  // reports the actual reason instead of a bare "generation_failed".
+  const rejectReasons: string[] = [];
+
   const results = await pool(Array.from({ length: variants }), 2, async (_x, i): Promise<RewriteVariant | null> => {
-    const raw = await fetchLLM(basePrompt(i), provider, apiKey, 8000, b.model || undefined, b.aiBaseUrl || undefined, b.temperature);
-    let content = clean(raw ?? "");
+    // Budget scaled from the source length. The old fixed 8000 truncated long pages
+    // mid-sentence, and a thinking model could spend the whole ceiling before writing a
+    // word of visible text — both shipped as "completed" 85–94 word pages. If even the
+    // scaled ceiling cuts the answer (the provider says so in its finish reason), one
+    // retry at double the budget; the gate below catches whatever still comes back wrong.
+    const budget = contentTokens(wordCount(source));
+    let gen = await fetchLLMDetailed(basePrompt(i), provider, apiKey, budget, b.model || undefined, b.aiBaseUrl || undefined, b.temperature);
+    if (gen.text != null && isLengthCut(gen.finishReason)) {
+      const wider = await fetchLLMDetailed(basePrompt(i), provider, apiKey, Math.min(CONTENT_TOKENS_RETRY_MAX, budget * 2), b.model || undefined, b.aiBaseUrl || undefined, b.temperature);
+      if (wider.text != null) gen = wider;
+    }
+    let content = clean(gen.text ?? "");
     if (!content) return null;
     content = normalizeCurrency(source, content);
 
@@ -329,7 +387,9 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
       const lost = [...drift.numbers.lost, ...drift.identifiers.lost].slice(0, 40);
       const added = [...drift.numbers.added, ...drift.identifiers.added].slice(0, 40);
       try {
-        const fixRaw = await fetchLLM(repairPrompt(content, lost, added, structure), provider, apiKey, 8000, b.model || undefined, b.aiBaseUrl || undefined, b.temperature);
+        // The repair rewrites the whole draft, so it needs the same scaled ceiling as the
+        // writer — a fixed 8000 here truncated the very long pages that trigger repairs.
+        const fixRaw = await fetchLLM(repairPrompt(content, lost, added, structure), provider, apiKey, contentTokens(wordCount(content), budget), b.model || undefined, b.aiBaseUrl || undefined, b.temperature);
         const fixed = normalizeCurrency(source, clean(fixRaw ?? ""));
         if (fixed) {
           const d2 = factDrift(source, fixed);
@@ -345,11 +405,32 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
     // Computed after masking, because masking rewrites phrasing and could itself drop a target
     // phrase. Measuring before it would report a coverage the shipped text does not have.
     const coverage = targets.length ? keywordCoverage(source, content, targets) : undefined;
-    return { content, uniqueness: uniquenessPct(source, content), words: wordCount(content), drift, structure, repaired, coverage };
+
+    // Publication gate, then judge — in that order, because the gate is free and kills the
+    // responses that must never reach a second paid call (scratch notes, 90-word stubs).
+    const gate = contentGate(source, content);
+    if (!gate.ok) {
+      rejectReasons.push(`${gate.reason}: ${gate.detail}`);
+      return null;
+    }
+    let judged: RewriteVariant["judge"];
+    if (b.judge !== false) {
+      judged = await judgeVariant(source, content);
+      if (judged.verdict === "reject") {
+        rejectReasons.push(`judge_rejected: ${judged.blockers?.join("; ") || "the QA reviewer rejected the draft"}`);
+        return null;
+      }
+    }
+    return { content, uniqueness: uniquenessPct(source, content), words: wordCount(content), drift, structure, repaired, coverage, judge: judged };
   });
 
   const variantsOut = results.filter((r): r is RewriteVariant => !!r);
-  if (!variantsOut.length) return { ok: false, error: "generation_failed" };
+  if (!variantsOut.length) {
+    // Every variant was gate- or judge-rejected (or empty). The first recorded reason is the
+    // honest error: "gate_scratch_leaked: …", "judge_rejected: …". rewriteBatch prefix-matches
+    // these codes to decide whether a retry has a chance.
+    return { ok: false, error: rejectReasons[0] ?? "generation_failed" };
+  }
 
   // Snippet refresh. Requested explicitly (`snippet: true`) so an existing caller's cost and
   // latency don't change, and only meaningful when the source page actually has meta tags.

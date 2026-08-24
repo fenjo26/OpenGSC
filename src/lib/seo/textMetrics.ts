@@ -107,3 +107,21 @@ export function keywordCoverage(
     total: rows.length,
   };
 }
+
+/**
+ * Strips the writer model's own self-check lines that leaked into shipped articles:
+ * "Double check word count: / Section 1: 121 words. / Total: 211 words. (201-225 range
+ * met perfectly)". Observed verbatim in a completed generation on 2026-08-16, sitting in
+ * the article body between the meta block and the first heading.
+ *
+ * Line-anchored on purpose: it only removes lines whose whole shape is a scratch note, so
+ * it cannot eat legitimate prose that happens to contain the word "total" or "section".
+ */
+export function stripModelScratch(md: string): string {
+  return md
+    .replace(/^\s*double[- ]check(ing)?\s+word\s+count:?\s*\d*.*$/gim, "")
+    .replace(/^\s*(section|секция|раздел)\s+\d+\s*:\s*\d+\s+words?\.\s*$/gim, "")
+    .replace(/^\s*total:\s*\d+\s+words?\.\s*\(.*?\)\.?\s*$/gim, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}

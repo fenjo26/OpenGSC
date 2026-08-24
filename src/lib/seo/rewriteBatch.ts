@@ -1,9 +1,10 @@
 // Background, resumable rewriting of many pages — the job form of rewrite.ts.
 //
 // Why this exists. `rewriteContent()` takes minutes for one page: a scrape, then an LLM
-// call producing up to 8000 tokens, then a scoped repair pass when the value audit fails,
-// then optionally a snippet pass. The per-call ceiling in lib/llm.ts is 280 seconds.
-// MCP clients cut a tool call off at 30–60, and the browser has its own limits.
+// call producing a length-scaled token budget, then a scoped repair pass when the value
+// audit fails, then the publication gate and QA judge. The per-call ceiling in lib/llm.ts
+// is 280 seconds. MCP clients cut a tool call off at 30–60, and the browser has its own
+// limits.
 //
 // The failure that follows is worse than a timeout, and it is the reason this file exists
 // rather than a bigger timeout somewhere. When the caller gives up, the server does not:
@@ -47,6 +48,8 @@ export interface RewritePageResult {
   };
   structureOk?: boolean | null;
   repaired?: boolean;
+  /** QA judge outcome for the saved draft; "unavailable" = the judge call itself failed. */
+  judge?: "publish" | "reject" | "unavailable" | null;
   snippet?: unknown;
   content?: string;
   finishedAt: string;
@@ -67,6 +70,10 @@ const explain = (code: string): string => {
   if (code === "no_ai_key") return "No AI key configured for the selected provider.";
   if (code === "no_content") return "Nothing to rewrite — the page yielded no article body, or the text was empty.";
   if (code === "boilerplate_only") return "The fetch returned navigation and chrome, not an article. The URL may be a listing page, or it may need JavaScript to render.";
+  // Gate/judge rejections arrive as "<code>: <detail>" and are already human-readable —
+  // rewrite.ts writes them as full sentences ("gate_too_short: the draft is 94 words
+  // against a 1875-word source — not a rewrite"). Pass them through unchanged.
+  if (/^(gate_|judge_)/.test(code)) return code;
   return code;
 };
 
@@ -125,7 +132,17 @@ export async function runRewriteBatch(
     await persist();
 
     try {
-      const r = await rewriteContent({ ...opts, url: item.url, text: item.text });
+      let r = await rewriteContent({ ...opts, url: item.url, text: item.text });
+      // A gate or judge rejection is a verdict on ONE attempt, not on the page: the draft the
+      // QA layer refused is discarded, and one fresh try is worth a paid call before the page
+      // is written off — truncation-shaped failures usually clear once the scaled budget path
+      // runs, and a verdict a second independent call contradicts is exactly the disagreement
+      // worth resolving in favour of trying again. Anything else (no key, no content,
+      // provider dead) would fail identically, so it is not retried.
+      if (!r.ok && /^(gate_|judge_)/.test(String(r.error ?? ""))) {
+        console.error(`[rewrite] ${label} rejected (${r.error}) — one retry`);
+        r = await rewriteContent({ ...opts, url: item.url, text: item.text });
+      }
       if (!r.ok || !r.data) {
         state.failed++;
         state.pages.push({ url: label, status: "error", error: explain(String(r.error ?? "unknown")), finishedAt: new Date().toISOString() });
@@ -148,6 +165,7 @@ export async function runRewriteBatch(
           },
           structureOk: v.structure?.ok ?? null,
           repaired: v.repaired ?? false,
+          judge: v.judge?.verdict ?? null,
           snippet: r.data.snippet ?? null,
           content: v.content,
           finishedAt: new Date().toISOString(),

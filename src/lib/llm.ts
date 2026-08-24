@@ -147,6 +147,27 @@ function zaiAnthropicShape(baseUrl?: string): boolean {
   return /\/api\/anthropic$/.test(zaiRoot(baseUrl));
 }
 
+// ─── Content-sized output budgets ────────────────────────────────────────────────
+// Fixed small ceilings (4–8K tokens) truncated long rewrites and articles mid-sentence:
+// the drift panel then reported dozens of "lost" numbers for text the model never got to
+// write, and the truncated page still shipped as completed. max_tokens is a ceiling, not
+// a charge — a generous budget costs nothing extra unless the model actually writes more,
+// which is exactly the outcome being asked for. European text runs ~2–4 tokens per word
+// (Greek at the high end), so 8 tokens/word is 2–4× headroom; the floor keeps short
+// sources from getting a ceiling a model can trip over with preamble alone, and the cap
+// stays inside the output maximum of the smallest model any supported provider still serves.
+export const CONTENT_TOKENS_MAX = 32_000;
+export const CONTENT_TOKENS_RETRY_MAX = 48_000;
+
+export function contentTokens(words: number, floor = 12_000): number {
+  return Math.min(CONTENT_TOKENS_MAX, Math.max(floor, Math.ceil((Number(words) || 0) * 8)));
+}
+
+/** True when the provider's own finish/stop reason says the answer was cut by the token ceiling. */
+export function isLengthCut(finishReason?: string | null): boolean {
+  return /^(length|max_tokens)$/i.test(String(finishReason ?? "").trim());
+}
+
 // Anthropic caps temperature at 1.0; the OpenAI-compatible family accepts up to 2.0. Clamping here
 // keeps a single UI slider honest across providers instead of surfacing provider-specific 400s.
 function clampTemp(provider: string, t: number): number {
