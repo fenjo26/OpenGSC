@@ -5,12 +5,104 @@ import { useRouter } from "next/navigation";
 import {
   ArrowLeft, Pencil, Copy, FileText, Download, ChevronDown, Save, Check, X, Code2,
   ExternalLink, Target, Hash, ListTree, ArrowUp, Shield, ImageIcon, Loader2, Wand2, AlertTriangle,
+  CheckCircle2, HelpCircle,
 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { HistoryItem, getHistoryItem, updateHistory, patchHistory } from "@/lib/seo/history";
 import { outlineHeadings, articleHeadings, markdownToHtml, htmlDocument, countWords, splitArticleSections, hasVerifiableFacts } from "@/lib/seo/outlineFormat";
 import { getSeoGenCreds, getTaskCreds, getSerpCreds, getFirecrawlKey, getAutoFactcheck, getAutoImages, getFactSourceCount, getFactBearingOnly, getFactReuseCorpus, getKieKey } from "@/lib/seo/keys";
 import { IMAGE_MODELS, imageModel, type ImageModelId } from "@/lib/seo/imageModels";
+
+/**
+ * What the pipeline noticed and could not fix by itself.
+ *
+ * This is the screen where the finished article is actually read, which is why the report lives
+ * here rather than in Settings: it describes ONE result, not a configuration. Settings owns the
+ * switches that decide whether the checks run; this owns what they found.
+ *
+ * Two kinds of finding, deliberately not merged. Auto-repaired ones (mixed-alphabet words) are
+ * shown as already handled — the article on this page already carries the correction, and hiding
+ * them would leave a silent edit nobody could audit. The rest are the ones that still need a
+ * person: a competitor named, a placeholder dropped, a price in the wrong market's currency, plus
+ * the QA reviewer's soft findings — things it flagged without being sure enough to fail the job.
+ */
+function DiagnosticsPanel({ diag }: { diag: NonNullable<NonNullable<HistoryItem["meta"]>["diagnostics"]> }) {
+  const { t } = useLanguage();
+  const [open, setOpen] = useState(false);
+
+  const label = (code: string) => {
+    const key = "seoDiag" + code.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join("");
+    const s = t(key as never);
+    return s === key ? code : s;
+  };
+  const mech = diag.mechanics ?? [];
+  const fixed = mech.filter(m => m.fixed);
+  const open_ = mech.filter(m => !m.fixed);
+  const concerns = diag.judgeConcerns ?? [];
+  const attention = open_.length + concerns.length + (diag.incomplete ? 1 : 0);
+  const clean = attention === 0 && fixed.length === 0;
+
+  const chip = (color: string): React.CSSProperties => ({
+    fontSize: "11px", fontWeight: 700, padding: "2px 9px", borderRadius: "20px",
+    color, background: `${color}1f`, whiteSpace: "nowrap",
+  });
+  const red = "var(--color-accent-red)", green = "var(--color-accent-green)", grey = "var(--color-text-tertiary)";
+
+  return (
+    <div className="panel">
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+      >
+        <span style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)" }}>
+          {attention > 0 ? <AlertTriangle size={15} color={red} /> : <CheckCircle2 size={15} color={green} />}
+          {t("seoDiagTitle")}
+          {attention > 0 && <span style={chip(red)}>{attention} {t("seoDiagNeedsYou")}</span>}
+          {fixed.length > 0 && <span style={chip(green)}>{fixed.length} {t("seoDiagFixed")}</span>}
+          {typeof diag.usedSources === "number" && <span style={chip(grey)}>{diag.usedSources} {t("seoDiagSources")}</span>}
+          {diag.autoCleaned && <span style={chip(grey)}>{t("seoDiagAutoCleaned")}</span>}
+        </span>
+        <ChevronDown size={16} style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 0.2s", flexShrink: 0 }} />
+      </button>
+
+      {open && (
+        <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "10px" }}>
+          <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>{t("seoDiagHint")}</div>
+
+          {clean && <div style={{ fontSize: "13px", color: "var(--color-text-secondary)" }}>{t("seoDiagClean")}</div>}
+
+          {diag.incomplete && (
+            <div style={{ fontSize: "13px", color: "var(--color-text-secondary)", borderLeft: `2px solid ${red}`, paddingLeft: "10px" }}>
+              <b style={{ color: red }}>{t("seoDiagIncomplete")}</b>
+              <div style={{ marginTop: "4px" }}>{(diag.missingHeadings ?? []).join(" · ")}</div>
+            </div>
+          )}
+
+          {open_.map((m, i) => (
+            <div key={`o${i}`} style={{ fontSize: "13px", color: "var(--color-text-secondary)", borderLeft: `2px solid ${red}`, paddingLeft: "10px" }}>
+              <b style={{ color: "var(--color-text-primary)" }}>{label(m.code)}</b>
+              <div style={{ marginTop: "2px" }}>{m.detail}</div>
+            </div>
+          ))}
+
+          {concerns.map((c, i) => (
+            <div key={`c${i}`} style={{ fontSize: "13px", color: "var(--color-text-secondary)", borderLeft: "2px solid var(--color-accent-orange)", paddingLeft: "10px", display: "flex", gap: "7px" }}>
+              <HelpCircle size={14} color="var(--color-accent-orange)" style={{ marginTop: "2px", flexShrink: 0 }} />
+              <div><b style={{ color: "var(--color-text-primary)" }}>{t("seoDiagJudgeConcern")}</b><div style={{ marginTop: "2px" }}>{c}</div></div>
+            </div>
+          ))}
+
+          {fixed.map((m, i) => (
+            <div key={`f${i}`} style={{ fontSize: "13px", color: "var(--color-text-tertiary)", borderLeft: `2px solid ${green}`, paddingLeft: "10px" }}>
+              <b style={{ color: green }}>{label(m.code)} — {t("seoDiagFixed")}</b>
+              <div style={{ marginTop: "2px" }}>{m.detail}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function SeoTextDetail({ item: initial }: { item: HistoryItem }) {
   const { t } = useLanguage();
@@ -123,6 +215,8 @@ export default function SeoTextDetail({ item: initial }: { item: HistoryItem }) 
         </div>
         );
       })()}
+
+      {item.meta?.diagnostics && <DiagnosticsPanel diag={item.meta.diagnostics} />}
 
       {/* Tabs */}
       <div className="panel">

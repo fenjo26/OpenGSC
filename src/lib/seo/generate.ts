@@ -810,6 +810,7 @@ export async function genOutline(b: any): Promise<GenResult> {
     if (verdict.verdict === "reject") {
       return { ok: false, error: `judge_rejected: ${verdict.blockers?.join("; ") || "the QA reviewer rejected the outline"}` };
     }
+    if (verdict.concerns?.length) (outline as any)._judgeConcerns = verdict.concerns;
   }
 
   return { ok: true, data: outline };
@@ -1524,6 +1525,7 @@ export async function genText(b: any): Promise<GenResult> {
   // Skipped for the self-reported partial path: `incomplete` already names the missing sections
   // — that result is an honest partial deliberately preserved with its paid-for chunks, and a
   // judge rejecting it for being incomplete would destroy work the design chose to keep.
+  let judgeConcerns: string[] = [];
   if (b.judge !== false && !incomplete) {
     const verdict = await judgeArticle(
       text,
@@ -1544,6 +1546,9 @@ export async function genText(b: any): Promise<GenResult> {
     if (verdict.verdict === "reject") {
       return { ok: false, error: `judge_rejected: ${verdict.blockers?.join("; ") || "the QA reviewer rejected the article"}` };
     }
+    // Everything the reviewer flagged without being sure of it. The article ships — but the doubt
+    // is said out loud instead of dropped, which is the entire point of the blocker/concern split.
+    judgeConcerns = verdict.concerns ?? [];
   }
 
   return {
@@ -1554,6 +1559,7 @@ export async function genText(b: any): Promise<GenResult> {
       // consumers already parse. `fixed: true` entries are informational (the text already
       // carries the correction); the rest are what still needs a human.
       ...(mechIssues.length ? { mechanics: mechIssues } : {}),
+      ...(judgeConcerns.length ? { judgeConcerns } : {}),
       // Present only when sections are genuinely absent, so existing consumers see the same
       // shape they always did for a complete article.
       ...(incomplete ? { incomplete: true, missingHeadings, chunkError: chunked?.lastError } : {}),

@@ -12,7 +12,26 @@ export interface HistoryItem {
   createdAt: number;
   status: HistoryStatus;
   data: any; // outline object | article string | gap report object
-  meta?: { tone?: string; promptType?: string; version?: string; error?: string; outlineId?: string; factcheck?: any; images?: any; serpIntent?: any; jobId?: string };
+  meta?: {
+    tone?: string; promptType?: string; version?: string; error?: string; outlineId?: string;
+    factcheck?: any; images?: any; serpIntent?: any; jobId?: string;
+    /**
+     * What the pipeline noticed about this result but could not fix by itself.
+     *
+     * `data` for a text record is the article STRING, so everything the generator reported
+     * alongside it — the mechanics audit, the QA reviewer's soft findings, how many sources
+     * grounded it — had nowhere to live and was dropped at import. A report nobody can see is
+     * not a report, and this is the only screen where the article itself is read.
+     */
+    diagnostics?: {
+      mechanics?: { code: string; detail: string; fixed?: boolean; samples?: string[] }[];
+      judgeConcerns?: string[];
+      usedSources?: number;
+      autoCleaned?: boolean;
+      incomplete?: boolean;
+      missingHeadings?: string[];
+    };
+  };
 }
 
 const KEY = "seoHistory";

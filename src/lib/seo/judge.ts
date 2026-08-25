@@ -27,23 +27,81 @@ export interface JudgeContext {
 }
 
 export type JudgeVerdict = "publish" | "reject" | "unavailable";
-export interface JudgeOutcome { verdict: JudgeVerdict; blockers?: string[] }
+export interface JudgeOutcome {
+  verdict: JudgeVerdict;
+  /** Objective, unambiguous failures. These and only these fail the result. */
+  blockers?: string[];
+  /**
+   * Everything the reviewer found questionable but could not be certain about — including
+   * anything it does not recognise. Reported, never fatal.
+   *
+   * This split is the fix for a structural fault, not a nicety. The judge is fresh-context by
+   * design: it has seen none of the prompts that produced the work, so it cannot distinguish
+   * "this is broken" from "I do not know why this is here". With one verdict those collapsed
+   * into the same output, and that output DESTROYED a finished, paid result. Twice in one week
+   * that meant the pipeline rejecting itself for doing exactly what it was told — once over the
+   * [ЗАПОЛНИТЬ ВРУЧНУЮ] markers its own writing prompt requires, once over a section the
+   * author's instruction had deliberately removed. Each was patched by telling the judge about
+   * that one artifact, which does not scale: the next deliberate artifact fails the same way,
+   * silently, and the only symptom is a job that costs money and returns nothing.
+   *
+   * So uncertainty now has somewhere to go that is not the bin. A judge that cannot explain
+   * something says so, the caller sees it, and the work survives.
+   */
+  concerns?: string[];
+}
 
 const stripToJson = (raw: string) => raw.trim().replace(/^[^{]*/, "").replace(/[^}]*$/, "");
 
+const strList = (v: unknown) => (Array.isArray(v) ? v : []).map(String).map(x => x.trim()).filter(Boolean).slice(0, 5);
+
 async function callJudge(prompt: string, ctx: JudgeContext): Promise<JudgeOutcome> {
   try {
-    const raw = await fetchLLM(prompt, ctx.provider, ctx.apiKey, 700, ctx.model, ctx.baseUrl);
+    const raw = await fetchLLM(prompt, ctx.provider, ctx.apiKey, 900, ctx.model, ctx.baseUrl);
     const j = JSON.parse(stripToJson((raw ?? "").replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/i, "")));
-    if (j?.verdict === "reject") {
-      return { verdict: "reject", blockers: (Array.isArray(j.blockers) ? j.blockers : []).map(String).slice(0, 5) };
+    const concerns = strList(j?.concerns);
+    const blockers = strList(j?.blockers);
+    // The verdict is DERIVED from the blockers rather than trusted from the model. A reviewer
+    // that returns "reject" with an empty blocker list is asking for work to be destroyed for a
+    // reason it declined to name; that is a concern, and the result ships.
+    if (j?.verdict === "reject" && blockers.length) {
+      return { verdict: "reject", blockers, ...(concerns.length ? { concerns } : {}) };
     }
-    if (j?.verdict === "publish") return { verdict: "publish" };
+    if (j?.verdict === "reject" || j?.verdict === "publish") {
+      const soft = j?.verdict === "reject" ? [...concerns, "the reviewer voted to reject but named no specific defect"] : concerns;
+      return { verdict: "publish", ...(soft.length ? { concerns: soft.slice(0, 6) } : {}) };
+    }
     return { verdict: "unavailable" };
   } catch {
     return { verdict: "unavailable" };
   }
 }
+
+/**
+ * The one place that describes what a fresh reviewer will not recognise.
+ *
+ * Every pipeline on this instance deliberately emits things that look wrong out of context.
+ * Rather than adding a line here each time one is invented — which is what failed — the rule is
+ * stated as a category plus a default: unrecognised is not the same as broken.
+ */
+const DELIBERATE_ARTIFACTS =
+  `This text was produced by a pipeline that deliberately emits some things a reviewer reading it ` +
+  `cold would not recognise. Square-bracket markers are the clearest example and are ALWAYS ` +
+  `intentional: [[NAME]] tokens are the author's own placeholders (a booking widget, a form), and ` +
+  `[SOMETHING IN BRACKETS] marks a spot the pipeline was instructed to leave for manual completion ` +
+  `instead of inventing a fact. They are part of the deliverable.\n` +
+  `More generally: you cannot see the instructions this was written from, so you cannot tell a ` +
+  `defect from a deliberate choice you were not told about. When you are not certain which one ` +
+  `you are looking at, it is a CONCERN, not a blocker. Blockers are only for the objective ` +
+  `failures listed above — things that are wrong no matter what anyone asked for.\n`;
+
+/** Shared JSON contract. Blockers fail the result; concerns are reported and it ships. */
+const VERDICT_FORMAT =
+  `Return STRICT JSON, nothing else:\n` +
+  `{"verdict":"publish","concerns":["..."]} — usable. Put anything you found questionable but ` +
+  `cannot be sure about in "concerns" (omit the field if there is nothing).\n` +
+  `{"verdict":"reject","blockers":["short reason"],"concerns":["..."]} — only when at least one ` +
+  `objective failure above genuinely holds. Never reject without naming the blocker.\n`;
 
 /**
  * Article judge — for the rewrite and text pipelines. The question is deliberately narrow:
@@ -67,21 +125,9 @@ export function judgeArticle(
     ? `- it introduces page furniture (menus, form confirmations, buttons) that does NOT appear in the source\n`
     : `- it copies page furniture (menus, booking/contact-form confirmations, thank-you messages, buttons)\n`;
   const langLine = opts.language ? `The article must be written in: ${opts.language}. Reject if it is in another language.\n` : "";
-  // Two things the judge has to be told, or it rejects the pipeline for working correctly.
-  //
-  // Placeholders. The writing prompts REQUIRE square-bracket markers where real data is missing
-  // ([ЗАПОЛНИТЬ ВРУЧНУЮ: …], [ВСТАВЬ РЕАЛЬНЫЙ ОПЫТ]), and the mechanics gate re-inserts an
-  // author's [[WIDGET]] token when the writer dropped one — immediately before this call. To a
-  // fresh reviewer those read exactly like scratch left in by accident, which is the first thing
-  // on its reject list. So the article gets written to spec, repaired to spec, and thrown away.
-  const placeholderLine =
-    `Square-bracket markers are INTENTIONAL and must never be a reason to reject: [[NAME]] tokens ` +
-    `are the author's own placeholders (a booking widget, a form) and [SOMETHING IN BRACKETS] marks ` +
-    `a spot the pipeline was told to leave for manual completion rather than invent. They are part ` +
-    `of the deliverable, not scratch.\n`;
-  // Constraints. The judge is deliberately fresh-context, but "the structure does not cover X" is
-  // the wrong verdict when the author explicitly said not to cover X. This tells it what was
-  // deliberate without telling it how the article was written.
+  // The author's own rules. "The structure does not cover X" is the wrong verdict when the author
+  // explicitly said not to cover X — this names what was deliberate without revealing how the
+  // article was written, so the judge stays independent on everything else.
   const constraintLine = opts.constraints?.trim()
     ? `\nThe author imposed these constraints on this page. Anything absent BECAUSE of them is ` +
       `deliberate and is not an omission — judge completeness within them:\n${opts.constraints.trim().slice(0, 2000)}\n`
@@ -89,15 +135,15 @@ export function judgeArticle(
   return callJudge(
     `You are a strict QA reviewer. A tool generated a web article; below is the finished draft ` +
     `that is about to be saved as a completed result. Decide whether it is a COMPLETE, PUBLISHABLE article.\n\n` +
-    `Reject it if ANY of these hold:\n` +
+    `These are the OBJECTIVE FAILURES — the only things that may be blockers:\n` +
     `- it is not an article at all (planning notes, number lists, scratch, JSON, an outline)\n` +
     `- it is truncated (ends mid-sentence or mid-word) or clearly missing sections it announced\n` +
     `${furnitureLine}` +
     `- it contains the generator's own self-check or planning lines (word counts, section budgets)\n` +
     `- it is written in a different language than required\n\n` +
     `Do NOT judge style, quality or SEO — only completeness and publishability.\n` +
-    `${placeholderLine}${constraintLine}` +
-    `${langLine}Return STRICT JSON, nothing else: {"verdict":"publish"} or {"verdict":"reject","blockers":["short reason", "..."]}\n\n` +
+    `${DELIBERATE_ARTIFACTS}${constraintLine}` +
+    `${langLine}${VERDICT_FORMAT}\n` +
     `DRAFT (full):${sourceBlock ? "" : "\n"}${draft}${sourceBlock}`,
     ctx,
   );
@@ -133,14 +179,14 @@ export function judgeOutline(
     `You are a strict QA reviewer for SEO article outlines. An outline was generated for the ` +
     `search query "${opts.keyword}"${opts.country ? ` (market: ${opts.country})` : ""}. Below is its ` +
     `structure as compact JSON. Decide whether it is a COMPLETE, USABLE outline.\n\n` +
-    `Reject it if ANY of these hold:\n` +
+    `These are the OBJECTIVE FAILURES — the only things that may be blockers:\n` +
     `- headings are unrelated to the query, or the structure does not cover what the query asks for\n` +
     `- duplicate or near-duplicate sections\n` +
     `- obviously too thin for a real article (a couple of headings and nothing else)\n` +
     `- headings in the wrong language (${langLine}reject otherwise)\n\n` +
     `Do NOT judge wording style or keyword placement — only structural completeness and coverage.\n` +
-    `${constraintLine}` +
-    `Return STRICT JSON, nothing else: {"verdict":"publish"} or {"verdict":"reject","blockers":["short reason", "..."]}\n\n` +
+    `${DELIBERATE_ARTIFACTS}${constraintLine}` +
+    `${VERDICT_FORMAT}\n` +
     `OUTLINE STRUCTURE:\n${JSON.stringify(compact).slice(0, 12000)}`,
     ctx,
   );

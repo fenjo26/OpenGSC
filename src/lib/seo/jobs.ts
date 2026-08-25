@@ -97,12 +97,24 @@ export async function importJob(job: SeoJobRec): Promise<HistoryItem | null> {
     let rec: HistoryItem | null = null;
     if (result != null) {
       const data = job.type === "text" ? (result.text ?? result) : result;
+      // A text record keeps only the article string, so the generator's own findings have to be
+      // carried across explicitly or they are lost the moment the job is imported.
+      const diag = job.type === "text" && result && typeof result === "object" ? {
+        ...(Array.isArray(result.mechanics) ? { mechanics: result.mechanics } : {}),
+        ...(Array.isArray(result.judgeConcerns) ? { judgeConcerns: result.judgeConcerns } : {}),
+        ...(typeof result.usedSources === "number" ? { usedSources: result.usedSources } : {}),
+        ...(result.autoCleaned ? { autoCleaned: true } : {}),
+        ...(result.incomplete ? { incomplete: true, missingHeadings: result.missingHeadings ?? [] } : {}),
+      } : null;
       const createdAt = Date.parse(job.createdAt || "") || undefined;
       // outline_auto (batch SERP→scrape→outline) lands in history as a regular outline.
       const htype = (String(job.type) === "outline_auto" ? "outline" : job.type) as HistoryItem["type"];
       rec = addHistory({
         type: htype, keyword: job.keyword || "—", data, createdAt,
-        meta: { ...(safeParse(job.meta) || {}), jobId: job.id },
+        meta: {
+          ...(safeParse(job.meta) || {}), jobId: job.id,
+          ...(diag && Object.keys(diag).length ? { diagnostics: diag } : {}),
+        },
       });
     }
     await deleteJob(job.id);

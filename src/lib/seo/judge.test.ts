@@ -15,7 +15,7 @@ import { judgeArticle, judgeOutline, type JudgeContext } from "./judge";
 // prompt says otherwise. The provider is stubbed, so no network and no credits.
 
 /** Captures the prompt instead of calling a provider. Restore with the returned `done`. */
-function capture(): { ctx: JudgeContext; prompt: () => string; done: () => void } {
+function capture(reply = '{"verdict":"publish"}'): { ctx: JudgeContext; prompt: () => string; done: () => void } {
   let seen = "";
   const g = globalThis as unknown as { fetch: typeof fetch };
   const real = g.fetch;
@@ -23,8 +23,8 @@ function capture(): { ctx: JudgeContext; prompt: () => string; done: () => void 
     seen = String(init.body ?? "");
     return {
       ok: true, status: 200,
-      json: async () => ({ choices: [{ message: { content: '{"verdict":"publish"}' } }] }),
-      text: async () => '{"verdict":"publish"}',
+      json: async () => ({ choices: [{ message: { content: reply } }] }),
+      text: async () => reply,
     } as unknown as Response;
   }) as typeof fetch;
   return {
@@ -39,7 +39,7 @@ test("the article judge is told square-bracket placeholders are deliberate", asy
   await judgeArticle("# T\n\n## S\n\nBook here: [[TRANSFER_WIDGET]]\n\n[ЗАПОЛНИТЬ ВРУЧНУЮ: лицензия]", c.ctx, { language: "en" });
   const p = c.prompt();
   c.done();
-  assert.equal(p.includes("INTENTIONAL"), true, "the judge was not told placeholders are expected");
+  assert.equal(p.includes("ALWAYS ") && p.includes("intentional"), true, "the judge was not told placeholders are expected");
   assert.equal(p.includes("[[NAME]]"), true);
 });
 
@@ -73,4 +73,47 @@ test("the outline judge is told which sections were excluded on purpose", async 
   c.done();
   assert.equal(p.includes("No section about the reverse direction."), true);
   assert.equal(p.includes("not a coverage gap"), true);
+});
+
+// ─── The structural fix: uncertainty has somewhere to go that is not the bin ──────────
+
+test("a soft finding is reported and the result still ships", async () => {
+  const c = capture('{"verdict":"publish","concerns":["an odd bracketed token in section 3"]}');
+  const out = await judgeArticle("# T\n\n## S\n\nbody", c.ctx, { language: "en" });
+  c.done();
+  assert.equal(out.verdict, "publish");
+  assert.deepEqual(out.concerns, ["an odd bracketed token in section 3"]);
+});
+
+test("a reject with a named blocker still fails the result", async () => {
+  const c = capture('{"verdict":"reject","blockers":["ends mid-sentence"]}');
+  const out = await judgeArticle("# T\n\n## S\n\nbody that stops", c.ctx, { language: "en" });
+  c.done();
+  assert.equal(out.verdict, "reject");
+  assert.deepEqual(out.blockers, ["ends mid-sentence"]);
+});
+
+test("a reject that names no defect does not destroy the work", async () => {
+  // The failure this guards is a paid article discarded on a verdict the reviewer declined to
+  // justify. The doubt is kept — as a concern — and the article survives.
+  const c = capture('{"verdict":"reject","blockers":[]}');
+  const out = await judgeArticle("# T\n\n## S\n\nbody", c.ctx, { language: "en" });
+  c.done();
+  assert.equal(out.verdict, "publish");
+  assert.equal(out.concerns?.some(x => /named no specific defect/.test(x)), true);
+});
+
+test("the judges are told that unrecognised is not the same as broken", async () => {
+  const a = capture();
+  await judgeArticle("# T\n\n## S\n\nbody", a.ctx, { language: "en" });
+  const ap = a.prompt(); a.done();
+  const o = capture();
+  await judgeOutline({ meta: {}, sections: [{ h_level: "H2", heading: "H" }], faq: [] }, o.ctx, { keyword: "k" });
+  const op = o.prompt(); o.done();
+  // The rule that stops the next deliberate artifact becoming a silently failed job. It must be
+  // in BOTH prompts — patching one judge is how this became a recurring bug in the first place.
+  for (const [name, p] of [["article", ap], ["outline", op]] as const) {
+    assert.equal(p.includes("CONCERN, not a blocker"), true, `${name} judge may still reject what it merely does not recognise`);
+    assert.equal(p.includes("Never reject without naming the blocker"), true, `${name} judge may still reject without a reason`);
+  }
 });

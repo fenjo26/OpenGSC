@@ -745,9 +745,14 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
         // above already learned this lesson with factDrift, so this mirrors its shape — the
         // defects that still need a human are lifted to the top level with a sentence saying so.
         const genResult = job.status === "completed" ? parseJson(job.result) as any : null;
-        const unresolved = Array.isArray(genResult?.mechanics)
-          ? genResult.mechanics.filter((m: any) => m && m.fixed !== true)
-          : [];
+        const unresolved = [
+          ...(Array.isArray(genResult?.mechanics) ? genResult.mechanics.filter((m: any) => m && m.fixed !== true) : []),
+          // The QA reviewer's soft findings. It could not be sure these are defects — which is
+          // exactly why they must be shown rather than either hidden or used to bin the article.
+          ...(Array.isArray(genResult?.judgeConcerns)
+            ? genResult.judgeConcerns.map((c: any) => ({ code: "judge_concern", detail: String(c), samples: [] }))
+            : []),
+        ];
         const autoFixed = Array.isArray(genResult?.mechanics)
           ? genResult.mechanics.filter((m: any) => m && m.fixed === true)
           : [];
@@ -756,7 +761,7 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
           result: genResult,
           ...(unresolved.length ? {
             needsAttention: unresolved.map((m: any) => ({ code: m.code, detail: m.detail, samples: m.samples })),
-            warning: `The page-mechanics audit found ${unresolved.length} defect(s) the pipeline could not fix on its own: ${unresolved.map((m: any) => m.code).join(", ")}. The prose is finished; these are checkable page rules (a competitor named, a placeholder dropped, an internal link missing, a price in the wrong currency) and they need correcting before publishing.`,
+            warning: `${unresolved.length} finding(s) the pipeline could not resolve on its own: ${unresolved.map((m: any) => m.code).join(", ")}. The prose is finished; these are checkable page rules (a competitor named, a placeholder dropped, an internal link missing, a price in the wrong currency) and they need correcting before publishing.`,
           } : {}),
           ...(autoFixed.length ? {
             autoFixed: autoFixed.map((m: any) => ({ code: m.code, detail: m.detail })),

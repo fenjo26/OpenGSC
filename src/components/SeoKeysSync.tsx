@@ -16,7 +16,7 @@ const EXACT_KEYS = [
   "aiProvider", "aiApiKey", "seoProvider", "seoModel", "seoSerpProvider", "seoSerpProvider_rank",
   "seoActivePolicy", "seoPolicies",
   "seoAutoFactcheck", "seoAutoImages", "seoHardRedact", "seoFactSources",
-  "seoFactBearingOnly", "seoFactReuseCorpus",
+  "seoFactBearingOnly", "seoFactReuseCorpus", "seoMechanics", "seoMechanicsRepair",
   // The scheduled warm-up is the only setting here a *server* process reads: the cron has no
   // browser, so a value that lived only in localStorage would be invisible to the thing it
   // configures. It rides the same mirror as everything else rather than getting its own endpoint.

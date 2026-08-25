@@ -289,6 +289,22 @@ export function getHardRedact(): boolean {
   if (typeof window === "undefined") return false;
   return (localStorage.getItem("seoHardRedact") ?? "0") === "1";
 }
+/**
+ * The deterministic page-mechanics gate, and its one scoped repair call.
+ *
+ * Two switches rather than one because they cost different things. The gate itself is free and
+ * local — regex work on the finished text — so turning it off only buys ignorance. The repair is
+ * a paid provider call, and on a metered window that is a real reason to want the findings
+ * reported and left alone. Both default ON.
+ */
+export function getMechanicsOn(): boolean {
+  if (typeof window === "undefined") return true;
+  return (localStorage.getItem("seoMechanics") ?? "1") !== "0";
+}
+export function getMechanicsRepairOn(): boolean {
+  if (typeof window === "undefined") return true;
+  return (localStorage.getItem("seoMechanicsRepair") ?? "1") !== "0";
+}
 export function getFactSourceCount(): number {
   if (typeof window === "undefined") return 6;
   const n = parseInt(localStorage.getItem("seoFactSources") ?? "6", 10);

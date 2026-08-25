@@ -92,7 +92,7 @@ export interface RewriteVariant {
    */
   coverage?: KeywordCoverage;
   /** Outcome of the independent QA pass; absent when `judge` is disabled. */
-  judge?: { verdict: "publish" | "reject" | "unavailable"; blockers?: string[] };
+  judge?: { verdict: "publish" | "reject" | "unavailable"; blockers?: string[]; concerns?: string[] };
   /**
    * Deterministic page-mechanics audit — mixed-alphabet words (repaired in place), plus any
    * competitor named, placeholder dropped or required link missing against the job's `custom`
