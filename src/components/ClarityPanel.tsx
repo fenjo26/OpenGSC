@@ -364,10 +364,12 @@ Use relevant emoji as accents (🎯 🔴 ⚠️ ✅ 🖱️ 📊 📉 💰). Do 
 
 Summary metrics (aggregated over ${view.daysCovered} day(s)): ${JSON.stringify(view.metrics)}. Top problem pages: ${JSON.stringify(view.pages)}. Raw per-URL data (latest day): ${raw}`;
 
+      const model = localStorage.getItem(`aiModel_${provider}`) || undefined;
+      const baseUrl = localStorage.getItem(`aiBaseUrl_${provider}`) || undefined;
       const res = await fetch("/api/gsc/ai-summary", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, aiProvider: provider, aiApiKey: apiKey }),
+        body: JSON.stringify({ prompt, aiProvider: provider, aiApiKey: apiKey, model, aiBaseUrl: baseUrl }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {

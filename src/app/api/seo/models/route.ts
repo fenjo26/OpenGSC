@@ -116,7 +116,8 @@ async function listModels(provider: string, apiKey: string, baseUrl?: string): P
   }
 
   if (provider === "gemini") {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}&pageSize=200`, { signal: timeout });
+    const gRoot = (baseUrl || "").trim().replace(/\/+$/, "") || "https://generativelanguage.googleapis.com";
+    const res = await fetch(`${gRoot}/v1beta/models?key=${apiKey}&pageSize=200`, { signal: timeout });
     if (!res.ok) throw new Error(`gemini ${res.status}`);
     const data = await res.json();
     const arr: any[] = data.models ?? [];

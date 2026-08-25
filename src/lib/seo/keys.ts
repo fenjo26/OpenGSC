@@ -128,12 +128,13 @@ export function getTaskCreds(task: SeoTask): { provider: string; apiKey: string;
 
 // Resolved creds for SEO generation: a SEO-specific provider override (seoProvider)
 // can differ from the global aiProvider; falls back to it when unset.
-export function getSeoGenCreds(): { provider: string; apiKey: string; model: string } {
+export function getSeoGenCreds(): { provider: string; apiKey: string; model: string; baseUrl?: string } {
   if (typeof window === "undefined") return { provider: "anthropic", apiKey: "", model: "" };
   const provider = localStorage.getItem("seoProvider") || localStorage.getItem("aiProvider") || "anthropic";
   const apiKey = localStorage.getItem(`aiKey_${provider}`) || localStorage.getItem("aiApiKey") || "";
   const model = localStorage.getItem("seoModel") || getProviderModel(provider);
-  return { provider, apiKey, model };
+  const baseUrl = localStorage.getItem(`aiBaseUrl_${provider}`) || undefined;
+  return { provider, apiKey, model, baseUrl };
 }
 
 export function getSerpCreds(): { provider: string; apiKey: string } {

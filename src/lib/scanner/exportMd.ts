@@ -100,7 +100,7 @@ export function buildScanMarkdown(
 
   // The identifiers themselves, last: useful to paste into a search engine or another tool, and
   // uninteresting until the reader has decided the rest of the report is worth acting on.
-  const fp = report.fingerprints as Record<string, string[] | string | null>;
+  const fp = report.fingerprints as unknown as Record<string, string[] | string | null>;
   const identifiers = Object.entries(fp)
     .filter(([, value]) => Array.isArray(value) ? value.length : !!value)
     .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(", ") : value}`);

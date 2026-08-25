@@ -26,7 +26,7 @@ export async function POST(req: Request) {
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const body = await req.json();
-    const { action, words, niche, aiProvider, aiApiKey } = body;
+    const { action, words, niche, aiProvider, aiApiKey, model, aiBaseUrl } = body;
 
     if (action === "generate") {
       if (!niche) {
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
 
       if (aiProvider && aiApiKey) {
         const prompt = `Generate exactly 80 simple, single-word or short 2-word SEO keywords (no commas in phrases, no line numbers, no formatting) related to the topic "${niche}". Output them as a plain list, one keyword per line. Do not write any introduction or explanation. Output only the words themselves.`;
-        const result = await fetchLLM(prompt, aiProvider, aiApiKey, 1500);
+        const result = await fetchLLM(prompt, aiProvider, aiApiKey, 1500, model, aiBaseUrl);
         if (result) {
           generatedWords = result
             .split("\n")

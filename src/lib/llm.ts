@@ -634,11 +634,17 @@ export async function fetchLLMVision(
   try {
     let text = '';
     if (provider === 'anthropic' || provider === 'zai') {
-      const base = provider === 'zai' ? 'https://api.z.ai/api/anthropic' : 'https://api.anthropic.com';
+      const proxy = provider === 'anthropic' ? anthropicRoot(baseUrl) : null;
+      const base = provider === 'zai' ? zaiRoot(baseUrl) : proxy ? proxy.root : 'https://api.anthropic.com';
       const model = modelOverride ?? defaultModelFor(provider, 'vision');
       const res = await fetch(`${base}/v1/messages`, {
         method: 'POST', signal: sig,
-        headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+        headers: {
+          ...(proxy?.proxied ? { 'Authorization': `Bearer ${apiKey}` } : {}),
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+        },
         body: JSON.stringify({
           model, max_tokens: maxTokens,
           messages: [{ role: 'user', content: [
@@ -652,7 +658,8 @@ export async function fetchLLMVision(
       text = data.content?.[0]?.text ?? '';
     } else if (provider === 'gemini') {
       const gModel = modelOverride ?? defaultModelFor('gemini', 'vision');
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${gModel}:generateContent?key=${apiKey}`, {
+      const gRoot = (baseUrl || '').trim().replace(/\/+$/, '') || 'https://generativelanguage.googleapis.com';
+      const res = await fetch(`${gRoot}/v1beta/models/${gModel}:generateContent?key=${apiKey}`, {
         method: 'POST', signal: sig,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType, data: b64 } }] }] }),
@@ -666,12 +673,12 @@ export async function fetchLLMVision(
         { type: 'text', text: prompt },
         { type: 'image_url', image_url: { url: dataUrl } },
       ];
-      let url = 'https://api.openai.com/v1/chat/completions';
+      let url = `${(baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '')}/chat/completions`;
       let model = modelOverride ?? defaultModelFor('openai', 'vision');
       let tokenParam = 'max_completion_tokens'; // GPT-5.x rejects legacy max_tokens
-      if (provider === 'deepseek') { url = 'https://api.deepseek.com/chat/completions'; model = modelOverride ?? defaultModelFor('deepseek', 'vision'); tokenParam = 'max_tokens'; }
-      if (provider === 'qwen') { url = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions'; model = modelOverride ?? defaultModelFor('qwen', 'vision'); tokenParam = 'max_tokens'; }
-      if (provider === 'openrouter') { url = 'https://openrouter.ai/api/v1/chat/completions'; model = modelOverride ?? defaultModelFor('openrouter', 'vision'); tokenParam = 'max_tokens'; }
+      if (provider === 'deepseek') { url = `${(baseUrl || 'https://api.deepseek.com').replace(/\/+$/, '')}/chat/completions`; model = modelOverride ?? defaultModelFor('deepseek', 'vision'); tokenParam = 'max_tokens'; }
+      if (provider === 'qwen') { url = `${(baseUrl || 'https://dashscope.aliyuncs.com/compatible-mode/v1').replace(/\/+$/, '')}/chat/completions`; model = modelOverride ?? defaultModelFor('qwen', 'vision'); tokenParam = 'max_tokens'; }
+      if (provider === 'openrouter') { url = `${(baseUrl || 'https://openrouter.ai/api/v1').replace(/\/+$/, '')}/chat/completions`; model = modelOverride ?? defaultModelFor('openrouter', 'vision'); tokenParam = 'max_tokens'; }
       if (provider === 'cheaperinference') { url = `${(baseUrl || 'https://api.cheaperinference.com/v1').replace(/\/+$/, '')}/chat/completions`; model = modelOverride ?? defaultModelFor('cheaperinference', 'vision'); tokenParam = 'max_tokens'; }
       if (provider === 'kimi') { url = `${(baseUrl || 'https://api.moonshot.ai/v1').replace(/\/+$/, '')}/chat/completions`; model = modelOverride ?? defaultModelFor('kimi', 'vision'); tokenParam = 'max_tokens'; }
       if (provider === 'custom') {

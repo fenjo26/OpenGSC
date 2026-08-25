@@ -11,7 +11,20 @@ import { rawQuery } from "@/lib/db/raw";
 
 export const AEO_STALE_MS = 24 * 60 * 60 * 1000; // daily — AEO checks cost real money per engine
 
-export interface AeoCreds { chatgpt?: string; perplexity?: string; claude?: string; grok?: string }
+export interface AeoCreds {
+  chatgpt?: string;
+  perplexity?: string;
+  claude?: string;
+  grok?: string;
+  chatgptBaseUrl?: string;
+  claudeBaseUrl?: string;
+  perplexityBaseUrl?: string;
+  grokBaseUrl?: string;
+  chatgptModel?: string;
+  claudeModel?: string;
+  perplexityModel?: string;
+  grokModel?: string;
+}
 
 // Reads the user's server-side settings snapshot (User.seoSettings — the same mirror
 // getUserSerpCreds in lib/rank.ts uses). ChatGPT/Claude reuse the existing generic AI
@@ -31,6 +44,14 @@ export async function getUserAeoCreds(userId: string): Promise<AeoCreds> {
       claude: s["aiKey_anthropic"] || undefined,
       perplexity: s["seoKey_perplexity"] || undefined,
       grok: s["seoKey_xai"] || undefined,
+      chatgptBaseUrl: s["aiBaseUrl_openai"] || undefined,
+      claudeBaseUrl: s["aiBaseUrl_anthropic"] || undefined,
+      perplexityBaseUrl: s["seoBaseUrl_perplexity"] || undefined,
+      grokBaseUrl: s["seoBaseUrl_xai"] || undefined,
+      chatgptModel: s["aiModel_openai"] || undefined,
+      claudeModel: s["aiModel_anthropic"] || undefined,
+      perplexityModel: s["seoModel_perplexity"] || undefined,
+      grokModel: s["seoModel_xai"] || undefined,
     };
   } catch {
     return {};
@@ -138,7 +159,23 @@ export async function checkTrackedQuestion(
   for (const engine of AEO_ENGINES) {
     const key = creds[engine];
     if (!key) continue; // engine not configured — leave its last known state untouched
-    const r = await runAeoCheck(engine, key, q.question, cfg.url, cfg.brandTerms, cfg.options);
+    const engineOpts: AeoRunOptions = { ...cfg.options };
+    if (engine === "claude") {
+      if (creds.claudeBaseUrl) engineOpts.baseUrl = creds.claudeBaseUrl;
+      if (creds.claudeModel) engineOpts.model = creds.claudeModel;
+    } else if (engine === "chatgpt") {
+      if (creds.chatgptBaseUrl) engineOpts.baseUrl = creds.chatgptBaseUrl;
+      if (cfg.options.model) engineOpts.model = cfg.options.model;
+      else if (creds.chatgptModel) engineOpts.model = creds.chatgptModel;
+    } else if (engine === "perplexity") {
+      if (creds.perplexityBaseUrl) engineOpts.baseUrl = creds.perplexityBaseUrl;
+      if (creds.perplexityModel) engineOpts.model = creds.perplexityModel;
+    } else if (engine === "grok") {
+      if (creds.grokBaseUrl) engineOpts.baseUrl = creds.grokBaseUrl;
+      if (creds.grokModel) engineOpts.model = creds.grokModel;
+    }
+
+    const r = await runAeoCheck(engine, key, q.question, cfg.url, cfg.brandTerms, engineOpts);
     results[engine] = r;
 
     await prisma.aeoCheck.create({

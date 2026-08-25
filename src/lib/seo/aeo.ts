@@ -47,7 +47,7 @@ export interface AeoCheckResult {
 }
 
 export interface AeoRunOptions {
-  /** OpenAI model id for the ChatGPT engine. Other engines have their own fixed models. */
+  /** Model id for the engine. If omitted, engine default is used. */
   model?: string;
   /** ISO-3166-1 alpha-2, lowercase (same `gl` codes as the rest of SEO Tools). */
   country?: string | null;
@@ -55,6 +55,8 @@ export interface AeoRunOptions {
   region?: string | null;
   /** ISO-639-1, lowercase. Only used to nudge the answer language, never the question text. */
   language?: string | null;
+  /** Base URL for custom endpoints / proxies */
+  baseUrl?: string | null;
 }
 
 // Used only when the site has no model chosen and the picker could not list the account's
@@ -253,7 +255,10 @@ async function callOpenAi(apiKey: string, question: string, o: AeoRunOptions): P
     }
 
     try {
-      const res = await fetch("https://api.openai.com/v1/responses", {
+      const rawBase = (o.baseUrl || "").trim().replace(/\/+$/, "");
+      const root = rawBase ? rawBase.replace(/\/responses$/, "") : "https://api.openai.com/v1";
+      const url = root.endsWith("/responses") ? root : `${root}/responses`;
+      const res = await fetch(url, {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -310,15 +315,18 @@ export async function checkChatGpt(apiKey: string, question: string, domain: str
 const PERPLEXITY_MODEL = "sonar";
 
 export async function checkPerplexity(apiKey: string, question: string, domain: string, brandTerms: string[], o: AeoRunOptions = {}): Promise<AeoCheckResult> {
+  const model = o.model || PERPLEXITY_MODEL;
+  const rawBase = (o.baseUrl || "").trim().replace(/\/+$/, "");
+  const url = rawBase ? (rawBase.endsWith("/chat/completions") ? rawBase : `${rawBase.replace(/\/v1$/, "")}/v1/chat/completions`) : "https://api.perplexity.ai/chat/completions";
   const webOpts: Record<string, unknown> = { search_context_size: "high" };
   if (o.country) webOpts.user_location = { country: o.country.toUpperCase(), ...(o.city ? { city: o.city } : {}) };
 
   try {
-    const res = await fetch("https://api.perplexity.ai/chat/completions", {
+    const res = await fetch(url, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: PERPLEXITY_MODEL,
+        model,
         messages: [
           { role: "system", content: languageHint(o.language) },
           { role: "user", content: question },
@@ -327,7 +335,7 @@ export async function checkPerplexity(apiKey: string, question: string, domain: 
       }),
       signal: AbortSignal.timeout(120_000),
     });
-    if (!res.ok) return failed(`perplexity ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`, PERPLEXITY_MODEL);
+    if (!res.ok) return failed(`perplexity ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`, model);
 
     const data = await res.json();
     const text: string = data?.choices?.[0]?.message?.content ?? "";
@@ -340,17 +348,22 @@ export async function checkPerplexity(apiKey: string, question: string, domain: 
     if (!citations.length && Array.isArray(data?.citations)) {
       for (const u of data.citations) if (typeof u === "string") citations.push({ url: u, domain: domainOf(u), title: "" });
     }
-    return verdict(hostOf(domain), brandTerms, { text, citations, scanned: citations.map(c => c.domain), searched: true, model: PERPLEXITY_MODEL });
+    return verdict(hostOf(domain), brandTerms, { text, citations, scanned: citations.map(c => c.domain), searched: true, model });
   } catch (e: any) {
-    return failed(e?.name === "TimeoutError" || e?.name === "AbortError" ? "timeout" : `perplexity: ${e?.message ?? e}`, PERPLEXITY_MODEL);
+    return failed(e?.name === "TimeoutError" || e?.name === "AbortError" ? "timeout" : `perplexity: ${e?.message ?? e}`, model);
   }
 }
 
 // ─── Claude — Messages API + server-side web_search tool ─────────────────────
 
-const CLAUDE_MODEL = "claude-haiku-4-5-20251001";
+const CLAUDE_DEFAULT_MODEL = "claude-haiku-4-5-20251001";
 
 export async function checkClaude(apiKey: string, question: string, domain: string, brandTerms: string[], o: AeoRunOptions = {}): Promise<AeoCheckResult> {
+  const model = o.model || CLAUDE_DEFAULT_MODEL;
+  const rawBase = (o.baseUrl || "").trim().replace(/\/+$/, "");
+  const isProxied = !!rawBase && !rawBase.includes("api.anthropic.com");
+  const root = rawBase ? rawBase.replace(/\/v1$/, "") : "https://api.anthropic.com";
+
   const tool: Record<string, unknown> = { type: "web_search_20250305", name: "web_search", max_uses: 6 };
   if (o.country) {
     tool.user_location = {
@@ -362,11 +375,16 @@ export async function checkClaude(apiKey: string, question: string, domain: stri
   }
 
   async function call(withTool: boolean) {
-    return fetch("https://api.anthropic.com/v1/messages", {
+    return fetch(`${root}/v1/messages`, {
       method: "POST",
-      headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
+      headers: {
+        ...(isProxied || !apiKey.startsWith("sk-ant-") ? { "Authorization": `Bearer ${apiKey}` } : {}),
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({
-        model: CLAUDE_MODEL,
+        model,
         max_tokens: 2048,
         system: languageHint(o.language),
         messages: [{ role: "user", content: question }],
@@ -382,7 +400,7 @@ export async function checkClaude(apiKey: string, question: string, domain: stri
     let res = await call(true);
     let searched = true;
     if (res.status === 400 || res.status === 404) { res = await call(false); searched = false; }
-    if (!res.ok) return failed(`claude ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`, CLAUDE_MODEL);
+    if (!res.ok) return failed(`claude ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`, model);
 
     const data = await res.json();
     const blocks: any[] = Array.isArray(data?.content) ? data.content : [];
@@ -402,9 +420,9 @@ export async function checkClaude(apiKey: string, question: string, domain: stri
         }
       }
     }
-    return verdict(hostOf(domain), brandTerms, { text: text.trim(), citations, scanned, searched, model: CLAUDE_MODEL });
+    return verdict(hostOf(domain), brandTerms, { text: text.trim(), citations, scanned, searched, model });
   } catch (e: any) {
-    return failed(e?.name === "TimeoutError" || e?.name === "AbortError" ? "timeout" : `claude: ${e?.message ?? e}`, CLAUDE_MODEL);
+    return failed(e?.name === "TimeoutError" || e?.name === "AbortError" ? "timeout" : `claude: ${e?.message ?? e}`, model);
   }
 }
 
@@ -413,11 +431,15 @@ export async function checkClaude(apiKey: string, question: string, domain: stri
 const GROK_MODEL = "grok-4-fast";
 
 export async function checkGrok(apiKey: string, question: string, domain: string, brandTerms: string[], o: AeoRunOptions = {}): Promise<AeoCheckResult> {
+  const model = o.model || GROK_MODEL;
+  const rawBase = (o.baseUrl || "").trim().replace(/\/+$/, "");
+  const url = rawBase ? (rawBase.endsWith("/chat/completions") ? rawBase : `${rawBase.replace(/\/v1$/, "")}/v1/chat/completions`) : "https://api.x.ai/v1/chat/completions";
+
   const webSource: Record<string, unknown> = { type: "web" };
   if (o.country) webSource.country = o.country.toUpperCase();
 
   const body: Record<string, unknown> = {
-    model: GROK_MODEL,
+    model,
     messages: [
       { role: "system", content: languageHint(o.language) },
       { role: "user", content: question },
@@ -431,13 +453,13 @@ export async function checkGrok(apiKey: string, question: string, domain: string
   };
 
   try {
-    const res = await fetch("https://api.x.ai/v1/chat/completions", {
+    const res = await fetch(url, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(120_000),
     });
-    if (!res.ok) return failed(`grok ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`, GROK_MODEL);
+    if (!res.ok) return failed(`grok ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`, model);
 
     const data = await res.json();
     const text: string = data?.choices?.[0]?.message?.content ?? "";
@@ -446,9 +468,9 @@ export async function checkGrok(apiKey: string, question: string, domain: string
       .map(c => (typeof c === "string" ? c : c?.url))
       .filter(Boolean)
       .map((u: string) => ({ url: u, domain: domainOf(u), title: "" }));
-    return verdict(hostOf(domain), brandTerms, { text, citations, scanned: citations.map(c => c.domain), searched: true, model: GROK_MODEL });
+    return verdict(hostOf(domain), brandTerms, { text, citations, scanned: citations.map(c => c.domain), searched: true, model });
   } catch (e: any) {
-    return failed(e?.name === "TimeoutError" || e?.name === "AbortError" ? "timeout" : `grok: ${e?.message ?? e}`, GROK_MODEL);
+    return failed(e?.name === "TimeoutError" || e?.name === "AbortError" ? "timeout" : `grok: ${e?.message ?? e}`, model);
   }
 }
 
