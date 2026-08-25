@@ -47,6 +47,12 @@ export interface RewritePageResult {
     identifiersLost: string[];
   };
   structureOk?: boolean | null;
+  /**
+   * Page-mechanics defects that still need a human (a competitor named, a placeholder dropped,
+   * a required link missing, a price in the wrong currency). Auto-repaired ones — mixed-alphabet
+   * words — are not listed: the shipped text already carries the correction.
+   */
+  mechanics?: { code: string; detail: string }[];
   repaired?: boolean;
   /** QA judge outcome for the saved draft; "unavailable" = the judge call itself failed. */
   judge?: "publish" | "reject" | "unavailable" | null;
@@ -166,6 +172,9 @@ export async function runRewriteBatch(
           structureOk: v.structure?.ok ?? null,
           repaired: v.repaired ?? false,
           judge: v.judge?.verdict ?? null,
+          ...(v.mechanics?.some(m => !m.fixed)
+            ? { mechanics: v.mechanics.filter(m => !m.fixed).map(m => ({ code: m.code, detail: m.detail })) }
+            : {}),
           snippet: r.data.snippet ?? null,
           content: v.content,
           finishedAt: new Date().toISOString(),

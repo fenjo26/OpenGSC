@@ -111,8 +111,16 @@ const CONFUSABLES: Record<string, Record<string, string>> = {
 /** Letters plus the combining marks that ride on them — a word is one run of these. */
 const WORD_RE = /[A-Za-z\u0300-\u036F\u0400-\u04FF\u0370-\u03FF\u1F00-\u1FFF]+/gu;
 
+/**
+ * Accepts both an ISO code (`el`, `ru`) and a language NAME (`Greek`, `Russian`) — the generation
+ * pipeline passes codes and the rewriter passes names, and "Greek".slice(0,2) is "gr", which is
+ * not Greek. Only used to break ties: the per-word majority decides everything else.
+ */
 export function documentScript(language?: string): Script {
-  const l = (language || "").toLowerCase().slice(0, 2);
+  const raw = (language || "").trim().toLowerCase();
+  if (/^(greek|ελλην)/.test(raw)) return "greek";
+  if (/^(russian|ukrain|belarus|bulgar|serbian|macedon|kazakh|русск|україн)/.test(raw)) return "cyrillic";
+  const l = raw.slice(0, 2);
   if (["ru", "uk", "be", "bg", "sr", "mk", "kk"].includes(l)) return "cyrillic";
   if (l === "el") return "greek";
   return "latin";

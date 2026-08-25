@@ -10,6 +10,10 @@ import { uniquenessPct, wordCount, keywordCoverage, stripPageFurniture, type Key
 import { renderPolicy, type EditorialPolicy } from "@/lib/seo/policy";
 import { contentGate } from "@/lib/seo/rewriteGate";
 import { judgeArticle, type JudgeOutcome } from "@/lib/seo/judge";
+import {
+  checkMechanics, placeholdersFromInstruction, linksFromInstruction,
+  type MechanicsIssue,
+} from "@/lib/seo/mechanics";
 
 export interface RewriteBody {
   text?: string;
@@ -45,6 +49,8 @@ export interface RewriteBody {
    * change it back.
    */
   custom?: string;
+  /** Names that must not appear in the rewritten body — checked deterministically, never fatal. */
+  forbiddenBrands?: string[];
   temperature?: number;     // sampling temperature; undefined = provider default
   autoRepair?: boolean;     // run a scoped fix pass when the value audit fails (default true)
   /**
@@ -87,6 +93,13 @@ export interface RewriteVariant {
   coverage?: KeywordCoverage;
   /** Outcome of the independent QA pass; absent when `judge` is disabled. */
   judge?: { verdict: "publish" | "reject" | "unavailable"; blockers?: string[] };
+  /**
+   * Deterministic page-mechanics audit — mixed-alphabet words (repaired in place), plus any
+   * competitor named, placeholder dropped or required link missing against the job's `custom`
+   * instruction. Absent when nothing was found. The rewrite path had a value audit, a structure
+   * check and a QA judge, and none of the three can see any of this.
+   */
+  mechanics?: MechanicsIssue[];
 }
 
 /** Refreshed search snippet alongside the current one, so the change is judged by comparison. */
@@ -217,6 +230,108 @@ const MAX_CHARS_URL = 40_000;
 export const SNIPPET_TITLE_MAX = 60;
 export const SNIPPET_DESC_MAX = 160;
 
+/**
+ * The rewrite prompt, as a pure function.
+ *
+ * Extracted from inside `rewriteContent` so it can be asserted against. Everything else that
+ * writes on this instance is an exported builder covered by promptContract.test.ts; this was the
+ * one prompt no test could reach, which is precisely the position the text pipeline was in when
+ * it spent months silently discarding the user's instruction.
+ */
+export function buildRewritePrompt(args: {
+  source: string;
+  variantIndex?: number;
+  variants?: number;
+  language?: string;
+  tone?: string;
+  policy?: EditorialPolicy;
+  custom?: string;
+  bannedWords?: string[];
+  targetKeywords?: { keyword: string; volume?: number | null; globalVolume?: number | null }[];
+}): string {
+  const source = args.source;
+  const variants = Math.min(5, Math.max(1, Number(args.variants) || 1));
+  const i = Number(args.variantIndex) || 0;
+  const langName = (args.language || "").trim();
+  const langLine = langName ? `Write the rewrite in ${langName}.` : `Write in the SAME language as the source.`;
+  // Omitted when a policy exists, because renderPolicy already carries the tone as its override.
+  const toneLine = args.tone && !args.policy ? `Tone: ${args.tone}.` : "";
+
+  // Vocabulary constraint, when the caller supplies one from the local fingerprint model.
+  // A CONCRETE list is the point: it removes specific high-signal tokens without telling the model
+  // anything about how to write. Vague style directives ("write naturally", "vary your sentence
+  // length", "sound human") do the opposite of what they promise — the model applies them as
+  // explicit rules, which narrows its output distribution and makes the text MORE machine-typical,
+  // not less. That is why no such instruction appears in this prompt.
+  const banned = (args.bannedWords || []).map(w => String(w).trim()).filter(Boolean).slice(0, 80);
+  const bannedLine = banned.length
+    ? `Do not use these words or their inflected forms anywhere in the output: ${banned.join(", ")}. Express the same ideas with different wording. `
+    : "";
+
+  // Scraped pages arrive as Markdown with the heading tree intact, and that tree is the page's SEO
+  // skeleton — dropping or merging headings silently changes what the page ranks for. Spelled out
+  // explicitly because a model handed a long document will otherwise "tidy" the structure.
+  const structureLine = /^#{1,6}\s/m.test(source)
+    ? `Preserve the heading structure EXACTLY: same number of headings, same levels (# / ## / ###), same order. Rewrite heading text, never drop, merge, split or reorder a heading. If the source starts with an H1, your output must start with an H1 too. Keep every markdown table with all its rows. `
+    : "";
+
+  // Currency notation is a house style, not a fact. The value checker treats "€30" and "30 EUR" as
+  // the same price, so a swap passes the audit — but a Greek page that suddenly mixes both reads as
+  // sloppy, and nothing else in the pipeline would catch it.
+  const currencyLine = /[€$£₽₴]/.test(source)
+    ? `Keep currency notation exactly as the source writes it (symbol stays a symbol, code stays a code) — do not convert € into EUR or back. `
+    : "";
+
+  // Named, explicit list of every checkable value in the source. Telling a model to "preserve all
+  // facts" is the kind of vague directive it acknowledges and then quietly violates on paragraph
+  // forty; an enumerated list of the actual prices, durations and brand names is something it can
+  // check itself against. This is prevention — the drift panel afterwards is only the audit.
+  const mustKeep = criticalValues(source);
+  const keepLine = mustKeep.length
+    ? `These exact values MUST all appear in your output — every price, duration, percentage, phone number and brand name: ${mustKeep.join(", ")}. Do not drop, round, convert or re-unit any of them, and do not introduce values that are not in the source. `
+    : "";
+
+  // The queries the page is supposed to keep. Ordered by volume so the model knows which ones are
+  // worth an exact match when a phrasing has to give: a rewrite that loses the top query has
+  // failed even if every fact survived.
+  const targets = (args.targetKeywords || [])
+    .map(k => ({ keyword: String(k.keyword || "").trim(), volume: k.volume ?? null, globalVolume: k.globalVolume ?? null }))
+    .filter(k => k.keyword)
+    .sort((a, z) => Math.max(z.volume ?? 0, z.globalVolume ?? 0) - Math.max(a.volume ?? 0, a.globalVolume ?? 0))
+    .slice(0, 30);
+  const targetLine = targets.length
+    ? `This page ranks for these searches and must keep ranking for them — preserve each phrase verbatim at least once, in natural context, and do not paraphrase them away: ${targets.map(k => {
+        const local = k.volume ? `${k.volume}/mo` : "0";
+        const global = k.globalVolume ? `, global ${k.globalVolume}/mo` : "";
+        return `"${k.keyword}" (${local}${global})`;
+      }).join(", ")}. `
+    : "";
+
+  // Same block the outline and text steps render, in the same position — leading the prompt, so
+  // brand, audience, voice and the words-to-avoid list frame everything that follows. The tone
+  // argument is folded in as the override, exactly as buildTextPrompt does it, which is why
+  // `toneLine` stays empty when a policy is present: one source of tone, never two.
+  const policyBlock = args.policy ? renderPolicy(args.policy, args.tone) + "\n\n" : "";
+
+  // Placed AFTER the mechanical constraints and immediately before the content, i.e. last thing
+  // read before the work starts, and repeated in the repair pass. The value/heading/keyword rules
+  // above are non-negotiable invariants of a rewrite; this is the one block where the user gets to
+  // override the generic instructions, so it has to be able to see them.
+  const customText = (args.custom || "").trim();
+  const customBlock = customText
+    ? `AUTHOR'S INSTRUCTION — follow it exactly; where it conflicts with the general guidance above, the instruction wins (it never overrides the rule against inventing facts or the requirement to keep the source's values): ${customText.slice(0, 6000)} `
+    : "";
+
+  return policyBlock +
+    `You are an expert SEO copywriter. Rewrite the content below so it is UNIQUE and original, ` +
+    `while preserving the exact meaning, all facts, numbers, named entities, and links. ` +
+    `Keep the same format as the input (HTML stays HTML, Markdown stays Markdown, plain stays plain). ` +
+    `${structureLine}${currencyLine}${keepLine}${targetLine}${langLine} ${toneLine} ${bannedLine}${customBlock}` +
+    (variants > 1 ? `This is variant #${i + 1} — make it clearly different from the other variants. ` : "") +
+    `Output ONLY the rewritten content, with no preamble, notes, or explanations.\n\n` +
+    `CONTENT:\n${source}`;
+}
+
 export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
   const provider = String(b.aiProvider ?? "anthropic");
   const apiKey = String(b.aiApiKey ?? "");
@@ -256,86 +371,24 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
 
   const variants = Math.min(5, Math.max(1, Number(b.variants) || 1));
   const langName = (b.language || "").trim();
+  // Still needed here: the snippet prompts below reuse it.
   const langLine = langName ? `Write the rewrite in ${langName}.` : `Write in the SAME language as the source.`;
-  // Omitted when a policy exists, because renderPolicy already carries the tone as its override.
-  const toneLine = b.tone && !b.policy ? `Tone: ${b.tone}.` : "";
-
-  // Vocabulary constraint, when the caller supplies one from the local fingerprint model.
-  // A CONCRETE list is the point: it removes specific high-signal tokens without telling the model
-  // anything about how to write. Vague style directives ("write naturally", "vary your sentence
-  // length", "sound human") do the opposite of what they promise — the model applies them as
-  // explicit rules, which narrows its output distribution and makes the text MORE machine-typical,
-  // not less. That is why no such instruction appears in this prompt.
-  const banned = (b.bannedWords || []).map(w => String(w).trim()).filter(Boolean).slice(0, 80);
-  const bannedLine = banned.length
-    ? `Do not use these words or their inflected forms anywhere in the output: ${banned.join(", ")}. Express the same ideas with different wording. `
-    : "";
-
-  // Scraped pages arrive as Markdown with the heading tree intact, and that tree is the page's SEO
-  // skeleton — dropping or merging headings silently changes what the page ranks for. Spelled out
-  // explicitly because a model handed a long document will otherwise "tidy" the structure.
-  const structureLine = /^#{1,6}\s/m.test(source)
-    ? `Preserve the heading structure EXACTLY: same number of headings, same levels (# / ## / ###), same order. Rewrite heading text, never drop, merge, split or reorder a heading. If the source starts with an H1, your output must start with an H1 too. Keep every markdown table with all its rows. `
-    : "";
-
-  // Currency notation is a house style, not a fact. The value checker treats "€30" and "30 EUR" as
-  // the same price, so a swap passes the audit — but a Greek page that suddenly mixes both reads as
-  // sloppy, and nothing else in the pipeline would catch it.
-  const currencyLine = /[€$£₽₴]/.test(source)
-    ? `Keep currency notation exactly as the source writes it (symbol stays a symbol, code stays a code) — do not convert € into EUR or back. `
-    : "";
-
-  // Named, explicit list of every checkable value in the source. Telling a model to "preserve all
-  // facts" is the kind of vague directive it acknowledges and then quietly violates on paragraph
-  // forty; an enumerated list of the actual prices, durations and brand names is something it can
-  // check itself against. This is prevention — the drift panel afterwards is only the audit.
-  const mustKeep = criticalValues(source);
-  const keepLine = mustKeep.length
-    ? `These exact values MUST all appear in your output — every price, duration, percentage, phone number and brand name: ${mustKeep.join(", ")}. Do not drop, round, convert or re-unit any of them, and do not introduce values that are not in the source. `
-    : "";
-
-  // The queries the page is supposed to keep. Ordered by volume so the model knows which ones are
-  // worth an exact match when a phrasing has to give: a rewrite that loses the top query has
-  // failed even if every fact survived.
+  // Still needed here: keywordCoverage measures the shipped variant against the same list.
   const targets = (b.targetKeywords || [])
     .map(k => ({ keyword: String(k.keyword || "").trim(), volume: k.volume ?? null, globalVolume: k.globalVolume ?? null }))
     .filter(k => k.keyword)
-    // Sort by the bigger of local/global — a phrase with zero local demand but worldwide demand is
-    // still worth keeping, and ordering by local-only would bury it.
     .sort((a, z) => Math.max(z.volume ?? 0, z.globalVolume ?? 0) - Math.max(a.volume ?? 0, a.globalVolume ?? 0))
     .slice(0, 30);
-  const targetLine = targets.length
-    ? `This page ranks for these searches and must keep ranking for them — preserve each phrase verbatim at least once, in natural context, and do not paraphrase them away: ${targets.map(k => {
-        const local = k.volume ? `${k.volume}/mo` : "0";
-        const global = k.globalVolume ? `, global ${k.globalVolume}/mo` : "";
-        return `"${k.keyword}" (${local}${global})`;
-      }).join(", ")}. `
-    : "";
-
-  // Same block the outline and text steps render, in the same position — leading the prompt, so
-  // brand, audience, voice and the words-to-avoid list frame everything that follows. The tone
-  // argument is folded in as the override, exactly as buildTextPrompt does it, which is why
-  // `toneLine` below stays empty when a policy is present: one source of tone, never two.
-  const policyBlock = b.policy ? renderPolicy(b.policy, b.tone) + "\n\n" : "";
-
-  // Placed AFTER the mechanical constraints and immediately before the content, i.e. last thing
-  // read before the work starts, and repeated in the repair pass below. The value/heading/keyword
-  // rules above are non-negotiable invariants of a rewrite; this is the one block where the user
-  // gets to override the generic instructions, so it has to be able to see them.
+  // Still needed here: the repair pass restates it, and the mechanics check derives its
+  // placeholders and required links from it.
   const customText = (b.custom || "").trim();
-  const customBlock = customText
-    ? `AUTHOR'S INSTRUCTION — follow it exactly; where it conflicts with the general guidance above, the instruction wins (it never overrides the rule against inventing facts or the requirement to keep the source's values): ${customText.slice(0, 6000)} `
-    : "";
+  const customBlock = customText ? `While fixing, keep obeying this: ${customText.slice(0, 2000)} ` : "";
 
-  const basePrompt = (i: number) =>
-    policyBlock +
-    `You are an expert SEO copywriter. Rewrite the content below so it is UNIQUE and original, ` +
-    `while preserving the exact meaning, all facts, numbers, named entities, and links. ` +
-    `Keep the same format as the input (HTML stays HTML, Markdown stays Markdown, plain stays plain). ` +
-    `${structureLine}${currencyLine}${keepLine}${targetLine}${langLine} ${toneLine} ${bannedLine}${customBlock}` +
-    (variants > 1 ? `This is variant #${i + 1} — make it clearly different from the other variants. ` : "") +
-    `Output ONLY the rewritten content, with no preamble, notes, or explanations.\n\n` +
-    `CONTENT:\n${source}`;
+  const basePrompt = (i: number) => buildRewritePrompt({
+    source, variantIndex: i, variants,
+    language: b.language, tone: b.tone, policy: b.policy, custom: b.custom,
+    bannedWords: b.bannedWords, targetKeywords: b.targetKeywords,
+  });
 
   // Targeted second pass, run only when the audit finds something wrong. It names the specific
   // values to restore or remove instead of asking for a whole re-rewrite, so the text that was
@@ -351,7 +404,7 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
       `Fix ONLY these defects. Do not rewrite anything else, do not alter wording that is already correct. ` +
       // The repair pass rewrites real paragraphs, so it can undo the instruction the first pass
       // obeyed — restoring a "missing" value by naming the competitor it belonged to, for one.
-      (customBlock ? `While fixing, keep obeying this: ${customText.slice(0, 2000)} ` : "") +
+      customBlock +
       `Output ONLY the corrected text, with no preamble or notes.\n\nTEXT:\n${draft}`;
   };
 
@@ -435,6 +488,19 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
       rejectReasons.push(`${gate.reason}: ${gate.detail}`);
       return null;
     }
+
+    // Page mechanics. Derived from the job's own instruction exactly as the generation pipeline
+    // derives them, so a rewrite told to keep [[TRANSFER_WIDGET]] and link to /day-trips/ is
+    // checked on both. Mixed-alphabet words are repaired here even with no instruction at all:
+    // they are a defect of writing, not of policy, and a rewrite produces them as readily as a
+    // first draft. Reported, never fatal — a variant is not worth discarding over a brand name.
+    const mech = checkMechanics(content, {
+      language: langName || undefined,
+      placeholders: placeholdersFromInstruction(customText),
+      requiredLinks: linksFromInstruction(customText),
+      forbiddenBrands: Array.isArray(b.forbiddenBrands) ? b.forbiddenBrands.map(String) : undefined,
+    });
+    content = mech.text;
     let judged: RewriteVariant["judge"];
     if (b.judge !== false) {
       judged = await judgeVariant(content);
@@ -443,7 +509,11 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
         return null;
       }
     }
-    return { content, uniqueness: uniquenessPct(source, content), words: wordCount(content), drift, structure, repaired, coverage, judge: judged };
+    return {
+      content, uniqueness: uniquenessPct(source, content), words: wordCount(content),
+      drift, structure, repaired, coverage, judge: judged,
+      ...(mech.issues.length ? { mechanics: mech.issues } : {}),
+    };
   });
 
   const variantsOut = results.filter((r): r is RewriteVariant => !!r);

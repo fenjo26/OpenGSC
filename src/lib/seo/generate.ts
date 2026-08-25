@@ -1034,7 +1034,7 @@ async function writeTextInChunks(outline: any, ctx: {
     if (hiEff > 0 && cw > hiEff * 1.15) {
       try {
         const cut = await fetchLLM(
-          buildTextTrimPrompt({ article: md, targetWords: Math.round((lo + hiEff) / 2), currentWords: cw, language: ctx.language }),
+          buildTextTrimPrompt({ article: md, targetWords: Math.round((lo + hiEff) / 2), currentWords: cw, language: ctx.language, custom: ctx.custom, bannedWords: ctx.bannedWords }),
           ctx.provider, ctx.apiKey, Math.max(chunkBudget, contentTokens(cw, 10_000)), ctx.model, ctx.baseUrl,
         );
         if (cut) {
@@ -1131,6 +1131,10 @@ async function writeTextInChunks(outline: any, ctx: {
 // expect) → iterative trim passes, looping until within range or the model stops cooperating.
 async function enforceVolumeTarget(text: string, targetWc: number, ctx: {
   language: string; provider: string; apiKey: string; model?: string; baseUrl?: string;
+  // The rules the article was WRITTEN under. Expansion writes new prose — several hundred words
+  // of it — and did so knowing none of them, so it could reintroduce exactly what the chunked
+  // writer had been told to avoid. See postPassConstraints in prompts.ts.
+  custom?: string; bannedWords?: string[];
 }): Promise<string> {
   if (!targetWc || targetWc < 500 || !text) return text;
   // Full-structure invariant: H2 AND H3 counts must survive any volume pass untouched.
@@ -1140,7 +1144,7 @@ async function enforceVolumeTarget(text: string, targetWc: number, ctx: {
   if (words < targetWc * 0.85) {
     try {
       let expanded = await fetchLLM(
-        buildTextExpandPrompt({ article: text, targetWords: targetWc, currentWords: words, language: ctx.language }),
+        buildTextExpandPrompt({ article: text, targetWords: targetWc, currentWords: words, language: ctx.language, custom: ctx.custom, bannedWords: ctx.bannedWords }),
         ctx.provider, ctx.apiKey, contentTokens(targetWc), ctx.model, ctx.baseUrl,
       );
       if (expanded) {
@@ -1161,7 +1165,7 @@ async function enforceVolumeTarget(text: string, targetWc: number, ctx: {
       if (cur <= targetWc * 1.15) break;
       try {
         let trimmed = await fetchLLM(
-          buildTextTrimPrompt({ article: text, targetWords: targetWc, currentWords: cur, language: ctx.language }),
+          buildTextTrimPrompt({ article: text, targetWords: targetWc, currentWords: cur, language: ctx.language, custom: ctx.custom, bannedWords: ctx.bannedWords }),
           ctx.provider, ctx.apiKey, contentTokens(targetWc), ctx.model, ctx.baseUrl,
         );
         if (!trimmed) break;
@@ -1303,9 +1307,12 @@ export async function genText(b: any): Promise<GenResult> {
   // The author's instruction, explicit on this job or inherited from the outline it is writing
   // from. Inheriting matters because the outline was PLANNED under it: without the fallback a
   // text job started from a saved structure writes against rules its own sections were built for.
-  const authorInstruction = (b.custom ? String(b.custom) : "").trim()
-    || String(slimOutline.meta?.authorInstruction ?? "").trim()
-    || undefined;
+  // An explicitly supplied `custom` — including an empty string — is the caller's decision and
+  // ends the chain. Only an ABSENT one inherits: otherwise there is no way to run a text job
+  // deliberately free of the instruction its outline was planned under.
+  const authorInstruction = (b.custom !== undefined && b.custom !== null)
+    ? (String(b.custom).trim() || undefined)
+    : (String(slimOutline.meta?.authorInstruction ?? "").trim() || undefined);
 
   // CHUNKED writer (default on for 10+ sections, off with chunkedText:false): the article is
   // written 3-5 sections per call — one giant prompt degrades mid-generation (prose decays
@@ -1414,7 +1421,10 @@ export async function genText(b: any): Promise<GenResult> {
   if (b.autoFactCheck !== false && bank.length && text) {
     try {
       const bankText = bank.map((x: any, i: number) => `[${i + 1}]${x.official ? " (ОФИЦИАЛЬНЫЙ)" : ""} ${x.domain || x.source}\n${x.facts}`).join("\n\n");
-      let cleaned = await fetchLLM(buildAutoFactCleanPrompt({ article: text, factsBank: bankText, language }), provider, apiKey, contentTokens(text.split(/\s+/).filter(Boolean).length), model, baseUrl);
+      let cleaned = await fetchLLM(buildAutoFactCleanPrompt({
+        article: text, factsBank: bankText, language,
+        custom: authorInstruction, bannedWords: Array.isArray(b.bannedWords) ? b.bannedWords : undefined,
+      }), provider, apiKey, contentTokens(text.split(/\s+/).filter(Boolean).length), model, baseUrl);
       if (cleaned && cleaned.trim().length > text.length * 0.85) {
         cleaned = cleaned.trim().replace(/^```(?:markdown|md)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
         // Structure invariant: every heading (H2+H3, incl. FAQ questions) must survive.
@@ -1433,7 +1443,10 @@ export async function genText(b: any): Promise<GenResult> {
   // and pad the surviving sections to cover words that belong to text nobody wrote.
   const finalTargetWc = targetWc;
   if (b.expandText !== false && finalTargetWc >= 500 && !incomplete) {
-    text = await enforceVolumeTarget(text, finalTargetWc, { language, provider, apiKey, model, baseUrl });
+    text = await enforceVolumeTarget(text, finalTargetWc, {
+      language, provider, apiKey, model, baseUrl,
+      custom: authorInstruction, bannedWords: Array.isArray(b.bannedWords) ? b.bannedWords : undefined,
+    });
   }
 
   // Guarantee the SEO meta block is present (deterministic — don't trust the model to emit it).
@@ -1583,6 +1596,8 @@ export async function genWireframe(b: any): Promise<GenResult> {
     structureMode: b.structureMode,
     myStructure: Array.isArray(b.myStructure) ? b.myStructure : undefined,
     targetWordCount: b.targetWordCount ? Number(b.targetWordCount) : undefined,
+    policy: b.policy, tone: b.tone ? String(b.tone) : undefined,
+    custom: b.custom ? String(b.custom) : undefined,
   });
 
   let raw = await fetchLLM(prompt, provider, apiKey, 8000, model, baseUrl);

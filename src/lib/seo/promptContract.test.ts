@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import {
   buildSectionTextPrompt, buildFaqSectionPrompt, buildTextPrompt,
   buildSectionEnrichPrompt, buildStructureExpandPrompt, buildOutlinePrompt,
+  buildTextExpandPrompt, buildTextTrimPrompt, buildAutoFactCleanPrompt, buildWireframePrompt,
 } from "./prompts";
+import { buildRewritePrompt } from "./rewrite";
 import { DEFAULT_POLICY, type EditorialPolicy } from "./policy";
 
 // What this file locks down, and why it is worth its length.
@@ -171,7 +173,76 @@ test("every prose-writing builder renders the instruction it is given", () => {
     ["single-shot", buildTextPrompt({ outlineJson: OUTLINE, tone: "t", language: "en", custom: AUTHOR })],
     ["enrich", buildSectionEnrichPrompt({ keyword: "k", language: "en", country: "gr", sections: OUTLINE.sections, custom: AUTHOR })],
     ["outline", buildOutlinePrompt({ keyword: "k", language: "en", country: "gr", competitors: [], custom: AUTHOR })],
+    ["rewrite", buildRewritePrompt({ source: "## H\n\nbody", custom: AUTHOR })],
   ];
   const missing = built.filter(([, p]) => !p.includes(AUTHOR)).map(([name]) => name);
   assert.deepEqual(missing, [], `these builders silently dropped the author's instruction: ${missing.join(", ")}`);
+});
+
+// ─── Rewrite ─────────────────────────────────────────────────────────────────────────
+// Extracted out of rewriteContent purely so these can exist: it was the only prompt on the
+// instance that no test could reach, which is the exact position the chunked writer was in.
+
+const SOURCE = "# Athens transfers\n\n## Taxi\n\nThe flat fare is €40 by day and €55 at night, about 40 minutes.\n";
+
+test("buildRewritePrompt carries the per-job instruction, the policy and the banned vocabulary", () => {
+  const p = buildRewritePrompt({
+    source: SOURCE, policy: POLICY, custom: AUTHOR, bannedWords: [BANNED], language: "Greek",
+  });
+  assert.equal(p.includes(AUTHOR), true, "instruction missing from the rewrite prompt");
+  assert.equal(p.includes("SentinelBrandCo-a7c9"), true, "policy missing from the rewrite prompt");
+  assert.equal(p.includes(BANNED), true, "banned vocabulary missing from the rewrite prompt");
+  assert.equal(p.includes("Write the rewrite in Greek."), true);
+});
+
+test("buildRewritePrompt keeps the invariants it had before extraction", () => {
+  // Guards the refactor itself: these four lines were computed inline inside rewriteContent and
+  // are the reason a rewrite does not quietly lose the page's values or its heading tree.
+  const p = buildRewritePrompt({ source: SOURCE, targetKeywords: [{ keyword: "athens airport taxi", volume: 320 }] });
+  assert.equal(p.includes("Preserve the heading structure EXACTLY"), true, "structure rule lost");
+  assert.equal(p.includes("€40"), true, "the critical-values list lost a price");
+  assert.equal(p.includes("do not convert € into EUR"), true, "currency-notation rule lost");
+  assert.equal(p.includes('"athens airport taxi" (320/mo)'), true, "target-keyword line lost");
+  assert.equal(p.endsWith(`CONTENT:\n${SOURCE}`), true, "the content must be last");
+});
+
+test("buildRewritePrompt only numbers variants when there is more than one", () => {
+  const single = buildRewritePrompt({ source: SOURCE, variants: 1, variantIndex: 0 });
+  const third = buildRewritePrompt({ source: SOURCE, variants: 3, variantIndex: 2 });
+  assert.equal(single.includes("This is variant"), false);
+  assert.equal(third.includes("This is variant #3"), true);
+});
+
+// ─── The post-passes ─────────────────────────────────────────────────────────────────
+// These three rewrite a FINISHED article. Expansion is the one that matters: it adds hundreds of
+// words of new prose, so a pass that cannot see the rules can hand back a page that breaks them
+// after every earlier stage obeyed them.
+
+test("expand, trim and fact-clean all carry the rules the article was written under", () => {
+  const article = "# T\n\n## S\n\nbody";
+  const built: [string, string][] = [
+    ["expand", buildTextExpandPrompt({ article, targetWords: 1800, currentWords: 1200, language: "en", custom: AUTHOR, bannedWords: [BANNED] })],
+    ["trim", buildTextTrimPrompt({ article, targetWords: 1800, currentWords: 2400, language: "en", custom: AUTHOR, bannedWords: [BANNED] })],
+    ["fact-clean", buildAutoFactCleanPrompt({ article, factsBank: "[1] example.com\nfacts", language: "en", custom: AUTHOR, bannedWords: [BANNED] })],
+  ];
+  const missingCustom = built.filter(([, p]) => !p.includes(AUTHOR)).map(([n]) => n);
+  const missingBanned = built.filter(([, p]) => !p.includes(BANNED)).map(([n]) => n);
+  assert.deepEqual(missingCustom, [], `post-passes that would undo the instruction: ${missingCustom.join(", ")}`);
+  assert.deepEqual(missingBanned, [], `post-passes free to reuse banned vocabulary: ${missingBanned.join(", ")}`);
+});
+
+test("a post-pass with no rules to carry adds no empty constraint block", () => {
+  const p = buildTextExpandPrompt({ article: "# T", targetWords: 1800, currentWords: 1200, language: "en" });
+  assert.equal(p.includes("ИНСТРУКЦИЯ АВТОРА"), false);
+  assert.equal(p.includes("ЗАПРЕЩЁННАЯ ЛЕКСИКА"), false);
+});
+
+test("buildWireframePrompt carries the policy and the instruction", () => {
+  // A wireframe decides which BLOCKS exist — a comparison table, a reviews strip, a booking form.
+  // "No competitor comparison" is a block-level decision, so it has to land here too.
+  const p = buildWireframePrompt({
+    keyword: "k", language: "en", country: "gr", outline: OUTLINE, policy: POLICY, custom: AUTHOR,
+  });
+  assert.equal(p.includes(AUTHOR), true);
+  assert.equal(p.includes("SentinelBrandCo-a7c9"), true);
 });

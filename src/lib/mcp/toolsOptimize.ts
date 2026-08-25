@@ -354,6 +354,7 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
         text: { type: "string", description: "Literal text to rewrite instead of URLs (single item)" },
         language: { type: "string", description: "Target language NAME, e.g. \"Greek\". Omit to keep each page's own language." },
         tone: { type: "string", description: "Optional tone hint" },
+        forbiddenBrands: { type: "array", items: { type: "string" }, description: "Names that must not appear in the rewritten body. Checked deterministically after each page and reported per page as `mechanics`; never fails a page." },
         custom: { type: "string", description: "Free-text instruction applied to every page in this job — what the rewrite must not mention, placeholders it must keep verbatim, links it must add. Use this for one-off rules; a standing house style belongs in the editorial policy instead." },
         maskAI: { type: "boolean", description: "Strip common machine tells from the output (default true)" },
         bannedWords: { type: "array", items: { type: "string" }, description: "Words the model must not use — the AI-Fingerprint Lab's marker export goes here" },
@@ -423,6 +424,7 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
         language: args.language ? String(args.language) : undefined,
         tone: args.tone ? String(args.tone) : undefined,
         custom: args.custom ? String(args.custom) : undefined,
+        forbiddenBrands: Array.isArray(args.forbiddenBrands) ? args.forbiddenBrands.map(String) : undefined,
         maskAI: args.maskAI !== false,
         bannedWords: Array.isArray(args.bannedWords) ? args.bannedWords.map(String) : undefined,
         temperature: args.temperature != null ? Number(args.temperature) : undefined,
@@ -665,7 +667,7 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
     name: "get_generation_job",
     cost: "local",
     description:
-      "FREE: check a background job started by start_generation_job or start_rewrite_job — status, progress, and the result. Rewrite batches report per-page progress and return finished pages as they complete, so polling early gives partial work rather than nothing; pass includeContent to get the rewritten text itself. Jobs silent for over 20 minutes are reported as timed out (the process restarted mid-run). On error, the message carries the provider's own reason, including content-policy rejections.",
+      "FREE: check a background job started by start_generation_job or start_rewrite_job — status, progress, and the result. A finished text job also reports `needsAttention`: page-mechanics defects found deterministically after writing and NOT fixable automatically (a competitor named on a page told not to name one, a dropped [[PLACEHOLDER]], a missing internal link, a price in the wrong currency). Read it before publishing — the prose being good says nothing about these. Rewrite batches report per-page progress and return finished pages as they complete, so polling early gives partial work rather than nothing; pass includeContent to get the rewritten text itself. Jobs silent for over 20 minutes are reported as timed out (the process restarted mid-run). On error, the message carries the provider's own reason, including content-policy rejections.",
     inputSchema: {
       type: "object",
       properties: {
@@ -712,6 +714,8 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
 
           const withContent = args.includeContent === true;
           const danger = state.pages.filter((p: any) => p.factDrift?.severity === "danger").map((p: any) => p.url);
+          const mechFlagged = state.pages.filter((p: any) => Array.isArray(p.mechanics) && p.mechanics.length)
+            .map((p: any) => ({ url: p.url, defects: p.mechanics.map((m: any) => m.code) }));
           return {
             ...base,
             progress: {
@@ -726,11 +730,38 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
               needsAttention: danger,
               warning: "These pages contain numbers or identifiers that are NOT in the source — invented values. Correct them before publishing; call get_generation_job with `page` to read one in full.",
             } : {}),
+            ...(mechFlagged.length ? {
+              mechanicsFlagged: mechFlagged,
+              mechanicsWarning: "These pages carry page-mechanics defects the pipeline could not fix on its own — a named competitor, a dropped placeholder, a missing internal link or a price in the wrong currency. Call get_generation_job with `page` to read one in full.",
+            } : {}),
             ...(withContent ? {} : { note: "Rewritten text omitted — pass includeContent: true for all of it, or `page` for one." }),
           };
         }
 
-        return { ...base, result: job.status === "completed" ? parseJson(job.result) : null };
+        // Generation results carry `mechanics` — the deterministic page-mechanics audit. It was
+        // returned inside the result blob and nowhere else, which for the caller that matters most
+        // (an agent walking a 15-page cluster, polling and moving on) is the same as not being
+        // returned: it arrives as one key beside two thousand words of article. The rewrite branch
+        // above already learned this lesson with factDrift, so this mirrors its shape — the
+        // defects that still need a human are lifted to the top level with a sentence saying so.
+        const genResult = job.status === "completed" ? parseJson(job.result) as any : null;
+        const unresolved = Array.isArray(genResult?.mechanics)
+          ? genResult.mechanics.filter((m: any) => m && m.fixed !== true)
+          : [];
+        const autoFixed = Array.isArray(genResult?.mechanics)
+          ? genResult.mechanics.filter((m: any) => m && m.fixed === true)
+          : [];
+        return {
+          ...base,
+          result: genResult,
+          ...(unresolved.length ? {
+            needsAttention: unresolved.map((m: any) => ({ code: m.code, detail: m.detail, samples: m.samples })),
+            warning: `The page-mechanics audit found ${unresolved.length} defect(s) the pipeline could not fix on its own: ${unresolved.map((m: any) => m.code).join(", ")}. The prose is finished; these are checkable page rules (a competitor named, a placeholder dropped, an internal link missing, a price in the wrong currency) and they need correcting before publishing.`,
+          } : {}),
+          ...(autoFixed.length ? {
+            autoFixed: autoFixed.map((m: any) => ({ code: m.code, detail: m.detail })),
+          } : {}),
+        };
       } catch (e: any) {
         if (String(e?.message ?? "").startsWith("Job not found")) throw e;
         return { count: 0, jobs: [], note: "SeoJob table not available on this instance (run: npx prisma db push)." };

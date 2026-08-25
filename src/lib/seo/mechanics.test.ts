@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   normalizeMixedScript, checkMechanics, placeholdersFromInstruction,
-  linksFromInstruction, brandsFromDomains, repairableIssues,
+  linksFromInstruction, brandsFromDomains, repairableIssues, documentScript,
 } from "./mechanics";
 
 // The defect that started this: a Greek word typed half in Cyrillic. Both look identical on
@@ -104,4 +104,15 @@ test("only the defects a scoped model pass can fix are offered for repair", () =
   // mixed_script is already fixed in place, so it must not be sent to the model again.
   assert.equal(codes.includes("mixed_script" as never), false);
   assert.equal(codes.includes("foreign_currency"), true);
+});
+
+test("the document's script is resolved from a language NAME as well as a code", () => {
+  // The generation pipeline passes codes ("el"); the rewriter passes names ("Greek"), and
+  // "Greek".slice(0, 2) is "gr" — which is not Greek, and would have silently chosen Latin.
+  assert.equal(documentScript("el"), "greek");
+  assert.equal(documentScript("Greek"), "greek");
+  assert.equal(documentScript("ru"), "cyrillic");
+  assert.equal(documentScript("Russian"), "cyrillic");
+  assert.equal(documentScript("en"), "latin");
+  assert.equal(documentScript(undefined), "latin");
 });

@@ -512,8 +512,21 @@ export function buildWireframePrompt(args: {
   structureMode?: "serp" | "my_1to1" | "hybrid" | "seo_block";
   myStructure?: { level: string; text: string; words: number }[];
   targetWordCount?: number;
+  /**
+   * Same author-level inputs the outline and text steps take. A wireframe decides which blocks
+   * the page has — a comparison table, a reviews strip, a booking form — so an instruction like
+   * "no competitor comparison" or "the form is a [[WIDGET]] placeholder" is a block-level
+   * decision, not a wording one.
+   */
+  policy?: EditorialPolicy;
+  tone?: string;
+  custom?: string;
 }): string {
   const meta = args.outline?.meta || {};
+  const policyPrefix = args.policy ? renderPolicy(args.policy, args.tone) + "\n\n" : "";
+  const authorBlock = args.custom?.trim()
+    ? `\n\nИНСТРУКЦИЯ АВТОРА (обязательна при выборе блоков и требований к ним — запреты действуют и здесь; требуемые плейсхолдеры вида [[ИМЯ]] закладывай прямо в requirements соответствующего блока): ${args.custom.trim().slice(0, 4000)}`
+    : "";
   const sections = Array.isArray(args.outline?.sections) ? args.outline.sections : [];
   const slimSections = sections.map((s: any) => ({
     h_level: s.h_level, heading: s.heading, summary: s.summary,
@@ -532,7 +545,7 @@ export function buildWireframePrompt(args: {
   const dominant = meta.dominant_intent || "";
   const twc = args.targetWordCount ? `\n- ориентир общего объёма текста на странице: ~${args.targetWordCount} слов` : "";
 
-  return `Ты — UX/CRO-стратег лендингов. По ТЗ статьи ниже построй WIREFRAME лендинга — упорядоченный список БЛОКОВ секций (без визуального дизайна, просто структура и требования к содержимому каждого блока), максимально конверсионный для intent="${dominant || "mixed"}" и пригодный сразу отдать дизайнеру/верстальщику. Верни СТРОГИЙ JSON без преамбулы и без markdown-обёрток.
+  return `${policyPrefix}Ты — UX/CRO-стратег лендингов.${authorBlock} По ТЗ статьи ниже построй WIREFRAME лендинга — упорядоченный список БЛОКОВ секций (без визуального дизайна, просто структура и требования к содержимому каждого блока), максимально конверсионный для intent="${dominant || "mixed"}" и пригодный сразу отдать дизайнеру/верстальщику. Верни СТРОГИЙ JSON без преамбулы и без markdown-обёрток.
 
 КАТАЛОГ ТИПОВ БЛОКОВ (используй ТОЛЬКО эти значения для "type"): ${WIREFRAME_BLOCK_TYPES.join(", ")}.
 - HERO_FORM: главный экран — заголовок H1, подзаголовок/подводка, CTA-кнопка (и/или форма заявки).
@@ -595,7 +608,7 @@ ${JSON.stringify(args.outline).slice(0, 18000)}`;
 // ─── Auto fact-clean: verify a finished article against the facts bank, then fix in one pass ──────
 // Runs right after text generation. The facts bank = the consolidated facts extracted from the top
 // sources the article was built on, so this is a CONFIRM-and-correct pass, not a fresh rewrite.
-export function buildAutoFactCleanPrompt(args: { article: string; factsBank: string; language: string }): string {
+export function buildAutoFactCleanPrompt(args: { article: string; factsBank: string; language: string; custom?: string; bannedWords?: string[] }): string {
   return `Ты — аккуратный фактчек-редактор. Ниже ГОТОВАЯ СТАТЬЯ (Markdown) и БАНК ФАКТОВ — факты, извлечённые из топ-источников выдачи. Банк НЕПОЛНЫЙ (он не покрывает все реальные бренды/модели/цены — особенно для другого региона). Поэтому «нет в банке» НИКОГДА не значит «неправда».
 
 Сделай МИНИМАЛЬНУЮ правку, СОХРАНИВ объём, все секции, бренды и стиль:
@@ -603,7 +616,7 @@ export function buildAutoFactCleanPrompt(args: { article: string; factsBank: str
 2. Убирай ТОЛЬКО то, что ЯВНО невозможно/выдумано (несуществующая модель, абсурдная цифра).
 3. Всё остальное — реальные бренды и модели (SpringWell, Fleck и т.п.), типичные характеристики, диапазоны цен, общеизвестные факты — ОСТАВЬ КАК ЕСТЬ, даже если их нет в банке. НЕ обобщай и НЕ вырезай их.
 4. СИНХРОНИЗАЦИЯ ЧИСЕЛ: если значение есть и в прозе, и в таблице/списке — приведи к ОДНОМУ.
-КРИТИЧНО: НЕ сокращай статью (объём должен остаться примерно прежним, ±5%), НЕ удаляй секции/абзацы, НЕ трогай заголовки и их порядок, сохрани мета-блок в начале. Никаких маркеров [ПРОВЕРИТЬ] и плейсхолдеров. Язык — ${args.language}.
+КРИТИЧНО: НЕ сокращай статью (объём должен остаться примерно прежним, ±5%), НЕ удаляй секции/абзацы, НЕ трогай заголовки и их порядок, сохрани мета-блок в начале. Никаких маркеров [ПРОВЕРИТЬ]. Плейсхолдеры автора вида [[ИМЯ]] — не выдумка и не маркер: оставь их дословно. Язык — ${args.language}.${postPassConstraints(args.custom, args.bannedWords)}
 Верни ТОЛЬКО готовый Markdown статьи целиком, без преамбулы.
 
 БАНК ФАКТОВ:
@@ -927,11 +940,26 @@ ${args.defects.map((d, i) => `${i + 1}. ${d}`).join("\n")}
 ${args.article}`;
 }
 
+// ─── Constraints the post-passes must not undo ──────────────────────────────────────────
+// Expand, trim and fact-clean all rewrite a FINISHED article, and all three ran blind to the
+// rules it was written under. Expansion is the dangerous one: it adds hundreds of words of new
+// prose, so the chunk that carefully avoided naming a competitor gets a fresh paragraph naming
+// three. The mechanics gate catches that afterwards — but catching costs a repair call, and
+// prevention costs a paragraph of prompt.
+function postPassConstraints(custom?: string, bannedWords?: string[]): string {
+  const c = custom?.trim();
+  const b = bannedWordsBlock(bannedWords);
+  if (!c && !b) return "";
+  return (c
+    ? `\n- ИНСТРУКЦИЯ АВТОРА, под которую статья писалась — она действует и на твою правку: всё, что она запрещает (называть бренды/конкурентов, ставить внешние ссылки, заводить отдельные секции), нельзя вносить и здесь; всё, что она требует сохранить (плейсхолдеры вида [[ИМЯ]], внутренние ссылки), обязано уцелеть ДОСЛОВНО.\n${c.slice(0, 3000)}`
+    : "") + b;
+}
+
 // ─── Text expansion pass: bring an under-length article up to its target volume ──────
 // Models routinely undershoot the word budget. This pass takes the finished article and
 // expands THIN sections toward their budgets with substance (facts, examples, prose) —
 // never fluff, never touching structure/headings/tables that already exist.
-export function buildTextExpandPrompt(args: { article: string; targetWords: number; currentWords: number; language: string }): string {
+export function buildTextExpandPrompt(args: { article: string; targetWords: number; currentWords: number; language: string; custom?: string; bannedWords?: string[] }): string {
   return `Ты — редактор-эксперт. Ниже ГОТОВАЯ СТАТЬЯ (Markdown) объёмом ~${args.currentWords} слов при целевом объёме ~${args.targetWords} слов (недобор ${Math.max(0, args.targetWords - args.currentWords)} слов). РАСШИРЬ её до целевого объёма, сохранив ВСЁ существующее.
 
 ПРАВИЛА:
@@ -941,7 +969,7 @@ export function buildTextExpandPrompt(args: { article: string; targetWords: numb
 - Если у секции есть только список — допиши перед ним/после него 1-2 абзаца связного текста, раскрывающих пункты.
 - FAQ-секцию НЕ трогай ВООБЩЕ: не переписывай вопросы и ответы, не добавляй вводных абзацев, не объединяй и не удаляй вопросы — расширяй ТОЛЬКО обычные секции.
 - НЕ выдумывай факты: конкретику бери из уже написанного текста и общеизвестных достоверных знаний; сомнительное обобщай.
-- Язык — ${args.language}. Стиль и голос — как в статье.
+- Язык — ${args.language}. Стиль и голос — как в статье.${postPassConstraints(args.custom, args.bannedWords)}
 Верни ПОЛНУЮ статью целиком в Markdown, без преамбулы и без \`\`\`-обёрток.
 
 СТАТЬЯ:
@@ -951,7 +979,7 @@ ${args.article}`;
 // ─── Text trim pass: cut an over-length article down to its target volume ────────────
 // Verbose models overshoot budgets. This pass removes WATER — repeated ideas, filler
 // paragraphs, bloated lists — while preserving every heading, table, and concrete fact.
-export function buildTextTrimPrompt(args: { article: string; targetWords: number; currentWords: number; language: string }): string {
+export function buildTextTrimPrompt(args: { article: string; targetWords: number; currentWords: number; language: string; custom?: string; bannedWords?: string[] }): string {
   return `Ты — жёсткий редактор. Ниже ГОТОВАЯ СТАТЬЯ (Markdown) объёмом ~${args.currentWords} слов при целевом объёме ~${args.targetWords} слов (перебор ${Math.max(0, args.currentWords - args.targetWords)} слов). СОКРАТИ её до целевого объёма (±10%), вырезая ТОЛЬКО воду.
 
 ЧТО РЕЗАТЬ (в порядке приоритета):
@@ -966,6 +994,7 @@ export function buildTextTrimPrompt(args: { article: string; targetWords: number
 - ВСЮ конкретику: цифры, цены, RTP, лимиты, даты, названия моделей/провайдеров/брендов, лицензии.
 - FAQ-секцию (вопросы и ответы).
 - Язык (${args.language}), стиль и голос статьи.
+- Плейсхолдеры вида [[ИМЯ]] и внутренние ссылки — это механика страницы, а не вода: их не режут.${postPassConstraints(args.custom, args.bannedWords)}
 
 Верни ПОЛНУЮ статью целиком в Markdown, без преамбулы и без \`\`\`-обёрток.
 
