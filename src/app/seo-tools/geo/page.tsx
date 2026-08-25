@@ -8,7 +8,8 @@ import GeoAuditReport from "@/components/GeoAuditReport";
 import type { GeoReport } from "@/lib/seo/geo";
 import {
   startGeoAudit, getGeoAudit, listGeoAudits, deleteGeoAudit, parseReport,
-  getOpenAiKey, getOpenAiBaseUrl, getKieKeyForGeo, getGeoEngine, setGeoEngine, getGeoApiKey, GeoEngineChoice,
+  getOpenAiKey, getOpenAiBaseUrl, getKieKeyForGeo, getGeminiKeyForGeo, getGeminiBaseUrl,
+  getGeoEngine, setGeoEngine, getGeoApiKey, GeoEngineChoice,
   getGeoModel, setGeoModel, GeoAuditRec,
 } from "@/lib/seo/geoClient";
 import { rankModels, resolveModel, OPENAI_FALLBACK_MODELS, type ModelOpt } from "@/lib/seo/models";
@@ -18,6 +19,9 @@ import { getTaskCreds } from "@/lib/seo/keys";
 // The provider's actual current lineup is fetched live below, same as the global model picker.
 const OPENAI_MODELS_FALLBACK = OPENAI_FALLBACK_MODELS;
 const KIE_MODELS_FALLBACK = ["gpt-5-5", "gpt-5-4", "gpt-5-2"];
+const GEMINI_MODELS_FALLBACK = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite"];
+const modelsFallbackFor = (eng: GeoEngineChoice): string[] =>
+  eng === "kie" ? KIE_MODELS_FALLBACK : eng === "gemini" ? GEMINI_MODELS_FALLBACK : OPENAI_MODELS_FALLBACK;
 
 export default function GeoAuditPage() {
   const { t } = useLanguage();
@@ -37,18 +41,18 @@ export default function GeoAuditPage() {
   const [hasKey, setHasKey] = useState(true);
   const [hasOpenAi, setHasOpenAi] = useState(false);
   const [hasKie, setHasKie] = useState(false);
+  const [hasGemini, setHasGemini] = useState(false);
 
   useEffect(() => {
-    const oa = !!getOpenAiKey(), kie = !!getKieKeyForGeo();
-    setHasOpenAi(oa); setHasKie(kie);
-    setHasKey(oa || kie);
+    const oa = !!getOpenAiKey(), kie = !!getKieKeyForGeo(), gem = !!getGeminiKeyForGeo();
+    setHasOpenAi(oa); setHasKie(kie); setHasGemini(gem);
+    setHasKey(oa || kie || gem);
     const eng = getGeoEngine();
     setEngine(eng);
     // A stored choice is kept as-is even when it is absent from the fallback list — the fallback
     // is a stopgap for "no key to list models with", not a whitelist of allowed models.
     // loadModels() replaces it if the account no longer offers it.
-    const fallback = eng === "kie" ? KIE_MODELS_FALLBACK : OPENAI_MODELS_FALLBACK;
-    setModel(getGeoModel() || fallback[0]);
+    setModel(getGeoModel() || modelsFallbackFor(eng)[0]);
     loadModels(eng);
     refreshRecent();
   }, []);
@@ -57,16 +61,17 @@ export default function GeoAuditPage() {
   // AI-provider settings picker) instead of trusting a hardcoded, easily stale id list.
   async function loadModels(eng: GeoEngineChoice) {
     const apiKey = getGeoApiKey(eng);
-    const fallback = eng === "kie" ? KIE_MODELS_FALLBACK : OPENAI_MODELS_FALLBACK;
+    const fallback = modelsFallbackFor(eng);
     if (!apiKey) { setModelOpts(fallback.map(id => ({ id, label: id }))); return; }
     setModelsLoading(true);
     try {
-      // baseUrl rides along for the openai engine: with a gateway endpoint override the key is
-      // a gateway key, and the catalogue must come from the gateway too — OpenAI's own /models
-      // 401s on it and the picker silently falls back to ids the gateway doesn't serve.
+      // baseUrl rides along for the openai/gemini engines: with a gateway endpoint override the
+      // key is a gateway key, and the catalogue must come from the gateway too — the vendor's
+      // own /models 401s on it and the picker silently falls back to ids the gateway doesn't serve.
+      const override = eng === "openai" ? getOpenAiBaseUrl() || undefined : eng === "gemini" ? getGeminiBaseUrl() || undefined : undefined;
       const res = await fetch("/api/seo/models", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider: eng, apiKey, baseUrl: eng === "openai" ? getOpenAiBaseUrl() || undefined : undefined }),
+        body: JSON.stringify({ provider: eng, apiKey, baseUrl: override }),
       });
       const data = await res.json();
       const live: ModelOpt[] = Array.isArray(data.models) ? rankModels(data.models) : [];
@@ -89,7 +94,7 @@ export default function GeoAuditPage() {
   function chooseEngine(e: GeoEngineChoice) {
     setEngine(e);
     setGeoEngine(e);
-    const fallback = e === "kie" ? KIE_MODELS_FALLBACK : OPENAI_MODELS_FALLBACK;
+    const fallback = modelsFallbackFor(e);
     setModel(fallback[0]);
     setModelOpts(fallback.map(id => ({ id, label: id })));
     loadModels(e);
@@ -127,11 +132,14 @@ export default function GeoAuditPage() {
     // a failed analysis is not an error here, it silently assembles a report with the whole
     // qualitative half empty. Omitted when the utility provider is someone else, so the server
     // falls back to its own cheap default instead of an id from the wrong vendor.
-    const engineProvider = engine === "kie" ? "kie" : "openai";
+    const engineProvider = engine === "kie" ? "kie" : engine === "gemini" ? "gemini" : "openai";
     const legacyModel = util.provider === engineProvider ? (util.model || undefined) : undefined;
+    const engineBaseUrl = engine === "openai" ? getOpenAiBaseUrl() || undefined
+      : engine === "gemini" ? getGeminiBaseUrl() || undefined
+      : undefined;
     const { id, error } = await startGeoAudit({
       query: q, language, country, model, apiKey, engine,
-      baseUrl: engine === "openai" ? getOpenAiBaseUrl() || undefined : undefined,
+      baseUrl: engineBaseUrl,
       analysisModel: legacyModel,
       analysis,
     });
@@ -208,9 +216,11 @@ export default function GeoAuditPage() {
         <input className="tool-input" value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !running) run(); }}
           placeholder={t("geoFieldKeywordPh")} disabled={running} />
 
-        {hasOpenAi && hasKie && (
-          <div style={{ display: "flex", gap: "8px", marginTop: "14px" }}>
-            {(["openai", "kie"] as GeoEngineChoice[]).map(e => (
+        {([hasOpenAi, hasKie, hasGemini].filter(Boolean).length > 1) && (
+          <div style={{ display: "flex", gap: "8px", marginTop: "14px", flexWrap: "wrap" }}>
+            {(["openai", "gemini", "kie"] as GeoEngineChoice[])
+              .filter(e => (e === "openai" && hasOpenAi) || (e === "gemini" && hasGemini) || (e === "kie" && hasKie))
+              .map(e => (
               <button key={e} onClick={() => !running && chooseEngine(e)} disabled={running}
                 style={{
                   padding: "7px 13px", borderRadius: "8px", fontSize: "12px", fontWeight: 700, cursor: running ? "default" : "pointer",
@@ -218,7 +228,7 @@ export default function GeoAuditPage() {
                   background: engine === e ? "rgba(191,90,242,0.12)" : "var(--color-card)",
                   color: engine === e ? "var(--color-accent-purple)" : "var(--color-text-secondary)",
                 }}>
-                {e === "openai" ? "OpenAI" : "Kie.ai"}
+                {e === "openai" ? "OpenAI" : e === "gemini" ? "Gemini" : "Kie.ai"}
               </button>
             ))}
           </div>

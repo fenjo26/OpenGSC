@@ -120,9 +120,64 @@ function buildSearchInput(query: string, language: string, country: string): str
 // "openai" hits OpenAI's own Responses API directly. "kie" routes the same request shape through
 // kie.ai's `/codex/v1/responses` endpoint, which mirrors OpenAI's Responses API 1:1 (including the
 // `web_search` tool) but bills against the user's kie.ai credits instead of a separate OpenAI key.
-export type GeoEngine = "openai" | "kie";
+// "gemini" runs Google's own grounding search (`google_search` tool on generateContent) on the
+// user's Gemini key — a different request shape whose grounding chunks map onto the same trace.
+export type GeoEngine = "openai" | "kie" | "gemini";
+
+// Gemini grounding: google_search grounds the answer and reports webSearchQueries (what it
+// searched) plus groundingChunks (the pages it actually cited) — exactly the RawTrace shape the
+// report assembles from. No open_page equivalent exists, so `opened` stays empty by design.
+async function runGeminiGroundedSearch(
+  query: string, language: string, country: string, model: string, apiKey: string, baseUrl?: string,
+): Promise<RawTrace | { error: string }> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 280_000);
+  const root = (baseUrl || "").replace(/\/+$/, "") || "https://generativelanguage.googleapis.com/v1beta";
+  const input = buildSearchInput(query, language, country);
+  try {
+    const res = await fetch(`${root}/models/${encodeURIComponent(model)}:generateContent`, {
+      method: "POST", signal: ctrl.signal,
+      headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: input }] }],
+        tools: [{ google_search: {} }],
+      }),
+    });
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      return { error: `gemini_${res.status}: ${t.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160)}` };
+    }
+    const data = await res.json();
+    const cand = Array.isArray(data?.candidates) ? data.candidates[0] : null;
+    const parts: any[] = Array.isArray(cand?.content?.parts) ? cand.content.parts : [];
+    let answerText = "";
+    for (const p of parts) if (typeof p?.text === "string") answerText += p.text + "\n";
+    const gm = cand?.groundingMetadata ?? {};
+    const queries: string[] = Array.isArray(gm.webSearchQueries) ? gm.webSearchQueries.map((q: any) => String(q)).filter(Boolean) : [];
+    const seen = new Set<string>();
+    const sources: { url: string; domain: string; title: string }[] = [];
+    for (const c of Array.isArray(gm.groundingChunks) ? gm.groundingChunks : []) {
+      const url = c?.web?.uri ?? "";
+      if (!url || seen.has(url)) continue;
+      seen.add(url);
+      sources.push({ url, domain: domainOf(url), title: c?.web?.title ?? "" });
+    }
+    return {
+      batches: queries.length ? [{ id: "g1", queries, sources: sources.map(s => ({ url: s.url, domain: s.domain })) }] : [],
+      opened: [],
+      scannedAll: sources.map(s => ({ url: s.url, domain: s.domain })),
+      answerText: answerText.trim(),
+      citations: sources,
+    };
+  } catch (e: any) {
+    return { error: e?.name === "AbortError" ? "timeout" : String(e?.message ?? e) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 async function runWebSearch(query: string, language: string, country: string, model: string, apiKey: string, engine: GeoEngine = "openai", baseUrl?: string): Promise<RawTrace | { error: string }> {
+  if (engine === "gemini") return runGeminiGroundedSearch(query, language, country, model, apiKey, baseUrl);
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 280_000);
   const input = buildSearchInput(query, language, country);
@@ -401,6 +456,16 @@ async function runAnalysis(
       const r = await fetchLLMDetailed(
         prompt, creds.provider, creds.apiKey, 8000, creds.model || undefined, creds.baseUrl, 0.2,
       );
+      if (!r.text) {
+        console.error("[GEO] analysis failed:", r.error ?? "no text");
+        return null;
+      }
+      return extractJson(r.text);
+    }
+    if (engine === "gemini") {
+      // The Gemini engine's key only speaks generateContent — the shared client's gemini branch
+      // is the correct unattended fallback (same as the creds path, on the search key).
+      const r = await fetchLLMDetailed(prompt, "gemini", apiKey, 8000, analysisModel || undefined, baseUrl, 0.2);
       if (!r.text) {
         console.error("[GEO] analysis failed:", r.error ?? "no text");
         return null;
@@ -737,8 +802,9 @@ export async function runGeoAudit(params: {
   if (!apiKey) return { ok: false, error: "no_key" };
   const language = String(params.language ?? "en");
   const country = String(params.country ?? "us");
-  const engine: GeoEngine = params.engine === "kie" ? "kie" : "openai";
-  const model = String(params.model ?? "") || (engine === "kie" ? "gpt-5-5" : OPENAI_FALLBACK_MODELS[0]);
+  const engine: GeoEngine = params.engine === "kie" ? "kie" : params.engine === "gemini" ? "gemini" : "openai";
+  const model = String(params.model ?? "")
+    || (engine === "kie" ? "gpt-5-5" : engine === "gemini" ? "gemini-2.5-flash" : OPENAI_FALLBACK_MODELS[0]);
   const baseUrl = String(params.baseUrl ?? "").trim() || undefined;
 
   const trace = await runWebSearch(query, language, country, model, apiKey, engine, baseUrl);
@@ -749,9 +815,10 @@ export async function runGeoAudit(params: {
 
   // Through a gateway the hardcoded cheap default is an id the gateway may not serve (its
   // catalogue is not OpenAI's), so the search model — a proven-valid id on that gateway —
-  // stands in for the unattended stage-2 fallback.
+  // stands in for the unattended stage-2 fallback. The Gemini engine defaults likewise: an
+  // OpenAI id would 404 against the user's Gemini key.
   const analysisModel = String(params.analysisModel ?? "")
-    || (baseUrl ? model : OPENAI_FALLBACK_CHEAP);
+    || (engine === "gemini" || engine === "kie" || baseUrl ? model : OPENAI_FALLBACK_CHEAP);
   const analysis = await runAnalysis(trace, query, language, country, analysisModel, apiKey, engine, params.analysis, baseUrl);
   const report = assembleReport({ query, language, country, model, trace, analysis });
   return { ok: true, data: report };

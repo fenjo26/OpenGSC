@@ -32,10 +32,11 @@ export async function POST(req: Request) {
   if (!query) return NextResponse.json({ error: "no_query" }, { status: 400 });
   const apiKey = String(b.apiKey ?? "");
   if (!apiKey) return NextResponse.json({ error: "no_key" }, { status: 400 });
-  const engine: GeoEngine = b.engine === "kie" ? "kie" : "openai";
+  const engine: GeoEngine = b.engine === "kie" ? "kie" : b.engine === "gemini" ? "gemini" : "openai";
   const language = String(b.language ?? "en");
   const country = String(b.country ?? "us");
-  const model = String(b.model ?? "") || (engine === "kie" ? "gpt-5-5" : OPENAI_FALLBACK_MODELS[0]);
+  const model = String(b.model ?? "")
+    || (engine === "kie" ? "gpt-5-5" : engine === "gemini" ? "gemini-2.5-flash" : OPENAI_FALLBACK_MODELS[0]);
   // Engine endpoint override (aiBaseUrl_openai): validated like analysis.baseUrl, because this
   // string decides where the API key is sent.
   const baseUrl = typeof b.baseUrl === "string" && b.baseUrl.trim() ? b.baseUrl.trim() : undefined;
