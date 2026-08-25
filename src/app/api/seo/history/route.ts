@@ -7,11 +7,13 @@ import { rawQuery, rawExec } from "@/lib/db/raw";
 
 // The SEO Tools History store. SeoHistory IS the source of truth (the browser's localStorage
 // is a cache of the newest records), so reads paginate instead of capping what exists.
-// GET ?limit&offset → { records, total } (newest first, data included — the list page scores
-//                    text records client-side, so rows must be self-sufficient)
-// GET ?id=X         → { record } (single record, for detail pages past the local cache)
-// PUT { records }   → upsert the given records (client pushes only its dirty ids)
-// DELETE ?id=X      → delete one record;  DELETE ?all=1 → wipe the user's history
+// GET ?index=1       → { rows } — EVERY record, thin (no data/meta): powers client-side search,
+//                      filters and exact counts without shipping megabytes of article bodies
+// GET ?limit&offset  → { records, total } (newest first, data included)
+// GET ?ids=a,b,c     → { records } — full bodies for up to 100 ids (score badges per page)
+// GET ?id=X          → { record } (single record, for detail pages past the local cache)
+// PUT { records }    → upsert the given records (client pushes only its dirty ids)
+// DELETE ?id=X       → delete one record;  DELETE ?all=1 → wipe the user's history
 
 const COLS = `id, type, keyword, status, data, meta, createdAt`;
 
@@ -27,6 +29,10 @@ function mapRow(r: any) {
   };
 }
 
+function thinRow(r: any) {
+  return { id: r.id, type: r.type, keyword: r.keyword, status: r.status, createdAt: new Date(r.createdAt).getTime() };
+}
+
 // Numeric-clamped and interpolated, not parameterised: LIMIT ?/OFFSET ? placeholders are
 // rejected by some MySQL driver modes, and the clamp guarantees these are integers.
 const lim = (v: number | null, dflt: number, max: number) => {
@@ -40,6 +46,20 @@ export async function GET(req: Request) {
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const sp = new URL(req.url).searchParams;
   try {
+    if (sp.get("index")) {
+      const rows: any[] = await rawQuery(
+        `SELECT id, type, keyword, status, createdAt FROM "SeoHistory" WHERE userId = ? ORDER BY createdAt DESC, id DESC`, userId);
+      return NextResponse.json({ rows: rows.map(thinRow), total: rows.length });
+    }
+    const idsParam = sp.get("ids");
+    if (idsParam) {
+      const ids = idsParam.split(",").map(s => s.trim()).filter(Boolean).slice(0, 100);
+      if (!ids.length) return NextResponse.json({ records: [] });
+      const ph = ids.map(() => "?").join(",");
+      const rows: any[] = await rawQuery(
+        `SELECT ${COLS} FROM "SeoHistory" WHERE userId = ? AND id IN (${ph})`, userId, ...ids);
+      return NextResponse.json({ records: rows.map(mapRow) });
+    }
     const id = sp.get("id");
     if (id) {
       const one: any[] = await rawQuery(
