@@ -799,7 +799,13 @@ export async function genOutline(b: any): Promise<GenResult> {
         model: b.judgeModel || model || undefined,
         baseUrl: b.judgeBaseUrl || baseUrl || undefined,
       },
-      { keyword, language: String(b.language ?? "en"), country: String(b.country ?? "us") },
+      {
+        keyword, language: String(b.language ?? "en"), country: String(b.country ?? "us"),
+        constraints: [
+          b.custom ? String(b.custom) : "",
+          b.structureRules ? String(b.structureRules) : "",
+        ].filter(Boolean).join("\n") || undefined,
+      },
     );
     if (verdict.verdict === "reject") {
       return { ok: false, error: `judge_rejected: ${verdict.blockers?.join("; ") || "the QA reviewer rejected the outline"}` };
@@ -1527,7 +1533,13 @@ export async function genText(b: any): Promise<GenResult> {
         model: b.judgeModel || model || undefined,
         baseUrl: b.judgeBaseUrl || baseUrl || undefined,
       },
-      { language },
+      {
+        language,
+        // What the author deliberately excluded or required. Without it the judge rejects the
+        // article for obeying the instruction — see judgeArticle.
+        constraints: [authorInstruction, slimOutline.meta?.structureRules ? String(slimOutline.meta.structureRules) : ""]
+          .filter(Boolean).join("\n") || undefined,
+      },
     );
     if (verdict.verdict === "reject") {
       return { ok: false, error: `judge_rejected: ${verdict.blockers?.join("; ") || "the QA reviewer rejected the article"}` };

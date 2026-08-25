@@ -424,7 +424,10 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
         model: b.judgeModel || b.model || undefined,
         baseUrl: b.judgeBaseUrl || b.aiBaseUrl || undefined,
       },
-      { sourceExcerpt: source },
+      // Same reason as the text pipeline: a rewrite told to strip a competitor comparison has a
+      // section the source had and the draft does not, and "missing sections it announced" is on
+      // the judge's reject list.
+      { sourceExcerpt: source, constraints: customText || undefined },
     );
 
   // Why each variant was killed by the gate or the judge, so a batch where nothing survived

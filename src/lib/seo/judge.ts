@@ -53,7 +53,7 @@ async function callJudge(prompt: string, ctx: JudgeContext): Promise<JudgeOutcom
 export function judgeArticle(
   draft: string,
   ctx: JudgeContext,
-  opts: { sourceExcerpt?: string; language?: string } = {},
+  opts: { sourceExcerpt?: string; language?: string; constraints?: string } = {},
 ): Promise<JudgeOutcome> {
   const sourceBlock = opts.sourceExcerpt
     ? `\n\nSOURCE (first 4000 characters, for comparison):\n${opts.sourceExcerpt.slice(0, 4000)}`
@@ -67,6 +67,25 @@ export function judgeArticle(
     ? `- it introduces page furniture (menus, form confirmations, buttons) that does NOT appear in the source\n`
     : `- it copies page furniture (menus, booking/contact-form confirmations, thank-you messages, buttons)\n`;
   const langLine = opts.language ? `The article must be written in: ${opts.language}. Reject if it is in another language.\n` : "";
+  // Two things the judge has to be told, or it rejects the pipeline for working correctly.
+  //
+  // Placeholders. The writing prompts REQUIRE square-bracket markers where real data is missing
+  // ([ЗАПОЛНИТЬ ВРУЧНУЮ: …], [ВСТАВЬ РЕАЛЬНЫЙ ОПЫТ]), and the mechanics gate re-inserts an
+  // author's [[WIDGET]] token when the writer dropped one — immediately before this call. To a
+  // fresh reviewer those read exactly like scratch left in by accident, which is the first thing
+  // on its reject list. So the article gets written to spec, repaired to spec, and thrown away.
+  const placeholderLine =
+    `Square-bracket markers are INTENTIONAL and must never be a reason to reject: [[NAME]] tokens ` +
+    `are the author's own placeholders (a booking widget, a form) and [SOMETHING IN BRACKETS] marks ` +
+    `a spot the pipeline was told to leave for manual completion rather than invent. They are part ` +
+    `of the deliverable, not scratch.\n`;
+  // Constraints. The judge is deliberately fresh-context, but "the structure does not cover X" is
+  // the wrong verdict when the author explicitly said not to cover X. This tells it what was
+  // deliberate without telling it how the article was written.
+  const constraintLine = opts.constraints?.trim()
+    ? `\nThe author imposed these constraints on this page. Anything absent BECAUSE of them is ` +
+      `deliberate and is not an omission — judge completeness within them:\n${opts.constraints.trim().slice(0, 2000)}\n`
+    : "";
   return callJudge(
     `You are a strict QA reviewer. A tool generated a web article; below is the finished draft ` +
     `that is about to be saved as a completed result. Decide whether it is a COMPLETE, PUBLISHABLE article.\n\n` +
@@ -77,6 +96,7 @@ export function judgeArticle(
     `- it contains the generator's own self-check or planning lines (word counts, section budgets)\n` +
     `- it is written in a different language than required\n\n` +
     `Do NOT judge style, quality or SEO — only completeness and publishability.\n` +
+    `${placeholderLine}${constraintLine}` +
     `${langLine}Return STRICT JSON, nothing else: {"verdict":"publish"} or {"verdict":"reject","blockers":["short reason", "..."]}\n\n` +
     `DRAFT (full):${sourceBlock ? "" : "\n"}${draft}${sourceBlock}`,
     ctx,
@@ -92,7 +112,7 @@ export function judgeArticle(
 export function judgeOutline(
   outline: any,
   ctx: JudgeContext,
-  opts: { keyword: string; language?: string; country?: string },
+  opts: { keyword: string; language?: string; country?: string; constraints?: string },
 ): Promise<JudgeOutcome> {
   const secs = Array.isArray(outline?.sections) ? outline.sections : [];
   const compact = {
@@ -101,6 +121,14 @@ export function judgeOutline(
     faq: Array.isArray(outline?.faq) ? outline.faq.map((f: any) => f?.question ?? f) : [],
   };
   const langLine = opts.language ? `The headings must be in: ${opts.language}. ` : "";
+  // "The structure does not cover what the query asks for" is the outline judge's main rejection,
+  // and it is the wrong one when the author's own rules removed the section it is looking for.
+  // Without this an outline is rejected precisely for obeying the instruction — and a rejected
+  // outline job is paid work discarded.
+  const constraintLine = opts.constraints?.trim()
+    ? `\nThe author imposed these constraints on this outline. A section missing BECAUSE of them is ` +
+      `deliberate, not a coverage gap — judge completeness within them:\n${opts.constraints.trim().slice(0, 2000)}\n`
+    : "";
   return callJudge(
     `You are a strict QA reviewer for SEO article outlines. An outline was generated for the ` +
     `search query "${opts.keyword}"${opts.country ? ` (market: ${opts.country})` : ""}. Below is its ` +
@@ -111,6 +139,7 @@ export function judgeOutline(
     `- obviously too thin for a real article (a couple of headings and nothing else)\n` +
     `- headings in the wrong language (${langLine}reject otherwise)\n\n` +
     `Do NOT judge wording style or keyword placement — only structural completeness and coverage.\n` +
+    `${constraintLine}` +
     `Return STRICT JSON, nothing else: {"verdict":"publish"} or {"verdict":"reject","blockers":["short reason", "..."]}\n\n` +
     `OUTLINE STRUCTURE:\n${JSON.stringify(compact).slice(0, 12000)}`,
     ctx,
