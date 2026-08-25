@@ -24,6 +24,12 @@ export function getOpenAiKey(): string {
   if (typeof window === "undefined") return "";
   return localStorage.getItem("aiKey_openai") || (localStorage.getItem("aiProvider") === "openai" ? localStorage.getItem("aiApiKey") || "" : "");
 }
+// Endpoint override for the OpenAI engine (aiBaseUrl_openai), same convention as the shared
+// client: a gateway key must be spent against the gateway, never against api.openai.com.
+export function getOpenAiBaseUrl(): string {
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem("aiBaseUrl_openai") || "";
+}
 export function getKieKeyForGeo(): string {
   if (typeof window === "undefined") return "";
   return localStorage.getItem("aiKey_kie") || "";
@@ -65,6 +71,7 @@ export function setGeoModel(m: string) {
 export async function startGeoAudit(payload: {
   query: string; language: string; country: string; model: string; apiKey: string;
   engine?: GeoEngineChoice;
+  baseUrl?: string;
   analysisModel?: string;
   /**
    * Stage-2 provider, key and model from the `utility` task setting.

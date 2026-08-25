@@ -122,11 +122,18 @@ function buildSearchInput(query: string, language: string, country: string): str
 // `web_search` tool) but bills against the user's kie.ai credits instead of a separate OpenAI key.
 export type GeoEngine = "openai" | "kie";
 
-async function runWebSearch(query: string, language: string, country: string, model: string, apiKey: string, engine: GeoEngine = "openai"): Promise<RawTrace | { error: string }> {
+async function runWebSearch(query: string, language: string, country: string, model: string, apiKey: string, engine: GeoEngine = "openai", baseUrl?: string): Promise<RawTrace | { error: string }> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 280_000);
   const input = buildSearchInput(query, language, country);
-  const endpoint = engine === "kie" ? "https://api.kie.ai/codex/v1/responses" : "https://api.openai.com/v1/responses";
+  // Gateway override (aiBaseUrl_openai and friends): a proxy key only authenticates against the
+  // proxy, so the engine must follow the same endpoint-override convention as every other AI
+  // call in the app. Without this a gateway key got posted to api.openai.com, which answers
+  // with OpenAI's own "Incorrect API key provided" 401.
+  const root = (baseUrl || "").replace(/\/+$/, "");
+  const endpoint = root ? `${root}/responses`
+    : engine === "kie" ? "https://api.kie.ai/codex/v1/responses"
+    : "https://api.openai.com/v1/responses";
 
   async function call(toolType: string) {
     return fetch(endpoint, {
@@ -320,7 +327,7 @@ export interface GeoAnalysisCreds {
 async function runAnalysis(
   t: RawTrace, query: string, language: string, country: string,
   analysisModel: string, apiKey: string, engine: GeoEngine = "openai",
-  creds?: GeoAnalysisCreds,
+  creds?: GeoAnalysisCreds, baseUrl?: string,
 ): Promise<any> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 120_000);
@@ -377,7 +384,11 @@ async function runAnalysis(
       return extractJson(text);
     }
 
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    // Same gateway override as stage 1: without utility creds this fallback posts the engine's
+    // key, and a gateway key against api.openai.com is a guaranteed 401 (and a silently hollow
+    // report — a failed analysis is deliberately not a failed audit).
+    const root = (baseUrl || "").replace(/\/+$/, "");
+    const res = await fetch(root ? `${root}/chat/completions` : "https://api.openai.com/v1/chat/completions", {
       method: "POST", signal: ctrl.signal,
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -636,6 +647,12 @@ export async function runGeoAudit(params: {
    * matters because this runs detached in the background for live users.
    */
   analysis?: GeoAnalysisCreds;
+  /**
+   * Endpoint override for the GEO ENGINE (stage 1 + the stage-2 fallback), from
+   * aiBaseUrl_openai. Same convention as the shared client: a gateway key must be spent
+   * against the gateway, never against the vendor it proxies.
+   */
+  baseUrl?: string;
 }): Promise<GeoResult> {
   const query = String(params.query ?? "").trim();
   if (!query) return { ok: false, error: "no_query" };
@@ -645,15 +662,20 @@ export async function runGeoAudit(params: {
   const country = String(params.country ?? "us");
   const engine: GeoEngine = params.engine === "kie" ? "kie" : "openai";
   const model = String(params.model ?? "") || (engine === "kie" ? "gpt-5-5" : OPENAI_FALLBACK_MODELS[0]);
+  const baseUrl = String(params.baseUrl ?? "").trim() || undefined;
 
-  const trace = await runWebSearch(query, language, country, model, apiKey, engine);
+  const trace = await runWebSearch(query, language, country, model, apiKey, engine, baseUrl);
   if ("error" in trace) return { ok: false, error: trace.error };
   if (!trace.answerText && trace.citations.length === 0 && trace.batches.length === 0) {
     return { ok: false, error: "empty_trace" };
   }
 
-  const analysisModel = String(params.analysisModel ?? "") || OPENAI_FALLBACK_CHEAP;
-  const analysis = await runAnalysis(trace, query, language, country, analysisModel, apiKey, engine, params.analysis);
+  // Through a gateway the hardcoded cheap default is an id the gateway may not serve (its
+  // catalogue is not OpenAI's), so the search model — a proven-valid id on that gateway —
+  // stands in for the unattended stage-2 fallback.
+  const analysisModel = String(params.analysisModel ?? "")
+    || (baseUrl ? model : OPENAI_FALLBACK_CHEAP);
+  const analysis = await runAnalysis(trace, query, language, country, analysisModel, apiKey, engine, params.analysis, baseUrl);
   const report = assembleReport({ query, language, country, model, trace, analysis });
   return { ok: true, data: report };
 }

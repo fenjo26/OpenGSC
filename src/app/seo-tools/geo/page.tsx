@@ -8,7 +8,7 @@ import GeoAuditReport from "@/components/GeoAuditReport";
 import type { GeoReport } from "@/lib/seo/geo";
 import {
   startGeoAudit, getGeoAudit, listGeoAudits, deleteGeoAudit, parseReport,
-  getOpenAiKey, getKieKeyForGeo, getGeoEngine, setGeoEngine, getGeoApiKey, GeoEngineChoice,
+  getOpenAiKey, getOpenAiBaseUrl, getKieKeyForGeo, getGeoEngine, setGeoEngine, getGeoApiKey, GeoEngineChoice,
   getGeoModel, setGeoModel, GeoAuditRec,
 } from "@/lib/seo/geoClient";
 import { rankModels, resolveModel, OPENAI_FALLBACK_MODELS, type ModelOpt } from "@/lib/seo/models";
@@ -61,8 +61,12 @@ export default function GeoAuditPage() {
     if (!apiKey) { setModelOpts(fallback.map(id => ({ id, label: id }))); return; }
     setModelsLoading(true);
     try {
+      // baseUrl rides along for the openai engine: with a gateway endpoint override the key is
+      // a gateway key, and the catalogue must come from the gateway too — OpenAI's own /models
+      // 401s on it and the picker silently falls back to ids the gateway doesn't serve.
       const res = await fetch("/api/seo/models", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider: eng, apiKey }),
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: eng, apiKey, baseUrl: eng === "openai" ? getOpenAiBaseUrl() || undefined : undefined }),
       });
       const data = await res.json();
       const live: ModelOpt[] = Array.isArray(data.models) ? rankModels(data.models) : [];
@@ -127,6 +131,7 @@ export default function GeoAuditPage() {
     const legacyModel = util.provider === engineProvider ? (util.model || undefined) : undefined;
     const { id, error } = await startGeoAudit({
       query: q, language, country, model, apiKey, engine,
+      baseUrl: engine === "openai" ? getOpenAiBaseUrl() || undefined : undefined,
       analysisModel: legacyModel,
       analysis,
     });
