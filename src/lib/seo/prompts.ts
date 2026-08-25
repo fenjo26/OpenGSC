@@ -79,6 +79,15 @@ export function buildOutlinePrompt(args: {
   narration?: "first" | "third";
   customTemplate?: string;
   structureRules?: string;
+  /**
+   * The author's free-text instruction — the same string the text step calls `custom`.
+   *
+   * It belongs here as well as there because half of what people write in it is structural
+   * ("don't give the reverse route its own section", "keep a [[WIDGET]] placeholder where the
+   * form goes", "link to /where-to-stay/"). Telling only the writer produces a structure that
+   * fights the instruction and a writer that has to disobey the outline to obey the author.
+   */
+  custom?: string;
   ragFacts?: string;
   lightSections?: boolean; // enrichment pass will deepen sections — keep the skeleton lean & fast
   bannedWords?: string[];
@@ -117,6 +126,9 @@ export function buildOutlinePrompt(args: {
     : "";
   const customTplBlock = args.customTemplate?.trim()
     ? `\n\nПОЛЬЗОВАТЕЛЬСКИЙ ШАБЛОН СТРУКТУРЫ (ВЫСШИЙ ПРИОРИТЕТ — каркас): используй ИМЕННО эти заголовки H1/H2/H3, в ТОМ ЖЕ порядке и с той же формулировкой (язык заголовков адаптируй под язык статьи, если шаблон на другом). НЕ переименовывай по смыслу, не выкидывай и не переставляй заданные пункты. При этом ОБОГАЩАЙ шаблон: внутри крупных шаблонных H2 ДОБАВЛЯЙ 2-4 СВОИХ H3-подсекции (сразу после их H2, до следующего шаблонного H2), покрывающих реальные под-интенты темы — шаблон задаёт каркас, а полнота набирается твоими H3. Детально заполняй все секции по EAV.\n${args.customTemplate.trim().slice(0, 4000)}`
+    : "";
+  const authorBlock = args.custom?.trim()
+    ? `\n\nИНСТРУКЦИЯ АВТОРА (ОБЯЗАТЕЛЬНА — если она что-то запрещает: отдельную секцию под какую-то тему, упоминание конкурентов, внешние ссылки — структура ОБЯЗАНА это соблюсти; если требует плейсхолдер или внутренние ссылки — заложи их в copywriter_notes соответствующих секций): ${args.custom.trim().slice(0, 4000)}`
     : "";
   const structRulesBlock = args.structureRules?.trim()
     ? `\n\nПРАВИЛА СТРУКТУРЫ ОТ ПОЛЬЗОВАТЕЛЯ (учитывай ОБЯЗАТЕЛЬНО при построении секций — это указания, как организовать статью): ${args.structureRules.trim().slice(0, 1500)}`
@@ -206,7 +218,7 @@ ${args.lightSections
 ДАНО:
 - keyword: ${args.keyword}
 - язык/страна: ${args.language}/${args.country}${toneBlock}${personaBlock}${narrationBlock}${addKw}${lsiKw}${twc}${paaBlock}${relBlock}
-- топ-конкуренты (типы + структура): ${JSON.stringify(args.competitors.map(({ text_sample, ...c }) => { void text_sample; return c; }))}${manual}${kwData}${customTplBlock}${structRulesBlock}${factsBlock}${ragBlock}
+- топ-конкуренты (типы + структура): ${JSON.stringify(args.competitors.map(({ text_sample, ...c }) => { void text_sample; return c; }))}${manual}${kwData}${customTplBlock}${structRulesBlock}${authorBlock}${factsBlock}${ragBlock}
 
 МЕТА-ТЕГИ (title/description/slug) — по правилам Google и Bing, проработай ТЩАТЕЛЬНО (это готовые к публикации варианты):
 - title_options (3 шт.): 50–60 символов (под ~600px, иначе обрежется в выдаче). Главный ключ — в САМОМ НАЧАЛЕ. Если бренд известен — в конце через « | » или « - ». Формула: [Главный ключ] - [Вторичный ключ/УТП] | [Бренд]. Коммерческие — продающий хук (Buy/Best/от €X/Free shipping); информационные — «How to / Guide / Число + …»; числа и скобки повышают CTR. Bing любит точное вхождение ключа.
@@ -276,6 +288,18 @@ export function buildStructureExpandPrompt(args: {
   allowNewH2?: boolean;
   /** How many sections the word target calls for — quoted so the model aims at a real number. */
   targetSections?: number;
+  /**
+   * The user's own structure rules and editorial policy.
+   *
+   * This pass INVENTS headings, and it was the one heading-producing call that could not see the
+   * rules about which headings may exist. A user who wrote "no separate section for the reverse
+   * route — one paragraph with a link" got exactly that outline out of buildOutlinePrompt, and
+   * then this pass grafted the forbidden H2 back on, because to this prompt the outline just
+   * looked flat and the topic looked uncovered.
+   */
+  structureRules?: string;
+  policy?: EditorialPolicy;
+  tone?: string;
 }): string {
   const goal = args.pageGoal === "commercial" ? "коммерческая (конверсионная)" : args.pageGoal === "informational" ? "информационная (справочная)" : "смешанная";
   const paa = args.paa?.length ? `\n- вопросы пользователей из выдачи (покрой релевантные новыми подсекциями): ${JSON.stringify(args.paa.slice(0, 10))}` : "";
@@ -289,6 +313,10 @@ export function buildStructureExpandPrompt(args: {
   const diagnosis = args.allowNewH2
     ? `Она НЕПОЛНАЯ: секций СЛИШКОМ МАЛО для заданного объёма статьи${args.targetSections ? ` (сейчас ${args.sections.length}, нужно ≈${args.targetSections})` : ""} — часть тем вообще не раскрыта. Дострой её: добавь НЕДОСТАЮЩИЕ H2-темы (каждую сразу с 2-4 своими H3) и H3 под существующие H2.`
     : `Она слишком ПЛОСКАЯ — крупным H2 не хватает H3-подсекций, покрывающих реальные под-интенты пользователей. Предложи ДОПОЛНИТЕЛЬНЫЕ H3.`;
+  const sRulesBlock = args.structureRules?.trim()
+    ? `\n- ПРАВИЛА СТРУКТУРЫ ОТ ПОЛЬЗОВАТЕЛЯ (ВЫШЕ любых соображений полноты — если правило ЗАПРЕЩАЕТ какую-то секцию, НЕ предлагай её, даже если тема кажется непокрытой): ${args.structureRules.trim().slice(0, 1500)}`
+    : "";
+  const policyPrefix = args.policy ? renderPolicy(args.policy, args.tone) + "\n\n" : "";
   const placementRule = args.allowNewH2
     ? `- "after_heading" — ТОЧНЫЙ текст существующего H2, ПОСЛЕ блока которого вставить (вставка идёт после всех его H3). Чтобы дописать блок в САМЫЙ КОНЕЦ статьи, поставь "after_heading": "END".
 - Новый H2 подавай ОДНОЙ вставкой вместе со своими H3: [{"h_level":"H2",...},{"h_level":"H3",...},{"h_level":"H3",...}] — H3 идут сразу за своим H2 в том же массиве.
@@ -297,13 +325,13 @@ export function buildStructureExpandPrompt(args: {
     : `- "after_heading" — ТОЧНЫЙ текст существующего H2, под который вставить.
 - word_count_total для нового H3: [80, 160].
 - НЕ добавляй новых H2.`;
-  return `Сегодня ${new Date().toISOString().slice(0, 10)} — если в формулировках уместен год, используй ТОЛЬКО текущий (${new Date().getFullYear()}); НИКОГДА не пиши 2023/2024/2025.\n\nТы — SEO-стратег. Ниже структура статьи по теме "${args.keyword}" (язык ${args.language}, регион ${args.country}, цель страницы: ${goal}). ${diagnosis} Существующие заголовки НЕ трогай, НЕ переименовывай, НЕ переставляй — только вставки. Верни СТРОГИЙ JSON без преамбулы и markdown-обёрток.
+  return `${policyPrefix}Сегодня ${new Date().toISOString().slice(0, 10)} — если в формулировках уместен год, используй ТОЛЬКО текущий (${new Date().getFullYear()}); НИКОГДА не пиши 2023/2024/2025.\n\nТы — SEO-стратег. Ниже структура статьи по теме "${args.keyword}" (язык ${args.language}, регион ${args.country}, цель страницы: ${goal}). ${diagnosis} Существующие заголовки НЕ трогай, НЕ переименовывай, НЕ переставляй — только вставки. Верни СТРОГИЙ JSON без преамбулы и markdown-обёрток.
 
 ПРАВИЛА:
 - Для КАЖДОГО содержательного H2, у которого меньше 2 своих H3, предложи 2-4 новых H3 (для мелких/служебных H2 вроде FAQ/поддержки — можно 0-1 или пропустить).
 - Подсекции — конкретные под-интенты: типы/варианты/шаги/сравнения/условия/цены/география (напр. для услуги: «Цены по типу помещения», «Что входит в базовый пакет», «Как записаться за 3 шага», «Районы обслуживания»; для казино: «Условия отыгрыша (wagering)», «Демо-режим»).
 - Заголовки — на языке ${args.language}, с НЧ-ключами, без дублей существующих.
-${placementRule}
+${placementRule}${sRulesBlock}
 - Суммарно добавь НЕ БОЛЬШЕ ${Math.max(2, args.maxAdd ?? 12)} новых секций по всей статье — выбирай САМЫЕ важные под-интенты, остальные пропусти.
 
 СТРУКТУРА СЕЙЧАС: ${JSON.stringify(args.sections)}${missing}${paa}
@@ -404,6 +432,17 @@ export function buildSectionEnrichPrompt(args: {
   globalEntities?: string[];   // outline-level entity names for consistency
   ragFacts?: string;
   sections: any[];             // the batch (full section objects)
+  /**
+   * copywriter_notes produced here are what the writer follows section by section — in the
+   * chunked writer they are the section's ONLY brief. Enriching them without the policy or the
+   * user's rules is how "never name a competitor" survived into the outline skeleton and then
+   * got contradicted by the notes underneath it: the notes said to compare named services, and
+   * the notes are what the writer reads.
+   */
+  policy?: EditorialPolicy;
+  structureRules?: string;
+  custom?: string;
+  bannedWords?: string[];
 }): string {
   const voice = args.narration === "first"
     ? "первое лицо, экспертный «я»-голос (личный опыт)"
@@ -416,6 +455,13 @@ export function buildSectionEnrichPrompt(args: {
     ? "\n- ЦЕЛЬ СТРАНИЦЫ: СМЕШАННАЯ — информационная полнота + мягкие конверсионные вставки, CTA только там, где уместен."
     : "";
   const ents = args.globalEntities?.length ? `\n- сущности статьи (используй эти + добавляй релевантные): ${args.globalEntities.slice(0, 25).join(", ")}` : "";
+  const policyPrefix = args.policy ? renderPolicy(args.policy, args.tone) + "\n\n" : "";
+  const sRulesLine = args.structureRules?.trim()
+    ? `\n- ПРАВИЛА СТРУКТУРЫ/ПОДАЧИ ОТ ПОЛЬЗОВАТЕЛЯ (обязательны — copywriter_notes не должны им противоречить): ${args.structureRules.trim().slice(0, 1500)}`
+    : "";
+  const authorLine = args.custom?.trim()
+    ? `\n- ИНСТРУКЦИЯ АВТОРА (ПРИОРИТЕТ выше полноты: если она что-то запрещает — упоминание брендов/конкурентов, внешние ссылки, отдельные секции — НЕ пиши этого в summary и copywriter_notes, иначе писатель воспроизведёт запрещённое): ${args.custom.trim().slice(0, 3000)}`
+    : "";
   const rag = args.ragFacts?.trim() ? `\n- ПРОВЕРЕННЫЕ ФАКТЫ ИЗ БАЗЫ ЗНАНИЙ (вплетай конкретику в summary/notes): ${args.ragFacts.trim().slice(0, 2500)}` : "";
   const slim = args.sections.map((s: any) => ({
     h_level: s.h_level, heading: s.heading,
@@ -424,7 +470,7 @@ export function buildSectionEnrichPrompt(args: {
     copywriter_notes: s.copywriter_notes, entity_connections: s.entity_connections,
     visual_elements: s.visual_elements,
   }));
-  return `Сегодня ${new Date().toISOString().slice(0, 10)} — если в формулировках уместен год, используй ТОЛЬКО текущий (${new Date().getFullYear()}); НИКОГДА не пиши 2023/2024/2025.\n\nТы — SEO-стратег и entity-аналитик. Ниже ${slim.length} секций структуры статьи по теме "${args.keyword}" (язык ${args.language}, регион ${args.country}). Они набросаны СКУДНО. ОБОГАТИ каждую до эталонной детализации, по которой копирайтер напишет идеальную секцию. Верни СТРОГИЙ JSON без преамбулы и markdown-обёрток.
+  return `${policyPrefix}Сегодня ${new Date().toISOString().slice(0, 10)} — если в формулировках уместен год, используй ТОЛЬКО текущий (${new Date().getFullYear()}); НИКОГДА не пиши 2023/2024/2025.\n\nТы — SEO-стратег и entity-аналитик. Ниже ${slim.length} секций структуры статьи по теме "${args.keyword}" (язык ${args.language}, регион ${args.country}). Они набросаны СКУДНО. ОБОГАТИ каждую до эталонной детализации, по которой копирайтер напишет идеальную секцию. Верни СТРОГИЙ JSON без преамбулы и markdown-обёрток.
 
 ДЛЯ КАЖДОЙ СЕКЦИИ (ЖЁСТКИЕ ТРЕБОВАНИЯ):
 - "entities_to_cover": 3-5 сущностей (для мелких H3 — 2-3), КАЖДАЯ с weight (1-10) и role ("primary — ядро секции" / "secondary — регуляторная валидация" / "secondary — социальное доказательство" / "secondary — контекст рынка" и т.п.). НЕ дублируй один бренд во все секции — добавляй регуляторов, платёжки, типы игр/ставок, лиги, провайдеров, площадки отзывов.
@@ -434,8 +480,9 @@ export function buildSectionEnrichPrompt(args: {
 - "entity_connections": 3-5 триплетов { "subject","predicate","object","strength": 1-10 }.
 - "visual_elements": суммарно по статье пометь 2-4 САМЫЕ табличные секции (сравнения, цены/бонусы, платёжные методы, характеристики/RTP) элементом { "type":"table", "title":"", "description":"какие колонки и данные" }; у остальных секций — пустой массив. Секцию FAQ НИКОГДА не помечай таблицей — это вопрос-ответ, а не табличные данные, даже если в её summary упоминаются лимиты/бонусы/цифры.
 - ЯЗЫКИ (строго): "summary" и "copywriter_notes" — на РУССКОМ (это инструкции копирайтеру); готовое первое предложение внутри notes и все "keywords" — на языке статьи (${args.language}). Не смешивай языки внутри одного поля.
-- НЕ МЕНЯЙ: heading, h_level, word_count_total, word_count_self — верни их как есть.${goalLine}
+- НЕ МЕНЯЙ: heading, h_level, word_count_total, word_count_self — верни их как есть.${goalLine}${sRulesLine}${authorLine}
 - ${NO_FABRICATION}
+${bannedWordsBlock(args.bannedWords)}
 
 ДАНО:
 - keyword: ${args.keyword}
@@ -741,11 +788,52 @@ export function buildSectionTextPrompt(args: {
   isVerdictChunk?: boolean; // allow one expert blockquote here
   chunkBudget?: [number, number]; // summed word range of this chunk's sections
   bannedWords?: string[];
+  /**
+   * The author-level inputs below were the whole defect this signature existed to hide.
+   *
+   * The chunked writer is the DEFAULT path (any outline with 10+ sections, i.e. every real
+   * article), and it took none of them: the editorial policy, the author's free-text
+   * instruction and the user's structure rules were rendered only by `buildTextPrompt`, which
+   * runs solely as the single-shot fallback when chunks fail. So a user who wrote "never name a
+   * competitor, keep the [[WIDGET]] placeholder, no separate section for the reverse route" got
+   * an article that did none of it, with nothing in the logs to say the instruction had never
+   * been sent. Restating the rules harder — the natural next move — could not work: the text was
+   * not in the prompt at all.
+   */
+  policy?: EditorialPolicy;
+  custom?: string;
+  promptType?: "service" | "custom";
+  structureRules?: string;
 }): string {
   const today = new Date().toISOString().slice(0, 10);
   const year = today.slice(0, 4);
   const narr = args.narration === "first" ? "ПЕРВОЕ лицо — экспертный «я»-голос (личный опыт)"
     : args.narration === "third" ? "ТРЕТЬЕ лицо — нейтральный корпоративный голос" : "экспертный голос";
+  // Same single-source-of-tone rule as buildTextPrompt: when a policy exists it carries the tone
+  // as its override, so the `Тон:` line below is left to the policy rather than stated twice.
+  const policyBlock = args.policy ? renderPolicy(args.policy, args.tone) + "\n\n" : "";
+  // Currency/region rule — present in the single-shot prompt, missing here, which is how a page
+  // written for Greece came back quoting "$8–12".
+  const curLine = args.country
+    ? `\n- ВАЛЮТА И РЕАЛИИ: регион ${args.country} — все цены и суммы в валюте региона (${currencyHint(args.country)}), НЕ в USD по умолчанию; ритейлеры, операторы и реалии — существующие в этом регионе.`
+    : "";
+  const sRules = args.structureRules?.trim();
+  const sRulesLine = sRules ? `\n- ПРАВИЛА СТРУКТУРЫ ОТ ПОЛЬЗОВАТЕЛЯ (действуют и внутри этих секций): ${sRules.slice(0, 1500)}` : "";
+  const authorText = args.custom?.trim();
+  const authorBlock = authorText
+    ? `\n${args.promptType === "custom"
+        ? "ГЛАВНАЯ ИНСТРУКЦИЯ АВТОРА (ВЫСШИЙ ПРИОРИТЕТ — она определяет, ЧТО и КАК писать; при конфликте с любым шаблонным правилом ниже выполняй ЕЁ)"
+        : "ИНСТРУКЦИЯ АВТОРА (ОБЯЗАТЕЛЬНА — приоритет выше, чем у copywriter_notes и общих правил подачи ниже; при конфликте выполняй ЕЁ)"}:
+${authorText.slice(0, 8000)}
+`
+    : "";
+  // Restated inside the rules block as well. A constraint stated once at the top of a long prompt
+  // is followed for the first section and forgotten by the fourth; the chunk is small enough that
+  // repeating it costs almost nothing and it is the negative constraints ("do NOT name brands",
+  // "do NOT give this its own H2") that decay first — exactly the ones that were being violated.
+  const authorRule = authorText
+    ? `\n- ИНСТРУКЦИЯ АВТОРА ВЫШЕ СИЛЬНЕЕ ЭТОГО БЛОКА (кроме запрета выдумывать факты). Если она что-то ЗАПРЕЩАЕТ — называть бренды/конкурентов, ставить ссылки, заводить отдельный заголовок под какую-то тему — запрет действует и здесь, даже если спека секции, copywriter_notes или источники подталкивают к обратному. Если она требует сохранить плейсхолдер (например [[WIDGET]]) или поставить внутренние ссылки — сделай это ДОСЛОВНО в тех секциях, где это уместно.`
+    : "";
   const rag = args.ragFacts?.trim() ? `\nБАЗА ЗНАНИЙ (проверенные факты — используй как достоверные, без ссылок):\n${args.ragFacts.trim().slice(0, 2500)}\n` : "";
   const srcs = (args.sources || []).slice(0, 10);
   const srcBlock = srcs.length && args.sourceMode !== "off"
@@ -757,9 +845,9 @@ export function buildSectionTextPrompt(args: {
   const quote = args.isVerdictChunk
     ? "\n- Можно ОДНУ цитату-блок (строка с «> ») с личным экспертным выводом — только в секции вердикта/итога."
     : "\n- НЕ используй цитаты-блоки (>) в этих секциях.";
-  return `Ты пишешь ФРАГМЕНТ большой статьи по теме "${args.keyword}" (язык ${args.language}${args.country ? `, регион ${args.country}` : ""}). Сегодня ${today} — используй текущий год (${year}), не устаревшие.
-Тон: ${args.tone}. Лицо: ${narr}.
-
+  return `${policyBlock}Ты пишешь ФРАГМЕНТ большой статьи по теме "${args.keyword}" (язык ${args.language}${args.country ? `, регион ${args.country}` : ""}). Сегодня ${today} — используй текущий год (${year}), не устаревшие.
+${args.policy ? "" : `Тон: ${args.tone}. `}Лицо: ${narr}.
+${authorBlock}
 ПОЛНАЯ КАРТА СТАТЬИ (для понимания контекста — эти секции пишут ОТДЕЛЬНО, их содержимое НЕ дублируй и НЕ анонсируй):
 ${args.allHeadings.map(h => `${h.h_level}: ${h.heading}`).join("\n")}
 
@@ -773,12 +861,70 @@ ${args.allHeadings.map(h => `${h.h_level}: ${h.heading}`).join("\n")}
 - ПЛОТНОСТЬ ФАКТОВ (КРИТИЧНО — главный критерий качества): минимум КАЖДОЕ ВТОРОЕ предложение содержит конкретику — число, сумму, срок, процент, название модели/провайдера/лиги/платёжки. Пиши «ответ в чате за ~30 секунд с 10:00 до 23:00», а не «быстрая и отзывчивая поддержка». Предложение без факта — кандидат на удаление. Конкретику бери из summary/copywriter_notes/entities секции, базы знаний и источников — переноси ДОСЛОВНО. Если точного значения нигде нет — НЕ выдумывай, но и не пиши пустое обобщение: возьми другой реальный факт из материалов. Ключи из keywords вплетай в первые абзацы секции.
 - ПОДТЕМЫ: если у секции есть "subtopics" — раскрой КАЖДУЮ подтему 1-2 абзацами ВНУТРИ секции, БЕЗ отдельного заголовка (это редакторское решение: подтема покрывается прозой, её ключи вплетаются в эти абзацы).
 - ${NO_FABRICATION}
-- Язык — строго ${args.language}, без вкраплений других письменностей.
+- Язык — строго ${args.language}, без вкраплений других письменностей. НЕ смешивай алфавиты ВНУТРИ слова (кириллическая «а» в латинском слове и наоборот) — это брак, который не видно глазом.${curLine}${sRulesLine}${authorRule}
 ${bannedWordsBlock(args.bannedWords)}${rag}${srcBlock}${faqBlock}
 СЕКЦИИ ДЛЯ НАПИСАНИЯ (JSON-спеки):
 ${JSON.stringify(args.sections)}
 
 Верни ТОЛЬКО markdown этих секций (начиная с первого заголовка), без преамбулы и без \`\`\`-обёрток.`;
+}
+
+// ─── FAQ section: one dedicated call, for the same reason the chunks exist ──────────────
+// This was an inline template literal in generate.ts, and being inline is what made it the one
+// call in the whole text pipeline that saw NO policy, NO banned vocabulary and NO author
+// instruction. On an affiliate page whose instruction reads "never name a competitor" that is a
+// hole with a heading on top of it: the FAQ is precisely where a model reaches for a price
+// comparison, and the answers are what an AI search engine quotes back.
+export function buildFaqSectionPrompt(args: {
+  keyword: string;
+  language: string;
+  faq: { question: string; answer_guideline?: string }[];
+  policy?: EditorialPolicy;
+  tone?: string;
+  custom?: string;
+  bannedWords?: string[];
+  country?: string;
+}): string {
+  const today = new Date().toISOString().slice(0, 10);
+  const policyBlock = args.policy ? renderPolicy(args.policy, args.tone) + "\n\n" : "";
+  const authorText = args.custom?.trim();
+  const authorBlock = authorText
+    ? `\nИНСТРУКЦИЯ АВТОРА (обязательна и в FAQ — запреты из неё действуют в ответах так же, как в тексте статьи):\n${authorText.slice(0, 4000)}\n`
+    : "";
+  const curLine = args.country
+    ? `\nВалюта ответов — валюта региона ${args.country} (${currencyHint(args.country)}), не USD по умолчанию.`
+    : "";
+  return `${policyBlock}Сегодня ${today} — если уместен год, только текущий (${new Date().getFullYear()}). Ты пишешь FAQ-секцию статьи по теме "${args.keyword}" на языке ${args.language}.${curLine}
+${authorBlock}Верни ТОЛЬКО markdown секции строго такой формы: первая строка — ровно «## FAQ», затем СРАЗУ первый вопрос — НИКАКОГО вводного абзаца между ними. Каждый вопрос — «### Вопрос», под ним ответ 40-60 слов по answer_guideline (конкретика, без воды). Все ${args.faq.length} вопросов, СТРОГО В ЗАДАННОМ ПОРЯДКЕ. Заголовок секции НЕ переименовывай — ровно «## FAQ». Пиши строго на языке ${args.language} и его алфавитом, не смешивая алфавиты внутри слова. Без преамбулы и \`\`\`-обёрток.
+${bannedWordsBlock(args.bannedWords)}ВОПРОСЫ: ${JSON.stringify(args.faq)}`;
+}
+
+// ─── Scoped mechanics repair ────────────────────────────────────────────────────────────
+// Runs only when lib/seo/mechanics.ts found something it refused to fix with a regex, and it is
+// deliberately narrow: named defects in, the same article out. The alternative — asking for a
+// re-write "without competitors" — costs another full generation and comes back with different
+// prose, so the honest parts of a good article get re-rolled to fix a brand name in one sentence.
+export function buildMechanicsRepairPrompt(args: {
+  article: string;
+  defects: string[];
+  language: string;
+}): string {
+  return `Ниже ГОТОВАЯ СТАТЬЯ в Markdown. В ней найдены КОНКРЕТНЫЕ дефекты механики страницы (не стиля). Исправь ТОЛЬКО их.
+
+ДЕФЕКТЫ:
+${args.defects.map((d, i) => `${i + 1}. ${d}`).join("\n")}
+
+КАК ЧИНИТЬ:
+- Название бренда/конкурента: убери САМО НАЗВАНИЕ, а цифру и смысл предложения СОХРАНИ («у Welcome Pickups от €58» → «у международных агрегаторов трансфера — от €58»). НЕ удаляй предложение целиком и не выдумывай замену-факт.
+- Пропавший плейсхолдер вида [[ИМЯ]]: вставь его ДОСЛОВНО, отдельной строкой, в том месте, где по смыслу должна стоять форма/виджет (обычно после первой секции, где речь о бронировании).
+- Отсутствующая внутренняя ссылка вида /path/: поставь ОДНУ ссылку в формате [естественный якорь](/path/) в том абзаце, где эта тема реально упоминается. НЕ добавляй блок «читайте также» и не ставь одну и ту же ссылку дважды.
+- Цена в чужой валюте: НЕ конвертируй по курсу — это выдуманное число. Либо убери сумму и оставь качественное утверждение, либо перефразируй так, чтобы валюта не требовалась.
+
+ЧЕГО НЕ ДЕЛАТЬ: не переписывай остальной текст, не меняй заголовки (их количество, уровни, формулировки и порядок), не трогай мета-блок в начале, не трогай FAQ кроме перечисленных дефектов, не удаляй таблицы и не меняй значения в них, не меняй объём статьи.
+Язык — ${args.language}. Верни ПОЛНУЮ статью целиком в Markdown, без преамбулы и без \`\`\`-обёрток.
+
+СТАТЬЯ:
+${args.article}`;
 }
 
 // ─── Text expansion pass: bring an under-length article up to its target volume ──────

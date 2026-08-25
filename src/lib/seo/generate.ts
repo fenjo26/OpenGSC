@@ -7,11 +7,17 @@ import { judgeArticle, judgeOutline } from "@/lib/seo/judge";
 import { runSerp, heuristicIntent, heuristicSiteType } from "@/lib/seo/serp";
 import { enrichKeywords, type KwSource } from "@/lib/seo/keywordSource";
 import { scrapeMany } from "@/lib/seo/scrape";
+import type { EditorialPolicy } from "@/lib/seo/policy";
+import {
+  checkMechanics, repairableIssues, summarizeMechanics,
+  placeholdersFromInstruction, linksFromInstruction, brandsFromDomains,
+  type MechanicsIssue,
+} from "@/lib/seo/mechanics";
 import {
   buildOutlinePrompt, buildTextPrompt, buildAnalysisPrompt, buildFactScrubPrompt, buildSourceExtractPrompt,
   buildAutoFactCleanPrompt, buildWireframePrompt, buildSectionEnrichPrompt, buildStructureExpandPrompt,
   buildHeadingLocalizePrompt, buildTextExpandPrompt, buildTextTrimPrompt, buildSectionTextPrompt,
-  buildFaqBackfillPrompt,
+  buildFaqBackfillPrompt, buildFaqSectionPrompt, buildMechanicsRepairPrompt,
   enforceLinkPolicy, redactBannedWords, extractJson, extractJsonDetailed, CompetitorInput,
 } from "@/lib/seo/prompts";
 import { findRagFacts } from "@/lib/seo/rag";
@@ -206,6 +212,9 @@ async function expandOutlineStructure(outline: any, ctx: {
   keyword: string; language: string; country: string; provider: string; apiKey: string;
   model?: string; baseUrl?: string; pageGoal?: "informational" | "commercial" | "mixed"; paa?: string[];
   targetWc?: number;
+  // This pass invents headings; without these it could re-add the very section the user's rules
+  // told the outline step to leave out. See buildStructureExpandPrompt.
+  structureRules?: string; policy?: EditorialPolicy; tone?: string;
 }): Promise<boolean> {
   const sections: any[] = Array.isArray(outline?.sections) ? outline.sections : [];
   const maxSections = targetSectionCount(ctx.targetWc);
@@ -233,6 +242,7 @@ async function expandOutlineStructure(outline: any, ctx: {
     allowNewH2: isShort,
     missingTopics,
     targetSections: maxSections,
+    structureRules: ctx.structureRules, policy: ctx.policy, tone: ctx.tone,
   });
   const raw = await fetchLLM(prompt, ctx.provider, ctx.apiKey, 6000, ctx.model, ctx.baseUrl);
   const parsed: any = extractJson(raw);
@@ -370,6 +380,9 @@ async function enrichOutlineSections(outline: any, ctx: {
   keyword: string; language: string; country: string; provider: string; apiKey: string;
   model?: string; baseUrl?: string; tone?: string; persona?: string; ragFacts?: string;
   pageGoal?: "informational" | "commercial" | "mixed";
+  // copywriter_notes written here are the writer's entire brief for a section. See
+  // buildSectionEnrichPrompt for why enriching them blind to the policy undoes the policy.
+  policy?: EditorialPolicy; structureRules?: string; custom?: string; bannedWords?: string[];
 }): Promise<boolean> {
   const sections: any[] = Array.isArray(outline?.sections) ? outline.sections : [];
   if (!sections.length) return false;
@@ -387,6 +400,7 @@ async function enrichOutlineSections(outline: any, ctx: {
         tone: ctx.tone, persona: ctx.persona, pageGoal: ctx.pageGoal,
         narration: outline?.meta?.narration === "first" ? "first" : outline?.meta?.narration === "third" ? "third" : undefined,
         h1: outline?.meta?.h1, globalEntities, ragFacts: ctx.ragFacts, sections: batch.items,
+        policy: ctx.policy, structureRules: ctx.structureRules, custom: ctx.custom, bannedWords: ctx.bannedWords,
       });
       const raw = await fetchLLM(prompt, ctx.provider, ctx.apiKey, 8000, ctx.model, ctx.baseUrl);
       const parsed: any = extractJson(raw);
@@ -456,6 +470,7 @@ export async function genOutline(b: any): Promise<GenResult> {
     narration: b.narration === "first" || b.narration === "third" ? b.narration : undefined,
     customTemplate: b.customTemplate ? String(b.customTemplate) : undefined,
     structureRules: b.structureRules ? String(b.structureRules) : undefined,
+    custom: b.custom ? String(b.custom) : undefined,
     ragFacts: rag?.rendered,
     bannedWords: Array.isArray(b.bannedWords) ? b.bannedWords : undefined,
     // Enrichment (default on) deepens every section afterwards — keep the skeleton lean so
@@ -601,6 +616,10 @@ export async function genOutline(b: any): Promise<GenResult> {
   meta.keyword = keyword;
   if (b.narration === "first" || b.narration === "third") meta.narration = b.narration;
   if (b.structureRules && String(b.structureRules).trim()) meta.structureRules = String(b.structureRules).trim();
+  // Carried on the outline so the text step inherits the same author instruction the structure was
+  // planned under, instead of depending on the caller remembering to repeat it verbatim two jobs
+  // later. An explicit `custom` on the text job still wins — see genText.
+  if (b.custom && String(b.custom).trim()) meta.authorInstruction = String(b.custom).trim();
   // Recorded rather than thrown away: the repair passes below usually make a truncated response
   // whole again, but "this outline was rebuilt from a cut-off answer" is exactly the context
   // needed when someone later asks why a generation looks thin, and it costs one boolean.
@@ -619,6 +638,8 @@ export async function genOutline(b: any): Promise<GenResult> {
         pageGoal: b.pageGoal === "commercial" || b.pageGoal === "informational" ? b.pageGoal : "mixed",
         paa: Array.isArray(b.paa) ? b.paa : undefined,
         targetWc: Number(b.targetWordCount) || Number(meta.target_word_count) || 0,
+        structureRules: b.structureRules ? String(b.structureRules) : undefined,
+        policy: b.policy, tone: b.tone ? String(b.tone) : undefined,
       });
       if (grown) (outline as any)._expanded = true;
     } catch { /* expansion is best-effort */ }
@@ -686,6 +707,10 @@ export async function genOutline(b: any): Promise<GenResult> {
         persona: b.persona ? String(b.persona) : undefined,
         ragFacts: rag?.rendered,
         pageGoal: b.pageGoal === "commercial" || b.pageGoal === "informational" ? b.pageGoal : "mixed",
+        policy: b.policy,
+        structureRules: b.structureRules ? String(b.structureRules) : undefined,
+        custom: b.custom ? String(b.custom) : undefined,
+        bannedWords: Array.isArray(b.bannedWords) ? b.bannedWords : undefined,
       });
       if (ok) (outline as any)._enriched = true;
     } catch { /* enrichment is best-effort */ }
@@ -847,6 +872,23 @@ async function writeTextInChunks(outline: any, ctx: {
   sources?: { title: string; snippet: string; url: string; domain: string }[];
   sourceMode?: "off" | "facts" | "cited"; includeToc?: boolean; temperature?: number;
   bannedWords?: string[];
+  // The author-level inputs. Everything the user actually typed used to stop at this function's
+  // door: `policy`, `custom` and the outline's `structureRules` were rendered only by
+  // buildTextPrompt — the single-shot fallback nobody reaches on a healthy run — so on the
+  // default path the instruction was never sent to any model. See buildSectionTextPrompt.
+  policy?: EditorialPolicy;
+  custom?: string;
+  promptType?: "service" | "custom";
+  /**
+   * Max sections per call (2–5, default 5).
+   *
+   * Smaller chunks hold a long instruction better — a constraint decays with distance from the
+   * top of the prompt — but they cost one provider call each, and the providers people run this
+   * on meter by the call as much as by the token. 5 stays the default because the instruction is
+   * now IN each chunk; drop it only when a page keeps losing a rule the prompt demonstrably
+   * carries.
+   */
+  chunkSections?: number;
 }): Promise<ChunkedTextResult> {
   // FAQ-like sections[] entries are dropped up front (defensive — outlines saved before the
   // sanitizer existed still carry the template's "H2: FAQ" duplicate): the FAQ is rendered
@@ -925,11 +967,12 @@ async function writeTextInChunks(outline: any, ctx: {
     if (s.h_level === "H2" || !units.length) units.push([s]);
     else units[units.length - 1].push(s);
   }
-  // Greedy chunks of ~2-3 units / ≤5 sections.
+  // Greedy chunks of ~2-3 units / ≤chunkSections sections.
+  const maxPerChunk = Math.max(2, Math.min(5, Math.round(Number(ctx.chunkSections) || 5)));
   const chunks: any[][] = [];
   for (const u of units) {
     const last = chunks[chunks.length - 1];
-    if (last && last.length + u.length <= 5) last.push(...u);
+    if (last && last.length + u.length <= maxPerChunk) last.push(...u);
     else chunks.push([...u]);
   }
 
@@ -956,6 +999,10 @@ async function writeTextInChunks(outline: any, ctx: {
       isVerdictChunk: c.some((s: any) => verdictRe.test(String(s.heading || ""))),
       chunkBudget: hi > 0 ? [lo, hi] : undefined,
       bannedWords: ctx.bannedWords,
+      policy: ctx.policy, custom: ctx.custom, promptType: ctx.promptType,
+      // structureRules travels ON the outline (that is where the Outline page parks it), so it is
+      // read here rather than threaded through the caller — same source buildTextPrompt reads.
+      structureRules: meta.structureRules ? String(meta.structureRules) : undefined,
     });
     // Scaled ceiling, not a fixed 6000: Greek and other token-hungry languages ran past the
     // old cap and the truncated chunk still passed the first-heading sanity check below, so
@@ -1043,7 +1090,10 @@ async function writeTextInChunks(outline: any, ctx: {
   if (faq.length) {
     for (let i = 0; i < parts.length; i++) if (parts[i] != null) parts[i] = stripFaqSection(parts[i] as string);
     try {
-      const faqPrompt = `Сегодня ${new Date().toISOString().slice(0, 10)} — если уместен год, только текущий (${new Date().getFullYear()}). Ты пишешь FAQ-секцию статьи по теме "${ctx.keyword}" на языке ${ctx.language}. Верни ТОЛЬКО markdown секции строго такой формы: первая строка — ровно «## FAQ», затем СРАЗУ первый вопрос — НИКАКОГО вводного абзаца между ними. Каждый вопрос — «### Вопрос», под ним ответ 40-60 слов по answer_guideline (конкретика, без воды). Все ${faq.length} вопросов, СТРОГО В ЗАДАННОМ ПОРЯДКЕ. Заголовок секции НЕ переименовывай — ровно «## FAQ». Без преамбулы и \`\`\`-обёрток.\nВОПРОСЫ: ${JSON.stringify(faq)}`;
+      const faqPrompt = buildFaqSectionPrompt({
+        keyword: ctx.keyword, language: ctx.language, faq, country: meta.country,
+        policy: ctx.policy, tone: ctx.tone, custom: ctx.custom, bannedWords: ctx.bannedWords,
+      });
       const faqRaw = await fetchLLM(faqPrompt, ctx.provider, ctx.apiKey, 2500, ctx.model, ctx.baseUrl);
       if (faqRaw) {
         let faqMd = faqRaw.trim().replace(/^```(?:markdown|md)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
@@ -1250,6 +1300,13 @@ export async function genText(b: any): Promise<GenResult> {
   const model = b.model ? String(b.model) : undefined;
   const baseUrl = b.aiBaseUrl ? String(b.aiBaseUrl) : undefined;
 
+  // The author's instruction, explicit on this job or inherited from the outline it is writing
+  // from. Inheriting matters because the outline was PLANNED under it: without the fallback a
+  // text job started from a saved structure writes against rules its own sections were built for.
+  const authorInstruction = (b.custom ? String(b.custom) : "").trim()
+    || String(slimOutline.meta?.authorInstruction ?? "").trim()
+    || undefined;
+
   // CHUNKED writer (default on for 10+ sections, off with chunkedText:false): the article is
   // written 3-5 sections per call — one giant prompt degrades mid-generation (prose decays
   // into lists, tables get invented values). Falls back to single-shot if any chunk fails.
@@ -1258,7 +1315,12 @@ export async function genText(b: any): Promise<GenResult> {
   let missingHeadings: string[] = [];
   let chunked: ChunkedTextResult | null = null;
   const secCount = Array.isArray(slimOutline.sections) ? slimOutline.sections.length : 0;
-  if (b.chunkedText !== false && b.promptType !== "custom" && secCount >= 10) {
+  // `promptType: "custom"` used to disable chunking outright, which made the two things a user
+  // wants mutually exclusive: either the author's prompt was obeyed (single-shot, and the prose
+  // of a 15-section article written in one call degrades into lists and invented table values —
+  // the exact failure the chunked writer exists to prevent) or the prose held and the prompt was
+  // ignored. Now the instruction rides in every chunk as the highest-priority block instead.
+  if (b.chunkedText !== false && secCount >= 10) {
     try {
       chunked = await writeTextInChunks(slimOutline, {
         keyword: keyword || String(slimOutline.meta?.keyword ?? ""),
@@ -1267,6 +1329,10 @@ export async function genText(b: any): Promise<GenResult> {
         ragFacts, sources, sourceMode: effMode, includeToc: b.includeToc === true,
         temperature: b.temperature === undefined || b.temperature === null ? undefined : Number(b.temperature),
         bannedWords: Array.isArray(b.bannedWords) ? b.bannedWords : undefined,
+        policy: b.policy,
+        custom: authorInstruction,
+        promptType: b.promptType === "custom" ? "custom" : "service",
+        chunkSections: b.chunkSections != null ? Number(b.chunkSections) : undefined,
       });
     } catch { chunked = null; }
   }
@@ -1302,7 +1368,7 @@ export async function genText(b: any): Promise<GenResult> {
       policy: b.policy,
       tone: String(b.tone ?? "neutral, expert"),
       language,
-      custom: b.custom ? String(b.custom) : undefined,
+      custom: authorInstruction,
       promptType: b.promptType === "custom" ? "custom" : "service",
       sources,
       sourceMode: effMode,
@@ -1376,6 +1442,65 @@ export async function genText(b: any): Promise<GenResult> {
   // later expand/trim/fact-clean pass, could otherwise leave/reintroduce a wrong-language word).
   text = ensureTocLabel(text, language);
 
+  // ── MECHANICS GATE ────────────────────────────────────────────────────────────────────
+  // Everything above this line is the pipeline trying to get the page right by asking. This is
+  // the part that checks. The rules are derived rather than configured, so the check costs the
+  // caller nothing to set up:
+  //   • placeholders and internal links come out of the author's own instruction — if it says
+  //     "keep [[TRANSFER_WIDGET]]" and "link to /where-to-stay/athens/", those become checks;
+  //   • the forbidden brands ARE the source domains, whenever sourceMode is "facts", because
+  //     that mode already means "use these numbers, never name these companies";
+  //   • the expected currency is the outline's own country.
+  // Mixed-alphabet words are repaired here deterministically (a model cannot reliably see them —
+  // `апо́δειξη` looks correct to it too). Everything else is named, then handed to ONE scoped
+  // repair call, and whatever survives that is reported on the job instead of shipped silently.
+  const mechRules = {
+    language,
+    country: slimOutline.meta?.country ? String(slimOutline.meta.country) : undefined,
+    placeholders: placeholdersFromInstruction(authorInstruction),
+    requiredLinks: linksFromInstruction(authorInstruction),
+    forbiddenBrands: Array.isArray(b.forbiddenBrands)
+      ? b.forbiddenBrands.map(String)
+      : effMode === "facts"
+        ? brandsFromDomains([
+            ...sources.map(x => String(x.domain || x.url || "")),
+            ...bank.map((x: any) => String(x?.domain || x?.source || "")),
+          ])
+        : [],
+    keywords: [
+      String(slimOutline.meta?.keyword ?? ""),
+      ...(Array.isArray(slimOutline.sections) ? slimOutline.sections : []).flatMap((sec: any) => Array.isArray(sec?.keywords) ? sec.keywords.map(String) : []),
+    ].filter(Boolean),
+  };
+  let mechIssues: MechanicsIssue[] = [];
+  if (b.mechanics !== false) {
+    const first = checkMechanics(text, mechRules);
+    text = first.text;
+    mechIssues = first.issues;
+    const toRepair = repairableIssues(mechIssues);
+    if (toRepair.length && b.mechanicsRepair !== false) {
+      try {
+        const repaired = await fetchLLM(
+          buildMechanicsRepairPrompt({ article: text, defects: toRepair.map(i => i.detail), language }),
+          provider, apiKey, contentTokens(text.split(/\s+/).filter(Boolean).length), model, baseUrl,
+        );
+        const cand = (repaired || "").trim().replace(/^```(?:markdown|md)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
+        // Same two invariants the fact-clean pass uses, for the same reason: a "repair" that
+        // returns half the article or a different heading tree is a regression the caller would
+        // never see, because the defect it was asked to fix would indeed be gone.
+        const heads = (x: string) => (x.match(/^#{1,3}\s/gm) || []).length;
+        if (cand.length > text.length * 0.85 && heads(cand) === heads(text)) {
+          const second = checkMechanics(cand, mechRules);
+          if (repairableIssues(second.issues).length < toRepair.length) {
+            text = second.text;
+            mechIssues = second.issues;
+          }
+        }
+      } catch { /* keep the audited-but-unrepaired article; the issues are reported below */ }
+    }
+    if (mechIssues.length) console.error(`[text] ${summarizeMechanics(mechIssues)}`);
+  }
+
   // Independent QA judge (per-task "judge" slot; falls back to the writer's own provider).
   // Skipped for the self-reported partial path: `incomplete` already names the missing sections
   // — that result is an honest partial deliberately preserved with its paid-for chunks, and a
@@ -1400,6 +1525,10 @@ export async function genText(b: any): Promise<GenResult> {
     ok: true,
     data: {
       text, usedSources: sources.length, redacted, autoCleaned,
+      // Present only when something was actually found, so a clean article keeps the exact shape
+      // consumers already parse. `fixed: true` entries are informational (the text already
+      // carries the correction); the rest are what still needs a human.
+      ...(mechIssues.length ? { mechanics: mechIssues } : {}),
       // Present only when sections are genuinely absent, so existing consumers see the same
       // shape they always did for a complete article.
       ...(incomplete ? { incomplete: true, missingHeadings, chunkError: chunked?.lastError } : {}),

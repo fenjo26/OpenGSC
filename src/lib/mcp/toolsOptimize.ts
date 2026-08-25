@@ -345,7 +345,7 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
     name: "start_rewrite_job",
     cost: "paid",
     description:
-      "PAID — spends the instance owner's own AI credits and needs confirm: true. Rewrites up to 20 pages with OpenGSC's Content Rewriter, in the BACKGROUND: returns a jobId immediately, then poll get_generation_job. One page takes minutes (fetch, a model call on a length-scaled token budget, a repair pass when the value audit fails, then a publication gate and an independent QA judge that rejects non-articles instead of saving them as completed). MCP clients cut a tool call off at 30–60s, which is far shorter than the run — so this never returns the text directly. Each page is saved the moment it finishes, so a timeout, a closed client or a server restart costs at most the page in flight and never the ones already paid for. Prefer get_optimization_brief + your own writing + analyze_text, which costs the owner nothing; use this when they want the app's own pipeline, editorial policy or banned-word list applied.",
+      "PAID — spends the instance owner's own AI credits and needs confirm: true. Rewrites up to 20 pages with OpenGSC's Content Rewriter, in the BACKGROUND: returns a jobId immediately, then poll get_generation_job. One page takes minutes (fetch, a model call on a length-scaled token budget, a repair pass when the value audit fails, then a publication gate and an independent QA judge that rejects non-articles instead of saving them as completed). MCP clients cut a tool call off at 30–60s, which is far shorter than the run — so this never returns the text directly. Each page is saved the moment it finishes, so a timeout, a closed client or a server restart costs at most the page in flight and never the ones already paid for. Prefer get_optimization_brief + your own writing + analyze_text, which costs the owner nothing; use this when they want the app's own pipeline, editorial policy, banned-word list or a per-job `custom` instruction applied.",
     inputSchema: {
       type: "object",
       properties: {
@@ -354,6 +354,7 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
         text: { type: "string", description: "Literal text to rewrite instead of URLs (single item)" },
         language: { type: "string", description: "Target language NAME, e.g. \"Greek\". Omit to keep each page's own language." },
         tone: { type: "string", description: "Optional tone hint" },
+        custom: { type: "string", description: "Free-text instruction applied to every page in this job — what the rewrite must not mention, placeholders it must keep verbatim, links it must add. Use this for one-off rules; a standing house style belongs in the editorial policy instead." },
         maskAI: { type: "boolean", description: "Strip common machine tells from the output (default true)" },
         bannedWords: { type: "array", items: { type: "string" }, description: "Words the model must not use — the AI-Fingerprint Lab's marker export goes here" },
         temperature: { type: "number", description: "Sampling temperature; omit for the provider default" },
@@ -421,6 +422,7 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
         variants: 1,
         language: args.language ? String(args.language) : undefined,
         tone: args.tone ? String(args.tone) : undefined,
+        custom: args.custom ? String(args.custom) : undefined,
         maskAI: args.maskAI !== false,
         bannedWords: Array.isArray(args.bannedWords) ? args.bannedWords.map(String) : undefined,
         temperature: args.temperature != null ? Number(args.temperature) : undefined,
@@ -468,12 +470,14 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
         country: { type: "string", description: "Two-letter market code for outline/landing/cluster (default us) — drives SERP geo and the outline's country meta." },
         tone: { type: "string", description: "Free-text tone hint, e.g. 'expert, friendly, no hype' (the UI maps its tone dropdown to the same kind of string)." },
         promptType: { type: "string", enum: ["service", "custom"], description: "Service prompt (default) or a fully custom writing prompt — same radio as the UI Text generator." },
-        custom: { type: "string", description: "With promptType=custom: the whole writing prompt. With service: a short additional instruction appended to it (the UI's 'custom instruction' box)." },
+        custom: { type: "string", description: "The author's instruction. With promptType=custom it IS the writing prompt; with service (default) it is an additional instruction that outranks the section briefs where they conflict. It reaches every call that writes prose — each chunk of the chunked writer and the FAQ pass — and, on outline jobs, the structure and section-enrichment passes too, so a rule like 'never name a competitor' or 'no separate section for the reverse route' is enforced at both steps. A text job inherits the instruction its outline was planned under when this is omitted." },
         sourceMode: { type: "string", enum: ["off", "facts", "cited"], description: "Competitor sourcing for the article (UI default off). off still grounds the text on the facts bank the outline was built on; facts/cited additionally scrape live SERP competitors — slower." },
         includeToc: { type: "boolean", description: "Insert a table-of-contents block after H1 (default false)." },
         targetWordCount: { type: "number", description: "Target article length in words — sets outline section budgets and drives the volume guard." },
         temperature: { type: "number", description: "Sampling temperature; omit for the provider default. The outline phase caps it at 0.8 (JSON reliability)." },
         bannedWords: { type: "array", items: { type: "string" }, description: "Words the model must not use — the AI-Fingerprint Lab's marker export goes here." },
+        chunkSections: { type: "number", description: "type=text: how many sections one writing call covers (2–5, default 5). Lower it only when a page keeps losing a rule the instruction demonstrably carries — each step down adds provider calls, which is what a rate limit counts." },
+        forbiddenBrands: { type: "array", items: { type: "string" }, description: "type=text: names that must not appear in the body. Checked deterministically after writing and repaired in one scoped pass; with sourceMode=facts the source domains are used automatically and this only adds to them." },
         judge: { type: "boolean", description: "Independent QA pass on the finished result (default true): a fresh-context model call — on the per-task 'judge' slot, which can be a DIFFERENT model than the writer — checks a finished article is complete and publishable (rejects truncated stubs, planning notes, wrong language) and an outline actually covers the keyword, before anything is saved as completed." },
         payload: { type: "object", description: "Pipeline payload, the same shape the /seo-tools UI posts — e.g. { competitors, paa, related } for outline, { gl, hl, keywords } for cluster, { generate } for landing. The common knobs above are top-level arguments; payload wins when both are given." },
         policyName: { type: "string", description: "Editorial policy to write under, by name. Omit to use the instance's active policy — it is applied either way." },
@@ -512,7 +516,7 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
       // the pipeline read payload.keyword, so an agent following the docs got `no_keyword`
       // unless it ALSO nested the keyword inside payload.
       const knobs: Record<string, unknown> = {};
-      for (const k of ["keyword", "language", "country", "tone", "promptType", "custom", "sourceMode", "includeToc", "targetWordCount", "temperature", "bannedWords", "judge"]) {
+      for (const k of ["keyword", "language", "country", "tone", "promptType", "custom", "sourceMode", "includeToc", "targetWordCount", "temperature", "bannedWords", "judge", "chunkSections", "forbiddenBrands"]) {
         if (args[k] !== undefined && args[k] !== null) knobs[k] = args[k];
       }
       const payload: any = { ...knobs, ...((args.payload as object) ?? {}), ...creds, ...(serpCreds ?? {}), ...(policy ? { policy } : {}) };

@@ -34,6 +34,17 @@ export interface RewriteBody {
    * "editorial policy ... applied" in its own description. Half of that promise was false.
    */
   policy?: EditorialPolicy;
+  /**
+   * The author's free-text instruction for THIS job — the rewrite equivalent of the text step's
+   * `custom`.
+   *
+   * Rewrite had no such field at all. A policy is a standing house style; this is the thing you
+   * need for one page and cannot express as one ("de-brand the competitor comparison", "keep the
+   * [[TRANSFER_WIDGET]] placeholder exactly where it is", "link to /where-to-stay/athens/ once").
+   * Without it the only lever was to edit the shared policy for a single rewrite and remember to
+   * change it back.
+   */
+  custom?: string;
   temperature?: number;     // sampling temperature; undefined = provider default
   autoRepair?: boolean;     // run a scoped fix pass when the value audit fails (default true)
   /**
@@ -307,12 +318,21 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
   // `toneLine` below stays empty when a policy is present: one source of tone, never two.
   const policyBlock = b.policy ? renderPolicy(b.policy, b.tone) + "\n\n" : "";
 
+  // Placed AFTER the mechanical constraints and immediately before the content, i.e. last thing
+  // read before the work starts, and repeated in the repair pass below. The value/heading/keyword
+  // rules above are non-negotiable invariants of a rewrite; this is the one block where the user
+  // gets to override the generic instructions, so it has to be able to see them.
+  const customText = (b.custom || "").trim();
+  const customBlock = customText
+    ? `AUTHOR'S INSTRUCTION — follow it exactly; where it conflicts with the general guidance above, the instruction wins (it never overrides the rule against inventing facts or the requirement to keep the source's values): ${customText.slice(0, 6000)} `
+    : "";
+
   const basePrompt = (i: number) =>
     policyBlock +
     `You are an expert SEO copywriter. Rewrite the content below so it is UNIQUE and original, ` +
     `while preserving the exact meaning, all facts, numbers, named entities, and links. ` +
     `Keep the same format as the input (HTML stays HTML, Markdown stays Markdown, plain stays plain). ` +
-    `${structureLine}${currencyLine}${keepLine}${targetLine}${langLine} ${toneLine} ${bannedLine}` +
+    `${structureLine}${currencyLine}${keepLine}${targetLine}${langLine} ${toneLine} ${bannedLine}${customBlock}` +
     (variants > 1 ? `This is variant #${i + 1} — make it clearly different from the other variants. ` : "") +
     `Output ONLY the rewritten content, with no preamble, notes, or explanations.\n\n` +
     `CONTENT:\n${source}`;
@@ -329,6 +349,9 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
       (added.length ? `- INVENTED values that are NOT in the source and must be removed or corrected: ${added.join(", ")}\n` : "") +
       (levels ? `- WRONG heading count — restore the missing sections with real content, do not add empty headings (${levels})\n` : "") +
       `Fix ONLY these defects. Do not rewrite anything else, do not alter wording that is already correct. ` +
+      // The repair pass rewrites real paragraphs, so it can undo the instruction the first pass
+      // obeyed — restoring a "missing" value by naming the competitor it belonged to, for one.
+      (customBlock ? `While fixing, keep obeying this: ${customText.slice(0, 2000)} ` : "") +
       `Output ONLY the corrected text, with no preamble or notes.\n\nTEXT:\n${draft}`;
   };
 

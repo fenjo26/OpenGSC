@@ -106,6 +106,32 @@ export default function OutlinePage() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
 
+  // The structure template and the structure rules survive a reload.
+  //
+  // They were plain useState, so every navigation back to this page silently emptied both. That
+  // is a bad failure mode for exactly these two fields: they hold multi-paragraph instructions
+  // people write once for a whole content cluster, and an empty textarea looks the same as a
+  // field that was never meant to be filled — so the outline came back built to no rules at all
+  // and nothing said why. Restored after mount for the same hydration reason as the block above,
+  // and kept in the browser only: mirroring them server-side would make an agent-started job
+  // silently inherit whatever is currently typed in someone's browser.
+  useEffect(() => {
+    try {
+      const tpl = localStorage.getItem("seoCustomTemplate");
+      const rules = localStorage.getItem("seoStructureRules");
+      if (tpl) setCustomTemplate(tpl);
+      if (rules) setStructureRules(rules);
+    } catch { /* private mode / storage disabled — the fields just start empty */ }
+  }, []);
+  useEffect(() => {
+    if (!mounted) return;
+    try { localStorage.setItem("seoCustomTemplate", customTemplate); } catch { /* ignore */ }
+  }, [customTemplate, mounted]);
+  useEffect(() => {
+    if (!mounted) return;
+    try { localStorage.setItem("seoStructureRules", structureRules); } catch { /* ignore */ }
+  }, [structureRules, mounted]);
+
   // Append keyword(s) to the "additional keywords" field without duplicating entries.
   //
   // Joined with newlines, not commas, because the field's own placeholder says "one keyword per

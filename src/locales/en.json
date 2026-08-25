@@ -2978,6 +2978,8 @@
   "kwSrcPriceUnknown": "DataForSEO is billed in dollars per call rather than in units; the price is reported after the request.",
   "kwSrcAutoOnHint": "Fetching happens on its own after each SERP — convenient, and it spends credits without asking.",
   "kwSrcAutoOffHint": "Nothing is fetched until you press the button, which shows the price first.",
+  "rwCustom": "Extra instruction",
+  "rwCustomPh": "Rules the rewrite must follow — what not to mention, placeholders to keep, links to add. Applied to every variant.",
   "rwTargetKeywords": "Target keywords",
   "rwTargetKeywordsPh": "One query per line — the phrases this page must keep ranking for",
   "rwCoverage": "Keyword coverage",

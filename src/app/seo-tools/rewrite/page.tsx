@@ -119,6 +119,10 @@ export default function RewritePage() {
   // One query per line — a comma-separated blob would split on commas inside phrases ("buy shoes,
   // red, size 42"). The rewriter treats these as strings it must keep; their volume is decorative.
   const [targetKeywords, setTargetKeywords] = useState("");
+  // Per-job author instruction. Deliberately not persisted: it is about ONE page, and a leftover
+  // "de-brand the comparison" from last week silently applied to the next rewrite is worse than
+  // retyping it.
+  const [custom, setCustom] = useState("");
   const [gscBusy, setGscBusy] = useState(false);
   const [gscNote, setGscNote] = useState("");
 
@@ -208,6 +212,7 @@ export default function RewritePage() {
           // unlike a vague "write more naturally" directive.
           bannedWords: useBanned && fp ? effectiveBannedWords(fp) : undefined,
           temperature: temp.trim() === "" ? undefined : Number(temp),
+          custom: custom.trim() || undefined,
           targetKeywords: targetKeywords.trim()
             ? targetKeywords.split("\n").map(s => s.trim()).filter(Boolean).map(k => ({ keyword: k }))
             : undefined,
@@ -363,6 +368,17 @@ export default function RewritePage() {
             placeholder={t("rwTargetKeywordsPh")}
             rows={3}
             style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }}
+          />
+        </div>
+
+        <div>
+          <label style={{ fontSize: "12px", fontWeight: 600, color: "var(--color-text-secondary)" }}>{t("rwCustom")}</label>
+          <textarea
+            value={custom}
+            onChange={e => setCustom(e.target.value)}
+            placeholder={t("rwCustomPh")}
+            rows={3}
+            style={{ ...inputStyle, marginTop: "4px", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }}
           />
         </div>
 

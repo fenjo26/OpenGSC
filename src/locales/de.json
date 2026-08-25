@@ -2978,6 +2978,8 @@
   "kwSrcPriceUnknown": "DataForSEO rechnet in Dollar pro Aufruf statt in Einheiten; der Preis steht nach der Anfrage fest.",
   "kwSrcAutoOnHint": "Der Abruf läuft nach jedem SERP von selbst — bequem, verbraucht aber Guthaben ohne Rückfrage.",
   "kwSrcAutoOffHint": "Es wird nichts abgerufen, bis Sie den Button drücken — er zeigt zuerst den Preis.",
+  "rwCustom": "Zusätzliche Anweisung",
+  "rwCustomPh": "Regeln, die das Rewrite einhalten muss: was nicht erwähnt werden darf, welche Platzhalter bleiben, welche Links ergänzt werden. Gilt für jede Variante.",
   "rwTargetKeywords": "Ziel-Keywords",
   "rwTargetKeywordsPh": "Eine Anfrage pro Zeile — die Phrasen, für die diese Seite weiter ranken muss",
   "rwCoverage": "Keyword-Abdeckung",

@@ -2978,6 +2978,8 @@
   "kwSrcPriceUnknown": "DataForSEO cobra en dólares por llamada en vez de en unidades; el precio se conoce tras la petición.",
   "kwSrcAutoOnHint": "La petición sale sola tras cada SERP: cómodo, pero gasta créditos sin preguntar.",
   "kwSrcAutoOffHint": "No se pide nada hasta que pulses el botón, que muestra el precio primero.",
+  "rwCustom": "Instrucción adicional",
+  "rwCustomPh": "Reglas que la reescritura debe cumplir: qué no mencionar, qué marcadores conservar, qué enlaces añadir. Se aplica a cada variante.",
   "rwTargetKeywords": "Palabras clave objetivo",
   "rwTargetKeywordsPh": "Una consulta por línea — las frases por las que esta página debe seguir posicionando",
   "rwCoverage": "Cobertura de palabras clave",
