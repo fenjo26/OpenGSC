@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Eye, Trash2, FileText, ScrollText, BarChart3, LayoutTemplate, Loader2, AlertTriangle, X, Boxes, Bot, Fingerprint, Wand2 } from "lucide-react";
+import { Search, Eye, Trash2, FileText, ScrollText, BarChart3, LayoutTemplate, Loader2, AlertTriangle, X, Boxes, Bot, Fingerprint, Wand2, ChevronDown } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { loadHistory, removeHistory, clearHistory, HistoryItem } from "@/lib/seo/history";
 import { listJobs, importJob, deleteJob, clearFailedJobs, SeoJobRec } from "@/lib/seo/jobs";
@@ -37,11 +37,17 @@ export default function HistoryPage() {
   const [filter, setFilter] = useState<Filter>("all");
   const [q, setQ] = useState("");
   const [fp, setFp] = useState<StoredModel | null>(null);
+  // Server truth: total record count on SeoHistory, and how many we have paged in so far.
+  // localStorage paints instantly; the server list completes it beyond whatever the cache kept.
+  const [serverTotal, setServerTotal] = useState<number | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const serverLoadedRef = useRef(0);
+  const totalRef = useRef<number | null>(null);
   useEffect(() => { setFp(getActiveModel()); }, []);
 
   // Score every stored article against the active fingerprint model. Scoring is local arithmetic
   // over a token map, so doing it for the whole list is cheap — but it's memoised on the model and
-  // the item list anyway, since History can hold 40 full articles.
+  // the item list anyway, since History can page in hundreds of full articles.
   const scores = useMemo(() => {
     if (!fp) return {} as Record<string, number>;
     const out: Record<string, number> = {};
@@ -54,10 +60,43 @@ export default function HistoryPage() {
   }, [fp, items]);
   const sColor = (s: number) => (s < 15 ? "#34c759" : s < 40 ? "#ff9f0a" : "#ff375f");
 
-  // Pull server-side background jobs: import finished ones into local History, keep showing
-  // the ones still processing/errored, and poll while anything is in progress.
+  // Merge server rows into the visible list. Records already shown are left as-is: the local
+  // copy may carry edits whose push is still in flight.
+  function mergeServer(recs: HistoryItem[]) {
+    if (!recs.length) return;
+    setItems(prev => {
+      const byId = new Map(prev.map(h => [h.id, h]));
+      for (const r of recs) if (r?.id && !byId.has(r.id)) byId.set(r.id, r);
+      return [...byId.values()].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    });
+  }
+
+  // Fetch one server page (newest first). offset comes from how many server rows are already in.
+  async function loadServerPage(offset: number): Promise<void> {
+    try {
+      const res = await fetch(`/api/seo/history?limit=50&offset=${offset}`, { cache: "no-store" });
+      if (!res.ok) return;
+      const d = await res.json();
+      const recs: HistoryItem[] = Array.isArray(d?.records) ? d.records : [];
+      if (typeof d?.total === "number") { totalRef.current = d.total; setServerTotal(d.total); }
+      serverLoadedRef.current = offset + recs.length;
+      mergeServer(recs);
+    } catch { /* server unreachable — the local cache still shows */ }
+  }
+
+  async function loadMore() {
+    setLoadingMore(true);
+    await loadServerPage(serverLoadedRef.current);
+    setLoadingMore(false);
+  }
+
+  // Pull server-side background jobs: import finished ones into the History store, keep showing
+  // the ones still processing/errored, and poll while anything is in progress. On the slow tick,
+  // also check the server total — records created elsewhere (MCP runs, another browser) appear
+  // without a reload.
   useEffect(() => {
     setItems(loadHistory());
+    void loadServerPage(0);
     let alive = true;
     let timer: any;
     async function sync() {
@@ -68,7 +107,22 @@ export default function HistoryPage() {
       if (completed.length) setItems(loadHistory());
       const rest = list.filter(j => j.status === "processing" || j.status === "error");
       setJobs(rest);
-      if (alive) timer = setTimeout(sync, rest.some(j => j.status === "processing") ? 3000 : 20000);
+      const slow = !rest.some(j => j.status === "processing");
+      if (slow) {
+        try {
+          const res = await fetch(`/api/seo/history?limit=1`, { cache: "no-store" });
+          if (res.ok) {
+            const d = await res.json();
+            if (typeof d?.total === "number") {
+              const changed = totalRef.current == null || d.total !== totalRef.current;
+              totalRef.current = d.total;
+              setServerTotal(d.total);
+              if (changed) void loadServerPage(0);
+            }
+          }
+        } catch { /* offline is fine */ }
+      }
+      if (alive) timer = setTimeout(sync, slow ? 20000 : 3000);
     }
     sync();
     return () => { alive = false; clearTimeout(timer); };
@@ -78,11 +132,14 @@ export default function HistoryPage() {
   async function clearFailed() { await clearFailedJobs(); setJobs(j => j.filter(x => x.status !== "error")); }
   const failedCount = useMemo(() => jobs.filter(j => j.status === "error").length, [jobs]);
 
+  // "All" counts everything that exists (server total + not-yet-pushed local records + live
+  // jobs); the per-status counts describe what is loaded and therefore filterable.
+  const knownTotal = Math.max(items.length, serverTotal ?? 0);
   const counts = useMemo(() => ({
-    all: items.length + jobs.length,
+    all: knownTotal + jobs.length,
     done: items.filter(i => i.status === "completed").length,
     progress: jobs.filter(j => j.status === "processing").length,
-  }), [items, jobs]);
+  }), [items, jobs, knownTotal]);
 
   const visibleJobs = useMemo(() => jobs.filter(j => {
     if (filter === "done") return false;
@@ -104,7 +161,12 @@ export default function HistoryPage() {
   function view(item: HistoryItem) {
     router.push(`/seo-tools/history/${item.id}`);
   }
-  function remove(id: string) { removeHistory(id); setItems(loadHistory()); }
+  function remove(id: string) {
+    removeHistory(id); // drops the local copy and the server row
+    setItems(list => list.filter(i => i.id !== id));
+    serverLoadedRef.current = Math.max(0, serverLoadedRef.current - 1);
+    if (totalRef.current != null) { totalRef.current = Math.max(0, totalRef.current - 1); setServerTotal(totalRef.current); }
+  }
 
   const FILTERS: { key: Filter; label: string; count?: number }[] = [
     { key: "all", label: t("seoHistFilterAll"), count: counts.all },
@@ -194,9 +256,22 @@ export default function HistoryPage() {
           })}
         </div>
 
+        {serverTotal != null && serverLoadedRef.current < serverTotal && (
+          <div style={{ display: "flex", justifyContent: "center", marginTop: "12px" }}>
+            <button onClick={loadMore} disabled={loadingMore} style={{
+              display: "inline-flex", alignItems: "center", gap: "6px", padding: "8px 16px", borderRadius: "8px",
+              border: "1px solid var(--color-border)", background: "var(--color-bg)", color: "var(--color-text-secondary)",
+              fontSize: "12px", fontWeight: 600, cursor: loadingMore ? "default" : "pointer",
+            }}>
+              {loadingMore ? <Loader2 size={13} className="spin" /> : <ChevronDown size={13} />}
+              {t("seoHistLoadMore")} · {serverTotal - serverLoadedRef.current}
+            </button>
+          </div>
+        )}
+
         {items.length > 0 && (
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "12px" }}>
-            <button onClick={() => { clearHistory(); setItems([]); }} style={{ fontSize: "12px", color: "var(--color-accent-red)", background: "none", border: "none", cursor: "pointer" }}>{t("seoHistClear")}</button>
+            <button onClick={() => { clearHistory(); setItems([]); serverLoadedRef.current = 0; totalRef.current = 0; setServerTotal(0); }} style={{ fontSize: "12px", color: "var(--color-accent-red)", background: "none", border: "none", cursor: "pointer" }}>{t("seoHistClear")}</button>
           </div>
         )}
       </div>

@@ -12,7 +12,7 @@ import SeoContentAnalysis from "@/components/SeoContentAnalysis";
 import SeoTextDetail from "@/components/SeoTextDetail";
 import SeoLandingDetail from "@/components/SeoLandingDetail";
 import SeoClusterDetail from "@/components/SeoClusterDetail";
-import { getHistoryItem, updateHistory, addHistory, HistoryItem } from "@/lib/seo/history";
+import { getHistoryItem, resolveHistoryItem, updateHistory, addHistory, HistoryItem } from "@/lib/seo/history";
 import { outlineToMarkdown, outlineToHtml, htmlDocument, outlineHeadings, outlineSummary } from "@/lib/seo/outlineFormat";
 import { getSeoGenCreds, getSerpCreds, getFirecrawlKey, getFactSourceCount, getHardRedact, loadPolicies, getActivePolicyName } from "@/lib/seo/keys";
 import { TONES, toneToPrompt } from "@/lib/seo/tones";
@@ -34,7 +34,16 @@ export default function TaskDetailPage() {
   const [genOpen, setGenOpen] = useState(false);
   const topRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { setItem(getHistoryItem(id) || null); }, [id]);
+  // Cache-first: the local copy paints instantly; a record evicted from the cache (older than
+  // the newest 150) is fetched from the server, which keeps every record forever.
+  useEffect(() => {
+    let alive = true;
+    const local = getHistoryItem(id);
+    if (local) { setItem(local); return; }
+    setItem(undefined);
+    resolveHistoryItem(id).then(rec => { if (alive) setItem(rec); });
+    return () => { alive = false; };
+  }, [id]);
 
   useEffect(() => {
     if (item && item.type === "googlebot") {

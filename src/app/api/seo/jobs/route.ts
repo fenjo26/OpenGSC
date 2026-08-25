@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { genByType } from "@/lib/seo/generate";
 import { resolveAiFallbacks } from "@/lib/mcp/shared";
 import { failStaleSeoJobs, touchSeoJob, withSeoJobHeartbeat } from "@/lib/jobs/lifecycle";
+import { saveJobToHistory } from "@/lib/seo/historyServer";
 
 // SeoJob model isn't in the committed generated client until `prisma generate` re-runs
 // on build; access it via a loose handle so types resolve everywhere.
@@ -12,21 +13,24 @@ const jobs = () => (prisma as any).seoJob;
 
 // Detached background run — not awaited by the request, so the result is persisted even
 // if the client navigates away or closes the tab. Keys live only in memory for the run.
-function runJob(jobId: string, type: string, payload: any) {
+function runJob(userId: string, job: any, payload: any) {
   void (async () => {
     try {
-      await touchSeoJob(jobId, { stage: "generating", progress: 5 });
-      const r = await withSeoJobHeartbeat(jobId, genByType(type, payload));
+      await touchSeoJob(job.id, { stage: "generating", progress: 5 });
+      const r = await withSeoJobHeartbeat(job.id, genByType(String(job.type), payload));
       await jobs().update({
-        where: { id: jobId },
+        where: { id: job.id },
         data: r.ok
           ? { status: "completed", stage: "completed", progress: 100, heartbeatAt: new Date(), result: JSON.stringify(r.data) }
           : { status: "error", stage: "error", heartbeatAt: new Date(), error: r.error },
       });
+      // File the finished result into SeoHistory server-side: the record must exist even if
+      // no browser tab ever imports the job row (id = job id, so a later import converges).
+      if (r.ok) await saveJobToHistory(userId, job, r.data);
     } catch (e: any) {
       try {
         await jobs().update({
-          where: { id: jobId },
+          where: { id: job.id },
           data: { status: "error", stage: "error", heartbeatAt: new Date(), error: String(e?.message ?? e) },
         });
       } catch { /* row removed */ }
@@ -69,7 +73,7 @@ export async function POST(req: Request) {
     } catch { /* fallbacks are a safety net, never a reason to refuse the job */ }
   }
 
-  runJob(job.id, type, payload); // fire-and-forget
+  runJob(userId, job, payload); // fire-and-forget
   return NextResponse.json({ jobId: job.id });
 }
 

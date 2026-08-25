@@ -5,7 +5,8 @@
 // pick the finished task up later from History. Completed jobs are imported into the
 // local (localStorage) History so the existing detail/render pages work unchanged.
 
-import { addHistory, loadHistory, HistoryItem, HistoryType } from "@/lib/seo/history";
+import { addHistory, loadHistory, flushHistoryDirty, patchHistory, HistoryItem, HistoryType } from "@/lib/seo/history";
+import { textDiagnostics } from "@/lib/seo/historyShared";
 
 export interface SeoJobRec {
   id: string;
@@ -91,31 +92,46 @@ export async function importJob(job: SeoJobRec): Promise<HistoryItem | null> {
   if (importing.has(job.id)) return null;
   importing.add(job.id);
   try {
-    const existing = loadHistory().find(h => h.meta?.jobId === job.id);
-    if (existing) { await deleteJob(job.id); return existing; }
+    // Match by id too: the server files completed jobs into SeoHistory under the job id, so a
+    // record synced from the server is this very job already adopted.
+    const existing = loadHistory().find(h => h.id === job.id || h.meta?.jobId === job.id);
+    if (existing) {
+      // An adopted server row can predate the diagnostics enrichment — fill it in without
+      // touching data (the local copy may already carry user edits).
+      if (!existing.meta?.diagnostics) {
+        const result0 = safeParse(job.result);
+        const diag0 = textDiagnostics(result0);
+        if (diag0 && String(job.type) === "text") {
+          patchHistory(existing.id, { meta: { ...existing.meta, diagnostics: diag0 } });
+          return { ...existing, meta: { ...existing.meta, diagnostics: diag0 } };
+        }
+      }
+      await deleteJob(job.id);
+      return existing;
+    }
     const result = safeParse(job.result);
     let rec: HistoryItem | null = null;
     if (result != null) {
       const data = job.type === "text" ? (result.text ?? result) : result;
       // A text record keeps only the article string, so the generator's own findings have to be
       // carried across explicitly or they are lost the moment the job is imported.
-      const diag = job.type === "text" && result && typeof result === "object" ? {
-        ...(Array.isArray(result.mechanics) ? { mechanics: result.mechanics } : {}),
-        ...(Array.isArray(result.judgeConcerns) ? { judgeConcerns: result.judgeConcerns } : {}),
-        ...(typeof result.usedSources === "number" ? { usedSources: result.usedSources } : {}),
-        ...(result.autoCleaned ? { autoCleaned: true } : {}),
-        ...(result.incomplete ? { incomplete: true, missingHeadings: result.missingHeadings ?? [] } : {}),
-      } : null;
+      const diag = job.type === "text" ? textDiagnostics(result) : null;
       const createdAt = Date.parse(job.createdAt || "") || undefined;
-      // outline_auto (batch SERP→scrape→outline) lands in history as a regular outline.
+      // outline_auto (batch SERP→scrape→outline) lands in history as a regular outline. The
+      // record id IS the job id, so the server's own saveJobToHistory row and this local one
+      // are the same record everywhere.
       const htype = (String(job.type) === "outline_auto" ? "outline" : job.type) as HistoryItem["type"];
       rec = addHistory({
+        id: job.id,
         type: htype, keyword: job.keyword || "—", data, createdAt,
         meta: {
           ...(safeParse(job.meta) || {}), jobId: job.id,
-          ...(diag && Object.keys(diag).length ? { diagnostics: diag } : {}),
+          ...(diag ? { diagnostics: diag } : {}),
         },
       });
+      // Push before dropping the server job row: for jobs completed before the server-side
+      // history write shipped, this debounce-to-immediate flush is the only SeoHistory copy.
+      await flushHistoryDirty();
     }
     await deleteJob(job.id);
     return rec;

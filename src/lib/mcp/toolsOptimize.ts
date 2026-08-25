@@ -19,7 +19,6 @@
 
 import { prisma } from "@/lib/prisma";
 import { rawQuery } from "@/lib/db/raw";
-import { runUpsert } from "@/lib/db/upsert";
 import {
   McpTool, lim, pct, r1, sinceDate, resolveSite, siteArg,
   resolveAiCreds, resolveAiFallbacks, resolveSerpCreds, resolveKeywordSource, resolveActivePolicy, taskForJobType, assertConfirmed, confirmArg, parseJson,
@@ -35,6 +34,7 @@ import { uniquenessPct, wordCount } from "@/lib/seo/textMetrics";
 import { genByType } from "@/lib/seo/generate";
 import { failStaleSeoJobs, withSeoJobHeartbeat } from "@/lib/jobs/lifecycle";
 import { coerceOutline } from "./outlineShape";
+import { saveJobToHistory } from "@/lib/seo/historyServer";
 
 const jobs = () => (prisma as any).seoJob;
 
@@ -82,37 +82,12 @@ async function fetchSavedOutline(userId: string, outlineId: string): Promise<{ o
   return null;
 }
 
-// ─── completed jobs → the shared History store ───────────────────────────────────
+// ─── completed jobs → the shared History store ─────────────────────────────────────
 // The browser imports finished jobs into localStorage History (and backs it up to SeoHistory,
 // which get_generations reads and the structure picker syncs from). MCP-started jobs used to
 // stop at the SeoJob row, so an outline an agent generated was invisible to the UI and to
-// get_generations — two stores, no bridge. This is the bridge, with importJob's exact
-// type/data mapping so both sides file the job identically.
-const HISTORY_TYPE: Record<string, string> = {
-  outline: "outline", outline_auto: "outline", text: "text",
-  analysis: "analysis", landing: "landing", cluster: "cluster",
-};
-async function saveJobToHistory(userId: string, job: any, result: unknown): Promise<void> {
-  const htype = HISTORY_TYPE[String(job.type)];
-  if (!htype || result == null) return;
-  const data = job.type === "text" ? ((result as any)?.text ?? result) : result;
-  try {
-    await runUpsert({
-      table: "SeoHistory",
-      conflict: ["id"],
-      values: {
-        id: job.id, userId, type: htype, keyword: job.keyword || "—",
-        status: "completed", data: JSON.stringify(data),
-        meta: JSON.stringify({ jobId: job.id }),
-        createdAt: new Date(job.createdAt ?? Date.now()).toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-      // id never drifts, and createdAt keeps the original moment. The browser adopts this row
-      // through its history sync (missing ids merge in), so its later pushes refresh the copy.
-      update: { data: "set", meta: "set", status: "set", keyword: "set", updatedAt: "set" },
-    });
-  } catch { /* SeoHistory not migrated — the SeoJob row still carries the result */ }
-}
+// get_generations — two stores, no bridge. The bridge lives in src/lib/seo/historyServer.ts
+// (shared with the jobs API, which files UI-started jobs the same way).
 
 export const OPTIMIZE_TOOLS: McpTool[] = [
   {
