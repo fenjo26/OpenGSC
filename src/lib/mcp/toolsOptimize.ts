@@ -32,7 +32,7 @@ import { runRewriteBatch } from "@/lib/seo/rewriteBatch";
 import { factDrift, driftSeverity } from "@/lib/seo/factDrift";
 import { uniquenessPct, wordCount } from "@/lib/seo/textMetrics";
 import { genByType } from "@/lib/seo/generate";
-import { failStaleSeoJobs, withSeoJobHeartbeat } from "@/lib/jobs/lifecycle";
+import { failStaleSeoJobs, touchSeoJob, withSeoJobHeartbeat } from "@/lib/jobs/lifecycle";
 import { coerceOutline } from "./outlineShape";
 import { saveJobToHistory } from "@/lib/seo/historyServer";
 
@@ -601,6 +601,11 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
       // Fire-and-forget, matching /api/seo/jobs — the promise outlives the response and
       // writes its own terminal state. The heartbeat is what keeps a genuinely long run
       // from tripping the 20-minute staleness sweep while it is still working.
+      // Same phase-progress hook the jobs API injects, so UI- and agent-started jobs
+      // report identically.
+      (payload as any).__onProgress = (progress: number, stage?: string) => {
+        void touchSeoJob(job.id, { progress, ...(stage ? { stage } : {}) }).catch(() => {});
+      };
       withSeoJobHeartbeat(job.id, genByType(type, payload))
         .then(async r => {
           await jobs().update({

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
+import { failStaleSeoJobs } from "@/lib/jobs/lifecycle";
 
 const jobs = () => (prisma as any).seoJob;
 
@@ -11,8 +12,14 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await context.params;
   try {
-    const job = await jobs().findUnique({ where: { id } });
+    let job = await jobs().findUnique({ where: { id } });
     if (!job || job.userId !== userId) return NextResponse.json({ error: "not_found" }, { status: 404 });
+    // The page WATCHING a wedged job is the one place the stale sweep must run: without this,
+    // a hung-but-heartbeating job only ever dies if the user happens to open History.
+    if (job.status === "processing") {
+      await failStaleSeoJobs(userId);
+      job = await jobs().findUnique({ where: { id } });
+    }
     return NextResponse.json({ job });
   } catch {
     return NextResponse.json({ error: "not_found" }, { status: 404 });

@@ -17,6 +17,12 @@ function runJob(userId: string, job: any, payload: any) {
   void (async () => {
     try {
       await touchSeoJob(job.id, { stage: "generating", progress: 5 });
+      // Phase-level progress for pipelines that report it (genOutline et al read this from the
+      // payload). Injected here rather than threaded through every signature: the function is
+      // process-local, never serialized, and MCP's start_generation_job injects the same hook.
+      (payload as any).__onProgress = (progress: number, stage?: string) => {
+        void touchSeoJob(job.id, { progress, ...(stage ? { stage } : {}) }).catch(() => {});
+      };
       const r = await withSeoJobHeartbeat(job.id, genByType(String(job.type), payload));
       await jobs().update({
         where: { id: job.id },

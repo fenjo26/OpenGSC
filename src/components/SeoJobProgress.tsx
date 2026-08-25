@@ -19,8 +19,11 @@ export default function SeoJobProgress({ jobId, keyword, onDone, onError, onCanc
   const { t } = useLanguage();
   const [elapsed, setElapsed] = useState(0);
   const [progress, setProgress] = useState(6);
+  const [stage, setStage] = useState("");
   const [err, setErr] = useState("");
   const stop = useRef(false);
+  // The server's real phase progress, fed by the poll below; the estimate never lags it.
+  const serverProgressRef = useRef(6);
 
   useEffect(() => {
     stop.current = false;
@@ -30,7 +33,8 @@ export default function SeoJobProgress({ jobId, keyword, onDone, onError, onCanc
       // Asymptotic approach to 95% calibrated for multi-pass generation (3-6 min typical:
       // skeleton → expand → localize → enrich → RAG). No linear floor — the bar visibly
       // slows but NEVER fills before the job actually completes (100% only on success).
-      setProgress(p => Math.min(95, p + Math.max(0.05, (95 - p) * 0.008)));
+      // The server's real phase progress wins whenever it is ahead of the estimate.
+      setProgress(p => Math.min(95, Math.max(p + Math.max(0.05, (95 - p) * 0.008), serverProgressRef.current)));
     }, 1000);
     let poll: any;
     async function tick() {
@@ -38,6 +42,8 @@ export default function SeoJobProgress({ jobId, keyword, onDone, onError, onCanc
       if (stop.current) return;
       if (job?.status === "completed") { stop.current = true; clearInterval(timer); setProgress(100); onDone(job); return; }
       if (job?.status === "error") { stop.current = true; clearInterval(timer); const m = job.error || "error"; setErr(m); onError?.(m); return; }
+      if (typeof job?.progress === "number" && job.progress > 0) serverProgressRef.current = Math.min(95, job.progress);
+      if (job?.stage && job.stage !== "generating" && job.stage !== "queued") setStage(job.stage);
       poll = setTimeout(tick, 2500);
     }
     poll = setTimeout(tick, 2000);
@@ -70,7 +76,7 @@ export default function SeoJobProgress({ jobId, keyword, onDone, onError, onCanc
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", color: "var(--color-text-secondary)" }}>
         <span>{Math.round(progress)}%</span>
         <span style={{ color: "var(--color-text-tertiary)" }}>
-          {elapsed < 75 ? t("seoJobStage1") : elapsed < 180 ? t("seoJobStage2") : t("seoJobStage3")}
+          {stage ? stage.toUpperCase() : elapsed < 75 ? t("seoJobStage1") : elapsed < 180 ? t("seoJobStage2") : t("seoJobStage3")}
         </span>
         <span>{t("seoCaElapsed")}: {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}</span>
       </div>

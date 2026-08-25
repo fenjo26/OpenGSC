@@ -264,7 +264,7 @@ export default function HistoryPage() {
                 {isErr ? <AlertTriangle size={16} color="var(--color-accent-red)" style={{ flexShrink: 0 }} /> : <Loader2 size={16} className="spin" color="var(--color-accent-blue)" style={{ flexShrink: 0 }} />}
                 <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "11px", fontWeight: 700, padding: "3px 9px", borderRadius: "6px", color: m.color, background: `${m.color}1a`, flexShrink: 0 }}><Icon size={12} /> {m.labelKey ? t(m.labelKey as any) : job.type}</span>
                 <span style={{ flex: 1, minWidth: 0, fontSize: "14px", color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{job.keyword || "—"}</span>
-                <span style={{ fontSize: "12px", color: isErr ? "var(--color-accent-red)" : "var(--color-accent-blue)", flexShrink: 0, maxWidth: "260px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{isErr ? (job.error || t("seoStatusError")) : t("seoStatusGenerating")}</span>
+                <span style={{ fontSize: "12px", color: isErr ? "var(--color-accent-red)" : "var(--color-accent-blue)", flexShrink: 0, maxWidth: "260px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{isErr ? (job.error || t("seoStatusError")) : `${t("seoStatusGenerating")}${typeof job.progress === "number" && job.progress > 0 ? ` · ${job.progress}%` : ""}`}</span>
                 {isErr && <button onClick={() => dismissJob(job.id)} title={t("seoDelete")} style={{ ...iconBtn, color: "var(--color-accent-red)" }}><X size={14} /></button>}
               </div>
             );

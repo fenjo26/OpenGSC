@@ -444,7 +444,9 @@ export async function genOutline(b: any): Promise<GenResult> {
 
   // MAP stage: extract compact facts per source (parallel) before assembling the outline.
   if (b.mapExtract !== false && competitors.length) {
+    b.__onProgress?.(10, "map");
     try { await mapExtractFacts(competitors, keyword, String(b.country ?? "us"), provider, apiKey, model, baseUrl); } catch { /* fall back to raw text grounding */ }
+    b.__onProgress?.(22, "outline");
   }
 
   // Casino RAG: pull verified entity facts (slots/casinos/providers) from the knowledge base.
@@ -590,6 +592,7 @@ export async function genOutline(b: any): Promise<GenResult> {
 
   // Knowledge-based fact scrub: actively correct wrong/fabricated specifics baked into the outline
   // (e.g. "8-inch" → "7.9-inch", invented colors → generalized) BEFORE the text inherits them.
+  b.__onProgress?.(45, "scrub");
   if (b.factScrub !== false) {
     try {
       const scrubPrompt = buildFactScrubPrompt({ outline, keyword, country: String(b.country ?? "us") });
@@ -698,6 +701,7 @@ export async function genOutline(b: any): Promise<GenResult> {
   // ENRICH pass (default on): deepen every section's EAV detail in parallel batches —
   // role-annotated entities, 4-6 sentence summaries, rich copywriter notes with a
   // ready opening line, weighted triplets. Off with enrich:false.
+  b.__onProgress?.(70, "enrich");
   if (b.enrich !== false) {
     try {
       const ok = await enrichOutlineSections(outline, {
@@ -790,6 +794,7 @@ export async function genOutline(b: any): Promise<GenResult> {
   // structure, so judging earlier would verdict on a draft nobody ships. A hollow outline
   // poisons every step downstream (sections, FAQ, the article itself), and JSON that parses
   // is not JSON that covers the keyword.
+  b.__onProgress?.(85, "judge");
   if (b.judge !== false) {
     const verdict = await judgeOutline(
       outline,
@@ -1694,11 +1699,13 @@ export async function genOutlineAuto(b: any): Promise<GenResult> {
   const keyword = String(b.keyword ?? "").trim();
   if (!keyword) return { ok: false, error: "no_keyword" };
   if (!b.serpKey) return { ok: false, error: "no_serp_key" };
+  b.__onProgress?.(8, "serp");
   const serp = await runSerp(String(b.serpProvider || "serper"), String(b.serpKey), keyword, {
     gl: b.gl ?? b.country, hl: b.hl ?? b.language, num: 10, engine: "google",
   });
   if (serp.error || !serp.results?.length) return { ok: false, error: serp.error || "serp_failed" };
   const results = serp.results.slice(0, 10);
+  b.__onProgress?.(12, "scrape");
   let pages: any[] = [];
   try { pages = await scrapeMany(results.map(r => r.url), b.firecrawlKey ? String(b.firecrawlKey) : undefined, 4); } catch { /* outline can run on titles alone */ }
   const competitors: CompetitorInput[] = results.map(r => {
