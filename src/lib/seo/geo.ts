@@ -134,6 +134,12 @@ async function runWebSearch(query: string, language: string, country: string, mo
   const endpoint = root ? `${root}/responses`
     : engine === "kie" ? "https://api.kie.ai/codex/v1/responses"
     : "https://api.openai.com/v1/responses";
+  // Gateways usually sit behind Cloudflare, whose 524 cuts a NON-streaming response whose
+  // generation hasn't produced the first byte within ~100s — and an agentic web search runs
+  // for minutes. Streaming sends events as the search happens, so the connection never hits
+  // the wall; the final `response.completed` event carries the same object shape the
+  // non-streaming call would have returned. Official OpenAI and kie.ai keep the plain call.
+  const wantsStream = !!root;
 
   async function call(toolType: string) {
     return fetch(endpoint, {
@@ -141,13 +147,50 @@ async function runWebSearch(query: string, language: string, country: string, mo
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model,
-        stream: false,
+        stream: wantsStream,
         tools: [{ type: toolType }],
         tool_choice: "auto",
         include: ["web_search_call.action.sources"],
         input,
       }),
     });
+  }
+
+  // SSE reader for the Responses API: ignore progress events, take the terminal
+  // response.completed (or surface response.failed/incomplete) — parseResponses then consumes
+  // the exact same response object the non-streaming path gets.
+  async function readSse(res: Response): Promise<{ data?: any; error?: string }> {
+    const reader = res.body?.getReader();
+    if (!reader) return { error: "no_stream_body" };
+    const decoder = new TextDecoder();
+    let buf = "";
+    let final: any = null;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let nl: number;
+        while ((nl = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, nl).trim();
+          buf = buf.slice(nl + 1);
+          if (!line.startsWith("data:")) continue;
+          const payload = line.slice(5).trim();
+          if (!payload || payload === "[DONE]") continue;
+          let ev: any;
+          try { ev = JSON.parse(payload); } catch { continue; /* keepalive/partial line */ }
+          if (ev?.type === "response.completed") { final = ev.response; break; }
+          if (ev?.type === "response.failed" || ev?.type === "response.incomplete") {
+            const why = ev.response?.error?.message || ev.response?.incomplete_details?.reason || ev.type;
+            return { error: `stream ${ev.type}: ${String(why).slice(0, 200)}` };
+          }
+        }
+        if (final) break;
+      }
+    } finally {
+      try { await reader.cancel(); } catch { /* already closed */ }
+    }
+    return final ? { data: final } : { error: "stream_ended_without_response" };
   }
 
   try {
@@ -161,8 +204,15 @@ async function runWebSearch(query: string, language: string, country: string, mo
       }
       if (!res.ok) {
         const t2 = res.ok ? "" : await res.text().catch(() => errText);
-        return { error: `${engine}_${res.status}: ${(t2 || errText).slice(0, 300)}` };
+        // Cloudflare's 524 page is HTML noise — keep only the status, it already names the cause.
+        return { error: `${engine}_${res.status}: ${(t2 || errText).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160)}` };
       }
+    }
+    if (wantsStream) {
+      const sse = await readSse(res);
+      if (sse.error) return { error: `openai_stream: ${sse.error}` };
+      if (!sse.data) return { error: "openai_stream: no_response" };
+      return parseResponses(sse.data);
     }
     const data = await res.json();
     return parseResponses(data);
@@ -396,9 +446,36 @@ async function runAnalysis(
         response_format: { type: "json_object" },
         messages: [{ role: "user", content: prompt }],
         temperature: 0.2,
+        // Same Cloudflare 524 wall as stage 1: a structured 8000-token analysis can outlive a
+        // gateway's time-to-first-byte window. Deltas start flowing immediately; [DONE] ends it.
+        ...(root ? { stream: true } : {}),
       }),
     });
     if (!res.ok) return null;
+    if (root) {
+      const reader = res.body?.getReader();
+      if (!reader) return null;
+      const decoder = new TextDecoder();
+      let buf = "";
+      let text = "";
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          let nl: number;
+          while ((nl = buf.indexOf("\n")) >= 0) {
+            const line = buf.slice(0, nl).trim();
+            buf = buf.slice(nl + 1);
+            if (!line.startsWith("data:")) continue;
+            const payload = line.slice(5).trim();
+            if (!payload || payload === "[DONE]") continue;
+            try { text += JSON.parse(payload)?.choices?.[0]?.delta?.content ?? ""; } catch { /* partial line */ }
+          }
+        }
+      } catch { return null; } finally { try { await reader.cancel(); } catch { /* closed */ } }
+      return text ? extractJson(text) : null;
+    }
     const data = await res.json();
     const text = data?.choices?.[0]?.message?.content ?? "";
     return extractJson(text);
