@@ -247,6 +247,19 @@ export async function fetchLLMDetailed(
 
 const retryableStatus = (s: number) => s === 429 || s === 408 || s >= 500;
 
+// One tiny call with a short leash, run BEFORE an expensive generation chain starts. A
+// gray-market pool can accept connections and never answer — every step of the chain then
+// burns its full 280s timeout and the job dies at the wall-clock cap ~25 minutes later. A ping
+// turns that into a seconds-fast verdict. maxTokens is generous because reasoning models spend
+// the budget thinking before they answer; 25s is plenty for a trivial prompt on a healthy pool.
+export async function pingProvider(
+  provider: string, apiKey: string, model?: string, baseUrl?: string, timeoutMs = 25_000,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!provider || !apiKey) return { ok: false, error: "no provider/key configured" };
+  const r = await fetchLLMOnce("Reply with the single word: ok", provider, apiKey, 2000, model, baseUrl, 0, false, timeoutMs);
+  return r.text != null ? { ok: true } : { ok: false, error: r.errorDetail ?? "no answer" };
+}
+
 // How long to wait before the next attempt, when the response itself says something useful.
 //
 // Two cases the generic 0/5s/20s ladder gets wrong. A 429 usually carries `Retry-After`, and
@@ -316,10 +329,13 @@ async function fetchLLMOnce(
   temperature?: number,
   /** Opt back into Z.AI's thinking mode; off by default because it eats the whole max_tokens budget. */
   enableThinking = false,
+  /** Per-call abort budget. Generation calls keep the 280s default; cheap probes (pingProvider)
+   *  pass a short one so a black-holed upstream fails in seconds, not minutes. */
+  timeoutMs = 280_000,
 ): Promise<{ text: string | null; retryable: boolean; errorDetail?: string; finishReason?: string; retryAfterMs?: number }> {
   // Hard timeout so a stuck/over-long generation fails in minutes instead of hanging forever.
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 280_000);
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   const sig = ctrl.signal;
   // Spread into a request body only when the caller asked for a temperature AND the target model
   // accepts one — an empty spread leaves the payload byte-identical to the pre-temperature version.

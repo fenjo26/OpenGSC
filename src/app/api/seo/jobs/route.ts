@@ -6,6 +6,7 @@ import { genByType } from "@/lib/seo/generate";
 import { resolveAiFallbacks } from "@/lib/mcp/shared";
 import { failStaleSeoJobs, touchSeoJob, withSeoJobHeartbeat } from "@/lib/jobs/lifecycle";
 import { saveJobToHistory } from "@/lib/seo/historyServer";
+import { pickLiveProvider } from "@/lib/seo/providerPing";
 
 // SeoJob model isn't in the committed generated client until `prisma generate` re-runs
 // on build; access it via a loose handle so types resolve everywhere.
@@ -23,7 +24,15 @@ function runJob(userId: string, job: any, payload: any) {
       (payload as any).__onProgress = (progress: number, stage?: string) => {
         void touchSeoJob(job.id, { progress, ...(stage ? { stage } : {}) }).catch(() => {});
       };
-      const r = await withSeoJobHeartbeat(job.id, genByType(String(job.type), payload));
+      const r = await withSeoJobHeartbeat(job.id, (async () => {
+        // Pre-flight ping: a dead pool fails here in seconds (or a configured fallback is
+        // promoted) instead of grinding the whole chain into the wall-clock cap 25 minutes later.
+        const picked = await pickLiveProvider(payload);
+        if (!picked.ok) {
+          return { ok: false as const, error: `provider_unreachable: ${picked.error} — the provider answered no pre-flight ping. Switch the model/provider for this task in SEO Tools → Settings.` };
+        }
+        return genByType(String(job.type), payload);
+      })());
       await jobs().update({
         where: { id: job.id },
         data: r.ok

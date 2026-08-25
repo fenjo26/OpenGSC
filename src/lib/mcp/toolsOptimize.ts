@@ -35,6 +35,7 @@ import { genByType } from "@/lib/seo/generate";
 import { failStaleSeoJobs, touchSeoJob, withSeoJobHeartbeat } from "@/lib/jobs/lifecycle";
 import { coerceOutline } from "./outlineShape";
 import { saveJobToHistory } from "@/lib/seo/historyServer";
+import { pickLiveProvider } from "@/lib/seo/providerPing";
 
 const jobs = () => (prisma as any).seoJob;
 
@@ -606,7 +607,15 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
       (payload as any).__onProgress = (progress: number, stage?: string) => {
         void touchSeoJob(job.id, { progress, ...(stage ? { stage } : {}) }).catch(() => {});
       };
-      withSeoJobHeartbeat(job.id, genByType(type, payload))
+      withSeoJobHeartbeat(job.id, (async () => {
+        // Same pre-flight ping the jobs API runs: a dead pool fails in seconds instead of
+        // burning the agent's patience (and the wall-clock cap) 25 minutes later.
+        const picked = await pickLiveProvider(payload);
+        if (!picked.ok) {
+          return { ok: false as const, error: `provider_unreachable: ${picked.error} — the provider answered no pre-flight ping. Switch the model/provider for this task in SEO Tools → Settings.` };
+        }
+        return genByType(type, payload);
+      })())
         .then(async r => {
           await jobs().update({
             where: { id: job.id },
