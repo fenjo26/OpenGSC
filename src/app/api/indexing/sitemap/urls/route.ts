@@ -19,6 +19,23 @@ export async function GET(req: Request) {
   const limit = Math.min(200, Math.max(10, parseInt(searchParams.get("limit") ?? "50", 10)));
   const statusFilter = searchParams.get("status") ?? "all";
   const search = searchParams.get("search") ?? "";
+  const sortKey = searchParams.get("sort") ?? "";
+  const sortDir = searchParams.get("dir") === "asc" ? ("asc" as const) : ("desc" as const);
+  // Whitelisted orderings — sort keys come from the client's column headers. "checked" mirrors
+  // the UI column that coalesces googleChecked ?? neuralAt ?? xrChecked; Prisma cannot coalesce
+  // across columns, so the three timestamps cascade with Google first, which is also the
+  // column's display precedence.
+  const SORTS: Record<string, { [k: string]: "asc" | "desc" }[]> = {
+    url: [{ url: sortDir }],
+    lastmod: [{ lastmod: sortDir }, { url: "asc" }],
+    inventory_status: [{ inventoryStatus: sortDir }, { firstSeenAt: "asc" }],
+    google_status: [{ googleStatus: sortDir }, { url: "asc" }],
+    xr_status: [{ xrStatus: sortDir }, { url: "asc" }],
+    twoindex_status: [{ twoIndexStatus: sortDir }, { url: "asc" }],
+    neural_status: [{ neuralStatus: sortDir }, { url: "asc" }],
+    checked: [{ googleChecked: sortDir }, { neuralAt: sortDir }, { xrChecked: sortDir }, { url: "asc" }],
+  };
+  const orderBy = SORTS[sortKey] ?? [{ inventoryStatus: "asc" as const }, { firstSeenAt: "asc" as const }];
 
   const site = await prisma.site.findFirst({
     where: { id: siteDbId, userId },
@@ -86,7 +103,7 @@ export async function GET(req: Request) {
     prisma.sitemapUrl.count({ where }),
     prisma.sitemapUrl.findMany({
       where,
-      orderBy: [{ inventoryStatus: "asc" }, { firstSeenAt: "asc" }],
+      orderBy,
       skip: (page - 1) * limit,
       take: limit,
       select: {

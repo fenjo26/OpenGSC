@@ -2756,6 +2756,9 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
   const [statusFilter, setStatusFilter] = useState("all");
   const [search,     setSearch]     = useState("");
   const [loading,    setLoading]    = useState(false);
+  const [sortKey,    setSortKey]    = useState("");
+  const [sortDir,    setSortDir]    = useState<"asc" | "desc">("desc");
+  const [selectingAll, setSelectingAll] = useState(false);
 
   // ── Sitemap sync state ──
   const [syncing,    setSyncing]    = useState(false);
@@ -2803,11 +2806,14 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
   const [opsLoading, setOpsLoading] = useState(false);
 
   // ── Load URL list ──
-  const loadUrls = async (pg = page, sf = statusFilter, sq = search) => {
+  // sk/sd default to the current sort state but are passed explicitly when the sort itself
+  // changes — setSortKey() won't be visible to this closure until the next render.
+  const loadUrls = async (pg = page, sf = statusFilter, sq = search, sk = sortKey, sd = sortDir) => {
     if (!siteDbId) return;
     setLoading(true);
     try {
       const params = new URLSearchParams({ siteDbId, page: String(pg), limit: "50", status: sf, search: sq });
+      if (sk) { params.set("sort", sk); params.set("dir", sd); }
       const res = await fetch(`/api/indexing/sitemap/urls?${params}`);
       const d = await res.json();
       setUrlRows(d.rows ?? []);
@@ -2898,7 +2904,10 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
 
   // ── Google URL Inspection check ──
   const runGoogleCheck = async () => {
-    const urls = selected.size > 0 ? [...selected] : urlRows.filter(r => !r.googleStatus).map(r => r.url);
+    // Nothing selected → every unchecked URL on the site, not just the page on screen.
+    const urls = selected.size > 0
+      ? [...selected]
+      : (await fetchAllRows("all", "")).filter(r => !r.googleStatus).map(r => r.url);
     if (!urls.length) return;
     setChecking(true); setCheckMsg("");
     try {
@@ -2924,9 +2933,10 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
 
   // ── NeuralIndexer submit ──
   const runNeuralSubmit = async () => {
+    // The toolbar label counts "not sent yet" across the whole site, so the fallback must too.
     const urls = selected.size > 0
       ? [...selected]
-      : urlRows.filter(r => r.neuralStatus !== "submitted").map(r => r.url);
+      : (await fetchAllRows("all", "")).filter(r => r.neuralStatus !== "submitted").map(r => r.url);
     if (!urls.length) return;
     setSubmitting(true); setSubmitResult(null);
     try {
@@ -2949,9 +2959,11 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
     // The old check refused to submit while the select visibly showed a domain — the state
     // started empty but the browser renders the first <option>, so the two disagreed and the
     // button answered "choose a domain first" for a domain that was on screen.
+    // The label next to the button promises "All N URLs" — deliver the whole site, not the
+    // 50 rows of the current pagination page.
     const urls = selected.size > 0
       ? [...selected]
-      : urlRows.map(r => r.url);
+      : (await fetchAllRows("all", "")).map(r => r.url);
 
     if (!urls.length) return;
     setSubmittingToFarm(true);
@@ -2983,15 +2995,14 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
 
   // ── XMLRiver / NeuralIndexer indexation check ──
   const runXrCheck = async (via: "xr" | "neural") => {
-    // If nothing selected — fetch ALL site URLs (not just current page)
+    // If nothing selected — fetch ALL site URLs (not just current page). The list API caps a
+    // single call at 200 rows, so the old one-shot limit=1000 fetch silently stopped there.
     let urls: string[];
     if (selected.size > 0) {
       urls = [...selected];
     } else {
       try {
-        const allRes = await fetch(`/api/indexing/sitemap/urls?siteDbId=${siteDbId}&page=1&limit=1000`);
-        const allData = await allRes.json();
-        urls = (allData.rows ?? []).map((r: any) => r.url);
+        urls = (await fetchAllRows("all", "")).map(r => r.url);
       } catch {
         urls = urlRows.map(r => r.url);
       }
@@ -3048,7 +3059,7 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
 
   // ── 2index.ninja submit ──
   const runTwoIndexSubmit = async () => {
-    const urls = selected.size > 0 ? [...selected] : urlRows.map(r => r.url);
+    const urls = selected.size > 0 ? [...selected] : (await fetchAllRows("all", "")).map(r => r.url);
     if (!urls.length) return;
     setSubmitting(true); setSubmitResult(null);
     try {
@@ -3079,9 +3090,45 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
   const toggleSelect = (url: string) => setSelected(prev => {
     const n = new Set(prev); n.has(url) ? n.delete(url) : n.add(url); return n;
   });
-  const toggleAll = () => setSelected(prev =>
-    prev.size === urlRows.length && urlRows.length > 0 ? new Set() : new Set(urlRows.map(r => r.url))
-  );
+
+  // The list API caps `limit` at 200 per call, so "everything" means paging through. The 20k
+  // guard mirrors the doorway queue's own ceiling, so a selection can never outgrow what a
+  // submit can accept anyway.
+  const fetchAllRows = async (sf = statusFilter, sq = search): Promise<any[]> => {
+    const out: any[] = [];
+    let pg = 1, pageCount = 1;
+    while (pg <= pageCount && out.length < 20000) {
+      const res = await fetch(`/api/indexing/sitemap/urls?${new URLSearchParams({ siteDbId, page: String(pg), limit: "200", status: sf, search: sq })}`);
+      const d = await res.json();
+      const rows: any[] = d.rows ?? [];
+      if (!rows.length) break;
+      out.push(...rows);
+      pageCount = d.pages ?? 1;
+      pg++;
+    }
+    return out;
+  };
+
+  // "Select all" means every URL matching the current filter across all pagination pages, not
+  // just the 50 rows on screen — the selection then travels with the user through the pager
+  // and every action button acts on the full set.
+  const toggleAll = async () => {
+    if (selectingAll) return;
+    if (total > 0 && selected.size >= total) { setSelected(new Set()); return; }
+    setSelectingAll(true);
+    try {
+      setSelected(new Set((await fetchAllRows()).map(r => r.url)));
+    } catch { /* keep the current selection */ }
+    setSelectingAll(false);
+  };
+
+  // ── Column sort ──
+  // First click: A→Z for URLs, newest/fullest first for everything else; further clicks toggle.
+  const applySort = (k: string) => {
+    const nextDir = sortKey === k ? (sortDir === "desc" ? "asc" : "desc") : (k === "url" ? "asc" : "desc");
+    setSortKey(k); setSortDir(nextDir); setPage(1);
+    loadUrls(1, statusFilter, search, k, nextDir);
+  };
 
   // ── Helpers ──
   const googleStatusColor = (s: string | null) => {
@@ -3245,7 +3292,7 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
       {counters.total > 0 && (
         <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
           {COUNTER_CHIPS.map(({ label, value, color, filter }) => (
-            <button key={label} onClick={() => { setStatusFilter(filter); loadUrls(1, filter, search); }}
+            <button key={label} onClick={() => { setStatusFilter(filter); setPage(1); loadUrls(1, filter, search); }}
               style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "10px 18px", borderRadius: "10px", border: `1px solid ${statusFilter === filter && filter !== "all" ? color + "55" : "var(--color-border)"}`, background: statusFilter === filter && filter !== "all" ? `${color}10` : "var(--color-card)", cursor: "pointer", minWidth: "80px", gap: "2px" }}>
               <span style={{ fontSize: "22px", fontWeight: 700, color }}>{value}</span>
               <span style={{ fontSize: "10px", color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</span>
@@ -3259,11 +3306,11 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
         <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
           <input
             value={search} onChange={e => setSearch(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && loadUrls(1, statusFilter, search)}
+            onKeyDown={e => { if (e.key === "Enter") { setPage(1); loadUrls(1, statusFilter, search); } }}
             placeholder={t("idxSearchUrl")}
             style={{ fontSize: "12px", padding: "6px 12px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-primary)", minWidth: "200px" }}
           />
-          <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); loadUrls(1, e.target.value, search); }}
+          <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); loadUrls(1, e.target.value, search); }}
             style={{ fontSize: "12px", padding: "6px 10px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-primary)", cursor: "pointer" }}>
             {[
               ["all", t("idxAllStatuses")],
@@ -3476,12 +3523,33 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--color-border)", background: "rgba(255,255,255,0.02)" }}>
                   <th style={{ padding: "9px 12px", width: 32 }}>
-                    <input type="checkbox" checked={selected.size === urlRows.length && urlRows.length > 0} onChange={toggleAll}
+                    {/* Checked when the whole filtered set is selected (across all pagination
+                        pages); indeterminate while only part of it is. */}
+                    <input type="checkbox"
+                      checked={urlRows.length > 0 && selected.size >= total && urlRows.every(r => selected.has(r.url))}
+                      ref={el => { if (el) el.indeterminate = selected.size > 0 && !(selected.size >= total && urlRows.every(r => selected.has(r.url))); }}
+                      onChange={toggleAll} disabled={selectingAll}
                       style={{ cursor: "pointer", width: 13, height: 13, accentColor: "#3B82F6" }} />
                   </th>
-                  {["URL",t("idxInventoryStatus"),t("idxLastmod"),t("idxAudit"),t("idxColGoogleStatus"),"XML RIVER","2INDEX","NEURAL",t("idxColChecked")].map(h => (
-                    <th key={h} style={{ textAlign: "left", padding: "9px 12px", color: "var(--color-text-secondary)", fontWeight: 500, fontSize: "10px", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>{h}</th>
-                  ))}
+                  {([
+                    ["URL", "url"],
+                    [t("idxInventoryStatus"), "inventory_status"],
+                    [t("idxLastmod"), "lastmod"],
+                    [t("idxAudit"), ""],
+                    [t("idxColGoogleStatus"), "google_status"],
+                    ["XML RIVER", "xr_status"],
+                    ["2INDEX", "twoindex_status"],
+                    ["NEURAL", "neural_status"],
+                    [t("idxColChecked"), "checked"],
+                  ] as const).map(([label, key]) => {
+                    const active = key !== "" && sortKey === key;
+                    return (
+                      <th key={label} onClick={key !== "" ? () => applySort(key) : undefined}
+                        style={{ textAlign: "left", padding: "9px 12px", color: active ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: 500, fontSize: "10px", letterSpacing: "0.06em", whiteSpace: "nowrap", cursor: key !== "" ? "pointer" : "default", userSelect: "none" }}>
+                        {label}{key !== "" ? (active ? (sortDir === "desc" ? " ↓" : " ↑") : " ↕") : ""}
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
