@@ -13,7 +13,7 @@ const audits = () => (prisma as any).geoAudit;
 
 // Detached background run — not awaited by the request, so the result is persisted even
 // if the client navigates away. The API key lives only in memory for the run.
-function runAudit(id: string, params: { query: string; language: string; country: string; model: string; apiKey: string; engine: GeoEngine; baseUrl?: string; analysisModel?: string; analysis?: GeoAnalysisCreds; aparserPreset?: string; aparserConfig?: string }) {
+function runAudit(id: string, params: { query: string; language: string; country: string; model: string; apiKey: string; engine: GeoEngine; baseUrl?: string; analysisModel?: string; analysis?: GeoAnalysisCreds; aparserPreset?: string; aparserConfig?: string; pageUrl?: string }) {
   runGeoAudit(params)
     .then(async (r) => {
       if (r.ok) await audits().update({ where: { id }, data: { status: "completed", report: JSON.stringify(r.data) } });
@@ -63,6 +63,10 @@ export async function POST(req: Request) {
   // Stage-2 model, sent by the client from the `utility` task setting. Optional: an older
   // client that does not send it falls back inside runGeoAudit rather than failing.
   const analysisModel = String(b.analysisModel ?? "") || undefined;
+  // Optional: the user's own page to hold against the cited ones in stage 2. http(s) only —
+  // this string becomes an outbound server-side fetch.
+  const pageUrlRaw = String(b.pageUrl ?? "").trim().slice(0, 300);
+  const pageUrl = /^https?:\/\//i.test(pageUrlRaw) ? pageUrlRaw : undefined;
   // Stage-2 provider + key, from the same `utility` task setting. The search pass needs a hosted
   // web_search tool and so stays on OpenAI or kie.ai; the analysis pass only reads a trace and
   // writes JSON, so it follows the user's per-task choice like every other analysis step — and
@@ -88,7 +92,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: `db: ${String(e?.message ?? e)} (run: npx prisma db push)` }, { status: 500 });
   }
 
-  runAudit(rec.id, { query, language, country, model, apiKey, engine, baseUrl, analysisModel, analysis, aparserPreset, aparserConfig }); // fire-and-forget
+  runAudit(rec.id, { query, language, country, model, apiKey, engine, baseUrl, analysisModel, analysis, aparserPreset, aparserConfig, pageUrl }); // fire-and-forget
   return NextResponse.json({ id: rec.id });
 }
 

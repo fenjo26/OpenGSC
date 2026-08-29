@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Globe, Loader2, AlertTriangle, Plus, Trash2, Clock, ArrowRight } from "lucide-react";
+import { Globe, Loader2, AlertTriangle, Plus, Trash2, Clock, ArrowRight, FileDown } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { COUNTRIES, LANGUAGES, defaultLanguageFor } from "@/lib/seo/regions";
+import { readUrlParam } from "@/lib/urlParam";
+import { buildGeoMarkdown } from "@/lib/seo/geoExportMd";
 import GeoAuditReport from "@/components/GeoAuditReport";
 import type { GeoReport } from "@/lib/seo/geo";
 import {
@@ -28,6 +30,11 @@ const modelsFallbackFor = (eng: GeoEngineChoice): string[] =>
 export default function GeoAuditPage() {
   const { t } = useLanguage();
   const [query, setQuery] = useState("");
+  // Optional: the page the user wants cited for this query. Stage 2 fetches it and answers
+  // "what do I fix on MY page" instead of only describing the niche. ?url= prefills it, so any
+  // other screen can open the form with the target already set.
+  const [pageUrl, setPageUrl] = useState("");
+  useEffect(() => { const u = readUrlParam("url"); if (u) setPageUrl(u); }, []);
   const [language, setLanguage] = useState("en");
   const [country, setCountry] = useState("us");
   // Language follows the country's market default until the user picks one explicitly.
@@ -162,6 +169,7 @@ export default function GeoAuditPage() {
       analysisModel: legacyModel,
       analysis,
       aparserConfig: engine === "aparser" ? aparser.config.trim() || undefined : undefined,
+      pageUrl: pageUrl.trim() || undefined,
     });
     if (error || !id) { setRunning(false); setErr(error || "audit_failed"); return; }
 
@@ -205,6 +213,18 @@ export default function GeoAuditPage() {
 
   function reset() { setReport(null); setErr(""); setQuery(""); }
 
+  // The "feed the conclusions somewhere" path: hand the report to a brief, a client or a doc
+  // instead of making the user select-and-copy from the screen.
+  function downloadMd() {
+    if (!report) return;
+    const blob = new Blob([buildGeoMarkdown(report)], { type: "text/markdown;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `geo-audit-${new Date(report.createdAt).toISOString().slice(0, 10)}.md`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
   const card: React.CSSProperties = { background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: "14px", padding: "22px" };
 
   // ── Results view ──
@@ -213,6 +233,9 @@ export default function GeoAuditPage() {
       <div>
         <button onClick={reset} style={{ display: "inline-flex", alignItems: "center", gap: "7px", padding: "9px 15px", borderRadius: "9px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-primary)", fontSize: "13px", fontWeight: 600, cursor: "pointer", marginBottom: "22px" }}>
           <Plus size={15} /> {t("geoNewAudit")}
+        </button>
+        <button onClick={downloadMd} style={{ display: "inline-flex", alignItems: "center", gap: "7px", padding: "9px 15px", borderRadius: "9px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-primary)", fontSize: "13px", fontWeight: 600, cursor: "pointer", marginBottom: "22px", marginLeft: "10px" }}>
+          <FileDown size={15} /> {t("geoDownloadMd")}
         </button>
         <GeoAuditReport report={report} />
       </div>
@@ -237,6 +260,10 @@ export default function GeoAuditPage() {
         <label className="tool-field-label">{t("geoFieldKeyword")}</label>
         <input className="tool-input" value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !running) run(); }}
           placeholder={t("geoFieldKeywordPh")} disabled={running} />
+
+        <label className="tool-field-label" style={{ marginTop: "14px", display: "block" }}>{t("geoYourPageLabel")}</label>
+        <input className="tool-input" value={pageUrl} onChange={e => setPageUrl(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !running) run(); }}
+          placeholder={t("geoYourPagePh")} disabled={running} />
 
         {([hasOpenAi, hasKie, hasGemini, hasAparser].filter(Boolean).length > 1) && (
           <div style={{ display: "flex", gap: "8px", marginTop: "14px", flexWrap: "wrap" }}>

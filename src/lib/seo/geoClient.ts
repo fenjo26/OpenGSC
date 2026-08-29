@@ -127,6 +127,8 @@ export async function startGeoAudit(payload: {
   aparserPreset?: string;
   /** Engine "aparser" only: the instance's thread-count config to run under. */
   aparserConfig?: string;
+  /** Optional: the user's own page to compare against the cited ones in stage 2. */
+  pageUrl?: string;
 }): Promise<{ id?: string; error?: string }> {
   try {
     const res = await fetch("/api/seo/geo", {

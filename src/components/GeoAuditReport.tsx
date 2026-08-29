@@ -69,6 +69,46 @@ export default function GeoAuditReport({ report }: { report: GeoReport }) {
         </div>
       </div>
 
+      {/* Your page — the actionable verdict, present only when the audit ran with a page URL.
+          Placed above the metrics on purpose: it is the part the user is here for. */}
+      {report.yourPage && (
+        <section style={{ ...card, borderColor: report.yourPage.cited ? "rgba(16,185,129,0.35)" : "rgba(239,68,68,0.3)" }}>
+          <h3 style={secTitle}>{tp("geoYourPageTitle")}</h3>
+          <p style={secSub}>{report.pageUrl}</p>
+          <span style={{ ...chip, color: report.yourPage.cited ? GREEN : "var(--color-accent-red)", borderColor: report.yourPage.cited ? GREEN : "var(--color-accent-red)" }}>
+            {report.yourPage.cited ? <Check size={13} style={{ marginRight: 5 }} /> : <X size={13} style={{ marginRight: 5 }} />}
+            {report.yourPage.cited ? tp("geoYourPageCited") : tp("geoYourPageNotCited")}
+          </span>
+          {report.yourPage.summary && (
+            <p style={{ fontSize: "13px", color: "var(--color-text-secondary)", lineHeight: 1.55, margin: "12px 0 0" }}>{report.yourPage.summary}</p>
+          )}
+          {report.yourPage.gaps.length > 0 && (
+            <>
+              <div style={{ fontSize: "12px", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--color-text-tertiary)", margin: "16px 0 6px" }}>{tp("geoYourPageGaps")}</div>
+              <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "13px", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+                {report.yourPage.gaps.map((g, i) => <li key={i}>{g}</li>)}
+              </ul>
+            </>
+          )}
+          {report.yourPage.fixes.length > 0 && (
+            <>
+              <div style={{ fontSize: "12px", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--color-text-tertiary)", margin: "16px 0 6px" }}>{tp("geoYourPageFixes")}</div>
+              <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "13px", color: "var(--color-text-primary)", lineHeight: 1.6 }}>
+                {report.yourPage.fixes.map((f, i) => <li key={i}>{f}</li>)}
+              </ul>
+            </>
+          )}
+          {report.yourPage.citedCompetitors.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "14px" }}>
+              {report.yourPage.citedCompetitors.map(d => <span key={d} style={chip}>{d}</span>)}
+            </div>
+          )}
+        </section>
+      )}
+      {!report.yourPage && report.pageUrl && (
+        <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>{tp("geoYourPageFetchFail")}</div>
+      )}
+
       {/* Metric cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: "14px" }}>
         <Metric label={tp("geoMetricSearchBatches")} value={m.searchBatches} sub={tp("geoMetricUniqueQueries", { n: m.uniqueQueries })} />

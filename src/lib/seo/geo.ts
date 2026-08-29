@@ -17,6 +17,7 @@ import { OPENAI_FALLBACK_MODELS, OPENAI_FALLBACK_CHEAP } from "@/lib/seo/models"
 import { fetchLLMDetailed } from "@/lib/llm";
 import { defaultModelFor } from "@/lib/providerDefaults";
 import { runGeoAparser, GEO_APARSER_PARSER } from "@/lib/seo/geoAparser";
+import { safeFetch } from "@/lib/security/safeFetch";
 
 export type GeoResult = { ok: true; data: GeoReport } | { ok: false; error: string };
 
@@ -54,6 +55,19 @@ export interface GeoReport {
   };
   insights: { userSearchBehavior: string; dominantSource: string; strategicEngagement: string; opportunityGaps: string };
   answer: { text: string; citations: { n: number; domain: string; url: string; title: string }[]; chars: number };
+  /** Present when the audit was run with the user's own page URL. */
+  pageUrl?: string;
+  /**
+   * Stage-2 verdict on the user's own page: is it cited for this query, and what would it take
+   * to cite it. Present only when a pageUrl was given AND the page itself was fetchable.
+   */
+  yourPage?: {
+    cited: boolean;
+    citedCompetitors: string[];
+    gaps: string[];
+    fixes: string[];
+    summary: string;
+  };
 }
 
 export interface GeoBatch { id: string; queries: string[]; scanned: number; cited: number }
@@ -428,15 +442,36 @@ function extractLinksFromText(text: string): { url: string; title: string; domai
 }
 
 // ─── Stage 2: qualitative analysis pass ──────────────────────────────────────────
-function buildAnalysisPrompt(t: RawTrace, query: string, language: string, country: string): string {
+function buildAnalysisPrompt(t: RawTrace, query: string, language: string, country: string, ownPage?: { url: string; text: string }): string {
   const citedDomains = Array.from(new Set(t.citations.map(c => c.domain)));
   const scannedDomains = Array.from(new Set(t.scannedAll.map(s => s.domain)));
   const citationList = t.citations.map((c, i) => `[${i + 1}] ${c.domain} — ${c.title || c.url}`).join("\n");
+  // The own-page block is what turns the audit from niche recon into "what do I fix on MY page":
+  // without it the schema below stays byte-identical to the old one, so existing consumers see
+  // no difference when no URL was given.
+  const ownPageBlock = ownPage ? `
+
+THE USER'S OWN PAGE (they ran this audit to learn what to change on it):
+URL: ${ownPage.url}
+PAGE TEXT (trimmed):
+"""
+${ownPage.text}
+"""
+` : "";
+  const yourPageShape = ownPage ? `,
+  "yourPage": {
+    "cited": true|false,
+    "citedCompetitors": ["domains of the cited pages that serve this query better"],
+    "gaps": ["what those cited pages offer that this page lacks — page-level and concrete"],
+    "fixes": ["specific changes to this page that would make it citation-worthy for this answer"],
+    "summary": "2-3 sentences: where this page stands for this query today"
+  }` : "";
+  const yourPageRule = ownPage ? `\n- "yourPage": judge the user's page as an answer engine would — would citing it add something the current citations lack? Compare it against what the cited pages actually offer, not against a generic ideal. Be specific to THIS page's text.` : "";
 
   return `You are a GEO (Generative Engine Optimization) analyst. Below is an AI assistant's answer to a real user query, plus the web sources it cited and scanned. Extract a STRICT JSON object (no prose, no markdown) describing how the niche is represented.
 
 QUERY: "${query}"  (language: ${language}, country: ${country})
-
+${ownPageBlock}
 CITED SOURCES (in answer order):
 ${citationList || "(none)"}
 
@@ -477,13 +512,39 @@ Return JSON with EXACTLY this shape:
   "coverageNotes": {
     "missingFactors": ["factors the answer never weighed, if any"],
     "missingEntities": ["entities absent but expected, if any"]
-  }
+  }${yourPageShape}
 }
 
 Rules:
 - ORDER "brands" by prominence in the answer (most prominent first). One entry per real brand/provider that appears as a bookable/usable option. Skip pure reference pages.
 - "domainTypes" MUST include every CITED domain and every prominent scanned domain. official_site = a provider's own website; ecommerce = marketplace/aggregator/booking platform; review_aggregator = reviews/ratings hubs; listicle_editorial = blog/magazine "best of" articles; forum = reddit/quora/community; wikipedia = wikipedia/wikidata.
-- Keep every string short. Language of notes: ${language}.`;
+- Keep every string short. Language of notes: ${language}.${yourPageRule}`;
+}
+
+// Fetch the user's own page for the stage-2 comparison. safeFetch rather than a bare fetch:
+// the URL is user-supplied and this runs server-side, so it gets the SSRF guard. A page that
+// cannot be fetched is not fatal — the audit simply ships without the yourPage block, exactly
+// like a failed stage-2 analysis.
+async function fetchOwnPageText(url: string): Promise<{ url: string; text: string } | undefined> {
+  try {
+    const res = await safeFetch(url, { timeoutMs: 20_000, maxBytes: 1_500_000 });
+    if (!res.ok) return undefined;
+    const html = await res.text();
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&quot;/gi, '"')
+      .replace(/&#0?39;/g, "'").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 8000);
+    // Below this floor the fetch "succeeded" but returned a shell (JS-rendered SPA, a consent
+    // wall) — comparing against it would produce recommendations about a page that is not there.
+    return text.length >= 200 ? { url, text } : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -506,10 +567,11 @@ async function runAnalysis(
   t: RawTrace, query: string, language: string, country: string,
   analysisModel: string, apiKey: string, engine: GeoEngine = "openai",
   creds?: GeoAnalysisCreds, baseUrl?: string,
+  ownPage?: { url: string; text: string },
 ): Promise<any> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 120_000);
-  const prompt = buildAnalysisPrompt(t, query, language, country);
+  const prompt = buildAnalysisPrompt(t, query, language, country, ownPage);
   try {
     // Preferred path: the shared multi-provider client, so stage 2 obeys the per-task settings
     // like every other analysis step in the app — and inherits the things that client learned
@@ -634,8 +696,9 @@ function pct(n: number, d: number): number { return d > 0 ? Math.round((n / d) *
 
 export function assembleReport(opts: {
   query: string; language: string; country: string; model: string; trace: RawTrace; analysis: any;
+  pageUrl?: string; ownPage?: { url: string; text: string } | null;
 }): GeoReport {
-  const { query, language, country, model, trace, analysis } = opts;
+  const { query, language, country, model, trace, analysis, pageUrl, ownPage } = opts;
   const a = analysis ?? {};
 
   // Citation counts per domain.
@@ -823,6 +886,16 @@ export function assembleReport(opts: {
 
   const openPages = trace.opened.map((o, i) => ({ rank: i + 1, domain: domainOf(o.url), path: pathOf(o.url), url: o.url }));
 
+  // ── Your page (only when the audit ran with a pageUrl whose fetch succeeded) ──
+  const rawYour = (a.yourPage && typeof a.yourPage === "object") ? a.yourPage : null;
+  const yourPage: GeoReport["yourPage"] = ownPage && rawYour ? {
+    cited: Boolean(rawYour.cited),
+    citedCompetitors: Array.isArray(rawYour.citedCompetitors) ? rawYour.citedCompetitors.map(String).slice(0, 8) : [],
+    gaps: Array.isArray(rawYour.gaps) ? rawYour.gaps.map(String).slice(0, 8) : [],
+    fixes: Array.isArray(rawYour.fixes) ? rawYour.fixes.map(String).slice(0, 8) : [],
+    summary: String(rawYour.summary || ""),
+  } : undefined;
+
   return {
     query, language, country, model, createdAt: Date.now(),
     classification: {
@@ -849,6 +922,10 @@ export function assembleReport(opts: {
       chars: trace.answerText.length,
       citations: trace.citations.map((c, i) => ({ n: i + 1, domain: c.domain, url: c.url, title: c.title })),
     },
+    pageUrl: pageUrl ?? undefined,
+    // JSON.stringify drops the key entirely when undefined, so audits run without a page URL
+    // keep the exact old report shape on disk.
+    ...(yourPage ? { yourPage } : {}),
   };
 }
 
@@ -886,6 +963,12 @@ export async function runGeoAudit(params: {
   aparserPreset?: string;
   /** A-Parser thread-count config to run under ("default" unless the user changed it). */
   aparserConfig?: string;
+  /**
+   * The user's own page, when they want the report to say what to fix on IT rather than only
+   * describe the niche. Fetched after the search trace and fed to stage 2 as a comparison
+   * target; costs one extra fetch and a longer analysis prompt — nothing against stage 1.
+   */
+  pageUrl?: string;
 }): Promise<GeoResult> {
   const query = String(params.query ?? "").trim();
   if (!query) return { ok: false, error: "no_query" };
@@ -922,10 +1005,13 @@ export async function runGeoAudit(params: {
   // OpenAI id would 404 against the user's Gemini key.
   const analysisModel = String(params.analysisModel ?? "")
     || (engine === "gemini" || engine === "kie" || engine === "aparser" || baseUrl ? model : OPENAI_FALLBACK_CHEAP);
-  const analysis = await runAnalysis(trace, query, language, country, analysisModel, apiKey, engine, params.analysis, baseUrl);
+  const pageUrl = typeof params.pageUrl === "string" && /^https?:\/\//i.test(params.pageUrl.trim())
+    ? params.pageUrl.trim().slice(0, 300) : undefined;
+  const ownPage = pageUrl ? await fetchOwnPageText(pageUrl) : undefined;
+  const analysis = await runAnalysis(trace, query, language, country, analysisModel, apiKey, engine, params.analysis, baseUrl, ownPage);
   // What ran, not what was requested. On A-Parser the two differ by construction, and a report
   // that silently claims the requested id would hide the whole point of the trade-off: the free
   // tier serves whichever model it serves that day.
-  const report = assembleReport({ query, language, country, model: trace.model || model, trace, analysis });
+  const report = assembleReport({ query, language, country, model: trace.model || model, trace, analysis, pageUrl, ownPage });
   return { ok: true, data: report };
 }
