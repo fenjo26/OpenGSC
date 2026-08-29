@@ -112,7 +112,10 @@ export async function buildDigestData(
   userId: string, tag: string, days: number, lang: NotifyLang = "en",
   opts: { engineCap?: number } = {},
 ): Promise<DigestData> {
-  const allSites = await prisma.site.findMany({ where: { userId }, select: { id: true, url: true, tags: true } });
+  // Portfolio-wide means live properties the user actually works on: archived sites have no
+  // new data by definition, and a hidden one is shelved — same rule the dashboard's portfolio
+  // reports follow. Their rows would only overstate the totals the digest reports.
+  const allSites = await prisma.site.findMany({ where: { userId, hidden: false, archivedAt: null }, select: { id: true, url: true, tags: true } });
   const sites = tag ? allSites.filter(s => hasTag(s.tags, tag)) : allSites;
 
   const now = new Date();

@@ -83,7 +83,10 @@ function matchSite<T extends { id: string; siteId: string; url: string }>(sites:
 export async function resolveSites(userId: string, site: unknown) {
   const q = String(site ?? "").trim();
   const sites = await prisma.site.findMany({ where: { userId } });
-  if (!q || q.toLowerCase() === "all") return sites;
+  // Portfolio-wide ("all") means live properties the user actually works on: a hidden site is
+  // shelved and an archived one has no new data — same rule the dashboard's portfolio reports
+  // follow. An explicit site name still reaches hidden and archived sites on purpose.
+  if (!q || q.toLowerCase() === "all") return sites.filter(s => !s.hidden && !s.archivedAt);
   const found = matchSite(sites, q);
   if (!found) throw new Error(`Site not found: "${q}". Call list_sites to see available sites, or pass "all".`);
   return [found];

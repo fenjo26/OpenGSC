@@ -76,7 +76,9 @@ export async function POST(req: Request) {
   // Live per-engine rows for the page's Bing/Yandex tabs (lazy-loaded on tab click).
   if (action === "engine") {
     const engine = b.engine === "yandex" ? "yandex" : "bing";
-    const allSites = await prisma.site.findMany({ where: { userId }, select: { id: true, url: true, tags: true } });
+    // Same portfolio-wide rule as buildDigestData: hidden and archived sites are shelved, and
+    // their rows would only overstate the per-engine totals.
+    const allSites = await prisma.site.findMany({ where: { userId, hidden: false, archivedAt: null }, select: { id: true, url: true, tags: true } });
     const sites = tag ? allSites.filter(s => hasTag(s.tags, tag)) : allSites;
     const rows = await buildEngineRows(userId, engine, sites, days || 28, 120).catch(() => []);
     const clicks = rows.reduce((s, r) => s + r.clicks, 0), impr = rows.reduce((s, r) => s + r.impr, 0);
