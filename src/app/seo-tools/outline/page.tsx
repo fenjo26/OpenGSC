@@ -14,7 +14,7 @@ import SeoJobProgress from "@/components/SeoJobProgress";
 import SeoRecentList from "@/components/SeoRecentList";
 import { getSeoGenCreds, getTaskCreds, getSerpCreds, getFirecrawlKey, loadPolicies, getActivePolicyName, getKeywordSource, getKwAuto, getKwLimit } from "@/lib/seo/keys";
 import { getMetricsWithKd, formatUsd, priceExpand } from "@/lib/seo/metricsClient";
-import { COUNTRIES, LANGUAGES } from "@/lib/seo/regions";
+import { COUNTRIES, LANGUAGES, defaultLanguageFor } from "@/lib/seo/regions";
 import { TONES, toneToPrompt } from "@/lib/seo/tones";
 import { OUTLINE_TEMPLATES, TEMPLATE_GROUPS } from "@/lib/seo/templates";
 import { addHistory, takeView } from "@/lib/seo/history";
@@ -64,6 +64,8 @@ export default function OutlinePage() {
   const [keyword, setKeyword] = useState("");
   const [country, setCountry] = useState("us");
   const [language, setLanguage] = useState("en");
+  // Language follows the country's market default until the user picks one explicitly.
+  const [langTouched, setLangTouched] = useState(false);
   const [location, setLocation] = useState("");
   const [engine, setEngine] = useState<"google" | "bing">("google");
   const [topN, setTopN] = useState(10);
@@ -401,12 +403,12 @@ export default function OutlinePage() {
             <input className={inputStyle} value={keyword} onChange={e => setKeyword(e.target.value)} placeholder={t("seoKeywordPh")} onKeyDown={e => e.key === "Enter" && runSerp()} />
           </Field>
           <Field l={t("seoCountry")}>
-            <select className={inputStyle} value={country} onChange={e => setCountry(e.target.value)}>
+            <select className={inputStyle} value={country} onChange={e => { const gl = e.target.value; setCountry(gl); if (!langTouched) setLanguage(defaultLanguageFor(gl)); }}>
               {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
             </select>
           </Field>
           <Field l={t("seoLanguage")}>
-            <select className={inputStyle} value={language} onChange={e => setLanguage(e.target.value)}>
+            <select className={inputStyle} value={language} onChange={e => { setLangTouched(true); setLanguage(e.target.value); }}>
               {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
             </select>
           </Field>

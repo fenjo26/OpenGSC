@@ -19,6 +19,7 @@
 // Claude and Grok exist only in the live tracker, which is another reason not to merge them.
 
 import { locationCode, isSupportedCountry } from "./demand";
+import { defaultLanguageFor } from "./regions";
 
 const DFS_BASE = "https://api.dataforseo.com";
 const DFS_TIMEOUT_MS = 60_000;
@@ -167,7 +168,7 @@ export async function brandMentions(
     target,
     platform: opts.platform,
     location_code: locationCode(gl),
-    language_code: opts.hl || "en",
+    language_code: opts.hl || defaultLanguageFor(gl),
   };
 
   let cost = 0;
@@ -277,7 +278,7 @@ export async function shareOfVoice(
       targets: values.map(v => ({ aggregation_key: v, target: targetFor(opts.kind, v) })),
       platform: opts.platform,
       location_code: locationCode(gl),
-      language_code: opts.hl || "en",
+      language_code: opts.hl || defaultLanguageFor(gl),
       internal_list_limit: 5,
     }],
     (task) => task?.result?.[0]?.items ?? [],

@@ -3,6 +3,7 @@ import { authOptions } from "@/lib/auth";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { domainOverview, estimateDomainCost, providerFor, normDomain } from "@/lib/seo/demand";
+import { defaultLanguageFor } from "@/lib/seo/regions";
 import {
   writeDomainCache, readDomainCache, writeKeywordCache,
   readUsage, recordUsage, withinCap, normalizeKeyword,
@@ -42,7 +43,7 @@ export async function POST(req: Request) {
   const b = await req.json().catch(() => ({}));
   const domain = normDomain(String(b.domain ?? ""));
   const country = String(b.country ?? "us").toLowerCase();
-  const language = String(b.language ?? "en").toLowerCase();
+  const language = String(b.language || defaultLanguageFor(country)).toLowerCase();
   const keywordLimit = Math.max(10, Math.min(1000, Number(b.keywordLimit ?? 200)));
   const pageLimit = Math.max(10, Math.min(500, Number(b.pageLimit ?? 50)));
   const apiKey = String(b.apiKey ?? "").trim();

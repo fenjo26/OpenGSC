@@ -14,7 +14,7 @@ import { Plus, RefreshCw, Trash2, ChevronDown, ChevronUp, ChevronsUpDown, Extern
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { withShare, isGuestView } from "@/lib/shareParam";
 import { usePrivacy } from "@/lib/PrivacyContext";
-import { COUNTRIES, LANGUAGES } from "@/lib/seo/regions";
+import { COUNTRIES, LANGUAGES, defaultLanguageFor } from "@/lib/seo/regions";
 import KeywordWeightsBar from "@/components/KeywordWeightsBar";
 import { useKeywordWeights } from "@/lib/seo/useKeywordWeights";
 
@@ -148,6 +148,8 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
   const [kwText, setKwText] = useState("");
   const [country, setCountry] = useState("us");
   const [lang, setLang] = useState("en");
+  // Language follows the country's market default until the user picks one explicitly.
+  const [langTouched, setLangTouched] = useState(false);
   const [busy, setBusy] = useState<null | "add" | "check">(null);
   const [progress, setProgress] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -405,13 +407,13 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
           <div style={{ display: "flex", gap: "8px", alignItems: "flex-end" }}>
             <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
               <span style={{ fontSize: "10px", color: "var(--color-text-secondary)", paddingLeft: "2px" }}>{t("rankCountryLabel")}</span>
-              <select value={country} onChange={e => setCountry(e.target.value)} style={{ ...inputStyle, cursor: "pointer", height: "40px", maxWidth: "170px" }} title="Search location (Google gl param)">
+              <select value={country} onChange={e => { const gl = e.target.value; setCountry(gl); if (!langTouched) setLang(defaultLanguageFor(gl)); }} style={{ ...inputStyle, cursor: "pointer", height: "40px", maxWidth: "170px" }} title="Search location (Google gl param)">
                 {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
               </select>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
               <span style={{ fontSize: "10px", color: "var(--color-text-secondary)", paddingLeft: "2px" }}>{t("rankLangLabel")}</span>
-              <select value={lang} onChange={e => setLang(e.target.value)} style={{ ...inputStyle, cursor: "pointer", height: "40px", maxWidth: "150px" }} title="Search language (Google hl param)">
+              <select value={lang} onChange={e => { setLangTouched(true); setLang(e.target.value); }} style={{ ...inputStyle, cursor: "pointer", height: "40px", maxWidth: "150px" }} title="Search language (Google hl param)">
                 {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
               </select>
             </div>

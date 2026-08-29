@@ -162,8 +162,52 @@ const LANGUAGES_RAW: { code: string; label: string }[] = [
   { code: "cy", label: "Welsh" },
   { code: "af", label: "Afrikaans" },
   { code: "sw", label: "Swahili" },
+  { code: "bs", label: "Bosnian" },
+  { code: "ur", label: "Urdu" },
+  { code: "bn", label: "Bengali" },
+  { code: "si", label: "Sinhala" },
+  { code: "ne", label: "Nepali" },
+  { code: "uz", label: "Uzbek" },
 ];
 
 // Sorted A→Z by label for easy scanning in the dropdowns.
 export const COUNTRIES = [...COUNTRIES_RAW].sort((a, b) => a.label.localeCompare(b.label));
 export const LANGUAGES = [...LANGUAGES_RAW].sort((a, b) => a.label.localeCompare(b.label));
+
+// Country (gl) → the language its market mostly runs in — what a local user would
+// type into Google. Deliberately not always the official language: by/kz live on
+// Russian online, za on English. Picking a country only *preselects* this; the
+// language select stays free, so en-for-DE remains one deliberate click away.
+const DEFAULT_LANGUAGE: Record<string, string> = {
+  // ── Tier 1 ──
+  us: "en", gb: "en", ca: "en", au: "en", nz: "en", ie: "en",
+  // ── Tier 2 ──
+  de: "de", fr: "fr", nl: "nl", be: "nl", ch: "de", at: "de",
+  se: "sv", no: "no", dk: "da", fi: "fi", lu: "fr", it: "it",
+  es: "es", pt: "pt", sg: "en", hk: "zh", jp: "ja", kr: "ko",
+  il: "he", ae: "ar",
+  // ── Europe ──
+  gr: "el", cy: "el", mt: "en", is: "is", pl: "pl", cz: "cs",
+  sk: "sk", hu: "hu", ro: "ro", bg: "bg", hr: "hr", si: "sl",
+  rs: "sr", ba: "bs", mk: "mk", al: "sq", me: "sr", ee: "et",
+  lv: "lv", lt: "lt", ua: "uk", by: "ru", md: "ro", ru: "ru", tr: "tr",
+  // ── Americas ──
+  mx: "es", br: "pt", ar: "es", cl: "es", co: "es", pe: "es",
+  uy: "es", ec: "es", ve: "es", cr: "es", pa: "es", gt: "es",
+  do: "es", pr: "es",
+  // ── Asia–Pacific ──
+  in: "hi", id: "id", my: "ms", th: "th", vn: "vi", ph: "tl",
+  tw: "zh", cn: "zh", pk: "ur", bd: "bn", lk: "si", np: "ne",
+  kz: "ru", uz: "uz", az: "az", ge: "ka", am: "hy",
+  // ── Middle East ──
+  sa: "ar", qa: "ar", kw: "ar", bh: "ar", om: "ar", jo: "ar", lb: "ar",
+  // ── Africa ──
+  za: "en", eg: "ar", ma: "ar", tn: "ar", dz: "ar", ng: "en",
+  ke: "sw", gh: "en",
+};
+
+// Language a gl maps to by default. Falls back to en for anything unknown
+// (every code in COUNTRIES is covered — see regions.test.ts).
+export function defaultLanguageFor(gl: string): string {
+  return DEFAULT_LANGUAGE[(gl || "").trim().toLowerCase()] ?? "en";
+}

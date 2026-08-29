@@ -29,6 +29,8 @@
 const DFS_BASE = "https://api.dataforseo.com";
 const DFS_TIMEOUT_MS = 60_000;
 
+import { defaultLanguageFor } from "./regions";
+
 // ─── Locations ─────────────────────────────────────────────────────────────────
 
 /**
@@ -347,7 +349,7 @@ async function fetchRelated(cred: string, seed: string, o: DiscoverOpts): Promis
     [{
       keyword: seed,
       location_code: locationCode(o.gl || "us"),
-      language_code: o.hl || "en",
+      language_code: o.hl || defaultLanguageFor(o.gl || "us"),
       limit: o.limit ?? 150,
       depth: Math.min(4, Math.max(1, o.depth ?? 2)),
       include_seed_keyword: true,
@@ -366,7 +368,7 @@ async function fetchSuggestions(cred: string, seed: string, o: DiscoverOpts): Pr
     [{
       keyword: seed,
       location_code: locationCode(o.gl || "us"),
-      language_code: o.hl || "en",
+      language_code: o.hl || defaultLanguageFor(o.gl || "us"),
       limit: o.limit ?? 150,
       include_seed_keyword: true,
       include_clickstream_data: o.clickstream ?? false,
@@ -386,7 +388,7 @@ async function fetchIdeas(cred: string, seed: string, o: DiscoverOpts): Promise<
     [{
       keywords: [seed],
       location_code: locationCode(o.gl || "us"),
-      language_code: o.hl || "en",
+      language_code: o.hl || defaultLanguageFor(o.gl || "us"),
       limit: o.limit ?? 150,
       include_clickstream_data: o.clickstream ?? false,
       include_serp_info: false,
@@ -406,7 +408,7 @@ async function fetchAdsIdeas(cred: string, seed: string, o: DiscoverOpts): Promi
     [{
       keywords: [seed],
       location_code: locationCode(o.gl || "us"),
-      language_code: o.hl || "en",
+      language_code: o.hl || defaultLanguageFor(o.gl || "us"),
       sort_by: "search_volume",
     }],
     // keywords_data returns rows directly in `result`, without the `items` wrapper Labs uses.
@@ -624,7 +626,7 @@ export async function domainOverview(
   if (!isSupportedCountry(gl)) return { ...blank, error: `unsupported_country:${gl}` };
   if (providerFor(gl) === "google_ads") return { ...blank, error: "labs_only" };
 
-  const hl = opts.hl || "en";
+  const hl = opts.hl || defaultLanguageFor(gl);
   const loc = locationCode(gl);
   const keywordLimit = Math.max(10, Math.min(1000, opts.keywordLimit ?? 200));
   const pageLimit = Math.max(10, Math.min(500, opts.pageLimit ?? 50));
@@ -733,7 +735,7 @@ export async function keywordOverview(
       const r = await dfsPost(
         credential,
         "/v3/keywords_data/google_ads/search_volume/live",
-        [{ keywords: batch, location_code: locationCode(gl), language_code: opts.hl || "en" }],
+        [{ keywords: batch, location_code: locationCode(gl), language_code: opts.hl || defaultLanguageFor(gl) }],
         (task) => task?.result ?? [],
       );
       if (r.error) return { rows: out, cost, error: r.error };
@@ -753,7 +755,7 @@ export async function keywordOverview(
       [{
         keywords: batch,
         location_code: locationCode(gl),
-        language_code: opts.hl || "en",
+        language_code: opts.hl || defaultLanguageFor(gl),
         include_clickstream_data: opts.clickstream ?? false,
       }],
       (task) => task?.result?.[0]?.items ?? [],

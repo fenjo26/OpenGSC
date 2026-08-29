@@ -24,6 +24,7 @@ import {
   resolveAiCreds, resolveAiFallbacks, resolveSerpCreds, resolveKeywordSource, resolveActivePolicy, taskForJobType, assertConfirmed, confirmArg, parseJson,
 } from "./shared";
 import { expandKeywords } from "@/lib/seo/keywordSource";
+import { defaultLanguageFor } from "@/lib/seo/regions";
 import { priceExpand } from "@/lib/seo/metrics";
 import { readUsage, recordUsage, withinCap, releaseUnusedUnits } from "@/lib/seo/metricsStore";
 import { scrapePage } from "@/lib/seo/scrape";
@@ -548,7 +549,7 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
         let res;
         try {
           res = await expandKeywords({ source: kw.source, apiKey: kw.apiKey, baseUrl: kw.baseUrl }, seed, {
-            country, language: String(payload.language ?? "en"), limit, withDifficulty, mode, fetch: true,
+            country, language: String(payload.language || defaultLanguageFor(country)), limit, withDifficulty, mode, fetch: true,
           });
         } catch (e: any) {
           if (price.units) await releaseUnusedUnits(userId, kw.source, price.units, 0);

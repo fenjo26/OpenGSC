@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { getTaskCreds, getSerpCreds, getFirecrawlKey, getConfiguredProviders, AI_PROVIDER_NAMES, loadPolicies, savePolicies, getActivePolicyName } from "@/lib/seo/keys";
-import { COUNTRIES, LANGUAGES } from "@/lib/seo/regions";
+import { COUNTRIES, LANGUAGES, defaultLanguageFor } from "@/lib/seo/regions";
 import { loadHistory } from "@/lib/seo/history";
 import { trainModel, scoreText, suggestBannedWords, modelStats, type AiDetectReport } from "@/lib/seo/aidetect";
 import { loadModels, upsertModel, removeModel, getActiveName, setActiveName, effectiveBannedWords, type StoredModel } from "@/lib/seo/aidetectStore";
@@ -298,6 +298,8 @@ function CorpusTab({ models, activeName, onChange }: { models: StoredModel[]; ac
   const [urls, setUrls] = useState("");
   const [gl, setGl] = useState("us");
   const [hl, setHl] = useState("en");
+  // Language follows the country's market default until the user picks one explicitly.
+  const [langTouched, setLangTouched] = useState(false);
   const [count, setCount] = useState(12);
   const [human, setHuman] = useState<{ url: string; title: string; words: number; text: string }[]>([]);
   const [busy, setBusy] = useState<"harvest" | "train" | null>(null);
@@ -364,12 +366,12 @@ function CorpusTab({ models, activeName, onChange }: { models: StoredModel[]; ac
             <input value={keyword} onChange={e => setKeyword(e.target.value)} style={{ ...inputStyle, marginTop: "4px" }} />
           </label>
           <label style={label}>{t("seoCountryGl" as any)}
-            <select value={gl} onChange={e => setGl(e.target.value)} style={{ ...inputStyle, marginTop: "4px" }}>
+            <select value={gl} onChange={e => { const g = e.target.value; setGl(g); if (!langTouched) setHl(defaultLanguageFor(g)); }} style={{ ...inputStyle, marginTop: "4px" }}>
               {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
             </select>
           </label>
           <label style={label}>{t("seoLanguageHl" as any)}
-            <select value={hl} onChange={e => setHl(e.target.value)} style={{ ...inputStyle, marginTop: "4px" }}>
+            <select value={hl} onChange={e => { setLangTouched(true); setHl(e.target.value); }} style={{ ...inputStyle, marginTop: "4px" }}>
               {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
             </select>
           </label>

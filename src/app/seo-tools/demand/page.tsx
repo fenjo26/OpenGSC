@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Compass, Loader2, Download, ExternalLink, Search } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
-import { COUNTRIES, LANGUAGES } from "@/lib/seo/regions";
+import { COUNTRIES, LANGUAGES, defaultLanguageFor } from "@/lib/seo/regions";
 import { formatUsd } from "@/lib/seo/metricsClient";
 import { getDataForSeoKey } from "@/lib/seo/keys";
 import DemandDomain from "@/components/DemandDomain";
@@ -127,6 +127,8 @@ export default function DemandPage() {
   const [siteId, setSiteId] = useState("");
   const [country, setCountry] = useState("us");
   const [language, setLanguage] = useState("en");
+  // Language follows the country's market default until the user picks one explicitly.
+  const [langTouched, setLangTouched] = useState(false);
   const [seed, setSeed] = useState("");
   const [mode, setMode] = useState<DemandMode>("auto");
   const [limit, setLimit] = useState(150);
@@ -300,14 +302,14 @@ export default function DemandPage() {
         <div>
           <span className="tool-field-label">{t("importCountry")}</span>
           <select className="tool-input inline" value={country}
-            onChange={(e) => { setCountry(e.target.value); localStorage.setItem("seoMetricsCountry", e.target.value); }}>
+            onChange={(e) => { const gl = e.target.value; setCountry(gl); localStorage.setItem("seoMetricsCountry", gl); if (!langTouched) setLanguage(defaultLanguageFor(gl)); }}>
             {COUNTRIES.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
           </select>
         </div>
         <div>
           <span className="tool-field-label">{t("dmLanguage")}</span>
           <select className="tool-input inline" value={language}
-            onChange={(e) => { setLanguage(e.target.value); localStorage.setItem("seoDemandLang", e.target.value); }}>
+            onChange={(e) => { setLangTouched(true); setLanguage(e.target.value); localStorage.setItem("seoDemandLang", e.target.value); }}>
             {LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
           </select>
         </div>

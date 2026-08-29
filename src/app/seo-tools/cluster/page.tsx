@@ -9,7 +9,7 @@ import Link from "next/link";
 import { Boxes, Loader2, AlertTriangle } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { getSerpCreds, getKeywordSource } from "@/lib/seo/keys";
-import { COUNTRIES, LANGUAGES } from "@/lib/seo/regions";
+import { COUNTRIES, LANGUAGES, defaultLanguageFor } from "@/lib/seo/regions";
 import { startJob, importJob } from "@/lib/seo/jobs";
 import SeoJobProgress from "@/components/SeoJobProgress";
 
@@ -28,6 +28,8 @@ export default function ClusterPage() {
   const [raw, setRaw] = useState("");
   const [country, setCountry] = useState("us");
   const [language, setLanguage] = useState("en");
+  // Language follows the country's market default until the user picks one explicitly.
+  const [langTouched, setLangTouched] = useState(false);
   const [threshold, setThreshold] = useState(3);
   const [useVolumes, setUseVolumes] = useState(true);
   const [err, setErr] = useState("");
@@ -84,13 +86,13 @@ export default function ClusterPage() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginTop: "12px" }}>
             <div>
               <span className="tool-field-label">{t("seoCountry")}</span>
-              <select className={inputStyle} value={country} onChange={e => setCountry(e.target.value)}>
+              <select className={inputStyle} value={country} onChange={e => { const gl = e.target.value; setCountry(gl); if (!langTouched) setLanguage(defaultLanguageFor(gl)); }}>
                 {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
               </select>
             </div>
             <div>
               <span className="tool-field-label">{t("seoLanguage")}</span>
-              <select className={inputStyle} value={language} onChange={e => setLanguage(e.target.value)}>
+              <select className={inputStyle} value={language} onChange={e => { setLangTouched(true); setLanguage(e.target.value); }}>
                 {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
               </select>
             </div>

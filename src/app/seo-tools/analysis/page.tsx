@@ -8,7 +8,7 @@ import SeoContentAnalysis from "@/components/SeoContentAnalysis";
 import SeoJobProgress from "@/components/SeoJobProgress";
 import SeoRecentList from "@/components/SeoRecentList";
 import { getSeoGenCreds, getTaskCreds, getSerpCreds, getFirecrawlKey, loadPolicies, getActivePolicyName } from "@/lib/seo/keys";
-import { COUNTRIES, LANGUAGES } from "@/lib/seo/regions";
+import { COUNTRIES, LANGUAGES, defaultLanguageFor } from "@/lib/seo/regions";
 import { takeView } from "@/lib/seo/history";
 import { startJob, importJob } from "@/lib/seo/jobs";
 
@@ -26,6 +26,8 @@ export default function AnalysisPage() {
   const [keyword, setKeyword] = useState("");
   const [country, setCountry] = useState("us");
   const [language, setLanguage] = useState("en");
+  // Language follows the country's market default until the user picks one explicitly.
+  const [langTouched, setLangTouched] = useState(false);
   const [city, setCity] = useState("");
   const [topN, setTopN] = useState(10);
 
@@ -180,10 +182,10 @@ export default function AnalysisPage() {
           <input className="tool-input" value={keyword} onChange={e => setKeyword(e.target.value)} placeholder={t("seoKeywordRanksPh")} onKeyDown={e => e.key === "Enter" && findCompetitors()} />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "12px", marginTop: "14px" }}>
             <div><span className="tool-field-label">{t("seoCountry")}</span>
-              <select className="tool-input" value={country} onChange={e => setCountry(e.target.value)}>{COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}</select>
+              <select className="tool-input" value={country} onChange={e => { const gl = e.target.value; setCountry(gl); if (!langTouched) setLanguage(defaultLanguageFor(gl)); }}>{COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}</select>
             </div>
             <div><span className="tool-field-label">{t("seoLanguage")}</span>
-              <select className="tool-input" value={language} onChange={e => setLanguage(e.target.value)}>{LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}</select>
+              <select className="tool-input" value={language} onChange={e => { setLangTouched(true); setLanguage(e.target.value); }}>{LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}</select>
             </div>
             <div><span className="tool-field-label">{t("seoCaLocation")}</span>
               <input className="tool-input" value={city} onChange={e => setCity(e.target.value)} placeholder={t("seoCaLocationPh")} />

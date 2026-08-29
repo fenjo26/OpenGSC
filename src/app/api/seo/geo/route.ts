@@ -4,6 +4,7 @@ import { workspaceUserId } from "@/lib/team/workspace";
 import { OPENAI_FALLBACK_MODELS } from "@/lib/seo/models";
 import { prisma } from "@/lib/prisma";
 import { runGeoAudit, type GeoEngine, type GeoAnalysisCreds } from "@/lib/seo/geo";
+import { defaultLanguageFor } from "@/lib/seo/regions";
 
 // GeoAudit isn't in the committed generated client until `prisma generate` re-runs on
 // build; access it via a loose handle so types resolve everywhere (mirrors SeoJob).
@@ -33,8 +34,8 @@ export async function POST(req: Request) {
   const apiKey = String(b.apiKey ?? "");
   if (!apiKey) return NextResponse.json({ error: "no_key" }, { status: 400 });
   const engine: GeoEngine = b.engine === "kie" ? "kie" : b.engine === "gemini" ? "gemini" : "openai";
-  const language = String(b.language ?? "en");
   const country = String(b.country ?? "us");
+  const language = String(b.language || defaultLanguageFor(country));
   const model = String(b.model ?? "")
     || (engine === "kie" ? "gpt-5-5" : engine === "gemini" ? "gemini-2.5-flash" : OPENAI_FALLBACK_MODELS[0]);
   // Engine endpoint override (aiBaseUrl_openai): validated like analysis.baseUrl, because this

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Globe, Loader2, AlertTriangle, Plus, Trash2, Clock, ArrowRight } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
-import { COUNTRIES, LANGUAGES } from "@/lib/seo/regions";
+import { COUNTRIES, LANGUAGES, defaultLanguageFor } from "@/lib/seo/regions";
 import GeoAuditReport from "@/components/GeoAuditReport";
 import type { GeoReport } from "@/lib/seo/geo";
 import {
@@ -28,6 +28,8 @@ export default function GeoAuditPage() {
   const [query, setQuery] = useState("");
   const [language, setLanguage] = useState("en");
   const [country, setCountry] = useState("us");
+  // Language follows the country's market default until the user picks one explicitly.
+  const [langTouched, setLangTouched] = useState(false);
   const [engine, setEngine] = useState<GeoEngineChoice>("openai");
   const [model, setModel] = useState(OPENAI_FALLBACK_MODELS[0]);
   const [modelOpts, setModelOpts] = useState<ModelOpt[]>(OPENAI_MODELS_FALLBACK.map(id => ({ id, label: id })));
@@ -239,13 +241,13 @@ export default function GeoAuditPage() {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginTop: "14px" }}>
           <div>
             <label className="tool-field-label">{t("geoFieldLanguage")}</label>
-            <select className="tool-input" value={language} onChange={e => setLanguage(e.target.value)} disabled={running}>
+            <select className="tool-input" value={language} onChange={e => { setLangTouched(true); setLanguage(e.target.value); }} disabled={running}>
               {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
             </select>
           </div>
           <div>
             <label className="tool-field-label">{t("geoFieldCountry")}</label>
-            <select className="tool-input" value={country} onChange={e => setCountry(e.target.value)} disabled={running}>
+            <select className="tool-input" value={country} onChange={e => { const gl = e.target.value; setCountry(gl); if (!langTouched) setLanguage(defaultLanguageFor(gl)); }} disabled={running}>
               {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
             </select>
           </div>

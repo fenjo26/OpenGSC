@@ -6,6 +6,7 @@ import {
   discoverKeywords, estimateDemandCost, providerFor,
   type DemandMode, type DemandRow,
 } from "@/lib/seo/demand";
+import { defaultLanguageFor } from "@/lib/seo/regions";
 import { writeKeywordCache, readUsage, recordUsage, withinCap, normalizeKeyword } from "@/lib/seo/metricsStore";
 import { runUpsert } from "@/lib/db/upsert";
 import { rawQuery } from "@/lib/db/raw";
@@ -67,7 +68,7 @@ export async function POST(req: Request) {
   const b = await req.json().catch(() => ({}));
   const seed = String(b.seed ?? "").trim();
   const country = String(b.country ?? "us").toLowerCase();
-  const language = String(b.language ?? "en").toLowerCase();
+  const language = String(b.language || defaultLanguageFor(country)).toLowerCase();
   const mode = (["auto", "related", "suggestions", "ideas"].includes(String(b.mode))
     ? String(b.mode)
     : "auto") as DemandMode;

@@ -3,6 +3,7 @@
 // Keys are passed in from the client (stored in the browser, never on the server).
 
 import { goanySerp } from "./goanyapi";
+import { defaultLanguageFor } from "./regions";
 
 export type SerpEngine = "google" | "bing";
 
@@ -98,7 +99,7 @@ async function serperSearch(
 
   const settled = await Promise.all(
     Array.from({ length: pages }, (_, i) =>
-      serperFetchPage(endpoint, apiKey, keyword, opts.gl || "us", opts.hl || "en", opts.location, i + 1)),
+      serperFetchPage(endpoint, apiKey, keyword, opts.gl || "us", opts.hl || defaultLanguageFor(opts.gl || "us"), opts.location, i + 1)),
   );
 
   const page1 = settled[0];
@@ -160,7 +161,7 @@ async function dataForSeoSearch(
 
   const task = [{
     keyword,
-    language_code: opts.hl || "en",
+    language_code: opts.hl || defaultLanguageFor(opts.gl || "us"),
     location_code: DFS_LOC[(opts.gl || "us").toLowerCase()] ?? 2840,
     depth: opts.num || 10,
   }];
@@ -319,7 +320,7 @@ async function scrapingRobotSearch(
 ): Promise<SerpResponse> {
   const engine: SerpEngine = "google"; // ScrapingRobot path supports Google only
   const gl = (opts.gl || "us").toLowerCase();
-  const hl = opts.hl || "en";
+  const hl = opts.hl || defaultLanguageFor(gl);
   const want = opts.num || 10;
   const pages = Math.min(5, Math.max(1, Math.ceil(want / 10)));
   const results: SerpResultItem[] = [];

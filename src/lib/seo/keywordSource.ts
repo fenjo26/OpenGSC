@@ -35,6 +35,7 @@ import {
   type DemandRow, type KeywordIntent,
 } from "./demand";
 import { readKeywordCacheAny, writeKeywordCache, staleKeywords, normalizeKeyword, type CachedKeyword } from "./metricsStore";
+import { defaultLanguageFor } from "./regions";
 
 export type KwSource = "ahrefs" | "semrush" | "dataforseo" | "off";
 
@@ -172,7 +173,7 @@ export async function expandKeywords(
   if (creds.source === "dataforseo") {
     if (!isSupportedCountry(country)) return empty("dataforseo", `unsupported_country:${country}`);
     const r = await discoverKeywords(creds.apiKey, seed, {
-      gl: country, hl: opts.language || "en", limit: opts.limit ?? 100,
+      gl: country, hl: opts.language || defaultLanguageFor(country), limit: opts.limit ?? 100,
     });
     // Written into the shared cache so an Ahrefs user later sees rows DataForSEO paid for, and
     // vice versa. The whole point of one cache is that the money follows the keyword, not the tool.
@@ -248,7 +249,7 @@ export async function enrichKeywords(
     if (!isSupportedCountry(country)) {
       return { rows: cachedRows, source: "dataforseo", units: 0, usd: 0, fromCache: cachedRows.length, error: `unsupported_country:${country}` };
     }
-    const r = await keywordOverview(creds.apiKey, missing, { gl: country, hl: opts.language || "en" });
+    const r = await keywordOverview(creds.apiKey, missing, { gl: country, hl: opts.language || defaultLanguageFor(country) });
     if (r.rows.length) await writeKeywordCache(rowsToCacheWrites(r.rows), country, "dataforseo", "api");
     return {
       rows: merge(cachedRows, r.rows),

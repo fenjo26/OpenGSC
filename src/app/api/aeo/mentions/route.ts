@@ -7,6 +7,7 @@ import {
   type LlmPlatform,
 } from "@/lib/seo/llmMentions";
 import { normDomain } from "@/lib/seo/demand";
+import { defaultLanguageFor } from "@/lib/seo/regions";
 import { readUsage, recordUsage, withinCap } from "@/lib/seo/metricsStore";
 import { runUpsert } from "@/lib/db/upsert";
 import { rawQuery } from "@/lib/db/raw";
@@ -47,7 +48,7 @@ export async function POST(req: Request) {
   const platform: LlmPlatform = b.platform === "google" ? "google" : "chat_gpt";
   const kind = b.kind === "brand" ? "brand" : "domain";
   const country = String(b.country ?? "us").toLowerCase();
-  const language = String(b.language ?? "en").toLowerCase();
+  const language = String(b.language || defaultLanguageFor(country)).toLowerCase();
   const apiKey = String(b.apiKey ?? "").trim();
   const cap = Number(b.cap ?? 0);
   const wantFetch = !!b.fetch;

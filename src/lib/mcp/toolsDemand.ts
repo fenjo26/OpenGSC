@@ -25,6 +25,7 @@ import {
   type DemandMode, type DemandRow,
 } from "@/lib/seo/demand";
 import { expandKeywords, type KwSource } from "@/lib/seo/keywordSource";
+import { defaultLanguageFor } from "@/lib/seo/regions";
 import { writeKeywordCache, normalizeKeyword, recordUsage } from "@/lib/seo/metricsStore";
 import { runUpsert } from "@/lib/db/upsert";
 import { rawQuery } from "@/lib/db/raw";
@@ -314,7 +315,7 @@ export const DEMAND_TOOLS: McpTool[] = [
       if (!seed) throw new Error("Missing required argument: seed");
 
       const country = String(args.country ?? "us").toLowerCase();
-      const language = String(args.language ?? "en").toLowerCase();
+      const language = String(args.language || defaultLanguageFor(country)).toLowerCase();
       const mode = (["auto", "related", "suggestions", "ideas"].includes(String(args.mode))
         ? String(args.mode) : "auto") as DemandMode;
       const limit = lim(args.limit, 150, 1000);
