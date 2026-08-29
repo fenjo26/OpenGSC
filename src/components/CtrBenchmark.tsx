@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { ExternalLink } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { withShare } from "@/lib/shareParam";
+import { usePersistedState, isReportDays } from "@/lib/usePersistedState";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface CtrQuery {
@@ -100,7 +101,8 @@ function CtrTable({ siteDbId }: { siteDbId: string }) {
   const { t } = useLanguage();
   const [search,  setSearch]  = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("diff");
-  const [days,    setDays]    = useState(90);
+  // Same stored window as the other report panels, so it follows the user between tabs.
+  const [days,    setDays]    = usePersistedState<number>("gsc_report_days", 90, isReportDays);
   const [data,    setData]    = useState<CtrQuery[]>([]);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<string | null>(null);

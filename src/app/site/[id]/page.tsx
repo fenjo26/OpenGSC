@@ -23,6 +23,7 @@ import {
 import { useParams, useRouter } from "next/navigation";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import { usePersistedState, isGscPeriod } from "@/lib/usePersistedState";
 import { getTaskCreds, getAhrefsDrKey } from "@/lib/seo/keys";
 import TrafficChip from "@/components/TrafficChip";
 import BacklinkProfile from "@/components/BacklinkProfile";
@@ -4825,7 +4826,10 @@ export default function SitePage({
   const TAB_KEYS = ["dashboard", "positions", "aeo", "ga4", "indexing", "backlinks", "annotations", "optimize", "health", "audit", "ux", "settings"] as const;
   type TabKey = typeof TAB_KEYS[number];
   const [activeTab, setActiveTab] = useState<TabKey>("dashboard");
-  const [period, setPeriod]       = useState("7d");
+  // Same window vocabulary as the dashboard, same stored value (gsc_period): the dashboard
+  // hands its window over in the ?period= it appends when opening a site, a refresh or a
+  // shared site link reproduces it, and changing it here is what the dashboard shows next.
+  const [period, setPeriod]       = usePersistedState<string>("gsc_period", "7d", isGscPeriod, "period");
   const [siteData, setSiteData]   = useState<any>(null);
   const [dataLoading, setDataLoading] = useState(true);
 
@@ -4857,6 +4861,16 @@ export default function SitePage({
       { key: "settings" as const,    label: t("tabSettings") },
     ];
   }, [readOnly, t]);
+
+  // Deep link (?tab=audit): the workspace-wide audits page (/audits) opens a site's audit tab
+  // directly. Validated against the current tab list, so a stale or guest-forbidden tab falls
+  // back to the dashboard instead of rendering a tab the bar doesn't show. Read once on mount:
+  // depending on TABS would re-run on language change and reset the user's chosen tab.
+  useEffect(() => {
+    const tab = new URLSearchParams(window.location.search).get("tab");
+    if (tab && TABS.some(item => item.key === tab)) setActiveTab(tab as TabKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [syncing, setSyncing] = useState(false);
   const [activeMetrics, setActiveMetrics] = useState<Set<Metric>>(new Set(["clicks", "impressions", "ctr", "position"]));

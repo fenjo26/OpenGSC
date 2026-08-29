@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ChevronRight, ExternalLink, Loader2, ShieldCheck } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { withShare } from "@/lib/shareParam";
+import { usePersistedState, isReportDays } from "@/lib/usePersistedState";
 import type { IntentKind, IntentRecommendation, PageRole, RelatedIntentGroup } from "@/lib/cannibalization/relatedIntent";
 
 const intentKey: Record<IntentKind, string> = {
@@ -32,10 +33,14 @@ function confidenceColor(level: RelatedIntentGroup["confidenceLevel"]) {
   return level === "high" ? "#ef4444" : level === "medium" ? "#f59e0b" : "#60a5fa";
 }
 
-export default function RelatedIntentCannibalization({ siteDbId }: { siteDbId: string }) {
+export default function RelatedIntentCannibalization({ siteDbId, initialDays, onDaysChange }: { siteDbId: string; initialDays?: number; onDaysChange?: (days: number) => void }) {
   const { t, language } = useLanguage() as any;
   const [groups, setGroups] = useState<RelatedIntentGroup[]>([]);
-  const [days, setDays] = useState(90);
+  // Stored window (gsc_report_days, shared with the other report panels); the ?days= pin
+  // arrives as initialDays when a standalone page passes it through the parent component.
+  const [storedDays, setStoredDays] = usePersistedState<number>("gsc_report_days", 90, isReportDays);
+  const days    = initialDays ?? storedDays;
+  const setDays = (d: number) => { setStoredDays(d); onDaysChange?.(d); };
   const [search, setSearch] = useState("");
   const [confidence, setConfidence] = useState<"all" | "high" | "medium">("all");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());

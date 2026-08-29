@@ -5,6 +5,22 @@ All notable changes to OpenGSC. Dates are release dates; the version shown in
 
 ## [1.5.2] — 2026-08-29
 
+### Changed
+
+- Every period control in the app survives a refresh, and the windows that matter can travel
+  in a link. Ten controls across seven screens were bare component state with hardcoded
+  defaults: setting the dashboard to 12 months and reloading put you back on 7 days, opening
+  a site from a 12-month portfolio landed on a 7-day site page, and nothing could carry the
+  window you were looking at. The GSC window (dashboard and site page now share one value)
+  lives in the URL as `?period=` and in the browser as the last-used window, whichever the
+  link or history provides; chart granularity and comparison mode persist per browser; the
+  report panels (Striking Distance, CTR Benchmark, Cannibalization, Related Intent, Content
+  Decay) keep their analysis window across screens and refreshes. The standalone report pages
+  accept the window as a query param (`/striking?days=180`, `/decay?period=week`,
+  `/digest?days=30`) so a report shared with a client opens at exactly the window it was read
+  at. All of it is validated against each control's real option list — a hand-edited URL
+  falls back to the default instead of rendering a selector that shows nothing.
+
 ### Fixed
 
 - Hiding a site was a browser illusion. The hidden set lived in React state only, so the next

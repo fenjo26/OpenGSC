@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { withShare } from "@/lib/shareParam";
+import { usePersistedState, isReportDays } from "@/lib/usePersistedState";
 import RelatedIntentCannibalization from "@/components/RelatedIntentCannibalization";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -71,13 +72,17 @@ function InfoBlock() {
 }
 
 // ─── Cannibalization table ─────────────────────────────────────────────────────
-function CannibalizationTable({ siteDbId }: { siteDbId: string }) {
+function CannibalizationTable({ siteDbId, initialDays, onDaysChange }: { siteDbId: string; initialDays?: number; onDaysChange?: (days: number) => void }) {
   const { t } = useLanguage();
 
   const [groups,   setGroups]   = useState<CannibalGroup[]>([]);
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState("");
-  const [days,     setDays]     = useState(90);
+  // Stored window (gsc_report_days, shared with the other report panels); a standalone page
+  // can pin it via ?days= — see the default export below.
+  const [storedDays, setStoredDays] = usePersistedState<number>("gsc_report_days", 90, isReportDays);
+  const days    = initialDays ?? storedDays;
+  const setDays = (d: number) => { setStoredDays(d); onDaysChange?.(d); };
 
   const [search,         setSearch]         = useState("");
   const [sortKey,        setSortKey]        = useState<SortKey>("impressions");
@@ -351,7 +356,10 @@ function CannibalizationTable({ siteDbId }: { siteDbId: string }) {
 }
 
 // ─── Main export ───────────────────────────────────────────────────────────────
-export default function KeywordCannibalization({ siteDbId }: { siteDbId: string }) {
+// Both modes (exact + related intent) share one analysis window: stored under
+// gsc_report_days so it follows the user, pinnable via ?days= on the standalone page so a
+// shared report link opens at the window it was read at.
+export default function KeywordCannibalization({ siteDbId, initialDays, onDaysChange }: { siteDbId: string; initialDays?: number; onDaysChange?: (days: number) => void }) {
   const { t } = useLanguage();
   const [mode, setMode] = useState<"exact" | "related">("exact");
   return (
@@ -359,7 +367,7 @@ export default function KeywordCannibalization({ siteDbId }: { siteDbId: string 
       <div style={{ display: "flex", gap: "4px", padding: "10px 14px 0", borderBottom: "1px solid var(--color-border)", overflowX: "auto" }}>
         {(["exact", "related"] as const).map(value => <button key={value} onClick={() => setMode(value)} style={{ padding: "8px 13px", border: "none", borderBottom: mode === value ? "2px solid #3B82F6" : "2px solid transparent", background: "transparent", color: mode === value ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontSize: "12px", fontWeight: mode === value ? 700 : 500, cursor: "pointer", whiteSpace: "nowrap" }}>{t(value === "exact" ? "kcModeExact" : "kcModeRelated")}</button>)}
       </div>
-      {mode === "exact" ? <><InfoBlock /><CannibalizationTable siteDbId={siteDbId} /></> : <RelatedIntentCannibalization siteDbId={siteDbId} />}
+      {mode === "exact" ? <><InfoBlock /><CannibalizationTable siteDbId={siteDbId} initialDays={initialDays} onDaysChange={onDaysChange} /></> : <RelatedIntentCannibalization siteDbId={siteDbId} initialDays={initialDays} onDaysChange={onDaysChange} />}
     </div>
   );
 }

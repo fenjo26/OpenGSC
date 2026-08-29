@@ -6,6 +6,7 @@ import { RefreshCw } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { ScatterChart, Scatter, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { withShare, isGuestView } from "@/lib/shareParam";
+import { usePersistedState } from "@/lib/usePersistedState";
 import { getMetricsCreds } from "@/lib/seo/metricsClient";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -260,12 +261,17 @@ function DecayingPagesTable({ rows }: { rows: DecayRow[] }) {
 
 // ─── Heatmap ───────────────────────────────────────────────────────────────────
 function Heatmap({
-  domain, siteDbId,
-}: { domain: string; siteDbId: string }) {
+  domain, siteDbId, initialPeriod, onPeriodChange,
+}: { domain: string; siteDbId: string; initialPeriod?: HeatPeriod; onPeriodChange?: (p: HeatPeriod) => void }) {
   const { t } = useLanguage();
 
   const [metric,    setMetric]    = useState<HeatMetric>("clicks");
-  const [period,    setPeriod]    = useState<HeatPeriod>("month");
+  // The decay bucket is stored (gsc_decay_period) so week stays week across a refresh; a
+  // standalone page can pin it via ?period= (initialPeriod, forwarded by ContentDecayMap)
+  // so a shared decay report opens at the bucket it was read at.
+  const [storedPeriod, setStoredPeriod] = usePersistedState<HeatPeriod>("gsc_decay_period", "month", v => v === "month" || v === "week");
+  const period    = initialPeriod ?? storedPeriod;
+  const setPeriod = (p: HeatPeriod) => { setStoredPeriod(p); onPeriodChange?.(p); };
   const [threshold, setThreshold] = useState(30);
   const [data,      setData]      = useState<DecayData | null>(null);
   const [loading,   setLoading]   = useState(false);
@@ -585,11 +591,16 @@ function PositionDecayScatter({ siteDbId }: { siteDbId: string }) {
 }
 
 // ─── Main export ───────────────────────────────────────────────────────────────
-export default function ContentDecayMap({ domain, siteDbId }: { domain: string; siteDbId: string }) {
+// initialPeriod/onPeriodChange come from the standalone /decay page (?period=week pins the
+// bucket for a shared link); the site page renders this component without them and the stored
+// value (gsc_decay_period, shared with the heatmap below) is what the window starts at.
+export default function ContentDecayMap({ domain, siteDbId, initialPeriod, onPeriodChange }: { domain: string; siteDbId: string; initialPeriod?: HeatPeriod; onPeriodChange?: (p: HeatPeriod) => void }) {
   const { t } = useLanguage();
 
   const [metric,    setMetric]    = useState<HeatMetric>("clicks");
-  const [period,    setPeriod]    = useState<HeatPeriod>("month");
+  const [storedPeriod, setStoredPeriod] = usePersistedState<HeatPeriod>("gsc_decay_period", "month", v => v === "month" || v === "week");
+  const period    = initialPeriod ?? storedPeriod;
+  const setPeriod = (p: HeatPeriod) => { setStoredPeriod(p); onPeriodChange?.(p); };
   const [data,      setData]      = useState<DecayData | null>(null);
   const [loading,   setLoading]   = useState(false);
   const [view,      setView]      = useState<"heatmap" | "scatter">("heatmap");
@@ -642,7 +653,7 @@ export default function ContentDecayMap({ domain, siteDbId }: { domain: string; 
       </div>
 
       {view === "heatmap" || isPortfolio ? (
-        <Heatmap domain={domain} siteDbId={siteDbId} />
+        <Heatmap domain={domain} siteDbId={siteDbId} initialPeriod={initialPeriod} onPeriodChange={onPeriodChange} />
       ) : (
         <PositionDecayScatter siteDbId={siteDbId} />
       )}

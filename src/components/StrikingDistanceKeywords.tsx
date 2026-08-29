@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { ExternalLink } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { withShare, isGuestView } from "@/lib/shareParam";
+import { usePersistedState, isReportDays } from "@/lib/usePersistedState";
 import KeywordWeightsBar from "@/components/KeywordWeightsBar";
 import { useKeywordWeights, type KeywordWeight, type UseKeywordWeights } from "@/lib/seo/useKeywordWeights";
 
@@ -363,11 +364,17 @@ function KeywordsTable({ data, loading, siteDbId, weights, country }: {
 }
 
 // ─── Main export ───────────────────────────────────────────────────────────────
-export default function StrikingDistanceKeywords({ siteDbId }: { siteDbId: string }) {
+// The analysis window is stored (gsc_report_days, shared with the other report panels) so it
+// follows the user between the site page's tabs and this standalone report. A standalone page
+// can pin it via ?days= (initialDays) — a shared report link opens at the window it was read
+// at — while the selector keeps writing the last choice through for the next param-less visit.
+export default function StrikingDistanceKeywords({ siteDbId, initialDays, onDaysChange }: { siteDbId: string; initialDays?: number; onDaysChange?: (days: number) => void }) {
   const { t } = useLanguage();
   const [posFrom, setPosFrom] = useState(4);
   const [posTo,   setPosTo]   = useState(20);
-  const [days,    setDays]    = useState(90);
+  const [storedDays, setStoredDays] = usePersistedState<number>("gsc_report_days", 90, isReportDays);
+  const days    = initialDays ?? storedDays;
+  const setDays = (d: number) => { setStoredDays(d); onDaysChange?.(d); };
 
   const [keywords, setKeywords] = useState<StrikingKeyword[]>([]);
   const [loading,  setLoading]  = useState(false);

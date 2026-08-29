@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Loader2, Send, Eye, Trash2, AlertTriangle, Newspaper, Save, Calendar, Clock, Tag, ChevronRight, Sparkles } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import { usePersistedState } from "@/lib/usePersistedState";
 import { markdownToHtml } from "@/lib/seo/outlineFormat";
 import DigestView from "@/components/DigestView";
 import type { DigestData } from "@/lib/digest";
@@ -32,7 +33,11 @@ export default function DigestPage() {
   const [settings, setSettings] = useState<any>(null);
 
   const [tag, setTag] = useState("");
-  const [days, setDays] = useState(7);
+  // Digest days is saved automation config (the settings load below restores it), but the
+  // pill you clicked should still survive a refresh before you save, and ?days= on the URL
+  // shares a digest at a specific window. URL wins over the saved settings; the reload below
+  // skips its restore when a param is present.
+  const [days, setDays] = usePersistedState<number>("gsc_digest_days", 7, v => typeof v === "number" && [0, 7, 14, 30, 90, 180, 365].includes(v), "days");
   const [ai, setAi] = useState(false);
   const [preview, setPreview] = useState("");      // markdown (for history items)
   const [data, setData] = useState<DigestData | null>(null); // structured (rich view)
@@ -61,7 +66,15 @@ export default function DigestPage() {
       setSettings(d.settings || null);
       setEngines(d.engines || { bing: false, yandex: false });
       // AI summary defaults ON when any AI key is configured (user can still turn it off).
-      if (d.settings) { setTag(d.settings.tag ?? ""); setDays(d.settings.days ?? 7); setAi(!!d.settings.ai || hasAiKey()); }
+      // The saved days restore is skipped when the URL pins a window (?days=) — a shared
+      // digest link must not snap back to the owner's saved schedule.
+      if (d.settings) {
+        setTag(d.settings.tag ?? "");
+        setAi(!!d.settings.ai || hasAiKey());
+        if (!(typeof window !== "undefined" && new URLSearchParams(window.location.search).get("days") !== null)) {
+          setDays(d.settings.days ?? 7);
+        }
+      }
     } catch {}
   };
   useEffect(() => { reload(); }, []);

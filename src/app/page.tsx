@@ -16,6 +16,7 @@ import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { useHealthStatus } from "@/components/SiteHealthPanel";
 import { loadSyncedAt, rememberSyncedAt, fetchSyncState, watchSync, type SyncState } from "@/lib/syncedAt";
 import { marketFor } from "@/lib/seo/market";
+import { usePersistedState, isGscPeriod } from "@/lib/usePersistedState";
 import { getAhrefsDrKey } from "@/lib/seo/keys";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -605,7 +606,10 @@ function PortfolioPageContent() {
   // Market filter chip — null = show all. Special value "__unknown__" matches sites whose market
   // cannot be resolved, the same amber set the card highlights.
   const [activeMarket, setActiveMarket] = useState<string | null>(null);
-  const [period, setPeriod]     = useState("7d");
+  // The GSC window survives a refresh (?period= in the URL, else the last value this browser
+  // was set to) and travels: opening a site carries it, so the portfolio and the site page
+  // describe the same range instead of silently snapping back to 7 days.
+  const [period, setPeriod]     = usePersistedState<string>("gsc_period", "7d", isGscPeriod, "period");
   // Search-engine portfolio tabs. Google = local DB; Bing/Yandex = live, fetched on tab
   // click and cached per engine+period so switching back is instant.
   const [engine, setEngine] = useState<"google" | "bing" | "yandex">("google");
@@ -614,8 +618,10 @@ function PortfolioPageContent() {
   const [engineSyncedAt, setEngineSyncedAt] = useState<Record<string, number>>({});
   const [engineAccounts, setEngineAccounts] = useState<Record<string, { name: string }[]>>({ bing: [], yandex: [] });
   const [engineLoading, setEngineLoading] = useState(false);
-  const [periodView, setPeriodView] = useState<PeriodView>("day");
-  const [comparison, setComparison] = useState<Comparison>("previous");
+  // Chart granularity and the comparison mode are presentation of the same window, so they
+  // persist per browser (a shared link does not need to reproduce them) but stay out of the URL.
+  const [periodView, setPeriodView] = usePersistedState<PeriodView>("gsc_period_view", "day", v => v === "day" || v === "week" || v === "month");
+  const [comparison, setComparison] = usePersistedState<Comparison>("gsc_comparison", "previous", v => v === "disabled" || v === "previous" || v === "yoy" || v === "prev_month" || v === "custom");
   const [prevTrend, setPrevTrend]   = useState(true);
   const [matchWd, setMatchWd]       = useState(true);
   const [showPct, setShowPct]       = useState(true);
@@ -1430,7 +1436,7 @@ function PortfolioPageContent() {
       : {};
 
     return (
-      <div onClick={() => router.push(`/site/${encodeURIComponent(domain)}`)} className="card" style={{padding:"14px 16px",display:"flex",flexDirection:"column",gap:"8px",cursor:"pointer",textDecoration:"none",color:"inherit",...declineBorder}}>
+      <div onClick={() => router.push(`/site/${encodeURIComponent(domain)}?period=${period}`)} className="card" style={{padding:"14px 16px",display:"flex",flexDirection:"column",gap:"8px",cursor:"pointer",textDecoration:"none",color:"inherit",...declineBorder}}>
         {/* Header */}
         <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:"8px"}}>
           {/* Domain (name row + DR line underneath — the badge no longer squeezes the name) */}
