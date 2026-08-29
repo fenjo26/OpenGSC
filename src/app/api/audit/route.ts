@@ -3,10 +3,13 @@ import { authOptions } from "@/lib/auth";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { recoverStaleAudits, runAudit } from "@/lib/audit/crawler";
+import { toAuditHistoryRow } from "@/lib/audit/historyRows";
 
 // Site Audit — built-in crawler, no external APIs.
 // POST /api/audit { siteId, maxPages? }  → start an audit (fire-and-forget), returns { id }
 // GET  /api/audit?siteId=                → list audits for a site (latest first)
+// GET  /api/audit                        → workspace-wide history across every site (thin
+//                                          rows) plus the sites that have never been audited
 
 export async function POST(req: Request) {
   const userId = await workspaceUserId("act");
@@ -71,6 +74,39 @@ export async function GET(req: Request) {
 
   const { searchParams } = new URL(req.url);
   const siteId = searchParams.get("siteId") ?? "";
+
+  // Workspace-wide history. Scoping runs through site.userId, so this branch is owner-only:
+  // a share token names exactly one site, and for that caller the per-site branch below is the
+  // whole world. Rows stay thin (scalars extracted by toAuditHistoryRow) — the full summary and
+  // verification JSON remains a click away in the per-site view. Like the other portfolio
+  // sweeps, it selects live sites only: archived and hidden properties are deliberately
+  // shelved, and both the runs list and the never-audited list skip them. The per-site Audit
+  // tab keeps showing a shelved site's full history on purpose — hiding a property must not
+  // read as its history being gone.
+  if (!siteId) {
+    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const [rows, sites] = await Promise.all([
+      prisma.siteAudit.findMany({
+        where: { site: { userId, archivedAt: null, hidden: false } },
+        orderBy: { startedAt: "desc" },
+        select: {
+          id: true, status: true, startedAt: true, finishedAt: true,
+          pagesCrawled: true, baselineAuditId: true, error: true, summary: true, verification: true,
+          site: { select: { id: true, url: true } },
+        },
+      }),
+      prisma.site.findMany({
+        where: { userId, archivedAt: null, hidden: false },
+        select: { id: true, url: true },
+      }),
+    ]);
+    const auditedSiteIds = new Set(rows.map(row => row.site.id));
+    return NextResponse.json({
+      audits: rows.map(row => toAuditHistoryRow(row, row.site)),
+      neverAudited: sites.filter(s => !auditedSiteIds.has(s.id)),
+    });
+  }
+
   // Owner session — or a valid share token for this exact site (read-only guest view).
   const shareToken = searchParams.get("shareToken") ?? "";
   const site = userId

@@ -629,6 +629,9 @@ model SiteAudit {
   pages SiteAuditPage[]
 
   @@index([siteId, startedAt])
+  // The workspace-wide history (GET /api/audit without siteId) orders every audit of the
+  // workspace by date — no siteId to anchor on, so the composite index above can't serve it.
+  @@index([startedAt])
 }
 
 model SiteAuditPage {

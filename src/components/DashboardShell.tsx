@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import PasswordChangeGate from "@/components/PasswordChangeGate";
 import { useSession, signOut } from "next-auth/react";
 import { useState, useEffect, Suspense } from "react";
-import { Settings, LogOut, Sparkles, Globe, Newspaper, LayoutDashboard, TrendingUp, Anchor, BarChart2, Users, Compass, Radar } from "lucide-react";
+import { Settings, LogOut, Sparkles, Globe, Newspaper, LayoutDashboard, TrendingUp, Anchor, BarChart2, Users, Compass, Radar, ClipboardCheck } from "lucide-react";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { useTheme } from "@/lib/ThemeContext";
 import { useLayout } from "@/lib/LayoutContext";
@@ -488,6 +488,9 @@ function NavLinks() {
     { href: "/striking", label: t("menuStriking"), key: "striking", icon: <TrendingUp size={14} /> },
     { href: "/cannibalization", label: t("menuCannibalization"), key: "cannibalization", icon: <Anchor size={14} /> },
     { href: "/decay", label: t("menuDecay"), key: "decay", icon: <BarChart2 size={14} /> },
+    // Fourth portfolio-wide report, next to the three above: the per-site history stays in
+    // each site's Audit tab, this is the workspace view (every run, plus never-audited sites).
+    { href: "/audits", label: t("menuAudits"), key: "audits", icon: <ClipboardCheck size={14} /> },
     // Competitors and Demand are not here: both live under SEO Tools. Everything in this bar
     // reads data the instance already holds; those two buy data from outside it, which is the
     // line SEO Tools draws.
