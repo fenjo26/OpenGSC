@@ -72,7 +72,9 @@ export async function GET(req: Request) {
   let siteMap: Map<string, any>;
 
   if (siteId === 'all' || !siteId) {
-    const sites = await prisma.site.findMany({ where: { userId } });
+    // Archived and hidden sites stay out of portfolio-wide reports (see striking/route.ts);
+    // an explicit siteId still reaches them on purpose.
+    const sites = await prisma.site.findMany({ where: { userId, hidden: false, archivedAt: null } });
     siteIds = sites.map(s => s.id);
     siteMap = new Map(sites.map(s => [s.id, s]));
   } else {

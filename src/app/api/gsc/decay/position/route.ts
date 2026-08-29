@@ -70,9 +70,10 @@ export async function GET(req: Request) {
   }
 
   // 'all' is capped: this makes two live API calls per site, and an unbounded portfolio would
-  // turn one chart into a hundred round trips.
+  // turn one chart into a hundred round trips. Archived and hidden sites are excluded first,
+  // so the cap is spent on properties the user actually works on.
   const sites = siteId === 'all'
-    ? await prisma.site.findMany({ where: { userId }, select: { siteId: true }, take: 10 })
+    ? await prisma.site.findMany({ where: { userId, hidden: false, archivedAt: null }, select: { siteId: true }, take: 10 })
     : await prisma.site.findMany({ where: { id: siteId, userId }, select: { siteId: true } });
   if (!sites.length) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 

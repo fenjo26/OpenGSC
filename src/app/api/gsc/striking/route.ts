@@ -30,7 +30,10 @@ export async function GET(req: Request) {
   let siteMap: Map<string, any>;
 
   if (siteId === 'all' || !siteId) {
-    const sites = await prisma.site.findMany({ where: { userId } });
+    // Portfolio-wide means live properties the user actually works on: archived sites have no
+    // new data by definition, and a hidden one is shelved — either way their rows would only
+    // overstate the report. An explicit siteId still reaches archived/hidden sites on purpose.
+    const sites = await prisma.site.findMany({ where: { userId, hidden: false, archivedAt: null } });
     siteIds = sites.map(s => s.id);
     siteMap = new Map(sites.map(s => [s.id, s]));
   } else {

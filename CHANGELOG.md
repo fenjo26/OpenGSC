@@ -3,6 +3,29 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
+## [1.5.2] — 2026-08-29
+
+### Fixed
+
+- Hiding a site was a browser illusion. The hidden set lived in React state only, so the next
+  page load un-hid everything; favorites were forgotten just as fast, and of the three things
+  the dashboard promised to remember ("your last sort order, pin the important projects, hide
+  the dead ones") only the sort order actually survived a refresh. Both flags are now real
+  columns on the Site row (`hidden`, `pinned`) flipped through the existing site PATCH
+  endpoint — a workspace property rather than one browser's secret — with the toggles updated
+  optimistically and rolled back if the write fails. Nothing about the dashboard's structure
+  changed: hidden sites still sit in their collapsed 🙈 group at the bottom, one click from
+  coming back.
+
+- The portfolio-wide reports counted sites you had shelved. Striking Distance,
+  Cannibalization and Content Decay, asked for `siteId=all`, selected every site of the user
+  unconditionally — a hidden property still fed the report, and so did an archived one, even
+  though the dashboard, the metrics warmup and the alert scheduler all already treat archived
+  as excludable. All three (plus the position-decay chart, where dead sites were also burning
+  the 10-site live-API budget) now select only live, unhidden sites. Picking a site
+  explicitly from the report's own selector still works for hidden and archived properties —
+  the exclusion applies to the portfolio sweep, not to a deliberate choice.
+
 ## [1.5.1] — 2026-08-24
 
 ### Changed

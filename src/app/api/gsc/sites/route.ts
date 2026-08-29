@@ -167,8 +167,10 @@ export async function GET() {
   });
 }
 
-// ── Archive / restore / permanently delete a single site ────────────────────
-// PATCH  { id, archived: boolean }  → move a site in or out of the archive by hand
+// ── Archive / restore / pin / hide a single site ────────────────────────────
+// PATCH  { id, archived? | pinned? | hidden? }  → flip one workspace flag by hand.
+// pinned and hidden are the dashboard's favorites and decluttering; they live on the Site row
+// (not in the browser) so they survive a reload and the site-wide reports can honor them.
 // DELETE ?id=<site.id>              → hard delete (cascades all of the site's data)
 
 export async function PATCH(req: Request) {
@@ -177,18 +179,23 @@ export async function PATCH(req: Request) {
 
   const body = await req.json().catch(() => null);
   const id = body?.id as string | undefined;
-  const archived = body?.archived;
-  if (!id || typeof archived !== 'boolean') {
-    return NextResponse.json({ error: 'id and archived are required' }, { status: 400 });
+  const flags: Record<string, unknown> = {};
+  if (typeof body?.archived === 'boolean') {
+    flags.archivedAt = body.archived ? new Date() : null;
+  }
+  if (typeof body?.pinned === 'boolean') flags.pinned = body.pinned;
+  if (typeof body?.hidden  === 'boolean') flags.hidden  = body.hidden;
+  if (!id || Object.keys(flags).length === 0) {
+    return NextResponse.json({ error: 'id and at least one of archived/pinned/hidden are required' }, { status: 400 });
   }
 
   const res = await prisma.site.updateMany({
     where: { id, userId },
-    data: { archivedAt: archived ? new Date() : null },
+    data: flags,
   });
   if (res.count === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  return NextResponse.json({ ok: true, id, archived });
+  return NextResponse.json({ ok: true, id, ...body });
 }
 
 export async function DELETE(req: Request) {

@@ -568,8 +568,11 @@ function PortfolioPageContent() {
   const [loading, setLoading]   = useState(true);
   const [search, setSearch]     = useState("");
   const { blur } = usePrivacy();
-  const [favorites, setFavorites] = useState<Set<string>>(new Set());
-  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  // Favorites and hiding persist on the Site row (`pinned` / `hidden`), so both derive from
+  // the sites the server returned instead of state a reload would forget. Toggling flips the
+  // row optimistically and PATCHes the flag; a failed PATCH flips the card back.
+  const favorites = useMemo(() => new Set(sites.filter(s => s.pinned).map(s => s.id)), [sites]);
+  const hidden    = useMemo(() => new Set(sites.filter(s => s.hidden ).map(s => s.id)), [sites]);
   // Archive of properties removed from Search Console — collapsed by default.
   const [showArchive, setShowArchive] = useState(false);
   const [archiveBusy, setArchiveBusy] = useState<string | null>(null);
@@ -1055,8 +1058,25 @@ function PortfolioPageContent() {
   };
 
   const toggleMetric = (m: Metric) => setActiveMetrics(p => { const n = new Set(p); n.has(m) ? n.delete(m) : n.add(m); return n; });
-  const toggleFav    = (id: string) => setFavorites(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const toggleHide   = (id: string) => setHidden(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  // One optimistic flip + one PATCH per toggle. The server row is the source of truth, so a
+  // failed request un-flips the card instead of leaving UI state the next load would contradict.
+  const toggleSiteFlag = (id: string, flag: "pinned" | "hidden") => {
+    const site = sites.find(s => s.id === id);
+    if (!site) return;
+    const next = !site[flag];
+    setSites(prev => prev.map(s => s.id === id ? { ...s, [flag]: next } : s));
+    fetch("/api/gsc/sites", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, [flag]: next }),
+    }).then(res => {
+      if (!res.ok) throw new Error(String(res.status));
+    }).catch(() => {
+      setSites(prev => prev.map(s => s.id === id ? { ...s, [flag]: !next } : s));
+    });
+  };
+  const toggleFav    = (id: string) => toggleSiteFlag(id, "pinned");
+  const toggleHide   = (id: string) => toggleSiteFlag(id, "hidden");
 
   // ─── Period groups (uses t() for labels) ──────────────────────────────────
   const fmt    = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });

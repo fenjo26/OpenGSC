@@ -172,6 +172,15 @@ model Site {
   // Archived sites keep all their history but are hidden from the main dashboard.
   archivedAt       DateTime?
 
+  // Dashboard decluttering, as workspace properties rather than browser state. A hidden site
+  // drops out of the site-wide opportunity reports (striking distance, cannibalization, decay)
+  // the same way an archived one does — hiding is how you shelve a property you no longer work
+  // on, and a report that still counts it quietly overstates the portfolio. Pinned sites float
+  // to the favorites group on the dashboard. Both stay on the dashboard itself (collapsed
+  // groups), so nothing is unreachable.
+  pinned           Boolean   @default(false)
+  hidden           Boolean   @default(false)
+
   // AI Visibility (AEO Tracker) settings.
   //
   // Country/city are not decoration: an AI answer to a local-intent question is geolocated, and
