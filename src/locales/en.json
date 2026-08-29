@@ -1974,6 +1974,7 @@
   "geoRecentTitle": "Recent audits",
   "geoNoKey": "No OpenAI or Kie.ai key — add one in Settings → AI Providers. GEO audit needs a real web-search-capable key.",
   "geoErrEmpty": "Enter a keyword or search query.",
+  "geoErrTimeout": "Timed out waiting for the audit — the search was cut off. The provider may still bill the partial generation; check spend in your provider dashboard.",
   "geoStageSearching": "Searching the web…",
   "geoStageAnalyzing": "Analyzing citations…",
   "geoStageLoading": "Loading…",

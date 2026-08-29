@@ -16,6 +16,7 @@ import { extractJson } from "@/lib/seo/prompts";
 import { OPENAI_FALLBACK_MODELS, OPENAI_FALLBACK_CHEAP } from "@/lib/seo/models";
 import { fetchLLMDetailed } from "@/lib/llm";
 import { defaultModelFor } from "@/lib/providerDefaults";
+import { runAparserRequest, APARSER_PARSER } from "@/lib/seo/aparser";
 
 export type GeoResult = { ok: true; data: GeoReport } | { ok: false; error: string };
 
@@ -104,6 +105,12 @@ type RawTrace = {
   scannedAll: { url: string; domain: string }[];
   answerText: string;
   citations: { url: string; title: string; domain: string }[];
+  /**
+   * Set only by engines that REPORT a model instead of being asked for one — today just
+   * A-Parser, whose free ChatGPT session serves whatever it serves. Left undefined elsewhere,
+   * where the model is the one the user picked and already travels separately.
+   */
+  model?: string;
 };
 
 function buildSearchInput(query: string, language: string, country: string): string {
@@ -122,7 +129,19 @@ function buildSearchInput(query: string, language: string, country: string): str
 // `web_search` tool) but bills against the user's kie.ai credits instead of a separate OpenAI key.
 // "gemini" runs Google's own grounding search (`google_search` tool on generateContent) on the
 // user's Gemini key — a different request shape whose grounding chunks map onto the same trace.
-export type GeoEngine = "openai" | "kie" | "gemini";
+// "aparser" is the odd one out: not a vendor API at all, but the user's own A-Parser
+// installation driving the public ChatGPT surface (lib/seo/aparser.ts). It carries no
+// per-token cost, reports its model rather than accepting one, and answers with sources but
+// not with the search steps that found them.
+export type GeoEngine = "openai" | "kie" | "gemini" | "aparser";
+
+// Upper bound for the search call, not a target. The audit row it feeds is allowed to sit
+// "processing" for 20 minutes (stale_timeout in the geo route) while runAudit is fire-and-
+// forget, so the cap only has to stay under that window with room for the ~2 min analysis
+// stage — 15 minutes does. With streaming on, cutting the connection also stops the
+// provider's generation server-side, so a runaway search costs waiting time, not the price
+// of a full completion that gets thrown away.
+const SEARCH_TIMEOUT_MS = 900_000;
 
 // Gemini grounding: google_search grounds the answer and reports webSearchQueries (what it
 // searched) plus groundingChunks (the pages it actually cited) — exactly the RawTrace shape the
@@ -131,7 +150,7 @@ async function runGeminiGroundedSearch(
   query: string, language: string, country: string, model: string, apiKey: string, baseUrl?: string,
 ): Promise<RawTrace | { error: string }> {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 280_000);
+  const timer = setTimeout(() => ctrl.abort(), SEARCH_TIMEOUT_MS);
   const root = (baseUrl || "").replace(/\/+$/, "") || "https://generativelanguage.googleapis.com/v1beta";
   const input = buildSearchInput(query, language, country);
   try {
@@ -170,16 +189,67 @@ async function runGeminiGroundedSearch(
       citations: sources,
     };
   } catch (e: any) {
-    return { error: e?.name === "AbortError" ? "timeout" : String(e?.message ?? e) };
+    return { error: e?.name === "AbortError" ? `timeout_after_${Math.round(SEARCH_TIMEOUT_MS / 60_000)}m` : String(e?.message ?? e) };
   } finally {
     clearTimeout(timer);
   }
 }
 
-async function runWebSearch(query: string, language: string, country: string, model: string, apiKey: string, engine: GeoEngine = "openai", baseUrl?: string): Promise<RawTrace | { error: string }> {
+// A-Parser (FreeAI::ChatGPT) — the request and response live in lib/seo/aparser.ts. Here the
+// normalised answer is mapped onto RawTrace. `apiKey` is the instance password and `baseUrl`
+// its API endpoint: this engine authenticates against the user's own machine, not a vendor.
+//
+// `opened` stays empty for the same reason it does on the Gemini engine (geo.ts above): the
+// parser reports what the answer used, not the steps that found it. `batches` would be empty
+// too — and that is not merely one missing panel. An empty batch list zeroes `uniqueQueries`
+// and blanks every brand's coverage bar in the leaderboard, which reads as "surfaced for
+// nothing" rather than "the queries were not observable". One synthetic batch carrying the
+// audit's own query and the sources actually seen states precisely what is known, which is
+// what the Gemini engine does with webSearchQueries.
+async function runAparserSearch(
+  query: string, language: string, country: string, password: string, apiUrl: string, preset?: string,
+): Promise<RawTrace | { error: string }> {
+  const input = buildSearchInput(query, language, country);
+  const r = await runAparserRequest({ url: apiUrl, password, query: input, preset, timeoutMs: SEARCH_TIMEOUT_MS });
+  if ("error" in r) return r;
+
+  const seen = new Set<string>();
+  const scannedAll: { url: string; domain: string }[] = [];
+  const citations: { url: string; title: string; domain: string }[] = [];
+  for (const s of r.sources) {
+    if (seen.has(s.link)) continue;
+    seen.add(s.link);
+    const row = { url: s.link, domain: domainOf(s.link) };
+    scannedAll.push(row);
+    // Anything not typed "citation" is a scanned-but-uncited source — exactly the set the
+    // analysis prompt asks for, and the one the Responses API never exposes.
+    if (s.type === "citation") citations.push({ url: s.link, title: s.anchor, domain: row.domain });
+  }
+  // A preset that prints only $answer puts us in the kie.ai situation: real sources named in
+  // the prose with no metadata around them. The same fallback applies rather than a report of
+  // zeros — and since those links are then the only sources observed, the scanned pool mirrors
+  // them instead of claiming a wider one that was never seen.
+  if (citations.length === 0 && r.answer) {
+    for (const c of extractLinksFromText(r.answer)) {
+      citations.push(c);
+      if (!seen.has(c.url)) { seen.add(c.url); scannedAll.push({ url: c.url, domain: c.domain }); }
+    }
+  }
+  return {
+    batches: [{ id: "a1", queries: [query], sources: scannedAll.map(s => ({ url: s.url, domain: s.domain })) }],
+    opened: [],
+    scannedAll,
+    answerText: r.answer,
+    citations,
+    model: r.model || undefined,
+  };
+}
+
+async function runWebSearch(query: string, language: string, country: string, model: string, apiKey: string, engine: GeoEngine = "openai", baseUrl?: string, aparserPreset?: string): Promise<RawTrace | { error: string }> {
   if (engine === "gemini") return runGeminiGroundedSearch(query, language, country, model, apiKey, baseUrl);
+  if (engine === "aparser") return runAparserSearch(query, language, country, apiKey, baseUrl ?? "", aparserPreset);
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 280_000);
+  const timer = setTimeout(() => ctrl.abort(), SEARCH_TIMEOUT_MS);
   const input = buildSearchInput(query, language, country);
   // Gateway override (aiBaseUrl_openai and friends): a proxy key only authenticates against the
   // proxy, so the engine must follow the same endpoint-override convention as every other AI
@@ -189,12 +259,14 @@ async function runWebSearch(query: string, language: string, country: string, mo
   const endpoint = root ? `${root}/responses`
     : engine === "kie" ? "https://api.kie.ai/codex/v1/responses"
     : "https://api.openai.com/v1/responses";
-  // Gateways usually sit behind Cloudflare, whose 524 cuts a NON-streaming response whose
-  // generation hasn't produced the first byte within ~100s — and an agentic web search runs
-  // for minutes. Streaming sends events as the search happens, so the connection never hits
-  // the wall; the final `response.completed` event carries the same object shape the
-  // non-streaming call would have returned. Official OpenAI and kie.ai keep the plain call.
-  const wantsStream = !!root;
+  // Every engine on this path speaks the OpenAI Responses wire format, so all of them stream.
+  // SSE events arrive while the search runs, which keeps a proxy from killing a healthy
+  // multi-minute call (Cloudflare's 524 cuts a silent non-streaming response at ~100s) — and
+  // aborting a stream stops the generation server-side, so hitting the cap cancels the run
+  // instead of paying for a completion that is then thrown away. The terminal
+  // `response.completed` event carries the same object shape the non-streaming call returns;
+  // kie.ai documents `stream: true` → SSE on its Responses mirror like OpenAI's own.
+  const wantsStream = true;
 
   async function call(toolType: string) {
     return fetch(endpoint, {
@@ -272,7 +344,7 @@ async function runWebSearch(query: string, language: string, country: string, mo
     const data = await res.json();
     return parseResponses(data);
   } catch (e: any) {
-    return { error: e?.name === "AbortError" ? "timeout" : String(e?.message ?? e) };
+    return { error: e?.name === "AbortError" ? `timeout_after_${Math.round(SEARCH_TIMEOUT_MS / 60_000)}m` : String(e?.message ?? e) };
   } finally {
     clearTimeout(timer);
   }

@@ -152,7 +152,9 @@ export default function GeoAuditPage() {
       tries++;
       if (tries > 4) setStage(t("geoStageAnalyzing"));
       if (!rec || rec.status === "processing") {
-        if (tries > 150) { setRunning(false); setErr("timeout"); return; }
+        // 400 tries × 3s = 20 min — the search call itself may legitimately run 15 minutes
+        // (SEARCH_TIMEOUT_MS) plus the analysis stage, so the poller must outlast both.
+        if (tries > 400) { setRunning(false); setErr(t("geoErrTimeout")); return; }
         setTimeout(poll, 3000);
         return;
       }
@@ -255,7 +257,10 @@ export default function GeoAuditPage() {
           </div>
         </div>
 
-        {err && <div style={{ marginTop: "14px", fontSize: "13px", color: "var(--color-accent-red)", display: "flex", gap: "8px", alignItems: "center" }}><AlertTriangle size={15} /> {err}</div>}
+        {/* Server error codes that mean "we gave up waiting" (timeout_after_15m, stale_timeout)
+            get the same human sentence as the client-side poll cap — the raw code alone reads as
+            a broken key when the real story is a long agentic search. */}
+        {err && <div style={{ marginTop: "14px", fontSize: "13px", color: "var(--color-accent-red)", display: "flex", gap: "8px", alignItems: "center" }}><AlertTriangle size={15} /> {/timeout/i.test(err) ? t("geoErrTimeout") : err}</div>}
 
         <button onClick={run} disabled={running || !query.trim()}
           style={{ marginTop: "18px", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", padding: "12px", borderRadius: "10px", border: "none", background: "var(--color-text-primary)", color: "var(--color-bg)", fontSize: "14px", fontWeight: 700, cursor: running || !query.trim() ? "default" : "pointer", opacity: running || !query.trim() ? 0.6 : 1 }}>

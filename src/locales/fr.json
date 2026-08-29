@@ -1974,6 +1974,7 @@
   "geoRecentTitle": "Audits récents",
   "geoNoKey": "Aucune clé OpenAI ou Kie.ai — ajoutez-en une dans Paramètres → Fournisseurs d’IA. L’audit GEO nécessite une vraie clé capable de recherche web.",
   "geoErrEmpty": "Saisissez un mot-clé ou une requête de recherche.",
+  "geoErrTimeout": "Délai d'attente de l'audit dépassé — la recherche a été interrompue. Le fournisseur peut toujours facturer la génération partielle ; vérifiez les dépenses dans son tableau de bord.",
   "geoStageSearching": "Recherche sur le web…",
   "geoStageAnalyzing": "Analyse des citations…",
   "geoStageLoading": "Chargement…",

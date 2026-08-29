@@ -1974,6 +1974,7 @@
   "geoRecentTitle": "最近审计",
   "geoNoKey": "没有 OpenAI 或 Kie.ai 密钥——请在设置 → AI 服务商中添加一个。GEO 审计需要真正具备网络搜索能力的密钥。",
   "geoErrEmpty": "请输入关键词或搜索查询。",
+  "geoErrTimeout": "等待审核完成超时，搜索已被中断。服务商仍可能对已部分生成的内容计费，请在其后台核对消耗。",
   "geoStageSearching": "正在搜索网络…",
   "geoStageAnalyzing": "正在分析引用…",
   "geoStageLoading": "加载中…",

@@ -1974,6 +1974,7 @@
   "geoRecentTitle": "Aktuelle Audits",
   "geoNoKey": "Kein OpenAI- oder Kie.ai-Key — füge einen unter Einstellungen → AI-Provider hinzu. Das GEO-Audit benötigt einen echten websuchfähigen Key.",
   "geoErrEmpty": "Gib ein Keyword oder eine Suchanfrage ein.",
+  "geoErrTimeout": "Zeitüberschreitung beim Warten auf das Audit — die Suche wurde abgebrochen. Der Anbieter kann die teilweise Generierung dennoch berechnen; prüfe den Verbrauch im Dashboard des Anbieters.",
   "geoStageSearching": "Durchsuche das Web…",
   "geoStageAnalyzing": "Analysiere Zitate…",
   "geoStageLoading": "Lade…",
