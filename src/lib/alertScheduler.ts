@@ -128,22 +128,21 @@ async function checkUser(userId: string, s: AlertSettings): Promise<Pending[]> {
     } catch { /* ProviderBalance ещё не мигрирована */ }
   }
 
-  // ── provider_down: один провайдер набрал N+ ошибок за последний час по журналу вызовов.
-  // Сама таблица приезжает с provider-log workstream'ом; до её merge правило ничего не читает
-  // и не стреляет (тот же подход отложенной миграции, что и у backlinkLoss ниже).
+  // ── provider_down: один провайдер набрал N+ сбоев за последний час по журналу вызовов
+  // (ProviderCall). «Сбой» = 0 (транспорт: сеть или таймаут — HTTP-статуса нет) или 5xx.
+  // 4xx — это наш ключ, квота или плохой запрос, а не лежащий провайдер: для ключей и квот
+  // есть настройки и balance_low, алертом «лежит» должен оставаться именно лежащий.
   if (s.providerDown.on) {
     try {
       const since = new Date(Date.now() - 60 * 60_000);
-      const rows: any[] = await (prisma as any).providerCallLog.findMany({
-        where: { createdAt: { gte: since } },
+      const rows: any[] = await (prisma as any).providerCall.findMany({
+        where: { at: { gte: since } },
         select: { provider: true, status: true },
         take: 5000,
       });
       const fails = new Map<string, number>();
       for (const r of rows) {
-        const st = String(r.status ?? "").toLowerCase();
-        if (st !== "error" && st !== "failed") continue;
-        fails.set(String(r.provider), (fails.get(String(r.provider)) ?? 0) + 1);
+        if (r.status === 0 || r.status >= 500) fails.set(String(r.provider), (fails.get(String(r.provider)) ?? 0) + 1);
       }
       for (const [provider, n] of fails) {
         if (n < s.providerDown.failures) continue;
@@ -154,7 +153,7 @@ async function checkUser(userId: string, s: AlertSettings): Promise<Pending[]> {
           dedupeKey: `provider_down:${provider}:${isoDay()}`,
         });
       }
-    } catch { /* журнала вызовов ещё нет */ }
+    } catch { /* ProviderCall ещё не мигрирована */ }
   }
 
   // Archived properties are excluded: a removed domain's traffic goes to zero by definition,
