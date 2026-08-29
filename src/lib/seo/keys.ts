@@ -137,11 +137,44 @@ export function getSeoGenCreds(): { provider: string; apiKey: string; model: str
   return { provider, apiKey, model, baseUrl };
 }
 
-export function getSerpCreds(): { provider: string; apiKey: string } {
+export function getSerpCreds(): { provider: string; apiKey: string; baseUrl?: string } {
   if (typeof window === "undefined") return { provider: "serper", apiKey: "" };
   const provider = localStorage.getItem("seoSerpProvider") || "serper";
   const apiKey = localStorage.getItem(`seoKey_${provider}`) || "";
-  return { provider, apiKey };
+  // Only self-hosted providers have one; for the metered ones the host is a constant in the
+  // provider module and this stays undefined.
+  const baseUrl = localStorage.getItem(`seoBaseUrl_${provider}`) || undefined;
+  return { provider, apiKey, baseUrl };
+}
+
+/**
+ * The SERP credentials as a request payload, spread into a job body.
+ *
+ * A helper rather than three literal fields at each call site, because there are a dozen of
+ * them across the tools and they are the kind of thing that gets extended by copy-paste. When
+ * `serpKey` and `serpProvider` were the whole story, a missed site was survivable. A third
+ * field that only matters for one provider is not: the omission is invisible everywhere except
+ * with that provider selected, in that one tool, at runtime.
+ */
+export function serpPayload(): { serpProvider: string; serpKey: string; serpBaseUrl?: string } {
+  const { provider, apiKey, baseUrl } = getSerpCreds();
+  return { serpProvider: provider, serpKey: apiKey, ...(baseUrl ? { serpBaseUrl: baseUrl } : {}) };
+}
+
+/**
+ * A-Parser connection settings (Settings → SEO Tools).
+ *
+ * Read by name rather than through `getSerpCreds()` because the connection is useful before it
+ * is anyone's active SERP provider — the /aparser screen reports on the instance, and the
+ * settings card checks it — and because it is two values, not one.
+ */
+export function getAparserCreds(): { baseUrl: string; password: string; configPreset: string } {
+  if (typeof window === "undefined") return { baseUrl: "", password: "", configPreset: "" };
+  return {
+    baseUrl: localStorage.getItem("seoBaseUrl_aparser") || "",
+    password: localStorage.getItem("seoKey_aparser") || "",
+    configPreset: localStorage.getItem("seoAparserConfig") || "",
+  };
 }
 
 export function getFirecrawlKey(): string {

@@ -100,7 +100,7 @@ export default function SeoClusterDetail({ item }: { item: HistoryItem }) {
         const { jobId, error } = await startJob("outline_auto", {
           keyword: c.name,
           gl: p.gl, hl: p.hl, country: p.gl, language: p.hl,
-          serpProvider: serp.provider, serpKey: serp.apiKey, firecrawlKey: getFirecrawlKey() || undefined,
+          serpProvider: serp.provider, serpKey: serp.apiKey, serpBaseUrl: serp.baseUrl, firecrawlKey: getFirecrawlKey() || undefined,
           aiProvider: ai.provider, aiApiKey: ai.apiKey, model: ai.model || undefined, aiBaseUrl: ai.baseUrl || undefined,
           policy,
           additionalKeywords: c.keywords.slice(1).map((k: any) => k.keyword).join(", "),

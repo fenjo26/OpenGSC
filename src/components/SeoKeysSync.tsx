@@ -32,9 +32,16 @@ const EXACT_KEYS = [
 // sent to was not. Restore then produced a reseller key pointed at the official API: the mode
 // silently reverted to "official", and every request 401'd for a reason nothing on screen
 // explained. Server-side code reads the same snapshot, so it had no way to learn the host either.
+//
+// `seoBaseUrl_` is here for exactly the reason above, one layer down. A SERP provider used to be
+// a key and nothing else, because every provider had a hardcoded public host. A self-hosted one
+// (A-Parser) has a host the app cannot know, and mirroring the password without it would
+// reproduce the metrics bug verbatim: server-side jobs would hold a valid password and no idea
+// where to send it. `seoAparser` covers that provider's own knobs (thread config, concurrency,
+// and the cached parser list the UI gates features on).
 const PREFIXES = [
-  "aiKey_", "aiBaseUrl_", "aiModel_", "seoKey_", "seoTaskProvider_", "seoTaskModel_",
-  "seoMetrics",
+  "aiKey_", "aiBaseUrl_", "aiModel_", "seoKey_", "seoBaseUrl_", "seoTaskProvider_", "seoTaskModel_",
+  "seoMetrics", "seoAparser",
 ];
 
 function snapshot(): Record<string, string> {

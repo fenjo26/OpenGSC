@@ -283,7 +283,7 @@ function GenTextModal({ item, t, onClose, onDone }: { item: HistoryItem; t: any;
       const serp = getSerpCreds();
       const res = await fetch("/api/seo/text", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ outline: item.data, keyword: item.keyword, policy, language, tone: resolvedTone || undefined, sourceMode, includeToc, promptType, custom: promptType === "custom" ? (custom.trim() || undefined) : undefined, serpProvider: serp.provider, serpKey: serp.apiKey || undefined, firecrawlKey: getFirecrawlKey() || undefined, scrapeCount: getFactSourceCount(), hardRedact: getHardRedact(), aiProvider: provider, aiApiKey: apiKey, model: model || undefined }),
+        body: JSON.stringify({ outline: item.data, keyword: item.keyword, policy, language, tone: resolvedTone || undefined, sourceMode, includeToc, promptType, custom: promptType === "custom" ? (custom.trim() || undefined) : undefined, serpProvider: serp.provider, serpKey: serp.apiKey || undefined, serpBaseUrl: serp.baseUrl, firecrawlKey: getFirecrawlKey() || undefined, scrapeCount: getFactSourceCount(), hardRedact: getHardRedact(), aiProvider: provider, aiApiKey: apiKey, model: model || undefined }),
       });
       const data = await res.json();
       if (!res.ok) { setErr(data.error || t("seoErrText")); setLoading(false); return; }

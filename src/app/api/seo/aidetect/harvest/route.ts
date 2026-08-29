@@ -30,6 +30,7 @@ export async function POST(req: Request) {
     const serpKey = String(b.serpKey ?? "");
     if (!serpKey) return NextResponse.json({ error: "no_serp_key" }, { status: 400 });
     const serp = await runSerp(String(b.serpProvider || "serper"), serpKey, keyword, {
+      baseUrl: b.serpBaseUrl ? String(b.serpBaseUrl) : undefined,
       gl: b.gl, hl: b.hl, num: want, engine: "google",
     });
     if (serp.error) serpError = serp.error;

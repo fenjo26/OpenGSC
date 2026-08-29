@@ -34,7 +34,26 @@ const RANK_UNSUPPORTED: Record<string, string> = {
     "Pick Serper, DataForSEO or ScrapingRobot for Rank Tracker in Settings → SEO Tools (the Rank Tracker provider is set separately from the one used elsewhere).",
 };
 
-export interface SerpCreds { provider: string; apiKey: string }
+export interface SerpCreds { provider: string; apiKey: string; baseUrl?: string }
+
+/**
+ * SERP providers whose host the user supplies, and which are therefore only "configured" when
+ * BOTH slots are filled.
+ *
+ * The fallback loop below tests the key alone, which is correct for every metered provider: a
+ * key is the whole credential. For a self-hosted one it is half of it, and treating a lone
+ * password as configured picks a provider that cannot be reached and fails every scheduled
+ * check from then on — with an error about the network, not about the setting that is missing.
+ */
+const SELF_HOSTED_PROVIDERS = new Set<string>(["aparser"]);
+
+function configuredIn(s: any, provider: string): SerpCreds | null {
+  const apiKey = String(s[`seoKey_${provider}`] ?? "");
+  if (!apiKey) return null;
+  const baseUrl = String(s[`seoBaseUrl_${provider}`] ?? "");
+  if (SELF_HOSTED_PROVIDERS.has(provider) && !baseUrl) return null;
+  return { provider, apiKey, ...(baseUrl ? { baseUrl } : {}) };
+}
 
 // Read the user's SERP provider + key from the server-side settings snapshot.
 export async function getUserSerpCreds(userId: string): Promise<SerpCreds | null> {
@@ -49,19 +68,20 @@ export async function getUserSerpCreds(userId: string): Promise<SerpCreds | null
     // content generation/SERP analysis in SEO Tools) — set in Settings → SEO Tools; falls
     // back to the general active provider when unset.
     const provider = s.seoSerpProvider_rank || s.seoSerpProvider || "serper";
-    const apiKey = s[`seoKey_${provider}`] || "";
+    const chosen = configuredIn(s, provider);
     // An unsupported provider is treated exactly like a missing key: fall through to whatever
     // else is configured. Someone who set GoAnyAPI as their app-wide SERP source and never
     // touched the Rank Tracker override should keep tracking on the key they already have,
     // rather than have every scheduled check start failing at once.
-    if (!apiKey || RANK_UNSUPPORTED[provider]) {
+    if (!chosen || RANK_UNSUPPORTED[provider]) {
       // Fall back to any configured SERP key
       for (const p of ["serper", "dataforseo", "scrapingrobot"]) {
-        if (s[`seoKey_${p}`]) return { provider: p, apiKey: s[`seoKey_${p}`] };
+        const alt = configuredIn(s, p);
+        if (alt) return alt;
       }
       return null;
     }
-    return { provider, apiKey };
+    return chosen;
   } catch {
     return null;
   }
@@ -91,7 +111,7 @@ export interface CheckResult {
 async function scan(
   creds: SerpCreds, keyword: string, gl: string, hl: string, depth: number, siteHost: string,
 ): Promise<CheckResult> {
-  const serp = await runSerp(creds.provider, creds.apiKey, keyword, { gl, hl, num: depth });
+  const serp = await runSerp(creds.provider, creds.apiKey, keyword, { gl, hl, num: depth, baseUrl: creds.baseUrl });
   if (serp.error) return { position: null, url: null, depth, error: serp.error };
   for (const r of serp.results) {
     if (matchesSite(r.domain, siteHost)) return { position: r.position, url: r.url, depth };

@@ -5,7 +5,46 @@
 import { goanySerp } from "./goanyapi";
 import { defaultLanguageFor } from "./regions";
 
-export type SerpEngine = "google" | "bing";
+export type SerpEngine = "google" | "bing" | "yandex";
+
+export interface SerpOptions {
+  gl?: string;
+  hl?: string;
+  location?: string;
+  num?: number;
+  engine?: SerpEngine;
+  /**
+   * Where to send the request, for providers that do not have a fixed host.
+   *
+   * Undefined for every metered provider — their host is a constant inside their own module and
+   * always will be. A self-hosted provider (A-Parser) runs on a machine only the user knows
+   * about, so the host has to travel with the request the same way the key does.
+   */
+  baseUrl?: string;
+}
+
+/**
+ * Engines a provider can actually serve, so the ones it cannot are refused rather than
+ * substituted.
+ *
+ * This table exists because `engine` used to be a two-value union that every branch narrowed
+ * with `?? "google"`. Widening it to include Yandex turns each of those into a silent lie: the
+ * caller asks for Yandex, the provider scrapes Google, and the response is labelled with the
+ * engine that was requested rather than the one that answered. Nothing downstream can tell.
+ */
+const PROVIDER_ENGINES: Record<string, SerpEngine[]> = {
+  serper: ["google"],
+  dataforseo: ["google", "bing"],
+  scrapingrobot: ["google"],
+  goanyapi: ["google"],
+};
+
+function unsupportedEngine(provider: string, engine: SerpEngine): string | null {
+  const supported = PROVIDER_ENGINES[provider];
+  if (!supported || supported.includes(engine)) return null;
+  return `${provider} does not support engine "${engine}" (supported: ${supported.join(", ")}). ` +
+    `Pick a provider that does in Settings → SEO Tools.`;
+}
 
 export interface SerpResultItem {
   position: number;
@@ -82,12 +121,13 @@ async function serperFetchPage(
 async function serperSearch(
   apiKey: string,
   keyword: string,
-  opts: { gl?: string; hl?: string; location?: string; num?: number; engine?: SerpEngine },
+  opts: SerpOptions,
 ): Promise<SerpResponse> {
-  const engine: SerpEngine = opts.engine ?? "google";
-  const endpoint = engine === "bing"
-    ? "https://google.serper.dev/search" // Serper is Google-only; Bing falls back to google endpoint
-    : "https://google.serper.dev/search";
+  // Google only. `runSerp` refuses the other engines for this provider before we get here, so
+  // there is no fallback to write and none should be added: an endpoint that answers with
+  // Google results while the response says "bing" is worse than an error.
+  const engine: SerpEngine = "google";
+  const endpoint = "https://google.serper.dev/search";
 
   // Serper returns one Google page (~10 organic) per call and does NOT expand via `num`.
   // To honour Top N > 10 we paginate with the `page` param and merge (dedupe by URL).
@@ -148,9 +188,9 @@ export const DFS_LOC: Record<string, number> = {
 async function dataForSeoSearch(
   credential: string,
   keyword: string,
-  opts: { gl?: string; hl?: string; location?: string; num?: number; engine?: SerpEngine },
+  opts: SerpOptions,
 ): Promise<SerpResponse> {
-  const engine: SerpEngine = opts.engine ?? "google";
+  const engine: SerpEngine = opts.engine === "bing" ? "bing" : "google";
   const path = engine === "bing"
     ? "https://api.dataforseo.com/v3/serp/bing/organic/live/advanced"
     : "https://api.dataforseo.com/v3/serp/google/organic/live/advanced";
@@ -316,7 +356,7 @@ async function scrapingRobotHtmlPage(
 async function scrapingRobotSearch(
   apiKey: string,
   keyword: string,
-  opts: { gl?: string; hl?: string; location?: string; num?: number; engine?: SerpEngine },
+  opts: SerpOptions,
 ): Promise<SerpResponse> {
   const engine: SerpEngine = "google"; // ScrapingRobot path supports Google only
   const gl = (opts.gl || "us").toLowerCase();
@@ -378,7 +418,7 @@ async function scrapingRobotSearch(
 async function goAnySearch(
   apiKey: string,
   keyword: string,
-  opts: { gl?: string; hl?: string; location?: string; num?: number; engine?: SerpEngine },
+  opts: SerpOptions,
 ): Promise<SerpResponse> {
   const engine: SerpEngine = "google"; // Google only; there is no Bing endpoint here.
   const r = await goanySerp(apiKey, keyword, (opts.gl || "us").toLowerCase());
@@ -422,22 +462,48 @@ async function goAnySearch(
   };
 }
 
+/**
+ * Providers whose host the user supplies rather than this module hardcoding it.
+ *
+ * `aparser` is listed before its search branch exists, because the guard it feeds is about the
+ * credential being incomplete, and that is already true today: the connection is configurable in
+ * Settings and read by the GEO Audit engine, so the setting can be half-filled long before the
+ * SERP branch lands. A guard added after the code that needs it is a guard that was missing for
+ * the whole window in between.
+ */
+const SELF_HOSTED_PROVIDERS = new Set<string>(["aparser"]);
+
 export async function runSerp(
   provider: string,
   apiKey: string,
   keyword: string,
-  opts: { gl?: string; hl?: string; location?: string; num?: number; engine?: SerpEngine } = {},
+  opts: SerpOptions = {},
 ): Promise<SerpResponse> {
+  const engine: SerpEngine = opts.engine ?? "google";
   if (!apiKey) {
-    return { engine: opts.engine ?? "google", provider, keyword, results: [], error: "no_serp_key" };
+    return { engine, provider, keyword, results: [], error: "no_serp_key" };
+  }
+  // A self-hosted provider needs a host as well as a secret, and "no_serp_key" would send the
+  // user to the wrong field. Providers with a fixed host never reach this branch.
+  if (SELF_HOSTED_PROVIDERS.has(provider) && !String(opts.baseUrl ?? "").trim()) {
+    return { engine, provider, keyword, results: [], error: "no_serp_base_url" };
+  }
+  const engineProblem = unsupportedEngine(provider, engine);
+  if (engineProblem) {
+    return { engine, provider, keyword, results: [], error: engineProblem };
   }
   try {
     if (provider === "dataforseo") return await dataForSeoSearch(apiKey, keyword, opts);
     if (provider === "scrapingrobot") return await scrapingRobotSearch(apiKey, keyword, opts);
     if (provider === "goanyapi") return await goAnySearch(apiKey, keyword, opts);
-    return await serperSearch(apiKey, keyword, opts); // default: serper
+    if (provider === "serper" || !provider) return await serperSearch(apiKey, keyword, opts);
+    // An id with no branch used to fall through to Serper, which meant posting another
+    // provider's credential to Serper's endpoint and reporting whatever came back as that
+    // provider's answer. Harmless while every id in the picker had a branch; not harmless now
+    // that a provider can be configured (A-Parser) before its branch exists.
+    return { engine, provider, keyword, results: [], error: `unknown SERP provider "${provider}"` };
   } catch (e: any) {
-    return { engine: opts.engine ?? "google", provider, keyword, results: [], error: String(e?.message ?? e) };
+    return { engine, provider, keyword, results: [], error: String(e?.message ?? e) };
   }
 }
 

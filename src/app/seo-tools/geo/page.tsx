@@ -9,7 +9,7 @@ import type { GeoReport } from "@/lib/seo/geo";
 import {
   startGeoAudit, getGeoAudit, listGeoAudits, deleteGeoAudit, parseReport,
   getOpenAiKey, getOpenAiBaseUrl, getKieKeyForGeo, getGeminiKeyForGeo, getGeminiBaseUrl,
-  getGeoEngine, setGeoEngine, getGeoApiKey, GeoEngineChoice,
+  getGeoEngine, setGeoEngine, getGeoApiKey, GeoEngineChoice, getAparserCreds,
   getGeoModel, setGeoModel, GeoAuditRec,
 } from "@/lib/seo/geoClient";
 import { rankModels, resolveModel, OPENAI_FALLBACK_MODELS, type ModelOpt } from "@/lib/seo/models";
@@ -20,6 +20,8 @@ import { getTaskCreds } from "@/lib/seo/keys";
 const OPENAI_MODELS_FALLBACK = OPENAI_FALLBACK_MODELS;
 const KIE_MODELS_FALLBACK = ["gpt-5-5", "gpt-5-4", "gpt-5-2"];
 const GEMINI_MODELS_FALLBACK = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite"];
+// A-Parser is absent on purpose: its model is reported by the run, never picked, so there is
+// no list to fall back to and the picker is hidden for it entirely.
 const modelsFallbackFor = (eng: GeoEngineChoice): string[] =>
   eng === "kie" ? KIE_MODELS_FALLBACK : eng === "gemini" ? GEMINI_MODELS_FALLBACK : OPENAI_MODELS_FALLBACK;
 
@@ -44,17 +46,20 @@ export default function GeoAuditPage() {
   const [hasOpenAi, setHasOpenAi] = useState(false);
   const [hasKie, setHasKie] = useState(false);
   const [hasGemini, setHasGemini] = useState(false);
+  const [hasAparser, setHasAparser] = useState(false);
 
   useEffect(() => {
     const oa = !!getOpenAiKey(), kie = !!getKieKeyForGeo(), gem = !!getGeminiKeyForGeo();
-    setHasOpenAi(oa); setHasKie(kie); setHasGemini(gem);
-    setHasKey(oa || kie || gem);
+    const ap = getAparserCreds();
+    const apOk = !!ap.url.trim() && !!ap.password.trim();
+    setHasOpenAi(oa); setHasKie(kie); setHasGemini(gem); setHasAparser(apOk);
+    setHasKey(oa || kie || gem || apOk);
     const eng = getGeoEngine();
     setEngine(eng);
     // A stored choice is kept as-is even when it is absent from the fallback list — the fallback
     // is a stopgap for "no key to list models with", not a whitelist of allowed models.
     // loadModels() replaces it if the account no longer offers it.
-    setModel(getGeoModel() || modelsFallbackFor(eng)[0]);
+    setModel(eng === "aparser" ? "" : getGeoModel() || modelsFallbackFor(eng)[0]);
     loadModels(eng);
     refreshRecent();
   }, []);
@@ -62,6 +67,9 @@ export default function GeoAuditPage() {
   // Pull the provider's actual current model list with the user's own key (mirrors the global
   // AI-provider settings picker) instead of trusting a hardcoded, easily stale id list.
   async function loadModels(eng: GeoEngineChoice) {
+    // /api/seo/models knows AI providers only. A-Parser is not one — asking it would return an
+    // empty list and leave an empty dropdown on screen for a choice that does not exist.
+    if (eng === "aparser") { setModelOpts([]); return; }
     const apiKey = getGeoApiKey(eng);
     const fallback = modelsFallbackFor(eng);
     if (!apiKey) { setModelOpts(fallback.map(id => ({ id, label: id }))); return; }
@@ -96,6 +104,7 @@ export default function GeoAuditPage() {
   function chooseEngine(e: GeoEngineChoice) {
     setEngine(e);
     setGeoEngine(e);
+    if (e === "aparser") { setModel(""); setModelOpts([]); return; }
     const fallback = modelsFallbackFor(e);
     setModel(fallback[0]);
     setModelOpts(fallback.map(id => ({ id, label: id })));
@@ -110,7 +119,9 @@ export default function GeoAuditPage() {
     if (!q) { setErr(t("geoErrEmpty")); return; }
     const apiKey = getGeoApiKey(engine);
     if (!apiKey) { setErr(t("geoNoKey")); return; }
-    setGeoModel(model);
+    // Not on A-Parser: there is no model to remember, and storing "" here would wipe the choice
+    // the user made for the engines that do have one.
+    if (engine !== "aparser") setGeoModel(model);
     setRunning(true);
     setReport(null);
     setStage(t("geoStageSearching"));
@@ -134,16 +145,23 @@ export default function GeoAuditPage() {
     // a failed analysis is not an error here, it silently assembles a report with the whole
     // qualitative half empty. Omitted when the utility provider is someone else, so the server
     // falls back to its own cheap default instead of an id from the wrong vendor.
-    const engineProvider = engine === "kie" ? "kie" : engine === "gemini" ? "gemini" : "openai";
+    // "aparser" is deliberately not a provider id here: no AI provider can equal it, so
+    // `legacyModel` stays undefined and no model id from another vendor can travel to it.
+    const engineProvider = engine === "kie" ? "kie" : engine === "gemini" ? "gemini" : engine === "aparser" ? "aparser" : "openai";
     const legacyModel = util.provider === engineProvider ? (util.model || undefined) : undefined;
+    const aparser = getAparserCreds();
+    // On A-Parser the endpoint rides the same `baseUrl` field every other engine override uses,
+    // and the "key" sent above is that instance's password.
     const engineBaseUrl = engine === "openai" ? getOpenAiBaseUrl() || undefined
       : engine === "gemini" ? getGeminiBaseUrl() || undefined
+      : engine === "aparser" ? aparser.url.trim() || undefined
       : undefined;
     const { id, error } = await startGeoAudit({
-      query: q, language, country, model, apiKey, engine,
+      query: q, language, country, model: engine === "aparser" ? "" : model, apiKey, engine,
       baseUrl: engineBaseUrl,
       analysisModel: legacyModel,
       analysis,
+      aparserConfig: engine === "aparser" ? aparser.config.trim() || undefined : undefined,
     });
     if (error || !id) { setRunning(false); setErr(error || "audit_failed"); return; }
 
@@ -220,10 +238,10 @@ export default function GeoAuditPage() {
         <input className="tool-input" value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !running) run(); }}
           placeholder={t("geoFieldKeywordPh")} disabled={running} />
 
-        {([hasOpenAi, hasKie, hasGemini].filter(Boolean).length > 1) && (
+        {([hasOpenAi, hasKie, hasGemini, hasAparser].filter(Boolean).length > 1) && (
           <div style={{ display: "flex", gap: "8px", marginTop: "14px", flexWrap: "wrap" }}>
-            {(["openai", "gemini", "kie"] as GeoEngineChoice[])
-              .filter(e => (e === "openai" && hasOpenAi) || (e === "gemini" && hasGemini) || (e === "kie" && hasKie))
+            {(["openai", "gemini", "kie", "aparser"] as GeoEngineChoice[])
+              .filter(e => (e === "openai" && hasOpenAi) || (e === "gemini" && hasGemini) || (e === "kie" && hasKie) || (e === "aparser" && hasAparser))
               .map(e => (
               <button key={e} onClick={() => !running && chooseEngine(e)} disabled={running}
                 style={{
@@ -232,10 +250,19 @@ export default function GeoAuditPage() {
                   background: engine === e ? "rgba(191,90,242,0.12)" : "var(--color-card)",
                   color: engine === e ? "var(--color-accent-purple)" : "var(--color-text-secondary)",
                 }}>
-                {e === "openai" ? "OpenAI" : e === "gemini" ? "Gemini" : "Kie.ai"}
+                {e === "openai" ? "OpenAI" : e === "gemini" ? "Gemini" : e === "kie" ? "Kie.ai" : "A-Parser"}
               </button>
             ))}
           </div>
+        )}
+
+        {/* Said once, on screen, rather than left for the reader to infer from an empty panel:
+            this engine costs nothing per run, does not let you pin a model, and cannot report
+            the search steps — so the batch and deep-read panels stay empty by construction. */}
+        {engine === "aparser" && (
+          <p style={{ marginTop: "10px", marginBottom: 0, fontSize: "12px", color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>
+            {t("geoAparserNote")}
+          </p>
         )}
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginTop: "14px" }}>
@@ -252,10 +279,17 @@ export default function GeoAuditPage() {
             </select>
           </div>
           <div>
-            <label className="tool-field-label">{t("geoModel")}{modelsLoading ? " …" : ""}</label>
-            <select className="tool-input" value={model} onChange={e => setModel(e.target.value)} disabled={running || modelsLoading}>
-              {modelOpts.map(mm => <option key={mm.id} value={mm.id}>{mm.label}</option>)}
-            </select>
+            <label className="tool-field-label">{t("geoModel")}{modelsLoading && engine !== "aparser" ? " …" : ""}</label>
+            {engine === "aparser" ? (
+              // A disabled field rather than a hidden one: the report will name a model, and the
+              // user should learn here — before paying for the analysis pass — that the free
+              // session picks it, not them.
+              <input className="tool-input" value={t("geoAparserModelAuto")} readOnly disabled />
+            ) : (
+              <select className="tool-input" value={model} onChange={e => setModel(e.target.value)} disabled={running || modelsLoading}>
+                {modelOpts.map(mm => <option key={mm.id} value={mm.id}>{mm.label}</option>)}
+              </select>
+            )}
           </div>
         </div>
 

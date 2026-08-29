@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Boxes, Loader2, AlertTriangle } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
-import { getSerpCreds, getKeywordSource } from "@/lib/seo/keys";
+import { getSerpCreds, serpPayload, getKeywordSource } from "@/lib/seo/keys";
 import { COUNTRIES, LANGUAGES, defaultLanguageFor } from "@/lib/seo/regions";
 import { startJob, importJob } from "@/lib/seo/jobs";
 import SeoJobProgress from "@/components/SeoJobProgress";
@@ -45,7 +45,7 @@ export default function ClusterPage() {
     const kw = `${keywords[0]} +${keywords.length - 1}`;
     const { jobId: jid, error } = await startJob("cluster", {
       keywords, gl: country, hl: language, threshold,
-      serpProvider: serpCreds.provider, serpKey: serpCreds.apiKey,
+      ...serpPayload(),
       // Volumes now come from whichever source is configured, not from DataForSEO alone.
       ...(useVolumes && kwSrc.apiKey
         ? { kwSource: kwSrc.source, kwKey: kwSrc.apiKey, kwBaseUrl: kwSrc.baseUrl }

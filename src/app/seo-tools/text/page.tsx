@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PenLine, Loader2, AlertTriangle, Wand2, Eye } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
-import { getSeoGenCreds, getTaskCreds, getSerpCreds, getFirecrawlKey, getFactSourceCount, getHardRedact, getMechanicsOn, getMechanicsRepairOn, loadPolicies, getActivePolicyName } from "@/lib/seo/keys";
+import { getSeoGenCreds, getTaskCreds, getSerpCreds, serpPayload, getFirecrawlKey, getFactSourceCount, getHardRedact, getMechanicsOn, getMechanicsRepairOn, loadPolicies, getActivePolicyName } from "@/lib/seo/keys";
 import { TONES, toneToPrompt } from "@/lib/seo/tones";
 import { LANGUAGES } from "@/lib/seo/regions";
 import { loadHistory, HistoryItem } from "@/lib/seo/history";
@@ -91,7 +91,7 @@ export default function TextGenPage() {
         ? (custom.trim() || undefined)
         : (useCustom && extraInstr.trim() ? extraInstr : undefined),
       promptType, includeToc,
-      sourceMode, serpProvider: getSerpCreds().provider, serpKey: getSerpCreds().apiKey || undefined,
+      sourceMode, ...serpPayload(),
       firecrawlKey: getFirecrawlKey() || undefined, scrapeCount: getFactSourceCount(), hardRedact: getHardRedact(),
       mechanics: getMechanicsOn(), mechanicsRepair: getMechanicsRepairOn(),
       aiProvider: provider, aiApiKey: apiKey, model: model || undefined, aiBaseUrl: baseUrl || undefined,

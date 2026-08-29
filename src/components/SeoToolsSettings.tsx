@@ -114,6 +114,113 @@ export function SeoKeyCard({ provider, hideDocsLink = false }: { provider: KeyCa
   );
 }
 
+/**
+ * A-Parser — the one provider that is a machine, not an account.
+ *
+ * It gets its own card instead of a row in SEO_PROVIDERS because a key card is built around the
+ * assumption that a provider is one secret: type it, and the app knows how to reach the vendor.
+ * Here the app knows nothing until the user says where the instance lives, and "wrong host" and
+ * "wrong password" are different problems that a single masked field cannot tell apart.
+ *
+ * The check button is therefore not a nicety. `ping` proves reachability and `info` proves the
+ * build has the parsers a feature needs — 138 parsers is what a stock install ships with, not a
+ * promise — and without the second half a user configures everything correctly and then watches
+ * a feature fail for a reason nothing on screen mentions. The parser list is cached so the rest
+ * of the UI can gate on what is installed rather than on what is documented.
+ */
+function AparserCard() {
+  const { t } = useLanguage();
+  const [baseUrl, setBaseUrl] = useState("");
+  const [password, setPassword] = useState("");
+  const [configPreset, setConfigPreset] = useState("");
+  const [visible, setVisible] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => {
+    setBaseUrl(localStorage.getItem("seoBaseUrl_aparser") || "");
+    setPassword(localStorage.getItem("seoKey_aparser") || "");
+    setConfigPreset(localStorage.getItem("seoAparserConfig") || "");
+  }, []);
+
+  const persist = () => {
+    const url = baseUrl.trim(), pw = password.trim(), cfg = configPreset.trim();
+    if (url) localStorage.setItem("seoBaseUrl_aparser", url); else localStorage.removeItem("seoBaseUrl_aparser");
+    if (pw) localStorage.setItem("seoKey_aparser", pw); else localStorage.removeItem("seoKey_aparser");
+    if (cfg) localStorage.setItem("seoAparserConfig", cfg); else localStorage.removeItem("seoAparserConfig");
+  };
+
+  async function check() {
+    setBusy(true); setStatus(null);
+    try {
+      const res = await fetch("/api/aparser", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ op: "ping", baseUrl: baseUrl.trim(), password: password.trim(), configPreset: configPreset.trim() }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setStatus({ ok: false, text: String(d?.error || res.status) }); setBusy(false); return; }
+      persist();
+      const parsers: string[] = Array.isArray(d?.info?.availableParsers) ? d.info.availableParsers : [];
+      // Cached so every other surface can ask "is this parser installed" without a round trip,
+      // and so a feature is never offered for a parser this build does not have.
+      if (parsers.length) localStorage.setItem("seoAparserParsers", JSON.stringify(parsers));
+      const v = d?.info?.version ? `v${d.info.version}` : "";
+      setStatus({ ok: true, text: `${t("aparserTestOk")} · ${d?.host || ""} ${v} · ${parsers.length} ${t("aparserParsersWord")}`.trim() });
+    } catch (e: any) {
+      setStatus({ ok: false, text: String(e?.message ?? e) });
+    }
+    setBusy(false);
+  }
+
+  const configured = !!baseUrl.trim() && !!password.trim();
+  const inp: React.CSSProperties = { width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-primary)", fontSize: "12px", outline: "none", boxSizing: "border-box", fontFamily: "monospace" };
+
+  return (
+    <div style={{ padding: "16px", borderRadius: "10px", border: `1px solid ${configured ? "#e8452c40" : "var(--color-border)"}`, background: configured ? "#e8452c08" : "rgba(255,255,255,0.02)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
+        <div style={{ width: "30px", height: "30px", borderRadius: "8px", background: "#e8452c20", border: "1px solid #e8452c40", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "13px", fontWeight: 700, color: "#e8452c", flexShrink: 0 }}>A</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--color-text-primary)" }}>A-Parser</div>
+          <div style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>{t("aparserConnRole")}</div>
+        </div>
+        <span style={{ fontSize: "11px", fontWeight: 600, color: configured ? "#10B981" : "var(--color-text-secondary)" }}>
+          {configured ? t("aparserNoCost") : "Not set"}
+        </span>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "8px" }}>
+        <input style={inp} placeholder={t("aparserUrlPh")} value={baseUrl} onChange={e => setBaseUrl(e.target.value)} />
+        <div style={{ position: "relative" }}>
+          <input style={{ ...inp, paddingRight: "36px" }} type={visible ? "text" : "password"} placeholder={t("aparserPassPh")} value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && check()} />
+          <button onClick={() => setVisible(v => !v)} style={{ position: "absolute", right: "8px", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", padding: 0, display: "flex" }}>
+            <Eye size={14} style={{ opacity: visible ? 1 : 0.5 }} />
+          </button>
+        </div>
+        <input style={inp} placeholder={t("aparserPresetPh")} value={configPreset} onChange={e => setConfigPreset(e.target.value)} />
+        <div style={{ display: "flex", gap: "8px" }}>
+          <button onClick={check} disabled={busy || !baseUrl.trim() || !password.trim()}
+            style={{ padding: "8px 14px", borderRadius: "8px", border: "none", background: busy ? "rgba(255,255,255,0.06)" : "#e8452c25", color: busy ? "var(--color-text-secondary)" : "#e8452c", fontSize: "12px", fontWeight: 600, cursor: busy ? "wait" : "pointer", display: "flex", alignItems: "center", gap: "5px" }}>
+            <RefreshCw size={12} style={{ animation: busy ? "spin 1s linear infinite" : undefined }} /> {busy ? t("aparserChecking") : t("aparserTest")}
+          </button>
+          <a href="/aparser" style={{ padding: "8px 14px", borderRadius: "8px", border: "1px solid var(--color-border)", color: "var(--color-text-secondary)", fontSize: "12px", fontWeight: 600, textDecoration: "none", display: "flex", alignItems: "center" }}>{t("aparserOpenConsole")}</a>
+        </div>
+      </div>
+
+      {status && (
+        <div style={{ fontSize: "11px", fontFamily: "monospace", color: status.ok ? "#10B981" : "#f87171", marginBottom: "6px", wordBreak: "break-all" }}>
+          {status.ok ? "✓ " : "✕ "}{status.text}
+        </div>
+      )}
+
+      <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.5, marginBottom: "6px" }}>{t("aparserConnHint")}</div>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "10px" }}>
+        <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.5, flex: 1 }}>📍 {t("aparserConnInstr")}</span>
+        <a href="https://a-parser.com/docs/api" target="_blank" rel="noreferrer" style={{ fontSize: "11px", color: "var(--color-accent-blue)", textDecoration: "none", flexShrink: 0, whiteSpace: "nowrap" }}>API docs ↗</a>
+      </div>
+    </div>
+  );
+}
+
 function ModelSelector() {
   const { t } = useLanguage();
   const [groups, setGroups] = useState<{ provider: string; name: string; models: { id: string; label: string }[] }[]>([]);
@@ -473,6 +580,7 @@ export function SeoProviderKeysSection() {
       <p style={{ fontSize: "13px", color: "var(--color-text-secondary)", margin: "0 0 14px" }}>{t("seoSetSub")}</p>
       <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
         {SEO_PROVIDERS.map(p => <SeoKeyCard key={p.id} provider={p} />)}
+        <AparserCard />
       </div>
       <div style={{ marginTop: "14px", padding: "11px 14px", borderRadius: "8px", background: "rgba(16,163,127,0.06)", border: "1px solid rgba(16,163,127,0.18)", fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
         💡 {t("seoSetTip")}
@@ -480,6 +588,7 @@ export function SeoProviderKeysSection() {
     </div>
   );
 }
+
 
 export function AeoProviderKeysSection() {
   const { t } = useLanguage();

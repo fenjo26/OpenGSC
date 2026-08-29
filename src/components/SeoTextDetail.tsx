@@ -373,7 +373,7 @@ function FactCheck({ item, setItem, article, t, autoStart }: any) {
       try {
         const sr = await fetch("/api/seo/serp", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ keyword: item.keyword, provider: serp.provider, apiKey: serp.apiKey, num: 10, engine: "google" }),
+          body: JSON.stringify({ keyword: item.keyword, provider: serp.provider, apiKey: serp.apiKey, baseUrl: serp.baseUrl, num: 10, engine: "google" }),
         }).then(r => r.json());
         const results0 = sr.results || [];
         const cnt = getFactSourceCount();
@@ -396,7 +396,7 @@ function FactCheck({ item, setItem, article, t, autoStart }: any) {
       try {
         const body: any = { heading: s.heading, text: s.text, keyword: item.keyword, aiProvider: ai.provider, aiApiKey: ai.apiKey, model: ai.model || undefined, aiBaseUrl: ai.baseUrl || undefined };
         if (shared) { body.sources = shared; } // reuse-corpus mode → route skips its own SERP
-        else { body.serpProvider = serp.provider; body.serpKey = serp.apiKey; body.firecrawlKey = getFirecrawlKey() || undefined; body.scrapeCount = getFactSourceCount(); body.engine = "google"; body.gl = gl; body.hl = hl; }
+        else { body.serpProvider = serp.provider; body.serpKey = serp.apiKey; body.serpBaseUrl = serp.baseUrl; body.firecrawlKey = getFirecrawlKey() || undefined; body.scrapeCount = getFactSourceCount(); body.engine = "google"; body.gl = gl; body.hl = hl; }
         const res = await fetch("/api/seo/factcheck-section", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),

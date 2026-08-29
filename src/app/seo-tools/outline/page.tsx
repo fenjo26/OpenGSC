@@ -251,13 +251,13 @@ export default function OutlinePage() {
   async function runSerp() {
     setErr(""); setOutline(null); setArticle(""); setSerp([]); setSelected(new Set()); setScraped({}); setKeywordsData([]);
     if (!keyword.trim()) { setErr(t("seoErrEnterKeyword")); return; }
-    const { provider, apiKey } = getSerpCreds();
+    const { provider, apiKey, baseUrl: serpBaseUrl } = getSerpCreds();
     if (!apiKey) { setErr(t("seoErrNoSerpKey")); return; }
     setLoading("serp");
     try {
       const res = await fetch("/api/seo/serp", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ keyword, provider, apiKey, gl: country, hl: language, location, num: topN, engine }),
+        body: JSON.stringify({ keyword, provider, apiKey, baseUrl: serpBaseUrl, gl: country, hl: language, location, num: topN, engine }),
       });
       const data = await res.json();
       if (!res.ok) { setErr(data.error || t("seoErrSerp")); setLoading(""); return; }

@@ -153,13 +153,13 @@ export default function LandingPage() {
   async function runSerp() {
     setErr(""); setSerp([]); setSelected(new Set()); setScraped({}); setKeywordsData([]);
     if (!keyword.trim()) { setErr(t("seoErrEnterKeyword")); return; }
-    const { provider, apiKey } = getSerpCreds();
+    const { provider, apiKey, baseUrl: serpBaseUrl } = getSerpCreds();
     if (!apiKey) { setErr(t("seoErrNoSerpKey")); return; }
     setLoading("serp");
     try {
       const res = await fetch("/api/seo/serp", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ keyword, provider, apiKey, gl: country, hl: language, location, num: topN, engine: "google" }),
+        body: JSON.stringify({ keyword, provider, apiKey, baseUrl: serpBaseUrl, gl: country, hl: language, location, num: topN, engine: "google" }),
       });
       const data = await res.json();
       if (!res.ok) { setErr(data.error || t("seoErrSerp")); setLoading(""); return; }

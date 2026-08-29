@@ -266,6 +266,8 @@ export async function resolveActivePolicy(userId: string, args: Json = {}): Prom
 export interface SerpCreds {
   serpProvider: string;
   serpKey: string;
+  /** Only self-hosted SERP providers have one; undefined for the metered ones. */
+  serpBaseUrl?: string;
 }
 
 /**
@@ -283,7 +285,10 @@ export async function resolveSerpCreds(userId: string, args: Json = {}): Promise
   const s = await getUserSettings(userId);
   const provider = String(args.serpProvider ?? s.seoSerpProvider ?? "serper");
   const key = String(args.serpKey ?? s[`seoKey_${provider}`] ?? "");
-  return { serpProvider: provider, serpKey: key };
+  // Mirrored by the same prefix rule as the key (SeoKeysSync), so a server-side job learns the
+  // host without the browser having to send it — which is the whole reason it is mirrored.
+  const baseUrl = String(args.serpBaseUrl ?? s[`seoBaseUrl_${provider}`] ?? "");
+  return { serpProvider: provider, serpKey: key, ...(baseUrl ? { serpBaseUrl: baseUrl } : {}) };
 }
 
 export interface KeywordSourceCreds {

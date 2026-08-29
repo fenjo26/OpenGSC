@@ -4,7 +4,7 @@ import { workspaceUserId } from "@/lib/team/workspace";
 import { runSerp, heuristicSiteType, heuristicIntent, SerpEngine } from "@/lib/seo/serp";
 
 // POST /api/seo/serp
-// body: { keyword, provider, apiKey, gl?, hl?, location?, num?, engine? }
+// body: { keyword, provider, apiKey, baseUrl?, gl?, hl?, location?, num?, engine? }
 export async function POST(req: Request) {
   const workspaceId = await workspaceUserId("spend");
   if (!workspaceId) {
@@ -21,6 +21,7 @@ export async function POST(req: Request) {
 
   const serp = await runSerp(provider, apiKey, keyword, {
     gl: b.gl, hl: b.hl, location: b.location, num: b.num ?? 10, engine,
+    baseUrl: b.baseUrl ? String(b.baseUrl) : undefined,
   });
 
   if (serp.error) {

@@ -321,7 +321,7 @@ function CorpusTab({ models, activeName, onChange }: { models: StoredModel[]; ac
         body: JSON.stringify({
           keyword: keyword.trim() || undefined, urls: list.length ? list : undefined,
           count, gl, hl,
-          serpProvider: serp.provider, serpKey: serp.apiKey,
+          serpProvider: serp.provider, serpKey: serp.apiKey, serpBaseUrl: serp.baseUrl,
           firecrawlKey: getFirecrawlKey() || undefined,
         }),
       });

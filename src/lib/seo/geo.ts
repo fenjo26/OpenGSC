@@ -16,7 +16,7 @@ import { extractJson } from "@/lib/seo/prompts";
 import { OPENAI_FALLBACK_MODELS, OPENAI_FALLBACK_CHEAP } from "@/lib/seo/models";
 import { fetchLLMDetailed } from "@/lib/llm";
 import { defaultModelFor } from "@/lib/providerDefaults";
-import { runAparserRequest, APARSER_PARSER } from "@/lib/seo/aparser";
+import { runGeoAparser, GEO_APARSER_PARSER } from "@/lib/seo/geoAparser";
 
 export type GeoResult = { ok: true; data: GeoReport } | { ok: false; error: string };
 
@@ -207,10 +207,11 @@ async function runGeminiGroundedSearch(
 // audit's own query and the sources actually seen states precisely what is known, which is
 // what the Gemini engine does with webSearchQueries.
 async function runAparserSearch(
-  query: string, language: string, country: string, password: string, apiUrl: string, preset?: string,
+  query: string, language: string, country: string, password: string, apiUrl: string,
+  preset?: string, configPreset?: string,
 ): Promise<RawTrace | { error: string }> {
   const input = buildSearchInput(query, language, country);
-  const r = await runAparserRequest({ url: apiUrl, password, query: input, preset, timeoutMs: SEARCH_TIMEOUT_MS });
+  const r = await runGeoAparser({ baseUrl: apiUrl, password, query: input, preset, configPreset, timeoutMs: SEARCH_TIMEOUT_MS });
   if ("error" in r) return r;
 
   const seen = new Set<string>();
@@ -245,9 +246,9 @@ async function runAparserSearch(
   };
 }
 
-async function runWebSearch(query: string, language: string, country: string, model: string, apiKey: string, engine: GeoEngine = "openai", baseUrl?: string, aparserPreset?: string): Promise<RawTrace | { error: string }> {
+async function runWebSearch(query: string, language: string, country: string, model: string, apiKey: string, engine: GeoEngine = "openai", baseUrl?: string, aparserPreset?: string, aparserConfig?: string): Promise<RawTrace | { error: string }> {
   if (engine === "gemini") return runGeminiGroundedSearch(query, language, country, model, apiKey, baseUrl);
-  if (engine === "aparser") return runAparserSearch(query, language, country, apiKey, baseUrl ?? "", aparserPreset);
+  if (engine === "aparser") return runAparserSearch(query, language, country, apiKey, baseUrl ?? "", aparserPreset, aparserConfig);
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), SEARCH_TIMEOUT_MS);
   const input = buildSearchInput(query, language, country);
@@ -533,6 +534,15 @@ async function runAnalysis(
         return null;
       }
       return extractJson(r.text);
+    }
+    if (engine === "aparser") {
+      // Deliberate dead end. On this engine `apiKey` is an A-Parser password and `baseUrl` is
+      // the user's own machine, so every fallback below would post that password to a vendor —
+      // api.openai.com in the default branch. Stage 2 therefore runs only through the `utility`
+      // credentials handled above; without them the audit ships with the deterministic half
+      // only, exactly as it does for any other failed analysis, which is not fatal by design.
+      console.error("[GEO] analysis skipped: aparser engine, no utility credentials configured");
+      return null;
     }
     if (engine === "gemini") {
       // The Gemini engine's key only speaks generateContent — the shared client's gemini branch
@@ -867,6 +877,15 @@ export async function runGeoAudit(params: {
    * against the gateway, never against the vendor it proxies.
    */
   baseUrl?: string;
+  /**
+   * Preset name inside the user's A-Parser (engine "aparser" only). The preset decides both
+   * the parser options — "Search the web" MUST be on, or the answer comes from the model's
+   * weights and measures nothing — and the result format, which is why the response mapper
+   * accepts a range of shapes instead of one.
+   */
+  aparserPreset?: string;
+  /** A-Parser thread-count config to run under ("default" unless the user changed it). */
+  aparserConfig?: string;
 }): Promise<GeoResult> {
   const query = String(params.query ?? "").trim();
   if (!query) return { ok: false, error: "no_query" };
@@ -874,12 +893,24 @@ export async function runGeoAudit(params: {
   if (!apiKey) return { ok: false, error: "no_key" };
   const language = String(params.language ?? "en");
   const country = String(params.country ?? "us");
-  const engine: GeoEngine = params.engine === "kie" ? "kie" : params.engine === "gemini" ? "gemini" : "openai";
+  const engine: GeoEngine = params.engine === "kie" ? "kie"
+    : params.engine === "gemini" ? "gemini"
+    : params.engine === "aparser" ? "aparser"
+    : "openai";
+  // A-Parser is not asked for a model — it reports the one its free session happened to serve —
+  // so the placeholder here is only what the audit row shows until the real id comes back on
+  // the trace. Defaulting it to an OpenAI id would put a model in the report that never ran.
   const model = String(params.model ?? "")
-    || (engine === "kie" ? "gpt-5-5" : engine === "gemini" ? "gemini-2.5-flash" : OPENAI_FALLBACK_MODELS[0]);
+    || (engine === "aparser" ? GEO_APARSER_PARSER
+      : engine === "kie" ? "gpt-5-5"
+      : engine === "gemini" ? "gemini-2.5-flash"
+      : OPENAI_FALLBACK_MODELS[0]);
   const baseUrl = String(params.baseUrl ?? "").trim() || undefined;
+  // The endpoint is not optional on this engine: there is no public host to fall back to, and
+  // an empty one would send the instance password nowhere useful.
+  if (engine === "aparser" && !baseUrl) return { ok: false, error: "aparser_no_url" };
 
-  const trace = await runWebSearch(query, language, country, model, apiKey, engine, baseUrl);
+  const trace = await runWebSearch(query, language, country, model, apiKey, engine, baseUrl, params.aparserPreset, params.aparserConfig);
   if ("error" in trace) return { ok: false, error: trace.error };
   if (!trace.answerText && trace.citations.length === 0 && trace.batches.length === 0) {
     return { ok: false, error: "empty_trace" };
@@ -890,8 +921,11 @@ export async function runGeoAudit(params: {
   // stands in for the unattended stage-2 fallback. The Gemini engine defaults likewise: an
   // OpenAI id would 404 against the user's Gemini key.
   const analysisModel = String(params.analysisModel ?? "")
-    || (engine === "gemini" || engine === "kie" || baseUrl ? model : OPENAI_FALLBACK_CHEAP);
+    || (engine === "gemini" || engine === "kie" || engine === "aparser" || baseUrl ? model : OPENAI_FALLBACK_CHEAP);
   const analysis = await runAnalysis(trace, query, language, country, analysisModel, apiKey, engine, params.analysis, baseUrl);
-  const report = assembleReport({ query, language, country, model, trace, analysis });
+  // What ran, not what was requested. On A-Parser the two differ by construction, and a report
+  // that silently claims the requested id would hide the whole point of the trade-off: the free
+  // tier serves whichever model it serves that day.
+  const report = assembleReport({ query, language, country, model: trace.model || model, trace, analysis });
   return { ok: true, data: report };
 }

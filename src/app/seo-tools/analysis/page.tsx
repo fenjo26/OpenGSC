@@ -73,7 +73,7 @@ export default function AnalysisPage() {
   async function findCompetitors() {
     setErr("");
     if (!keyword.trim()) { setErr(t("seoErrFillKwUrl")); return; }
-    const { provider: sp, apiKey: sk } = getSerpCreds();
+    const { provider: sp, apiKey: sk, baseUrl: sbu } = getSerpCreds();
     if (!sk) { setErr(t("seoErrNoSerpKey")); return; }
     setBusy(true); setStage(t("seoStageSerp"));
     try {
@@ -84,7 +84,7 @@ export default function AnalysisPage() {
       if (!data) {
         const res = await fetch("/api/seo/serp", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ keyword, provider: sp, apiKey: sk, gl: country, hl: language, location: city || undefined, num: topN }),
+          body: JSON.stringify({ keyword, provider: sp, apiKey: sk, baseUrl: sbu, gl: country, hl: language, location: city || undefined, num: topN }),
         });
         data = await res.json();
         if (!res.ok) { setErr(data.error || t("seoErrSerp")); setBusy(false); return; }

@@ -1214,7 +1214,7 @@ export async function genText(b: any): Promise<GenResult> {
   let effMode: "off" | "facts" | "cited" = sourceMode;
   if (sourceMode !== "off" && b.serpKey && keyword) {
     try {
-      const serp = await runSerp(String(b.serpProvider || "serper"), String(b.serpKey), keyword, { gl: b.gl, hl: b.hl, num: 10, engine: "google" });
+      const serp = await runSerp(String(b.serpProvider || "serper"), String(b.serpKey), keyword, { gl: b.gl, hl: b.hl, num: 10, engine: "google", baseUrl: b.serpBaseUrl ? String(b.serpBaseUrl) : undefined });
       const top = (serp.results || []).slice(0, Math.max(1, Math.min(10, Number(b.scrapeCount ?? 6))));
       let scraped: any[] = [];
       try { scraped = await scrapeMany(top.map(r => r.url), b.firecrawlKey ? String(b.firecrawlKey) : undefined, 4); } catch {}
@@ -1702,6 +1702,7 @@ export async function genOutlineAuto(b: any): Promise<GenResult> {
   b.__onProgress?.(8, "serp");
   const serp = await runSerp(String(b.serpProvider || "serper"), String(b.serpKey), keyword, {
     gl: b.gl ?? b.country, hl: b.hl ?? b.language, num: 10, engine: "google",
+    baseUrl: b.serpBaseUrl ? String(b.serpBaseUrl) : undefined,
   });
   if (serp.error || !serp.results?.length) return { ok: false, error: serp.error || "serp_failed" };
   const results = serp.results.slice(0, 10);
@@ -1775,6 +1776,7 @@ export async function genCluster(b: any): Promise<GenResult> {
   const serpKey = String(b.serpKey ?? "");
   if (!serpKey) return { ok: false, error: "no_serp_key" };
   const provider = String(b.serpProvider ?? "serper");
+  const serpBaseUrl = b.serpBaseUrl ? String(b.serpBaseUrl) : undefined;
   const gl = String(b.gl ?? "us"), hl = String(b.hl ?? "en");
   const threshold = Math.max(2, Math.min(6, Number(b.threshold ?? 3)));
 
@@ -1795,7 +1797,7 @@ export async function genCluster(b: any): Promise<GenResult> {
   const serps: Record<string, { urls: string[]; titles: string[] }> = {};
   const failed: string[] = [];
   await runPool(keywords, 4, async (kw) => {
-    const r = await runSerp(provider, serpKey, kw, { gl, hl, num: 10, engine: "google" });
+    const r = await runSerp(provider, serpKey, kw, { gl, hl, num: 10, engine: "google", baseUrl: serpBaseUrl });
     if (r.error || !r.results?.length) { failed.push(kw); return; }
     serps[kw] = { urls: r.results.slice(0, 10).map(x => normUrl(x.url)), titles: r.results.slice(0, 5).map(x => x.title) };
   });

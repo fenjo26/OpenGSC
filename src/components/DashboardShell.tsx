@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import PasswordChangeGate from "@/components/PasswordChangeGate";
 import { useSession, signOut } from "next-auth/react";
 import { useState, useEffect, Suspense } from "react";
-import { Settings, LogOut, Sparkles, Globe, Newspaper, LayoutDashboard, TrendingUp, Anchor, BarChart2, Users, Compass, Radar, ClipboardCheck } from "lucide-react";
+import { Settings, LogOut, Sparkles, Globe, Newspaper, LayoutDashboard, TrendingUp, Anchor, BarChart2, Users, Compass, Radar, Server, ClipboardCheck } from "lucide-react";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { useTheme } from "@/lib/ThemeContext";
 import { useLayout } from "@/lib/LayoutContext";
@@ -483,6 +483,29 @@ function NavLinks() {
   const pathname = usePathname();
   const { t } = useLanguage();
 
+  /**
+   * A-Parser is the only nav item that can be absent, and the reason is that it is the only one
+   * that depends on hardware the app cannot provide. Everything else in this bar works out of
+   * the box; a permanent eighth entry whose page can only ever say "not configured" costs every
+   * user attention to buy nothing. It appears the moment a connection is saved.
+   */
+  const [hasAparser, setHasAparser] = useState(false);
+  useEffect(() => {
+    const read = () => {
+      try { setHasAparser(!!localStorage.getItem("seoBaseUrl_aparser") && !!localStorage.getItem("seoKey_aparser")); }
+      catch { setHasAparser(false); }
+    };
+    read();
+    // Settings write straight to localStorage; this is the same event SeoKeysSync fires after a
+    // restore, so the item also appears on a machine that has just pulled the backup.
+    window.addEventListener("seo-keys-restored", read);
+    window.addEventListener("storage", read);
+    return () => {
+      window.removeEventListener("seo-keys-restored", read);
+      window.removeEventListener("storage", read);
+    };
+  }, []);
+
   const items = [
     { href: "/", label: t("menuDashboard"), key: "sites", exact: true, icon: <LayoutDashboard size={14} /> },
     { href: "/striking", label: t("menuStriking"), key: "striking", icon: <TrendingUp size={14} /> },
@@ -500,6 +523,9 @@ function NavLinks() {
     // own data, this one looks at somebody else's site.
     { href: "/crawler", label: t("crawlerNavTitle"), key: "crawler", icon: <Radar size={14} /> },
     { href: "/digest", label: t("digestNavTitle"), key: "digest", icon: <Newspaper size={14} /> },
+    // Points inward at the user's own machine rather than at this instance's data or at
+    // somebody else's site — hence last, and hidden until that machine exists.
+    ...(hasAparser ? [{ href: "/aparser", label: t("aparserNavTitle"), key: "aparser", icon: <Server size={14} /> }] : []),
   ];
 
   return (

@@ -7,7 +7,7 @@ import { scrapeMany } from "@/lib/seo/scrape";
 import { buildFactCheckSectionPrompt, extractJson } from "@/lib/seo/prompts";
 
 // POST /api/seo/factcheck-section
-// body: { heading, text, keyword, serpProvider, serpKey, engine?, gl?, hl?, aiProvider, aiApiKey, model? }
+// body: { heading, text, keyword, serpProvider, serpKey, serpBaseUrl?, engine?, gl?, hl?, aiProvider, aiApiKey, model? }
 export async function POST(req: Request) {
   const workspaceId = await workspaceUserId("spend");
   if (!workspaceId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -39,6 +39,7 @@ export async function POST(req: Request) {
       .replace(/\s+/g, " ").trim();
     const query = [kw, cleanHeading].filter(Boolean).join(" ").trim() || kw || heading;
     const serp = await runSerp(String(b.serpProvider || "serper"), String(b.serpKey), query, {
+      baseUrl: b.serpBaseUrl ? String(b.serpBaseUrl) : undefined,
       gl: b.gl, hl: b.hl, num: 15, engine: (b.engine as SerpEngine) ?? "google",
     });
     const results = serp.results || [];

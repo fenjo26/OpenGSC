@@ -4,6 +4,7 @@ import { workspaceUserId } from "@/lib/team/workspace";
 import { OPENAI_FALLBACK_MODELS } from "@/lib/seo/models";
 import { prisma } from "@/lib/prisma";
 import { runGeoAudit, type GeoEngine, type GeoAnalysisCreds } from "@/lib/seo/geo";
+import { GEO_APARSER_PARSER } from "@/lib/seo/geoAparser";
 import { defaultLanguageFor } from "@/lib/seo/regions";
 
 // GeoAudit isn't in the committed generated client until `prisma generate` re-runs on
@@ -12,7 +13,7 @@ const audits = () => (prisma as any).geoAudit;
 
 // Detached background run — not awaited by the request, so the result is persisted even
 // if the client navigates away. The API key lives only in memory for the run.
-function runAudit(id: string, params: { query: string; language: string; country: string; model: string; apiKey: string; engine: GeoEngine; baseUrl?: string; analysisModel?: string; analysis?: GeoAnalysisCreds }) {
+function runAudit(id: string, params: { query: string; language: string; country: string; model: string; apiKey: string; engine: GeoEngine; baseUrl?: string; analysisModel?: string; analysis?: GeoAnalysisCreds; aparserPreset?: string; aparserConfig?: string }) {
   runGeoAudit(params)
     .then(async (r) => {
       if (r.ok) await audits().update({ where: { id }, data: { status: "completed", report: JSON.stringify(r.data) } });
@@ -33,14 +34,32 @@ export async function POST(req: Request) {
   if (!query) return NextResponse.json({ error: "no_query" }, { status: 400 });
   const apiKey = String(b.apiKey ?? "");
   if (!apiKey) return NextResponse.json({ error: "no_key" }, { status: 400 });
-  const engine: GeoEngine = b.engine === "kie" ? "kie" : b.engine === "gemini" ? "gemini" : "openai";
+  const engine: GeoEngine = b.engine === "kie" ? "kie"
+    : b.engine === "gemini" ? "gemini"
+    : b.engine === "aparser" ? "aparser"
+    : "openai";
   const country = String(b.country ?? "us");
   const language = String(b.language || defaultLanguageFor(country));
+  // On the A-Parser engine the model is reported by the run, not requested — this is only the
+  // placeholder the audit row carries until the report comes back with the id that actually
+  // served the answer.
   const model = String(b.model ?? "")
-    || (engine === "kie" ? "gpt-5-5" : engine === "gemini" ? "gemini-2.5-flash" : OPENAI_FALLBACK_MODELS[0]);
+    || (engine === "aparser" ? GEO_APARSER_PARSER
+      : engine === "kie" ? "gpt-5-5"
+      : engine === "gemini" ? "gemini-2.5-flash"
+      : OPENAI_FALLBACK_MODELS[0]);
   // Engine endpoint override (aiBaseUrl_openai): validated like analysis.baseUrl, because this
   // string decides where the API key is sent.
   const baseUrl = typeof b.baseUrl === "string" && b.baseUrl.trim() ? b.baseUrl.trim() : undefined;
+  // A-Parser has no public host to fall back to, so a missing endpoint is a client bug worth
+  // reporting here rather than a background run that fails a minute later with the same thing.
+  if (engine === "aparser" && !baseUrl) return NextResponse.json({ error: "aparser_no_url" }, { status: 400 });
+  // Preset name inside the user's own installation; bounded because it is echoed into a request
+  // body. The preset is what carries the "Search the web" option, so it is not decoration.
+  const aparserPreset = typeof b.aparserPreset === "string" && b.aparserPreset.trim()
+    ? b.aparserPreset.trim().slice(0, 120) : undefined;
+  const aparserConfig = typeof b.aparserConfig === "string" && b.aparserConfig.trim()
+    ? b.aparserConfig.trim().slice(0, 120) : undefined;
   // Stage-2 model, sent by the client from the `utility` task setting. Optional: an older
   // client that does not send it falls back inside runGeoAudit rather than failing.
   const analysisModel = String(b.analysisModel ?? "") || undefined;
@@ -69,7 +88,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: `db: ${String(e?.message ?? e)} (run: npx prisma db push)` }, { status: 500 });
   }
 
-  runAudit(rec.id, { query, language, country, model, apiKey, engine, baseUrl, analysisModel, analysis }); // fire-and-forget
+  runAudit(rec.id, { query, language, country, model, apiKey, engine, baseUrl, analysisModel, analysis, aparserPreset, aparserConfig }); // fire-and-forget
   return NextResponse.json({ id: rec.id });
 }
 
