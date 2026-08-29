@@ -1391,6 +1391,59 @@ model KeywordVolumeHistory {
 // Spent units per user/provider/month. Written before the request goes out (the cost of an
 // Ahrefs call is fully known from `select` and row count in advance), so a monthly cap can
 // refuse a call instead of discovering the overspend in the response.
+/// One outbound provider request. Append-only in spirit: a row is inserted when the request
+/// settles and completed once the caller has parsed the response, but never restated.
+///
+/// Deliberately NOT a replacement for ApiUsage below, which is a monthly counter written BEFORE
+/// a request to enforce a spending cap. This describes what actually happened, afterwards.
+model ProviderCall {
+  id        String   @id
+  at        DateTime @default(now())
+
+  /// Null when the call had no established context — a visible gap, never a guessed owner.
+  userId    String?
+  /// Route path, or a job type like "outline_auto". Null for the same reason as userId.
+  feature   String?
+
+  provider  String
+  model     String?
+  /// Origin + path only. Query strings and credentials are stripped before this is written.
+  endpoint  String
+
+  /// HTTP status, or 0 for a transport failure that never got one.
+  status    Int
+  /// Wall time from the start of the call to the moment the caller finished it — which is what
+  /// the call actually cost, since `await fetch` returns on headers and an LLM does its
+  /// generating inside the caller's `res.json()`. For a call nobody ever finished, it is the
+  /// time the response headers took to arrive.
+  ms        Int
+  /// Which attempt of a retry ladder this was; 1 for a single-shot call.
+  attempt   Int      @default(1)
+
+  promptTokens     Int?
+  completionTokens Int?
+  /// ONLY what the provider stated. Never computed from a price table — a stale table puts a
+  /// wrong number on screen that looks exactly like a right one.
+  costUsd          Float?
+
+  error     String?
+
+  /// Whether the caller closed this call after parsing.
+  ///
+  /// Without it, null tokens mean two different things — the row was never completed, or the
+  /// provider reported no usage — and this whole feature exists to stop conflating facts like
+  /// that.
+  complete  Boolean  @default(false)
+
+  /// Present only when body capture was switched on. Redacted and truncated.
+  requestBody  String?
+  responseBody String?
+
+  @@index([userId, at])
+  @@index([provider, at])
+  @@index([at])
+}
+
 model ApiUsage {
   userId    String
   provider  String

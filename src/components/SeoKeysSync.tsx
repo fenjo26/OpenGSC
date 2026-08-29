@@ -21,6 +21,11 @@ const EXACT_KEYS = [
   // browser, so a value that lived only in localStorage would be invisible to the thing it
   // configures. It rides the same mirror as everything else rather than getting its own endpoint.
   "seoWarmupSchedule",
+  // Same reason, one step further: the provider log's body-capture switch is read by the logger
+  // inside every server process — API routes, the seven schedulers, the detached job runner —
+  // none of which has a browser to read localStorage from. Left out of this list the toggle would
+  // appear to work and change nothing at all.
+  "seoProviderLogBodies",
   // The keyword-source selector and its behaviour flags — same reason the metrics layer is
   // mirrored: restoring a browser without them silently reverts the content tools to "off".
   "seoKwSource", "seoKwAuto", "seoKwLimit",

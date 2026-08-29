@@ -18,6 +18,9 @@ import { NOTIFY_L, normalizeLang, type NotifyLang } from "@/lib/notifyI18n";
 import { lostSince } from "@/lib/seo/backlinkStore";
 import { detectLossAnomaly, lossCountsForEvent, BASELINE_WINDOW_DAYS } from "@/lib/backlinkDigest";
 import { rawQuery } from "@/lib/db/raw";
+import { resolveCaptureBodies } from '@/lib/providerLog/bodies';
+import { withCallContext } from "@/lib/providerLog/context";
+import { sweepProviderLog } from "@/lib/providerLog/retention";
 
 const TICK_MS = 60 * 60 * 1000; // hourly
 
@@ -303,23 +306,28 @@ export async function runAlertsOnce(userId?: string): Promise<number> {
 
   let fired = 0;
   for (const uid of userIds) {
-    try {
-      const settings = await getAlertSettings(uid);
-      const pending = await checkUser(uid, settings);
-      for (const p of pending) {
-        // Unique dedupeKey — a second tick with the same event is a silent no-op.
-        try {
-          await prisma.alertEvent.create({
-            data: { userId: uid, type: p.type, siteId: p.siteId, title: p.title, message: p.message, dedupeKey: p.dedupeKey },
-          });
-        } catch { continue; } // duplicate — already alerted
-        const ok = await notifyUser(uid, `${p.title}\n\n${p.message}`);
-        if (ok) await prisma.alertEvent.updateMany({ where: { userId: uid, dedupeKey: p.dedupeKey }, data: { sent: true } });
-        fired++;
+    // Wrapped even though today's rules read only stored data: delivery goes out over the
+    // network, and the next rule that asks a provider anything must not have to remember this.
+    const captureBodies = await resolveCaptureBodies(uid);
+    await withCallContext({ userId: uid, feature: "alert-cron", captureBodies }, async () => {
+      try {
+        const settings = await getAlertSettings(uid);
+        const pending = await checkUser(uid, settings);
+        for (const p of pending) {
+          // Unique dedupeKey — a second tick with the same event is a silent no-op.
+          try {
+            await prisma.alertEvent.create({
+              data: { userId: uid, type: p.type, siteId: p.siteId, title: p.title, message: p.message, dedupeKey: p.dedupeKey },
+            });
+          } catch { continue; } // duplicate — already alerted
+          const ok = await notifyUser(uid, `${p.title}\n\n${p.message}`);
+          if (ok) await prisma.alertEvent.updateMany({ where: { userId: uid, dedupeKey: p.dedupeKey }, data: { sent: true } });
+          fired++;
+        }
+      } catch (e) {
+        console.warn(`[alert-cron] user ${uid} failed:`, e);
       }
-    } catch (e) {
-      console.warn(`[alert-cron] user ${uid} failed:`, e);
-    }
+    });
   }
   return fired;
 }
@@ -337,6 +345,13 @@ export function startAlertScheduler() {
     try {
       const n = await runAlertsOnce();
       if (n) console.log(`[alert-cron] fired ${n} alert(s)`);
+      // The provider log's housekeeping rides here rather than on a scheduler of its own. This is
+      // the least busy tick in the process — hourly, and its rules read stored data — so the
+      // deletes contend with the least, and a sweep that skips an hour costs nothing.
+      const swept = await sweepProviderLog();
+      if (swept.bodiesCleared || swept.rowsDeleted) {
+        console.log(`[alert-cron] provider log: cleared ${swept.bodiesCleared} body(s), deleted ${swept.rowsDeleted} row(s)`);
+      }
     } catch (e) {
       console.warn("[alert-cron] tick failed:", e);
     } finally {

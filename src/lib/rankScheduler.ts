@@ -1,5 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { getUserSerpCreds, checkSiteKeywords, RANK_STALE_MS } from '@/lib/rank';
+import { resolveCaptureBodies } from '@/lib/providerLog/bodies';
+import { withCallContext } from '@/lib/providerLog/context';
 
 // Background rank tracking. Runs inside the Next server process (started from
 // instrumentation) — same pattern as the Clarity scheduler, no system cron needed.
@@ -35,18 +37,28 @@ async function tick() {
 
     const credsByUser = new Map<string, Awaited<ReturnType<typeof getUserSerpCreds>>>();
     for (const site of sites) {
-      try {
-        if (!credsByUser.has(site.userId)) {
-          credsByUser.set(site.userId, await getUserSerpCreds(site.userId));
-        }
-        const creds = credsByUser.get(site.userId);
-        if (!creds) continue; // no SERP key configured — nothing we can do
+      // A timer inherits no request, so the log would file every one of these paid SERP calls
+      // under nobody unless the owner is named here. The wrapper goes around the whole per-site
+      // body, credential read included: a call made a line above it is a call logged as nobody's.
+      //
+      // Bodies are the site owner's own opt-in, read once here because the logger cannot read it
+      // later. A tick that spans an hour keeps whatever it started with, which the settings copy
+      // says out loud.
+      const captureBodies = await resolveCaptureBodies(site.userId);
+      await withCallContext({ userId: site.userId, feature: "rank-cron", captureBodies }, async () => {
+        try {
+          if (!credsByUser.has(site.userId)) {
+            credsByUser.set(site.userId, await getUserSerpCreds(site.userId));
+          }
+          const creds = credsByUser.get(site.userId);
+          if (!creds) return; // no SERP key configured — nothing we can do
 
-        const r = await checkSiteKeywords(site.id, site.url, creds, { limit: PER_SITE_CAP });
-        if (r.checked > 0) console.log(`[rank-cron] ${site.url}: checked ${r.checked}, errors ${r.errors}, remaining ${r.remaining}`);
-      } catch (e) {
-        console.warn(`[rank-cron] site ${site.id} failed:`, e);
-      }
+          const r = await checkSiteKeywords(site.id, site.url, creds, { limit: PER_SITE_CAP });
+          if (r.checked > 0) console.log(`[rank-cron] ${site.url}: checked ${r.checked}, errors ${r.errors}, remaining ${r.remaining}`);
+        } catch (e) {
+          console.warn(`[rank-cron] site ${site.id} failed:`, e);
+        }
+      });
     }
   } catch (e) {
     console.warn('[rank-cron] tick failed:', e);

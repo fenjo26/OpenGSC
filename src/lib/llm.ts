@@ -6,6 +6,11 @@
 // `modelOverride` and wins outright.
 
 import { defaultModelFor } from '@/lib/providerDefaults';
+// One row per outbound request. The unit that gets logged is the fetch, not the function call:
+// openrouter below fires a second, separately billed request when a route rejects `reasoning`,
+// and a logger sitting at the tail of this function would have recorded one of the two.
+import { loggedFetch, type CallHandle } from '@/lib/providerLog/log';
+import { usageFrom } from '@/lib/providerLog/tokens';
 
 // Kie.ai's "Codex" endpoint (GPT-5.5) speaks the OpenAI *Responses* API shape, not classic
 // chat-completions: `input` is an array of {role, content:[...]} messages (content items are
@@ -234,7 +239,7 @@ export async function fetchLLMDetailed(
   for (let i = 0; i < Math.min(cap, delays.length); i++) {
     const wait = i === 0 ? 0 : Math.max(delays[i], askedWait ?? 0);
     if (wait) await new Promise(r => setTimeout(r, wait + Math.floor(Math.random() * 4_000)));
-    const r = await fetchLLMOnce(prompt, provider, apiKey, maxTokens, modelOverride, baseUrl, temperature, enableThinking);
+    const r = await fetchLLMOnce(prompt, provider, apiKey, maxTokens, modelOverride, baseUrl, temperature, enableThinking, undefined, i + 1);
     if (r.text != null) return { text: r.text, finishReason: r.finishReason };
     lastError = r.errorDetail;
     askedWait = r.retryAfterMs;
@@ -332,6 +337,15 @@ async function fetchLLMOnce(
   /** Per-call abort budget. Generation calls keep the 280s default; cheap probes (pingProvider)
    *  pass a short one so a black-holed upstream fails in seconds, not minutes. */
   timeoutMs = 280_000,
+  /**
+   * Which rung of the caller's retry ladder this is, for the log.
+   *
+   * It has to be handed down rather than counted here, because the ladder is not always three
+   * rungs long: `attemptCapFor` shortens it to two for the gateway failure that no amount of
+   * retrying fixes. Counting fetches instead would also be wrong in the other direction — the
+   * openrouter branch makes two requests within a single attempt.
+   */
+  attempt = 1,
 ): Promise<{ text: string | null; retryable: boolean; errorDetail?: string; finishReason?: string; retryAfterMs?: number }> {
   // Hard timeout so a stuck/over-long generation fails in minutes instead of hanging forever.
   const ctrl = new AbortController();
@@ -351,6 +365,31 @@ async function fetchLLMOnce(
     // article was written from a structure that stopped mid-way through its own section list.
     let finishReason: string | undefined;
     let lastData: any = null;
+    /**
+     * Close the row for a 200, where its body has just been parsed.
+     *
+     * Here rather than at the tail of the function: the usage block is the only place the tokens
+     * exist, and `lastData` is not in scope in the sibling `finally`. Called AFTER `text` and
+     * `finishReason` are set, which is what lets it record the failure the log otherwise files as
+     * a clean success — a 200 that produced no text is reported to the caller through
+     * `emptyCompletionDetail`, while the row showed a billed call with `error: null` and nothing
+     * for an operator to go on.
+     *
+     * Wrapped, because `usageFrom` is evaluated out here rather than inside `log.ts`'s own guard.
+     * It is pure optional chaining and will not throw in practice, but if it did the throw would
+     * land in this function's catch and mark an already-billed call retryable — bookkeeping
+     * failing the provider call it exists to record, which is the one thing it must never do.
+     */
+    const closeCall = (call: CallHandle, data: any, model?: string): void => {
+      try {
+        call.finish({
+          ...usageFrom(provider, data), model, responseBody: data,
+          error: text.trim() ? null : emptyCompletionDetail(provider, finishReason, model, data),
+        });
+      } catch (e) {
+        console.error('[LLM] a provider call could not be recorded:', e);
+      }
+    };
     if (provider === 'anthropic' || (provider === 'zai' && zaiAnthropicShape(baseUrl))) {
       // For zai this branch is now the OPT-IN path, reached only when the user points the base URL
       // at the Coding Plan's Anthropic endpoint. See zaiRoot() for why that is no longer the default.
@@ -362,7 +401,7 @@ async function fetchLLMOnce(
       const proxy = provider === 'anthropic' ? anthropicRoot(baseUrl) : null;
       const root = provider === 'zai' ? zaiRoot(baseUrl) : proxy ? proxy.root : 'https://api.anthropic.com';
       const model = modelOverride ?? defaultModelFor(provider);
-      const res = await fetch(`${root}/v1/messages`, {
+      const { res, call } = await loggedFetch(`${root}/v1/messages`, {
         method: 'POST', signal: sig,
         headers: {
           ...(proxy?.proxied ? { 'Authorization': `Bearer ${apiKey}` } : {}),
@@ -373,16 +412,19 @@ async function fetchLLMOnce(
           ...temp(temperature, model),
           ...zaiThinking(provider, enableThinking),
         }),
-      });
+      }, { provider, model, attempt });
       if (!res.ok) {
         const bodyText = await res.text().catch(() => '');
         console.error('[LLM]', provider, res.status, bodyText);
-        return { text: null, retryable: retryableStatus(res.status), retryAfterMs: retryAfterFrom(res, res.status), errorDetail: extractErrorDetail(provider, res.status, bodyText) };
+        const detail = extractErrorDetail(provider, res.status, bodyText);
+        call.finish({ error: detail, responseBody: bodyText });
+        return { text: null, retryable: retryableStatus(res.status), retryAfterMs: retryAfterFrom(res, res.status), errorDetail: detail };
       }
       const data = await res.json();
       lastData = data;
       finishReason = data?.stop_reason;
       text = anthropicText(data);
+      closeCall(call, data, model);
     } else if (provider === 'openai' || provider === 'deepseek' || provider === 'qwen' || provider === 'zai') {
       // GPT-5.x models reject the legacy `max_tokens` param — `max_completion_tokens` is the
       // replacement and is also accepted by every still-supported older model.
@@ -402,7 +444,7 @@ async function fetchLLMOnce(
       const model = modelOverride ?? defaultModelFor(provider);
       const tokenParam = (provider === 'deepseek' || provider === 'qwen' || provider === 'zai') ? 'max_tokens' : 'max_completion_tokens';
 
-      const res = await fetch(url, {
+      const { res, call } = await loggedFetch(url, {
         method: 'POST', signal: sig,
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -410,22 +452,25 @@ async function fetchLLMOnce(
           ...temp(temperature, model),
           ...zaiThinking(provider, enableThinking),
         }),
-      });
+      }, { provider, model, attempt });
       if (!res.ok) {
         const bodyText = await res.text().catch(() => '');
         console.error(`[LLM] ${provider}`, res.status, bodyText);
-        return { text: null, retryable: retryableStatus(res.status), retryAfterMs: retryAfterFrom(res, res.status), errorDetail: extractErrorDetail(provider, res.status, bodyText) };
+        const detail = extractErrorDetail(provider, res.status, bodyText);
+        call.finish({ error: detail, responseBody: bodyText });
+        return { text: null, retryable: retryableStatus(res.status), retryAfterMs: retryAfterFrom(res, res.status), errorDetail: detail };
       }
       const data = await res.json();
       lastData = data;
       finishReason = data?.choices?.[0]?.finish_reason;
       text = openAiText(data);
+      closeCall(call, data, model);
     } else if (provider === 'gemini') {
       const gModel = modelOverride ?? defaultModelFor('gemini');
       // Endpoint override (aiBaseUrl_gemini) — Gemini-format gateways (NewAPI serves this shape
       // too). Empty = Google's own API.
       const gRoot = (baseUrl || '').trim().replace(/\/+$/, '') || 'https://generativelanguage.googleapis.com';
-      const res = await fetch(`${gRoot}/v1beta/models/${gModel}:generateContent?key=${apiKey}`, {
+      const { res, call } = await loggedFetch(`${gRoot}/v1beta/models/${gModel}:generateContent?key=${apiKey}`, {
         method: 'POST', signal: sig,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -440,16 +485,19 @@ async function fetchLLMOnce(
             ...(temperature !== undefined ? { temperature: clampTemp('gemini', temperature) } : {}),
           },
         }),
-      });
+      }, { provider, model: gModel, attempt });
       if (!res.ok) {
         const bodyText = await res.text().catch(() => '');
         console.error('[LLM] gemini', res.status, bodyText);
-        return { text: null, retryable: retryableStatus(res.status), retryAfterMs: retryAfterFrom(res, res.status), errorDetail: extractErrorDetail('gemini', res.status, bodyText) };
+        const detail = extractErrorDetail('gemini', res.status, bodyText);
+        call.finish({ error: detail, responseBody: bodyText });
+        return { text: null, retryable: retryableStatus(res.status), retryAfterMs: retryAfterFrom(res, res.status), errorDetail: detail };
       }
       const data = await res.json();
       lastData = data;
       finishReason = data?.candidates?.[0]?.finishReason;
       text = geminiText(data);
+      closeCall(call, data, gModel);
     } else if (provider === 'openrouter') {
       const orModel = modelOverride ?? defaultModelFor('openrouter');
       // Half of OpenRouter's catalogue reasons by default and bills those tokens against the same
@@ -468,31 +516,42 @@ async function fetchLLMOnce(
         if (!b) return 'https://openrouter.ai/api/v1/chat/completions';
         return /\/chat\/completions$/.test(b) ? b : `${b}/chat/completions`;
       })();
-      const orCall = (withReasoning: boolean) => fetch(orUrl, {
+      // Logged inside `orCall`, not around it: the retry below is a second request OpenRouter
+      // bills for in its own right, and a row opened once outside this arrow would have covered
+      // both and reported only the survivor.
+      const orCall = (withReasoning: boolean) => loggedFetch(orUrl, {
         method: 'POST', signal: sig,
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         body: orBody(withReasoning),
-      });
-      let res = await orCall(enableThinking);
+      }, { provider, model: orModel, attempt });
+      let { res, call } = await orCall(enableThinking);
       if (!res.ok) {
         const bodyText = await res.text().catch(() => '');
         if (res.status === 400 && !enableThinking && /reasoning/i.test(bodyText)) {
           console.error('[LLM] openrouter: route rejected reasoning:{enabled:false} — retrying without it');
-          res = await orCall(true);
+          // The rejected request is finished here because nothing downstream will ever see it
+          // again: `call` is about to point at the retry's row.
+          call.finish({ error: extractErrorDetail('openrouter', res.status, bodyText), responseBody: bodyText });
+          ({ res, call } = await orCall(true));
         } else {
           console.error('[LLM] openrouter', res.status, bodyText);
-          return { text: null, retryable: retryableStatus(res.status), retryAfterMs: retryAfterFrom(res, res.status), errorDetail: extractErrorDetail('openrouter', res.status, bodyText) };
+          const detail = extractErrorDetail('openrouter', res.status, bodyText);
+          call.finish({ error: detail, responseBody: bodyText });
+          return { text: null, retryable: retryableStatus(res.status), retryAfterMs: retryAfterFrom(res, res.status), errorDetail: detail };
         }
       }
       if (!res.ok) {
         const bodyText = await res.text().catch(() => '');
         console.error('[LLM] openrouter', res.status, bodyText);
-        return { text: null, retryable: retryableStatus(res.status), retryAfterMs: retryAfterFrom(res, res.status), errorDetail: extractErrorDetail('openrouter', res.status, bodyText) };
+        const detail = extractErrorDetail('openrouter', res.status, bodyText);
+        call.finish({ error: detail, responseBody: bodyText });
+        return { text: null, retryable: retryableStatus(res.status), retryAfterMs: retryAfterFrom(res, res.status), errorDetail: detail };
       }
       const data = await res.json();
       lastData = data;
       finishReason = data?.choices?.[0]?.finish_reason;
       text = openAiText(data);
+      closeCall(call, data, orModel);
     } else if (provider === 'cheaperinference') {
       // Cheaper Inference — an OpenAI-compatible gateway that ranks provider routes by price and
       // fails over down that ranking, so one id can be served by several upstreams.
@@ -509,50 +568,57 @@ async function fetchLLMOnce(
       // the outline step can be kept off them deliberately.
       const ciModel = modelOverride ?? defaultModelFor('cheaperinference');
       const ciRoot = (baseUrl || 'https://api.cheaperinference.com/v1').replace(/\/+$/, '');
-      const res = await fetch(`${ciRoot}/chat/completions`, {
+      const { res, call } = await loggedFetch(`${ciRoot}/chat/completions`, {
         method: 'POST', signal: sig,
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: ciModel, max_tokens: maxTokens, messages: [{ role: 'user', content: prompt }], ...temp(temperature, ciModel) }),
-      });
+      }, { provider, model: ciModel, attempt });
       if (!res.ok) {
         const bodyText = await res.text().catch(() => '');
         console.error('[LLM] cheaperinference', res.status, bodyText);
         // 402 is this gateway's own signal and deserves to survive the trip: it means the wallet
         // is empty, not that the request was wrong, and retrying it burns three attempts on a
         // condition only the account owner can clear.
-        return { text: null, retryable: retryableStatus(res.status), retryAfterMs: retryAfterFrom(res, res.status), errorDetail: extractErrorDetail('cheaperinference', res.status, bodyText) };
+        const detail = extractErrorDetail('cheaperinference', res.status, bodyText);
+        call.finish({ error: detail, responseBody: bodyText });
+        return { text: null, retryable: retryableStatus(res.status), retryAfterMs: retryAfterFrom(res, res.status), errorDetail: detail };
       }
       const data = await res.json();
       lastData = data;
       finishReason = data?.choices?.[0]?.finish_reason;
       text = openAiText(data);
+      closeCall(call, data, ciModel);
     } else if (provider === 'kimi') {
       // Kimi (Moonshot AI) — OpenAI-compatible chat completions. Default: Kimi K3
       // (flagship, 1M context, vision). baseUrl override supported for the .cn endpoint.
       const kimiModel = modelOverride ?? defaultModelFor('kimi');
       const root = (baseUrl || 'https://api.moonshot.ai/v1').replace(/\/+$/, '');
-      const res = await fetch(`${root}/chat/completions`, {
+      const { res, call } = await loggedFetch(`${root}/chat/completions`, {
         method: 'POST', signal: sig,
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: kimiModel, max_tokens: maxTokens, messages: [{ role: 'user', content: prompt }], ...temp(temperature, kimiModel) }),
-      });
+      }, { provider, model: kimiModel, attempt });
       if (!res.ok) {
         const bodyText = await res.text().catch(() => '');
         console.error('[LLM] kimi', res.status, bodyText);
-        return { text: null, retryable: retryableStatus(res.status), retryAfterMs: retryAfterFrom(res, res.status), errorDetail: extractErrorDetail('kimi', res.status, bodyText) };
+        const detail = extractErrorDetail('kimi', res.status, bodyText);
+        call.finish({ error: detail, responseBody: bodyText });
+        return { text: null, retryable: retryableStatus(res.status), retryAfterMs: retryAfterFrom(res, res.status), errorDetail: detail };
       }
       const data = await res.json();
       lastData = data;
       finishReason = data?.choices?.[0]?.finish_reason;
       text = openAiText(data);
+      closeCall(call, data, kimiModel);
     } else if (provider === 'kie') {
       // Kie.ai "Codex" (GPT-5.5) — Responses API, distinct from the "custom" chat-completions path.
       const root = (baseUrl || 'https://api.kie.ai').replace(/\/+$/, '');
-      const res = await fetch(`${root}/codex/v1/responses`, {
+      const kieModel = modelOverride ?? defaultModelFor('kie');
+      const { res, call } = await loggedFetch(`${root}/codex/v1/responses`, {
         method: 'POST', signal: sig,
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: modelOverride ?? defaultModelFor('kie'),
+          model: kieModel,
           stream: false,
           input: [{ role: 'user', content: [{ type: 'input_text', text: prompt }] }],
           // Reasoning tokens are drawn from the same output budget as the answer, so a step that
@@ -561,11 +627,13 @@ async function fetchLLMOnce(
           // (the default) and get the cheapest effort; prose callers opt back in.
           reasoning: { effort: enableThinking ? 'medium' : 'low' },
         }),
-      });
+      }, { provider, model: kieModel, attempt });
       if (!res.ok) {
         const bodyText = await res.text().catch(() => '');
         console.error('[LLM] kie', res.status, bodyText);
-        return { text: null, retryable: retryableStatus(res.status), retryAfterMs: retryAfterFrom(res, res.status), errorDetail: extractErrorDetail('kie', res.status, bodyText) };
+        const detail = extractErrorDetail('kie', res.status, bodyText);
+        call.finish({ error: detail, responseBody: bodyText });
+        return { text: null, retryable: retryableStatus(res.status), retryAfterMs: retryAfterFrom(res, res.status), errorDetail: detail };
       }
       const data = await res.json();
       lastData = data;
@@ -575,6 +643,7 @@ async function fetchLLMOnce(
         ? (data?.incomplete_details?.reason ?? 'incomplete')
         : data?.status;
       text = parseKieOutput(data);
+      closeCall(call, data, kieModel);
     } else if (provider === 'custom') {
       // Any OpenAI-compatible endpoint. baseUrl is the API root; we call /chat/completions.
       const root = (baseUrl || '').replace(/\/+$/, '');
@@ -589,20 +658,23 @@ async function fetchLLMOnce(
         console.error('[LLM] custom: no model configured');
         return { text: null, retryable: false, errorDetail: 'custom: no model configured — set one in Settings' };
       }
-      const res = await fetch(url, {
+      const { res, call } = await loggedFetch(url, {
         method: 'POST', signal: sig,
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: customModel, max_tokens: maxTokens, messages: [{ role: 'user', content: prompt }], ...temp(temperature, customModel) }),
-      });
+      }, { provider, model: customModel, attempt });
       if (!res.ok) {
         const bodyText = await res.text().catch(() => '');
         console.error('[LLM] custom', res.status, bodyText);
-        return { text: null, retryable: retryableStatus(res.status), retryAfterMs: retryAfterFrom(res, res.status), errorDetail: extractErrorDetail('custom', res.status, bodyText) };
+        const detail = extractErrorDetail('custom', res.status, bodyText);
+        call.finish({ error: detail, responseBody: bodyText });
+        return { text: null, retryable: retryableStatus(res.status), retryAfterMs: retryAfterFrom(res, res.status), errorDetail: detail };
       }
       const data = await res.json();
       lastData = data;
       finishReason = data?.choices?.[0]?.finish_reason;
       text = openAiText(data);
+      closeCall(call, data, customModel);
     } else {
       // No branch matched. This used to fall through to `return { text: '' }` — a *successful*
       // empty completion for a provider that was never called at all, which the outline pipeline
@@ -649,11 +721,22 @@ export async function fetchLLMVision(
   const b64 = imageBase64.includes(',') ? imageBase64.split(',').pop()! : imageBase64;
   try {
     let text = '';
+    // A screenshot is thousands of prompt tokens — the most expensive call this file makes, and
+    // until now the only one that left no trace at all. Wrapped for the same reason as the
+    // closure in fetchLLMOnce: `usageFrom` runs outside log.ts's guard, and a logging throw must
+    // not be what fails a call the provider has already been paid for.
+    const closeCall = (call: CallHandle, data: any, model?: string): void => {
+      try {
+        call.finish({ ...usageFrom(provider, data), model, responseBody: data });
+      } catch (e) {
+        console.error('[LLM vision] a provider call could not be recorded:', e);
+      }
+    };
     if (provider === 'anthropic' || provider === 'zai') {
       const proxy = provider === 'anthropic' ? anthropicRoot(baseUrl) : null;
       const base = provider === 'zai' ? zaiRoot(baseUrl) : proxy ? proxy.root : 'https://api.anthropic.com';
       const model = modelOverride ?? defaultModelFor(provider, 'vision');
-      const res = await fetch(`${base}/v1/messages`, {
+      const { res, call } = await loggedFetch(`${base}/v1/messages`, {
         method: 'POST', signal: sig,
         headers: {
           ...(proxy?.proxied ? { 'Authorization': `Bearer ${apiKey}` } : {}),
@@ -668,21 +751,33 @@ export async function fetchLLMVision(
             { type: 'text', text: prompt },
           ] }],
         }),
-      });
-      if (!res.ok) { console.error('[LLM vision]', provider, res.status, await res.text()); return null; }
+      }, { provider, model });
+      if (!res.ok) {
+        const bodyText = await res.text().catch(() => '');
+        console.error('[LLM vision]', provider, res.status, bodyText);
+        call.finish({ error: extractErrorDetail(provider, res.status, bodyText), responseBody: bodyText });
+        return null;
+      }
       const data = await res.json();
       text = data.content?.[0]?.text ?? '';
+      closeCall(call, data, model);
     } else if (provider === 'gemini') {
       const gModel = modelOverride ?? defaultModelFor('gemini', 'vision');
       const gRoot = (baseUrl || '').trim().replace(/\/+$/, '') || 'https://generativelanguage.googleapis.com';
-      const res = await fetch(`${gRoot}/v1beta/models/${gModel}:generateContent?key=${apiKey}`, {
+      const { res, call } = await loggedFetch(`${gRoot}/v1beta/models/${gModel}:generateContent?key=${apiKey}`, {
         method: 'POST', signal: sig,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType, data: b64 } }] }] }),
-      });
-      if (!res.ok) { console.error('[LLM vision] gemini', res.status); return null; }
+      }, { provider, model: gModel });
+      if (!res.ok) {
+        const bodyText = await res.text().catch(() => '');
+        console.error('[LLM vision] gemini', res.status, bodyText);
+        call.finish({ error: extractErrorDetail('gemini', res.status, bodyText), responseBody: bodyText });
+        return null;
+      }
       const data = await res.json();
       text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+      closeCall(call, data, gModel);
     } else if (provider === 'openai' || provider === 'openrouter' || provider === 'custom' || provider === 'kimi' || provider === 'deepseek' || provider === 'qwen' || provider === 'cheaperinference') {
       const dataUrl = `data:${mimeType};base64,${b64}`;
       const content = [
@@ -703,14 +798,20 @@ export async function fetchLLMVision(
         url = /\/chat\/completions$/.test(root) ? root : `${root}/chat/completions`;
         tokenParam = 'max_tokens';
       }
-      const res = await fetch(url, {
+      const { res, call } = await loggedFetch(url, {
         method: 'POST', signal: sig,
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ model, [tokenParam]: maxTokens, messages: [{ role: 'user', content }] }),
-      });
-      if (!res.ok) { console.error('[LLM vision]', provider, res.status, await res.text().catch(() => '')); return null; }
+      }, { provider, model });
+      if (!res.ok) {
+        const bodyText = await res.text().catch(() => '');
+        console.error('[LLM vision]', provider, res.status, bodyText);
+        call.finish({ error: extractErrorDetail(provider, res.status, bodyText), responseBody: bodyText });
+        return null;
+      }
       const data = await res.json();
       text = data.choices?.[0]?.message?.content ?? '';
+      closeCall(call, data, model);
     } else if (provider === 'kie') {
       // NOTE: the Codex Responses API's `input_image.image_url` is documented as a "publicly
       // accessible URL" — unclear if kie.ai's backend also accepts base64 data URIs the way
@@ -718,11 +819,12 @@ export async function fetchLLMVision(
       // if the backend rejects it, same as any other provider error path here.
       const root = (baseUrl || 'https://api.kie.ai').replace(/\/+$/, '');
       const dataUrl = `data:${mimeType};base64,${b64}`;
-      const res = await fetch(`${root}/codex/v1/responses`, {
+      const kieModel = modelOverride ?? defaultModelFor('kie', 'vision');
+      const { res, call } = await loggedFetch(`${root}/codex/v1/responses`, {
         method: 'POST', signal: sig,
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: modelOverride ?? defaultModelFor('kie', 'vision'),
+          model: kieModel,
           stream: false,
           input: [{ role: 'user', content: [
             { type: 'input_text', text: prompt },
@@ -730,10 +832,16 @@ export async function fetchLLMVision(
           ] }],
           reasoning: { effort: 'medium' },
         }),
-      });
-      if (!res.ok) { console.error('[LLM vision] kie', res.status, await res.text().catch(() => '')); return null; }
+      }, { provider, model: kieModel });
+      if (!res.ok) {
+        const bodyText = await res.text().catch(() => '');
+        console.error('[LLM vision] kie', res.status, bodyText);
+        call.finish({ error: extractErrorDetail('kie', res.status, bodyText), responseBody: bodyText });
+        return null;
+      }
       const data = await res.json();
       text = parseKieOutput(data);
+      closeCall(call, data, kieModel);
     } else {
       console.error('[LLM vision] unsupported provider', provider);
       return null;

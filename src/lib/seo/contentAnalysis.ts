@@ -3,21 +3,13 @@
 // this single confirmed endpoint and compute the summary ourselves (robust).
 // Docs: https://docs.dataforseo.com/v3/content_analysis/search/live/
 
-export type Polarity = "positive" | "neutral" | "negative";
-export const EMOTIONS = ["anger", "happiness", "love", "sadness", "share", "fun"] as const;
-export type Emotion = typeof EMOTIONS[number];
+import { loggedFetch, type CallHandle } from "@/lib/providerLog/log";
 
-export interface Citation {
-  url: string;
-  domain: string;
-  title: string;
-  snippet: string;
-  polarity: Polarity;
-  emotions: Record<Emotion, number>;
-  topEmotion?: Emotion;
-  date: string;
-  score: number;
-}
+// The shapes and the emotion list live next door because the Citations page needs them in the
+// browser, and this module — since its DataForSEO call became a logged one — reaches the Prisma
+// client. Re-exported here so every existing server-side import is unchanged.
+export * from "./contentAnalysisShapes";
+import { EMOTIONS, type Citation, type Emotion, type Polarity } from "./contentAnalysisShapes";
 
 function dfsAuth(cred: string): string {
   const c = (cred || "").trim();
@@ -45,21 +37,38 @@ export async function runContentSearch(
   }];
 
   let res: Response;
+  let call: CallHandle;
   try {
-    res = await fetch("https://api.dataforseo.com/v3/content_analysis/search/live", {
+    ({ res, call } = await loggedFetch("https://api.dataforseo.com/v3/content_analysis/search/live", {
       method: "POST",
       headers: { Authorization: `Basic ${dfsAuth(credential)}`, "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(45000),
-    });
+    }, { provider: "dataforseo" }));
   } catch (e: any) {
     return { total: 0, items: [], error: `сеть DataForSEO: ${e?.cause?.code || e?.cause?.message || e?.message || "fetch failed"}` };
   }
-  if (!res.ok) return { total: 0, items: [], error: `dataforseo ${res.status}: ${(await res.text()).slice(0, 200)}` };
+  if (!res.ok) {
+    const error = `dataforseo ${res.status}: ${(await res.text()).slice(0, 200)}`;
+    call.finish({ error });
+    return { total: 0, items: [], error };
+  }
   const data = await res.json();
-  if (data?.status_code && data.status_code !== 20000) return { total: 0, items: [], error: `dataforseo ${data.status_code}: ${data.status_message}` };
+  // DataForSEO states what the request cost, in dollars, in the envelope. Read, never computed,
+  // and read before the status checks: a task that failed inside a 200 was still charged for.
+  const costUsd = Number.isFinite(Number(data?.cost)) ? Number(data.cost) : null;
+  if (data?.status_code && data.status_code !== 20000) {
+    const error = `dataforseo ${data.status_code}: ${data.status_message}`;
+    call.finish({ error, costUsd });
+    return { total: 0, items: [], error };
+  }
   const taskObj = data?.tasks?.[0];
-  if (taskObj?.status_code && taskObj.status_code !== 20000) return { total: 0, items: [], error: `dataforseo task ${taskObj.status_code}: ${taskObj.status_message}` };
+  if (taskObj?.status_code && taskObj.status_code !== 20000) {
+    const error = `dataforseo task ${taskObj.status_code}: ${taskObj.status_message}`;
+    call.finish({ error, costUsd });
+    return { total: 0, items: [], error };
+  }
+  call.finish({ costUsd });
 
   const result = taskObj?.result?.[0] ?? {};
   const total: number = result.total_count ?? (result.items?.length ?? 0);

@@ -12,6 +12,8 @@
 // Stage 3 (DERIVE): everything numeric (metrics, trust signals, inclusion patterns, source
 //   breakdown, leaderboard scores) is computed deterministically in code from the trace.
 
+import { loggedFetch, type CallHandle } from "@/lib/providerLog/log";
+import { usageFrom } from "@/lib/providerLog/tokens";
 import { extractJson } from "@/lib/seo/prompts";
 import { OPENAI_FALLBACK_MODELS, OPENAI_FALLBACK_CHEAP } from "@/lib/seo/models";
 import { fetchLLMDetailed } from "@/lib/llm";
@@ -168,19 +170,22 @@ async function runGeminiGroundedSearch(
   const root = (baseUrl || "").replace(/\/+$/, "") || "https://generativelanguage.googleapis.com/v1beta";
   const input = buildSearchInput(query, language, country);
   try {
-    const res = await fetch(`${root}/models/${encodeURIComponent(model)}:generateContent`, {
+    const { res, call } = await loggedFetch(`${root}/models/${encodeURIComponent(model)}:generateContent`, {
       method: "POST", signal: ctrl.signal,
       headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{ role: "user", parts: [{ text: input }] }],
         tools: [{ google_search: {} }],
       }),
-    });
+    }, { provider: "gemini", model });
     if (!res.ok) {
       const t = await res.text().catch(() => "");
-      return { error: `gemini_${res.status}: ${t.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160)}` };
+      const error = `gemini_${res.status}: ${t.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160)}`;
+      call.finish({ error });
+      return { error };
     }
     const data = await res.json();
+    call.finish({ ...usageFrom("gemini", data), responseBody: data });
     const cand = Array.isArray(data?.candidates) ? data.candidates[0] : null;
     const parts: any[] = Array.isArray(cand?.content?.parts) ? cand.content.parts : [];
     let answerText = "";
@@ -283,8 +288,16 @@ async function runWebSearch(query: string, language: string, country: string, mo
   // kie.ai documents `stream: true` → SSE on its Responses mirror like OpenAI's own.
   const wantsStream = true;
 
+  // Every rung of the ladder below is its own request and its own row: a tool name the provider
+  // rejects is a separate call which may itself have been billed, and one row for the lot would
+  // hide however many round trips an audit actually took. `logged` holds the row for the request
+  // currently in hand; each is closed where its outcome is read.
+  let attempt = 0;
+  let logged: CallHandle | undefined;
+
   async function call(toolType: string) {
-    return fetch(endpoint, {
+    attempt += 1;
+    const opened = await loggedFetch(endpoint, {
       method: "POST", signal: ctrl.signal,
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -295,7 +308,9 @@ async function runWebSearch(query: string, language: string, country: string, mo
         include: ["web_search_call.action.sources"],
         input,
       }),
-    });
+    }, { provider: engine, model, attempt });
+    logged = opened.call;
+    return opened.res;
   }
 
   // SSE reader for the Responses API: ignore progress events, take the terminal
@@ -339,6 +354,7 @@ async function runWebSearch(query: string, language: string, country: string, mo
     let res = await call("web_search");
     if (!res.ok) {
       const errText = await res.text();
+      logged?.finish({ error: `${engine}_${res.status}: ${errText.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160)}` });
       // Older OpenAI snapshots expose the tool as `web_search_preview`; retry once. kie.ai's unified
       // endpoint only documents `web_search`, so skip the retry there.
       if (engine === "openai" && (/web_search(?!_preview)/.test(errText) || /tool/i.test(errText))) {
@@ -347,19 +363,35 @@ async function runWebSearch(query: string, language: string, country: string, mo
       if (!res.ok) {
         const t2 = res.ok ? "" : await res.text().catch(() => errText);
         // Cloudflare's 524 page is HTML noise — keep only the status, it already names the cause.
-        return { error: `${engine}_${res.status}: ${(t2 || errText).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160)}` };
+        // A no-op on the row already closed above when no retry was made — a second close is
+        // ignored, so the first outcome recorded stands.
+        const error = `${engine}_${res.status}: ${(t2 || errText).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160)}`;
+        logged?.finish({ error });
+        return { error };
       }
     }
     if (wantsStream) {
       const sse = await readSse(res);
-      if (sse.error) return { error: `openai_stream: ${sse.error}` };
-      if (!sse.data) return { error: "openai_stream: no_response" };
+      if (sse.error) {
+        logged?.finish({ error: `openai_stream: ${sse.error}` });
+        return { error: `openai_stream: ${sse.error}` };
+      }
+      if (!sse.data) {
+        logged?.finish({ error: "openai_stream: no_response" });
+        return { error: "openai_stream: no_response" };
+      }
+      // The Responses API reports usage as input_tokens/output_tokens — the dialect tokens.ts
+      // spells under "kie", which is the same endpoint shape whichever host serves it.
+      logged?.finish({ ...usageFrom("kie", sse.data), responseBody: sse.data });
       return parseResponses(sse.data);
     }
     const data = await res.json();
+    logged?.finish({ ...usageFrom("kie", data), responseBody: data });
     return parseResponses(data);
   } catch (e: any) {
-    return { error: e?.name === "AbortError" ? `timeout_after_${Math.round(SEARCH_TIMEOUT_MS / 60_000)}m` : String(e?.message ?? e) };
+    const error = e?.name === "AbortError" ? `timeout_after_${Math.round(SEARCH_TIMEOUT_MS / 60_000)}m` : String(e?.message ?? e);
+    logged?.finish({ error });
+    return { error };
   } finally {
     clearTimeout(timer);
   }
@@ -622,7 +654,7 @@ async function runAnalysis(
       // (It used to send `gpt-5-2`, an undocumented lighter id chosen for cost; a private id no
       // listing confirms is exactly the kind of guess that breaks silently.) Same Responses-API
       // endpoint as stage 1, minus the tools, with reasoning dialled down for a structured pass.
-      const res = await fetch("https://api.kie.ai/codex/v1/responses", {
+      const { res, call } = await loggedFetch("https://api.kie.ai/codex/v1/responses", {
         method: "POST", signal: ctrl.signal,
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -630,9 +662,13 @@ async function runAnalysis(
           input: [{ role: "user", content: [{ type: "input_text", text: prompt }] }],
           reasoning: { effort: "low" },
         }),
-      });
-      if (!res.ok) return null;
+      }, { provider: "kie", model: defaultModelFor("kie") });
+      if (!res.ok) {
+        call.finish({ error: `kie_${res.status}` });
+        return null;
+      }
       const data = await res.json();
+      call.finish({ ...usageFrom("kie", data), responseBody: data });
       const out: any[] = Array.isArray(data?.output) ? data.output : [];
       let text = "";
       for (const item of out) {
@@ -647,7 +683,7 @@ async function runAnalysis(
     // key, and a gateway key against api.openai.com is a guaranteed 401 (and a silently hollow
     // report — a failed analysis is deliberately not a failed audit).
     const root = (baseUrl || "").replace(/\/+$/, "");
-    const res = await fetch(root ? `${root}/chat/completions` : "https://api.openai.com/v1/chat/completions", {
+    const { res, call } = await loggedFetch(root ? `${root}/chat/completions` : "https://api.openai.com/v1/chat/completions", {
       method: "POST", signal: ctrl.signal,
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -659,11 +695,17 @@ async function runAnalysis(
         // gateway's time-to-first-byte window. Deltas start flowing immediately; [DONE] ends it.
         ...(root ? { stream: true } : {}),
       }),
-    });
-    if (!res.ok) return null;
+    }, { provider: "openai", model: analysisModel });
+    if (!res.ok) {
+      call.finish({ error: `openai_${res.status}` });
+      return null;
+    }
     if (root) {
       const reader = res.body?.getReader();
-      if (!reader) return null;
+      if (!reader) {
+        call.finish({ error: "no_stream_body" });
+        return null;
+      }
       const decoder = new TextDecoder();
       let buf = "";
       let text = "";
@@ -682,10 +724,17 @@ async function runAnalysis(
             try { text += JSON.parse(payload)?.choices?.[0]?.delta?.content ?? ""; } catch { /* partial line */ }
           }
         }
-      } catch { return null; } finally { try { await reader.cancel(); } catch { /* closed */ } }
+      } catch {
+        call.finish({ error: "stream_read_failed" });
+        return null;
+      } finally { try { await reader.cancel(); } catch { /* closed */ } }
+      // A streamed chat completion carries no usage block in this app's request shape, so the
+      // row closes with tokens absent rather than zeroed.
+      call.finish();
       return text ? extractJson(text) : null;
     }
     const data = await res.json();
+    call.finish({ ...usageFrom("openai", data), responseBody: data });
     const text = data?.choices?.[0]?.message?.content ?? "";
     return extractJson(text);
   } catch { return null; } finally { clearTimeout(timer); }

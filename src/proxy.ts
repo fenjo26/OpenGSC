@@ -10,9 +10,38 @@
 import { withAuth } from "next-auth/middleware";
 import { NextResponse } from "next/server";
 
+/**
+ * The header the matched path travels on.
+ *
+ * Spelled out again in `src/lib/team/workspace.ts`, which reads it, rather than imported from
+ * here: this file imports next-auth/middleware, and a route bundle has no business pulling that
+ * in to learn a string. The two are asserted equal in workspaceCallContext.test.ts.
+ */
+export const ROUTE_HEADER = "x-opengsc-route";
+
+/**
+ * The request headers a route handler sees, carrying the path this request matched.
+ *
+ * A handler cannot see its own matched path — `headers()` returns HTTP headers, and the route is
+ * not one of them — but the proxy can, and it runs in front of every route. So it writes the
+ * path down, which is the only honest value for the provider log's `feature`: anything else
+ * would be a name someone chose for a route rather than the route.
+ *
+ * Any inbound value is deleted before ours is written. `set` would replace it anyway; the
+ * `delete` is here so that remains true of this function rather than of Headers' semantics. The
+ * field is only a label, but a label an outsider can forge is worse than none — it puts a name
+ * of their choosing on the rows an operator reads to see what a user was doing.
+ */
+export function withRouteHeader(req: { headers: Headers; nextUrl: { pathname: string } }): Headers {
+  const headers = new Headers(req.headers);
+  headers.delete(ROUTE_HEADER);
+  headers.set(ROUTE_HEADER, req.nextUrl.pathname);
+  return headers;
+}
+
 export default withAuth(
-  function proxy() {
-    return NextResponse.next();
+  function proxy(req) {
+    return NextResponse.next({ request: { headers: withRouteHeader(req) } });
   },
   {
     callbacks: {

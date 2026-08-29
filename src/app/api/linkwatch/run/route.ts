@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { rawQuery, rawExec } from "@/lib/db/raw";
+import { loggedFetch } from "@/lib/providerLog/log";
 
 // POST /api/linkwatch/run { ahrefsKey, months?, minDr?, limit? }
 // For every watched brand, pull fresh quality backlinks via Ahrefs API v3 and store them.
@@ -40,12 +41,21 @@ async function fetchBrandLinks(ahrefsKey: string, baseUrl: string, brand: string
   });
   try {
     const base = (baseUrl || AHREFS_DEFAULT_BASE).replace(/\/+$/, "");
-    const res = await fetch(`${base}/v3/site-explorer/all-backlinks?${params}`, {
+    // Same paid endpoint `backlinksApi.ts` pages through, reached by a second client that lives
+    // here — one call per watched brand, up to 200 brands, at roughly 13 units a row. It is
+    // logged for exactly that reason: a whole second Ahrefs spender invisible to the log is the
+    // gap this feature exists to close.
+    const { res, call } = await loggedFetch(`${base}/v3/site-explorer/all-backlinks?${params}`, {
       headers: { Authorization: `Bearer ${ahrefsKey}`, Accept: "application/json" },
       signal: AbortSignal.timeout(30_000),
-    });
-    if (!res.ok) return { error: `ahrefs ${res.status}: ${(await res.text()).slice(0, 300)}` };
+    }, { provider: "ahrefs" });
+    if (!res.ok) {
+      const error = `ahrefs ${res.status}: ${(await res.text()).slice(0, 300)}`;
+      call.finish({ error });
+      return { error };
+    }
     const d = await res.json();
+    call.finish();
     return { rows: Array.isArray(d?.backlinks) ? d.backlinks : [] };
   } catch (e: any) {
     return { error: String(e?.message ?? e) };

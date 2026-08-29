@@ -4,7 +4,9 @@
 // Same convention as every other key in this app: it lives in localStorage, is mirrored to
 // User.seoSettings by SeoKeysSync, and travels with the request.
 
-import { MetricsProvider, UNIT_PRICE_USD, estimateCostUsd, estimateKeywordUnits, priceExpand, priceEnrich } from "./metrics";
+// From `metricsPricing`, not `metrics`: this file runs in the browser, and `metrics.ts` reaches
+// the provider log and through it the Prisma client. Prices are shared knowledge; sockets are not.
+import { MetricsProvider, UNIT_PRICE_USD, estimateCostUsd, estimateKeywordUnits, priceExpand, priceEnrich } from "./metricsPricing";
 
 export const METRICS_PROVIDERS: MetricsProvider[] = ["ahrefs", "semrush"];
 

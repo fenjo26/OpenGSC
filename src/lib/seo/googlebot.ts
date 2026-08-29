@@ -11,6 +11,7 @@
 // No third-party HTML deps — pure regex extraction, same convention as scrape.ts.
 
 import { createHash } from "crypto";
+import { loggedFetch, type CallHandle } from "@/lib/providerLog/log";
 import { safeFetch, type SafeFetchResponse } from "@/lib/security/safeFetch";
 import { textSimilarity } from "@/lib/seo/textSimilarity";
 
@@ -470,8 +471,9 @@ export async function renderWithFirecrawl(
   firecrawlKey: string,
   opts?: { prefer?: "rendered" | "raw" },
 ): Promise<ViewResult> {
+  let call: CallHandle | undefined;
   try {
-    const res = await fetch("https://api.firecrawl.dev/v1/scrape", {
+    const opened = await loggedFetch("https://api.firecrawl.dev/v1/scrape", {
       method: "POST",
       headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -490,7 +492,9 @@ export async function renderWithFirecrawl(
         timeout: 55000,
       }),
       signal: AbortSignal.timeout(70000),
-    });
+    }, { provider: "firecrawl" });
+    const res = opened.res;
+    call = opened.call;
     if (!res.ok) throw new Error(`firecrawl ${res.status}`);
     const data = await res.json();
     const rawHtml: string = data?.data?.rawHtml ?? "";
@@ -519,6 +523,9 @@ export async function renderWithFirecrawl(
     const bodyText = stripTags(html);
     const wordCount = bodyText ? bodyText.split(/\s+/).filter(Boolean).length : 0;
     const antiBot = detectAntiBot(200, html);
+    // Closed here rather than at the parse, so the two throws above — a blocked render and an
+    // empty one — are recorded as the failures they are on a request that was still billed.
+    call.finish();
     return {
       ua: label, ok: !antiBot && !!html, rendered: true,
       blocked: !!antiBot, antiBot,
@@ -533,6 +540,7 @@ export async function renderWithFirecrawl(
       screenshot,
     };
   } catch (e: any) {
+    call?.finish({ error: e?.message ?? "render_failed" });
     const v = blankView(label, url, 0, [], e?.message ?? "render_failed");
     v.rendered = true;
     return v;
@@ -542,7 +550,10 @@ export async function renderWithFirecrawl(
 // ─── Wayback (archive.org) — latest snapshot ─────────────────────────────────
 export async function getWayback(url: string): Promise<WaybackSnapshot | null> {
   try {
-    const res = await fetch(`https://archive.org/wayback/available?url=${encodeURIComponent(url)}`, {
+    // The one call in this module nobody is billed for: archive.org's availability index is
+    // public and unauthenticated, and rows for it would sit in the log next to calls that cost
+    // money, which is the confusion this table exists to prevent.
+    const res = await fetch(`https://archive.org/wayback/available?url=${encodeURIComponent(url)}`, { // providerLog-exempt: public, unauthenticated, unbilled
       signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) return { available: false };

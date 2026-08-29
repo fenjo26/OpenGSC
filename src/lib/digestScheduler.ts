@@ -8,6 +8,8 @@ import { notifyUser } from "@/lib/notify";
 import { buildDigest, aiSummary, getDigestSettings, saveDigestSettings } from "@/lib/digest";
 import type { NotifyLang } from "@/lib/notifyI18n";
 import { rawQuery } from "@/lib/db/raw";
+import { resolveCaptureBodies } from '@/lib/providerLog/bodies';
+import { withCallContext } from "@/lib/providerLog/context";
 
 const TICK_MS = 60 * 60 * 1000;
 
@@ -46,23 +48,29 @@ async function tick() {
 
   const now = new Date();
   for (const u of users) {
-    try {
-      const s = await getDigestSettings(u.id);
-      if (!s.enabled) continue;
-      if (now.getUTCHours() !== s.hourUtc) continue;
-      if (s.frequency === "weekly" && now.getUTCDay() !== 1) continue; // Mondays
+    // Around the whole per-user body, not just the send: a timer inherits no request, so every
+    // call `sendDigestNow` makes on this user's behalf — the AI summary above all — would
+    // otherwise be logged as nobody's.
+    const captureBodies = await resolveCaptureBodies(u.id);
+    await withCallContext({ userId: u.id, feature: "digest-cron", captureBodies }, async () => {
+      try {
+        const s = await getDigestSettings(u.id);
+        if (!s.enabled) return;
+        if (now.getUTCHours() !== s.hourUtc) return;
+        if (s.frequency === "weekly" && now.getUTCDay() !== 1) return; // Mondays
 
-      // Already sent within this scheduling window?
-      const last = s.lastSentAt ? new Date(s.lastSentAt) : null;
-      const windowMs = s.frequency === "daily" ? 20 * 3600_000 : 6 * 86_400_000;
-      if (last && now.getTime() - last.getTime() < windowMs) continue;
+        // Already sent within this scheduling window?
+        const last = s.lastSentAt ? new Date(s.lastSentAt) : null;
+        const windowMs = s.frequency === "daily" ? 20 * 3600_000 : 6 * 86_400_000;
+        if (last && now.getTime() - last.getTime() < windowMs) return;
 
-      await sendDigestNow(u.id, s.tag, s.days, s.ai, s.lang);
-      await saveDigestSettings(u.id, { ...s, lastSentAt: now.toISOString() });
-      console.log(`[digest-cron] sent digest to user ${u.id} (tag="${s.tag}")`);
-    } catch (e) {
-      console.warn(`[digest-cron] user ${u.id} failed:`, e);
-    }
+        await sendDigestNow(u.id, s.tag, s.days, s.ai, s.lang);
+        await saveDigestSettings(u.id, { ...s, lastSentAt: now.toISOString() });
+        console.log(`[digest-cron] sent digest to user ${u.id} (tag="${s.tag}")`);
+      } catch (e) {
+        console.warn(`[digest-cron] user ${u.id} failed:`, e);
+      }
+    });
   }
 }
 

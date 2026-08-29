@@ -7,6 +7,17 @@ import { join } from 'node:path'
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient }
 
 /**
+ * How long a query waits for another writer before giving up with SQLITE_BUSY.
+ *
+ * better-sqlite3's own default is 5s. That was survivable while writes were occasional; it is
+ * not now that every provider call writes a row underneath a rank scheduler doing up to fifty
+ * sequential checks for one site while other schedulers run alongside it. Fifteen seconds is
+ * chosen to outlast a burst, not to hide a deadlock: WAL means only writers contend, and a
+ * writer that cannot finish inside fifteen seconds is a bug worth surfacing.
+ */
+export const SQLITE_BUSY_TIMEOUT_MS = 15_000
+
+/**
  * Pick the driver adapter from the connection string.
  *
  * MariaDB is loaded dynamically and is not a dependency of this project: an install that uses
@@ -24,8 +35,13 @@ const globalForPrisma = globalThis as unknown as { prisma: PrismaClient }
  * dependency as "Module not found" on every build. Hiding the string from static analysis is
  * the difference between an optional dependency and a permanent build warning.
  */
-function createAdapter(url: string, isMysql: boolean) {
-  if (!isMysql) return new PrismaBetterSqlite3({ url });
+export function createAdapter(url: string, isMysql: boolean) {
+  if (!isMysql) {
+    enableWal(url);
+    // better-sqlite3 turns this into sqlite3_busy_timeout on the connection it opens, which is
+    // the only place a timeout can be set: the adapter exposes no hook for running a PRAGMA.
+    return new PrismaBetterSqlite3({ url, timeout: SQLITE_BUSY_TIMEOUT_MS });
+  }
 
   const mod = requireMariaDbAdapter();
   const Adapter = mod.PrismaMariaDb ?? mod.default;
@@ -35,6 +51,42 @@ function createAdapter(url: string, isMysql: boolean) {
   // The constructor takes either a mariadb PoolConfig or the connection string; the string form
   // is what DATABASE_URL already is.
   return new Adapter(url);
+}
+
+/**
+ * Put the database into WAL, once, before anything opens it for real.
+ *
+ * The default rollback journal takes an exclusive lock for the length of every write, so a
+ * reader blocks behind a writer and a second writer is refused outright. That is the wrong shape
+ * for this app even before the provider log: schedulers write while the dashboard reads. In WAL,
+ * readers never block and never block a writer, and only writers contend with each other — which
+ * is what the busy timeout above is for.
+ *
+ * Done on a connection of its own rather than through Prisma because journal_mode is a property
+ * of the *file*, recorded in its header and persisting across connections, so setting it once
+ * here covers every pool the adapter later opens. Going through Prisma would mean an async call
+ * after the client already exists, racing the first real query.
+ *
+ * Every part of this is best-effort. A read-only directory, a network filesystem that cannot do
+ * shared memory, or an absent native binding are all reasons a pragma fails, and none of them is
+ * a reason to refuse to boot: SQLite then runs exactly as it did before this function existed.
+ */
+function enableWal(file: string) {
+  // A memory database has no file to record the mode in, and WAL is not available to it.
+  if (file === ":memory:" || file.includes(":memory:")) return;
+  try {
+    const Database = createRequire(import.meta.url)("better-sqlite3");
+    const db = new Database(file);
+    try {
+      db.pragma("journal_mode = WAL");
+    } finally {
+      db.close();
+    }
+  } catch (err) {
+    if (process.env.DEBUG_PRISMA === "1") {
+      console.warn(`[prisma] could not enable WAL on ${file}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
 }
 
 /**

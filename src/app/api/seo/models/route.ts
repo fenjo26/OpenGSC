@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { workspaceUserId } from "@/lib/team/workspace";
+import { loggedFetch } from "@/lib/providerLog/log";
 
 // POST /api/seo/models  { provider, apiKey, baseUrl? }
 // Fetches the live model list from the provider's API (server-side to avoid CORS).
@@ -26,6 +27,9 @@ export async function POST(req: Request) {
 
 type M = { id: string; label: string };
 
+// The catalogue probes are logged like any other provider call. None of them is billed per
+// request today, but they are made with the user's key against the account the paid calls run
+// on, and a picker that quietly 401s for a week is a fault the log can now show.
 async function listModels(provider: string, apiKey: string, baseUrl?: string): Promise<M[]> {
   const timeout = AbortSignal.timeout(12000);
 
@@ -38,26 +42,32 @@ async function listModels(provider: string, apiKey: string, baseUrl?: string): P
       ? baseUrl.replace(/\/+$/, "").replace(/\/v1$/, "")
       : null;
     if (proxyRoot) {
-      const res = await fetch(`${proxyRoot}/v1/models`, {
+      const { res, call } = await loggedFetch(`${proxyRoot}/v1/models`, {
         headers: { 'Authorization': `Bearer ${apiKey}`, 'x-api-key': apiKey },
         signal: timeout,
-      });
-      if (!res.ok) throw new Error(`anthropic proxy ${res.status}`);
+      }, { provider: "anthropic" });
+      if (!res.ok) {
+        call.finish({ error: `anthropic proxy ${res.status}` });
+        throw new Error(`anthropic proxy ${res.status}`);
+      }
       const data = await res.json();
+      call.finish();
       const arr: any[] = data.data ?? data.models ?? [];
       return arr.map((m) => ({ id: String(m.id), label: String(m.id) })).filter((m) => m.id);
     }
     const base = provider === "zai" ? "https://api.z.ai/api/anthropic" : "https://api.anthropic.com";
-    const res = await fetch(`${base}/v1/models?limit=100`, {
+    const { res, call } = await loggedFetch(`${base}/v1/models?limit=100`, {
       headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
       signal: timeout,
-    });
+    }, { provider });
     if (!res.ok) {
+      call.finish({ error: `${provider} ${res.status}` });
       // Z.ai may not expose the anthropic models endpoint — fall back to a known set.
       if (provider === "zai") return ZAI_FALLBACK;
       throw new Error(`anthropic ${res.status}`);
     }
     const data = await res.json();
+    call.finish();
     const arr: any[] = data.data ?? data.models ?? [];
     return arr.map((m) => ({ id: m.id, label: m.display_name || m.id })).filter((m) => m.id);
   }
@@ -66,11 +76,15 @@ async function listModels(provider: string, apiKey: string, baseUrl?: string): P
     // Endpoint override (aiBaseUrl_openai) — same convention as everywhere else. The catalogue
     // then comes from the gateway, where the proxy key is the one that works.
     const root = (baseUrl || "").replace(/\/+$/, "") || "https://api.openai.com/v1";
-    const res = await fetch(`${root}/models`, {
+    const { res, call } = await loggedFetch(`${root}/models`, {
       headers: { Authorization: `Bearer ${apiKey}` }, signal: timeout,
-    });
-    if (!res.ok) throw new Error(`openai ${res.status}`);
+    }, { provider: "openai" });
+    if (!res.ok) {
+      call.finish({ error: `openai ${res.status}` });
+      throw new Error(`openai ${res.status}`);
+    }
     const data = await res.json();
+    call.finish();
     const arr: any[] = data.data ?? [];
     return arr
       .map((m) => m.id as string)
@@ -87,15 +101,22 @@ async function listModels(provider: string, apiKey: string, baseUrl?: string): P
     // truncation now only ever loses the oldest models, and everything listed is callable.
     const url = "https://openrouter.ai/api/v1/models?output_modalities=text&sort=newest";
     let arr: any[] = [];
-    const res = await fetch(url, { signal: timeout });
+    const { res, call } = await loggedFetch(url, { signal: timeout }, { provider: "openrouter" });
     if (res.ok) {
       arr = (await res.json()).data ?? [];
+      call.finish();
     } else {
+      call.finish({ error: `openrouter ${res.status}` });
       // The filter params are newer than the endpoint; an older/proxied deployment that rejects
       // them should still produce a usable list rather than an empty picker.
-      const plain = await fetch("https://openrouter.ai/api/v1/models", { signal: timeout });
-      if (!plain.ok) throw new Error(`openrouter ${res.status}`);
+      const retry = await loggedFetch("https://openrouter.ai/api/v1/models", { signal: timeout }, { provider: "openrouter", attempt: 2 });
+      const plain = retry.res;
+      if (!plain.ok) {
+        retry.call.finish({ error: `openrouter ${plain.status}` });
+        throw new Error(`openrouter ${res.status}`);
+      }
       arr = (await plain.json()).data ?? [];
+      retry.call.finish();
     }
     return arr.map((m) => ({ id: m.id as string, label: orLabel(m) })).filter((m) => m.id).slice(0, 300);
   }
@@ -106,20 +127,28 @@ async function listModels(provider: string, apiKey: string, baseUrl?: string): P
     // the image-generation ids out — they are served by /v1/images/generations and are rejected by
     // the chat endpoint this app calls, so listing them would only produce 400s.
     const root = (baseUrl || "").replace(/\/+$/, "") || "https://api.cheaperinference.com/v1";
-    const res = await fetch(`${root}/models?type=text`, {
+    const { res, call } = await loggedFetch(`${root}/models?type=text`, {
       headers: { Authorization: `Bearer ${apiKey}` }, signal: timeout,
-    });
-    if (!res.ok) throw new Error(`cheaperinference ${res.status}`);
+    }, { provider: "cheaperinference" });
+    if (!res.ok) {
+      call.finish({ error: `cheaperinference ${res.status}` });
+      throw new Error(`cheaperinference ${res.status}`);
+    }
     const data = await res.json();
+    call.finish();
     const arr: any[] = data.data ?? data.models ?? [];
     return arr.map((m) => ({ id: String(m.id), label: ciLabel(m) })).filter((m) => m.id);
   }
 
   if (provider === "gemini") {
     const gRoot = (baseUrl || "").trim().replace(/\/+$/, "") || "https://generativelanguage.googleapis.com";
-    const res = await fetch(`${gRoot}/v1beta/models?key=${apiKey}&pageSize=200`, { signal: timeout });
-    if (!res.ok) throw new Error(`gemini ${res.status}`);
+    const { res, call } = await loggedFetch(`${gRoot}/v1beta/models?key=${apiKey}&pageSize=200`, { signal: timeout }, { provider: "gemini" });
+    if (!res.ok) {
+      call.finish({ error: `gemini ${res.status}` });
+      throw new Error(`gemini ${res.status}`);
+    }
     const data = await res.json();
+    call.finish();
     const arr: any[] = data.models ?? [];
     return arr
       .filter((m) => (m.supportedGenerationMethods ?? []).includes("generateContent"))
@@ -131,11 +160,15 @@ async function listModels(provider: string, apiKey: string, baseUrl?: string): P
     // Moonshot AI — OpenAI-compatible /v1/models. Falls back to the known current lineup.
     try {
       const root = (baseUrl || "").replace(/\/+$/, "") || "https://api.moonshot.ai/v1";
-      const res = await fetch(`${root}/models`, {
+      const { res, call } = await loggedFetch(`${root}/models`, {
         headers: { Authorization: `Bearer ${apiKey}` }, signal: timeout,
-      });
-      if (!res.ok) throw new Error(`kimi ${res.status}`);
+      }, { provider: "kimi" });
+      if (!res.ok) {
+        call.finish({ error: `kimi ${res.status}` });
+        throw new Error(`kimi ${res.status}`);
+      }
       const data = await res.json();
+      call.finish();
       const arr: any[] = data.data ?? [];
       const models = arr.map((m) => ({ id: m.id as string, label: m.id as string })).filter((m) => m.id);
       return models.length ? models : KIMI_FALLBACK;
@@ -153,11 +186,15 @@ async function listModels(provider: string, apiKey: string, baseUrl?: string): P
   if (provider === "deepseek") {
     try {
       const root = (baseUrl || "").replace(/\/+$/, "") || "https://api.deepseek.com";
-      const res = await fetch(`${root}/models`, {
+      const { res, call } = await loggedFetch(`${root}/models`, {
         headers: { Authorization: `Bearer ${apiKey}` }, signal: timeout,
-      });
-      if (!res.ok) throw new Error(`deepseek ${res.status}`);
+      }, { provider: "deepseek" });
+      if (!res.ok) {
+        call.finish({ error: `deepseek ${res.status}` });
+        throw new Error(`deepseek ${res.status}`);
+      }
       const data = await res.json();
+      call.finish();
       const arr: any[] = data.data ?? [];
       const models = arr.map((m) => ({ id: m.id as string, label: m.id as string })).filter((m) => m.id);
       return models.length ? models : DEEPSEEK_FALLBACK;

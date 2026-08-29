@@ -8,6 +8,8 @@
 // Docs: https://docs.z.ai/api-reference/image/generate-image
 // The returned URLs expire after 30 days — download anything worth keeping.
 
+import { loggedFetch } from "@/lib/providerLog/log";
+
 const ZAI_DEFAULT_ROOT = "https://api.z.ai/api/paas/v4";
 
 export const ZAI_IMAGE_MODELS = [
@@ -76,7 +78,7 @@ export async function generateZaiImage(
 ): Promise<{ urls?: string[]; error?: string }> {
   const root = (baseUrl || "").trim().replace(/\/+$/, "") || ZAI_DEFAULT_ROOT;
   try {
-    const res = await fetch(`${root}/images/generations`, {
+    const { res, call } = await loggedFetch(`${root}/images/generations`, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -88,10 +90,11 @@ export async function generateZaiImage(
       // Rendering takes longer than a chat completion, and the caller is a user staring at a
       // spinner rather than a background job — 120s is the point where retrying beats waiting.
       signal: AbortSignal.timeout(120_000),
-    });
+    }, { provider: "zai", model });
     const data: ZaiImageResponse | null = await res.json().catch(() => null);
     if (!res.ok) {
       const msg = data?.error?.message || data?.message || `zai_image_${res.status}`;
+      call.finish({ error: String(msg).slice(0, 300), responseBody: data });
       return { error: String(msg).slice(0, 300) };
     }
     const urls = (data?.data ?? [])
@@ -101,8 +104,11 @@ export async function generateZaiImage(
       // A content-filter rejection comes back 200 with an empty data array — say so, rather than
       // letting the caller report a generic failure for a request that was answered and refused.
       const filtered = (data?.content_filter ?? []).some(c => Number(c?.level) > 0);
-      return { error: filtered ? "content_filter: the prompt was rejected by Z.AI's safety filter" : "no_image_returned" };
+      const error = filtered ? "content_filter: the prompt was rejected by Z.AI's safety filter" : "no_image_returned";
+      call.finish({ error, responseBody: data });
+      return { error };
     }
+    call.finish({ responseBody: data });
     return { urls };
   } catch (e: unknown) {
     const name = e instanceof Error ? e.name : "";

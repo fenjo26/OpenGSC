@@ -7,6 +7,8 @@ import { resolveAiFallbacks } from "@/lib/mcp/shared";
 import { failStaleSeoJobs, touchSeoJob, withSeoJobHeartbeat } from "@/lib/jobs/lifecycle";
 import { saveJobToHistory } from "@/lib/seo/historyServer";
 import { pickLiveProvider } from "@/lib/seo/providerPing";
+import { resolveCaptureBodies } from "@/lib/providerLog/bodies";
+import { withCallContext } from "@/lib/providerLog/context";
 
 // SeoJob model isn't in the committed generated client until `prisma generate` re-runs
 // on build; access it via a loose handle so types resolve everywhere.
@@ -14,8 +16,20 @@ const jobs = () => (prisma as any).seoJob;
 
 // Detached background run — not awaited by the request, so the result is persisted even
 // if the client navigates away or closes the tab. Keys live only in memory for the run.
-function runJob(userId: string, job: any, payload: any) {
-  void (async () => {
+//
+// The promise is returned rather than swallowed so a test can await the detached work; the route
+// still discards it. Nothing else may await it, or the request would once again live as long as
+// the generation does, which is the whole point of detaching.
+export async function runJob(userId: string, job: any, payload: any): Promise<void> {
+  // Read here rather than in the request that started the job: the setting belongs to the job's
+  // owner, and this is the last moment there is an `await` to spend on it. A generation that runs
+  // for half an hour keeps the answer it started with — said out loud in the settings copy, so
+  // nobody is puzzled by bodies still arriving after they switched capture off.
+  const captureBodies = await resolveCaptureBodies(userId);
+  // Inside the detached function, not around the route: the request that started this job is
+  // answered and gone long before `genByType` calls a provider, so there is no request context
+  // left to inherit. The job knows its own owner and its own type, which is what the log needs.
+  return withCallContext({ userId, feature: String(job.type), captureBodies }, async () => {
     try {
       await touchSeoJob(job.id, { stage: "generating", progress: 5 });
       // Phase-level progress for pipelines that report it (genOutline et al read this from the
@@ -50,7 +64,7 @@ function runJob(userId: string, job: any, payload: any) {
         });
       } catch { /* row removed */ }
     }
-  })();
+  });
 }
 
 // POST /api/seo/jobs — start a background generation job. body: { type, keyword?, payload, meta? }
@@ -88,7 +102,7 @@ export async function POST(req: Request) {
     } catch { /* fallbacks are a safety net, never a reason to refuse the job */ }
   }
 
-  runJob(userId, job, payload); // fire-and-forget
+  void runJob(userId, job, payload); // fire-and-forget
   return NextResponse.json({ jobId: job.id });
 }
 

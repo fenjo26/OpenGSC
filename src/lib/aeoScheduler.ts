@@ -1,5 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { getUserAeoCreds, hasAnyAeoCreds, siteAeoConfig, checkSiteQuestions, AEO_STALE_MS } from '@/lib/aeoTracker';
+import { resolveCaptureBodies } from '@/lib/providerLog/bodies';
+import { withCallContext } from '@/lib/providerLog/context';
 
 // Background AEO citation tracking. Runs inside the Next server process (started from
 // instrumentation) — same pattern as the Clarity/Rank schedulers, no system cron needed.
@@ -43,18 +45,25 @@ async function tick() {
 
     const credsByUser = new Map<string, Awaited<ReturnType<typeof getUserAeoCreds>>>();
     for (const site of sites) {
-      try {
-        if (!credsByUser.has(site.userId)) {
-          credsByUser.set(site.userId, await getUserAeoCreds(site.userId));
-        }
-        const creds = credsByUser.get(site.userId)!;
-        if (!hasAnyAeoCreds(creds)) continue; // no AEO-capable key configured — nothing we can do
+      // Four billed AI calls per question, on a timer, with no request to inherit a context from:
+      // the owner is named here or the spend is logged as nobody's.
+      // Resolved before the wrapper, not inside the logger: the answer lives in the owner's
+      // settings snapshot, and by the time a call is being logged there is no `await` left.
+      const captureBodies = await resolveCaptureBodies(site.userId);
+      await withCallContext({ userId: site.userId, feature: "aeo-cron", captureBodies }, async () => {
+        try {
+          if (!credsByUser.has(site.userId)) {
+            credsByUser.set(site.userId, await getUserAeoCreds(site.userId));
+          }
+          const creds = credsByUser.get(site.userId)!;
+          if (!hasAnyAeoCreds(creds)) return; // no AEO-capable key configured — nothing we can do
 
-        const r = await checkSiteQuestions(site.id, siteAeoConfig(site), creds, { limit: PER_SITE_CAP });
-        if (r.checked > 0) console.log(`[aeo-cron] ${site.url}: checked ${r.checked}, remaining ${r.remaining}`);
-      } catch (e) {
-        console.warn(`[aeo-cron] site ${site.id} failed:`, e);
-      }
+          const r = await checkSiteQuestions(site.id, siteAeoConfig(site), creds, { limit: PER_SITE_CAP });
+          if (r.checked > 0) console.log(`[aeo-cron] ${site.url}: checked ${r.checked}, remaining ${r.remaining}`);
+        } catch (e) {
+          console.warn(`[aeo-cron] site ${site.id} failed:`, e);
+        }
+      });
     }
   } catch (e) {
     console.warn('[aeo-cron] tick failed:', e);

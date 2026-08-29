@@ -15,9 +15,11 @@ import {
   getMetricsCreds, getMetricsMode, estimateCostUsd, formatUsd, type MetricsMode,
 } from "@/lib/seo/metricsClient";
 import { isGuestView, shareTokenFromPath } from "@/lib/shareParam";
+// The pure half of the metrics module — see its header. A client component importing
+// `@/lib/seo/metrics` drags the Prisma client into the browser bundle.
 import {
   estimateProfileUnits, DEFAULT_BASE_URL, gatewayStatusFromError, type SubscriptionInfo,
-} from "@/lib/seo/metrics";
+} from "@/lib/seo/metricsPricing";
 import { METRICS_GATEWAY_URL } from "@/components/SeoToolsSettings";
 
 /** `{host}` / `{n}` placeholders in locale strings — `t()` returns them verbatim by design. */

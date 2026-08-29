@@ -20,6 +20,7 @@
 //    module keeps a single request in flight — every paging mode allows that, because the keyset
 //    cursor is whatever the previous page returned.
 
+import { loggedFetch } from "@/lib/providerLog/log";
 import {
   AHREFS_UNIT_FLOOR, DEFAULT_BASE_URL, MetricsCreds, estimateCostUsd, estimateUnits,
 } from "./metrics";
@@ -457,14 +458,20 @@ async function gatewayGet(url: string, apiKey: string): Promise<Response> {
   let lastErr: any = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const res = await fetch(url, {
+      // One row per attempt, numbered: a retried 429 is a second request, and the ladder is the
+      // reason a single export page can cost three round trips.
+      const { res, call } = await loggedFetch(url, {
         headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
         signal: AbortSignal.timeout(45_000),
-      });
+      }, { provider: "ahrefs", attempt: attempt + 1 });
       if ((res.status === 429 || res.status >= 500) && attempt < 2) {
+        call.finish({ error: `ahrefs ${res.status}` });
         await sleep(800 * 2 ** attempt + Math.random() * 400);
         continue;
       }
+      // The body belongs to the caller, which reads it in four different shapes, and the gateway
+      // states neither usage nor a price in it. Everything this row will ever know is known now.
+      call.finish(res.ok ? undefined : { error: `ahrefs ${res.status}` });
       return res;
     } catch (e) {
       lastErr = e;

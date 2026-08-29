@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Quote, Loader2, AlertTriangle, Search, ExternalLink } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { getDataForSeoKey } from "@/lib/seo/keys";
-import { EMOTIONS } from "@/lib/seo/contentAnalysis";
+import { EMOTIONS } from "@/lib/seo/contentAnalysisShapes";
 
 const card = "panel";
 const POL: Record<string, string> = { positive: "var(--color-accent-green)", neutral: "var(--color-accent-orange)", negative: "var(--color-accent-red)" };

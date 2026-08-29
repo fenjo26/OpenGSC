@@ -21,17 +21,16 @@
 import { locationCode, isSupportedCountry } from "./demand";
 import { defaultLanguageFor } from "./regions";
 
+import { loggedFetch, type CallHandle } from "@/lib/providerLog/log";
+
 const DFS_BASE = "https://api.dataforseo.com";
 const DFS_TIMEOUT_MS = 60_000;
 
-/** The only two surfaces DataForSEO indexes. Not an abbreviation of a longer list. */
-export type LlmPlatform = "chat_gpt" | "google";
-export const LLM_PLATFORMS: LlmPlatform[] = ["chat_gpt", "google"];
-
-export const PLATFORM_LABEL: Record<LlmPlatform, string> = {
-  chat_gpt: "ChatGPT",
-  google: "Google AI Overview",
-};
+// The platform list and its labels live next door: the Brand Visibility panel renders them in the
+// browser, and this module reaches the Prisma client through the provider log. Re-exported, so
+// every server-side import still resolves here.
+export * from "./llmPlatforms";
+import { type LlmPlatform } from "./llmPlatforms";
 
 /** Live endpoints, flat-priced per call rather than per row. */
 const MENTIONS_CALL_COST = 0.02;
@@ -88,28 +87,46 @@ async function post<T = any>(
   pick: (task: any) => T,
 ): Promise<{ data: T | null; error?: string }> {
   let res: Response;
+  let call: CallHandle;
   try {
-    res = await fetch(`${DFS_BASE}${path}`, {
+    ({ res, call } = await loggedFetch(`${DFS_BASE}${path}`, {
       method: "POST",
       headers: { Authorization: `Basic ${dfsAuth(credential)}`, "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(DFS_TIMEOUT_MS),
-    });
+    }, { provider: "dataforseo" }));
   } catch (e: any) {
     return { data: null, error: `сеть DataForSEO: ${e?.cause?.code || e?.message || "fetch failed"}` };
   }
-  if (!res.ok) return { data: null, error: `dataforseo ${res.status}: ${(await res.text()).slice(0, 200)}` };
+  if (!res.ok) {
+    const error = `dataforseo ${res.status}: ${(await res.text()).slice(0, 200)}`;
+    call.finish({ error });
+    return { data: null, error };
+  }
 
   let json: any;
-  try { json = await res.json(); } catch { return { data: null, error: "dataforseo: ответ не JSON" }; }
+  try { json = await res.json(); } catch {
+    call.finish({ error: "dataforseo: ответ не JSON" });
+    return { data: null, error: "dataforseo: ответ не JSON" };
+  }
+
+  // The provider's own figure for this request, in dollars, read before the status checks: a
+  // task that failed inside a 200 was still charged for. MENTIONS_CALL_COST, which this module
+  // adds up for the caller, is an estimate of ours and deliberately never reaches the row.
+  const costUsd = Number.isFinite(Number(json?.cost)) ? Number(json.cost) : null;
 
   if (json?.status_code && json.status_code !== 20000) {
-    return { data: null, error: `dataforseo ${json.status_code}: ${json.status_message}` };
+    const error = `dataforseo ${json.status_code}: ${json.status_message}`;
+    call.finish({ error, costUsd });
+    return { data: null, error };
   }
   const task = json?.tasks?.[0];
   if (task?.status_code && task.status_code !== 20000) {
-    return { data: null, error: `dataforseo task ${task.status_code}: ${task.status_message}` };
+    const error = `dataforseo task ${task.status_code}: ${task.status_message}`;
+    call.finish({ error, costUsd });
+    return { data: null, error };
   }
+  call.finish({ costUsd });
   return { data: pick(task) };
 }
 

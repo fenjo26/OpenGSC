@@ -23,7 +23,7 @@ import {
   type MetricsMode,
 } from "@/lib/seo/metricsClient";
 import { getAhrefsDrKey, setAhrefsDrKey } from "@/lib/seo/keys";
-import type { MetricsProvider, SubscriptionInfo } from "@/lib/seo/metrics";
+import type { MetricsProvider, SubscriptionInfo } from "@/lib/seo/metricsPricing";
 
 // ─── Ahrefs free Domain Rating key ──────────────────────────────────────────────
 // Unrelated to the paid Site Explorer integration below: this key only unlocks the free

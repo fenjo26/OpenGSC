@@ -20,6 +20,9 @@
 // Hence the result shape: the full answer text, every citation, whether a search actually ran,
 // and our rank among the cited domains — the raw material the UI needs to explain itself.
 
+import { loggedFetch, type CallHandle } from "@/lib/providerLog/log";
+import { usageFrom } from "@/lib/providerLog/tokens";
+
 export type AeoEngine = "chatgpt" | "perplexity" | "claude" | "grok";
 
 // "cited" — our domain is linked in the answer. "mentioned" — the brand is named in the prose
@@ -237,7 +240,11 @@ async function callOpenAi(apiKey: string, question: string, o: AeoRunOptions): P
   ];
 
   let lastErr = "";
+  // Each rung of the ladder is its own request and its own row, numbered: a snapshot that
+  // rejects `web_search` still answered, and still charged for answering.
+  let attempt = 0;
   for (const a of attempts) {
+    attempt += 1;
     const tool: Record<string, unknown> = { type: a.toolType };
     if (a.contextSize) tool.search_context_size = a.contextSize;
     if (a.location) tool.user_location = a.location;
@@ -258,14 +265,21 @@ async function callOpenAi(apiKey: string, question: string, o: AeoRunOptions): P
       const rawBase = (o.baseUrl || "").trim().replace(/\/+$/, "");
       const root = rawBase ? rawBase.replace(/\/responses$/, "") : "https://api.openai.com/v1";
       const url = root.endsWith("/responses") ? root : `${root}/responses`;
-      const res = await fetch(url, {
+      const { res, call } = await loggedFetch(url, {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(180_000),
-      });
-      if (res.ok) return parseOpenAi(await res.json(), model);
+      }, { provider: "openai", model, attempt });
+      if (res.ok) {
+        const data = await res.json();
+        // The Responses API reports input_tokens/output_tokens — the dialect tokens.ts files
+        // under "kie", which is the same endpoint shape whichever host serves it.
+        call.finish({ ...usageFrom("kie", data), responseBody: data });
+        return parseOpenAi(data, model);
+      }
       lastErr = `chatgpt ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`;
+      call.finish({ error: lastErr });
       // 401/429 are about the key or the budget — retrying with a smaller feature set is noise.
       if (res.status === 401 || res.status === 403 || res.status === 429) return { error: lastErr };
     } catch (e: any) {
@@ -322,7 +336,7 @@ export async function checkPerplexity(apiKey: string, question: string, domain: 
   if (o.country) webOpts.user_location = { country: o.country.toUpperCase(), ...(o.city ? { city: o.city } : {}) };
 
   try {
-    const res = await fetch(url, {
+    const { res, call } = await loggedFetch(url, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -334,10 +348,16 @@ export async function checkPerplexity(apiKey: string, question: string, domain: 
         web_search_options: webOpts,
       }),
       signal: AbortSignal.timeout(120_000),
-    });
-    if (!res.ok) return failed(`perplexity ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`, model);
+    }, { provider: "perplexity", model });
+    if (!res.ok) {
+      const error = `perplexity ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`;
+      call.finish({ error });
+      return failed(error, model);
+    }
 
     const data = await res.json();
+    // sonar speaks the chat-completions dialect, prompt_tokens/completion_tokens.
+    call.finish({ ...usageFrom("openai", data), responseBody: data });
     const text: string = data?.choices?.[0]?.message?.content ?? "";
     // `search_results` is the current shape; `citations` is the older string[] form. Both are
     // still returned by some deployments, so read whichever is present.
@@ -374,8 +394,13 @@ export async function checkClaude(apiKey: string, question: string, domain: stri
     };
   }
 
+  // Two requests at most — the search tool is not enabled on every workspace and a 400/404 is
+  // answered by asking again without it — so each gets its own numbered row.
+  let attempt = 0;
+  let logged: CallHandle | undefined;
   async function call(withTool: boolean) {
-    return fetch(`${root}/v1/messages`, {
+    attempt += 1;
+    const opened = await loggedFetch(`${root}/v1/messages`, {
       method: "POST",
       headers: {
         ...(isProxied || !apiKey.startsWith("sk-ant-") ? { "Authorization": `Bearer ${apiKey}` } : {}),
@@ -391,7 +416,9 @@ export async function checkClaude(apiKey: string, question: string, domain: stri
         ...(withTool ? { tools: [tool] } : {}),
       }),
       signal: AbortSignal.timeout(120_000),
-    });
+    }, { provider: "anthropic", model, attempt });
+    logged = opened.call;
+    return opened.res;
   }
 
   try {
@@ -399,10 +426,19 @@ export async function checkClaude(apiKey: string, question: string, domain: stri
     // answer rather than reporting an error the user can do nothing about.
     let res = await call(true);
     let searched = true;
-    if (res.status === 400 || res.status === 404) { res = await call(false); searched = false; }
-    if (!res.ok) return failed(`claude ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`, model);
+    if (res.status === 400 || res.status === 404) {
+      logged?.finish({ error: `claude ${res.status}` });
+      res = await call(false);
+      searched = false;
+    }
+    if (!res.ok) {
+      const error = `claude ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`;
+      logged?.finish({ error });
+      return failed(error, model);
+    }
 
     const data = await res.json();
+    logged?.finish({ ...usageFrom("anthropic", data), responseBody: data });
     const blocks: any[] = Array.isArray(data?.content) ? data.content : [];
     const citations: AeoCitation[] = [];
     const scanned: string[] = [];
@@ -422,7 +458,9 @@ export async function checkClaude(apiKey: string, question: string, domain: stri
     }
     return verdict(hostOf(domain), brandTerms, { text: text.trim(), citations, scanned, searched, model });
   } catch (e: any) {
-    return failed(e?.name === "TimeoutError" || e?.name === "AbortError" ? "timeout" : `claude: ${e?.message ?? e}`, model);
+    const error = e?.name === "TimeoutError" || e?.name === "AbortError" ? "timeout" : `claude: ${e?.message ?? e}`;
+    logged?.finish({ error });
+    return failed(error, model);
   }
 }
 
@@ -453,15 +491,21 @@ export async function checkGrok(apiKey: string, question: string, domain: string
   };
 
   try {
-    const res = await fetch(url, {
+    const { res, call } = await loggedFetch(url, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(120_000),
-    });
-    if (!res.ok) return failed(`grok ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`, model);
+    }, { provider: "xai", model });
+    if (!res.ok) {
+      const error = `grok ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`;
+      call.finish({ error });
+      return failed(error, model);
+    }
 
     const data = await res.json();
+    // xAI speaks the chat-completions dialect.
+    call.finish({ ...usageFrom("openai", data), responseBody: data });
     const text: string = data?.choices?.[0]?.message?.content ?? "";
     const raw: any[] = Array.isArray(data?.citations) ? data.citations : [];
     const citations: AeoCitation[] = raw
