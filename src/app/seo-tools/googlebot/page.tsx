@@ -9,6 +9,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Loader2, AlertTriangle, Bot, Monitor, ShieldCheck, ShieldAlert, ShieldX, ArrowRight, Globe, CheckCircle2, ExternalLink, HelpCircle } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import { readUrlParam, writeUrlParam } from "@/lib/urlParam";
 import { addHistory, getHistoryItem } from "@/lib/seo/history";
 import { getFirecrawlKey } from "@/lib/seo/keys";
 
@@ -53,6 +54,16 @@ export default function GooglebotViewPage() {
   const [res, setRes] = useState<Result | null>(null);
   const [viewIdx, setViewIdx] = useState(0);
   const [mode, setMode] = useState<"preview" | "text" | "html">("preview");
+  // Deep link (?compare=js&view=text): restore on mount, mirror on change. viewIdx stays out of
+  // the URL on purpose — it indexes into the views the response happened to produce, so a
+  // number in a shared link would point at a different view or none.
+  useEffect(() => {
+    const c = readUrlParam("compare");
+    if (c === "raw" || c === "js") setCompareMode(c);
+    const m = readUrlParam("view");
+    if (m === "preview" || m === "text" || m === "html") setMode(m);
+  }, []);
+  useEffect(() => { writeUrlParam("compare", compareMode); writeUrlParam("view", mode); }, [compareMode, mode]);
   const [richLoading, setRichLoading] = useState(false);
   const [richErr, setRichErr] = useState("");
   const [richMsg, setRichMsg] = useState("");

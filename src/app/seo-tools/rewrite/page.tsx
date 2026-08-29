@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { RefreshCw, Loader2, AlertTriangle, Copy, Check, Download, Sparkles, Link2, FileText, Fingerprint, Search, Wrench, Pencil, Scale } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import { readUrlParam, writeUrlParam } from "@/lib/urlParam";
 import { getTaskCreds, getFirecrawlKey } from "@/lib/seo/keys";
 import { LANGUAGES } from "@/lib/seo/regions";
 import { TONES } from "@/lib/seo/tones";
@@ -103,6 +104,13 @@ export default function RewritePage() {
   }, []);
 
   const [mode, setMode] = useState<"text" | "url">("text");
+  // Deep link (?mode=url): restore on mount, mirror on change. Validated against the union, so
+  // a stale param falls back to the default.
+  useEffect(() => {
+    const m = readUrlParam("mode");
+    if (m === "text" || m === "url") setMode(m);
+  }, []);
+  useEffect(() => { writeUrlParam("mode", mode); }, [mode]);
   const [text, setText] = useState("");
   const [url, setUrl] = useState("");
   const [variants, setVariants] = useState(2);

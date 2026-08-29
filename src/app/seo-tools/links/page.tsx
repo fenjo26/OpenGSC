@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Loader2, AlertTriangle, Plus, X, RefreshCw, Link2, Sparkles, ExternalLink, Star, Send, Target, Check } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import { readUrlParam, writeUrlParam } from "@/lib/urlParam";
 import { getTaskCreds } from "@/lib/seo/keys";
 import { getMetricsCreds } from "@/lib/seo/metricsClient";
 import { markdownToHtml } from "@/lib/seo/outlineFormat";
@@ -41,6 +42,13 @@ export default function LinkWatchPage() {
   const [runInfo, setRunInfo] = useState("");
   const [favs, setFavs] = useState<Set<string>>(new Set());
   const [section, setSection] = useState<"mentions" | "prospects" | "campaigns">("mentions");
+  // Deep link (?section=prospects): restore on mount, mirror on change. Validated against the
+  // section union, so a stale param falls back to the default.
+  useEffect(() => {
+    const p = readUrlParam("section");
+    if (p === "mentions" || p === "prospects" || p === "campaigns") setSection(p);
+  }, []);
+  useEffect(() => { writeUrlParam("section", section); }, [section]);
   const [resultView, setResultView] = useState<"domains" | "mentions">("domains");
   const [outreachRefresh, setOutreachRefresh] = useState(0);
   const [prospectDomains, setProspectDomains] = useState<Set<string>>(new Set());

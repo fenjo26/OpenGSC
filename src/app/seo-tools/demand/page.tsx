@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Compass, Loader2, Download, ExternalLink, Search } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import { readUrlParam, writeUrlParam } from "@/lib/urlParam";
 import { COUNTRIES, LANGUAGES, defaultLanguageFor } from "@/lib/seo/regions";
 import { formatUsd } from "@/lib/seo/metricsClient";
 import { getDataForSeoKey } from "@/lib/seo/keys";
@@ -131,6 +132,15 @@ export default function DemandPage() {
   const [langTouched, setLangTouched] = useState(false);
   const [seed, setSeed] = useState("");
   const [mode, setMode] = useState<DemandMode>("auto");
+  // Deep link (?view=domain&mode=ideas): restore on mount, mirror on change. Validated against
+  // the unions, so stale params fall back to the defaults.
+  useEffect(() => {
+    const v = readUrlParam("view");
+    if (v === "keyword" || v === "domain") setView(v);
+    const m = readUrlParam("mode");
+    if (m === "auto" || m === "related" || m === "suggestions" || m === "ideas") setMode(m);
+  }, []);
+  useEffect(() => { writeUrlParam("view", view); writeUrlParam("mode", mode); }, [view, mode]);
   const [limit, setLimit] = useState(150);
   const [clickstream, setClickstream] = useState(false);
 

@@ -6,6 +6,7 @@ import {
   Sparkles, FileText, Type, Shield, Ban, Loader2, X, HelpCircle, Copy, Download,
 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import { readUrlParam, writeUrlParam } from "@/lib/urlParam";
 import { EditorialPolicy, DEFAULT_POLICY, renderPolicy, toExportJson, normalizePolicy } from "@/lib/seo/policy";
 import { loadPolicies, savePolicies, getActivePolicyName, setActivePolicyName, getTaskCreds, getFirecrawlKey } from "@/lib/seo/keys";
 import { TONES } from "@/lib/seo/tones";
@@ -100,6 +101,22 @@ export default function PolicyPage() {
   const [view, setView] = useState<"hub" | "editor">("hub");
   const [draft, setDraft] = useState<EditorialPolicy>(DEFAULT_POLICY);
   const [step, setStep] = useState(0);
+  // Deep link (?view=editor&step=2): restore on mount, mirror on change. The step only means
+  // something inside the editor — the hub carries no step param, and restoring one without the
+  // editor open would be a URL that describes nothing. Validated against STEPS bounds.
+  useEffect(() => {
+    const v = readUrlParam("view");
+    if (v !== "hub" && v !== "editor") return;
+    setView(v);
+    if (v === "editor") {
+      const s = Number(readUrlParam("step"));
+      if (Number.isInteger(s) && s >= 0 && s < STEPS.length) setStep(s);
+    }
+  }, []);
+  useEffect(() => {
+    writeUrlParam("view", view);
+    writeUrlParam("step", view === "editor" ? String(step) : null);
+  }, [view, step]);
   const [saved, setSaved] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [showJson, setShowJson] = useState(false);

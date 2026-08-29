@@ -7,6 +7,7 @@ import {
   ShieldCheck, Trash2, XCircle, Code2,
 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import { readUrlParam, writeUrlParam } from "@/lib/urlParam";
 import SourceAuditPanel from "@/components/SourceAuditPanel";
 
 type Repo = { id: string; name: string; owner: string; repo: string; baseBranch: string; contentRoot: string };
@@ -64,6 +65,14 @@ export default function ContentOperationsPage() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [tab, setTab] = useState<"queue" | "repositories" | "source-audit">("queue");
+  // Deep link (?tab=source-audit): restore on mount, mirror on change — a refresh or a copied
+  // link lands on the open tab. Validated against the tab union, so a stale param falls back
+  // to the default. Same convention on every seo-tools page (see src/lib/urlParam.ts).
+  useEffect(() => {
+    const p = readUrlParam("tab");
+    if (p === "queue" || p === "repositories" || p === "source-audit") setTab(p);
+  }, []);
+  useEffect(() => { writeUrlParam("tab", tab); }, [tab]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
