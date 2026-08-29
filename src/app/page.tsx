@@ -675,9 +675,17 @@ function PortfolioPageContent() {
       .then(d => {
         if (!ignore && d.sites?.length) {
           setSites(prev => {
-            // Only update if we don't already have data, to avoid overwriting portfolio metrics
-            if (prev.length > 0 && prev[0].hasData) return prev;
-            return d.sites;
+            // Discovery and the portfolio sweep are not sequenced — whichever resolves second
+            // must not destroy the other's contribution. Portfolio rows are authoritative for
+            // metrics, so they stay untouched; discovery only appends sites the portfolio has
+            // not returned yet (brand-new discoveries). The old guard inspected prev[0]
+            // .hasData, so one site that can never sync sorting first — hasData false forever,
+            // e.g. a property the Google account lacks permission for — let the metric-less
+            // discovery list wipe the whole portfolio on every single load.
+            if (prev.length === 0) return d.sites;
+            const known = new Set(prev.map(s => s.id));
+            const extra = (d.sites as any[]).filter(s => !known.has(s.id));
+            return extra.length > 0 ? [...prev, ...extra] : prev;
           });
           // Load tags from DB once on mount
           if (!tagsInitialized.current) {
