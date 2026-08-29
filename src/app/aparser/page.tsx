@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  AlertTriangle, CheckCircle2, Loader2, Play, RefreshCw, Search, Server, Settings2, XCircle,
+  AlertTriangle, CheckCircle2, Layers, Loader2, Play, RefreshCw, Search, Server, Settings2, XCircle,
 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { APARSER_CAPABILITIES } from "@/lib/seo/aparserCatalog";
@@ -48,6 +48,16 @@ export default function AparserPage() {
   const [testOut, setTestOut] = useState<{ results: any[]; resultStringPreview: string } | null>(null);
   const [testErr, setTestErr] = useState("");
   const [preset, setPreset] = useState<Record<string, any> | null>(null);
+  // Batch task + proxy detail — the console's answer to "and what else can this instance do
+  // for me": long runs belong in the instance's own queue, not in a synchronous call.
+  const [proxyDetail, setProxyDetail] = useState<Record<string, string[]> | null>(null);
+  const [bulkPreset, setBulkPreset] = useState("default");
+  const [bulkQueries, setBulkQueries] = useState("");
+  const [bulkFormat, setBulkFormat] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkTask, setBulkTask] = useState<{ id: number; status: string } | null>(null);
+  const [bulkResults, setBulkResults] = useState<string | null>(null);
+  const [bulkErr, setBulkErr] = useState("");
 
   useEffect(() => {
     setConfigured(!!localStorage.getItem("seoBaseUrl_aparser") && !!localStorage.getItem("seoKey_aparser"));
@@ -111,6 +121,63 @@ export default function AparserPage() {
     setTestBusy(false);
   }
 
+  async function toggleProxyDetail() {
+    if (proxyDetail) { setProxyDetail(null); return; }
+    try {
+      const d = await call({ op: "proxies", detail: true });
+      setProxyDetail(d.proxies ?? {});
+    } catch (e: any) { setError(String(e?.message ?? e)); }
+  }
+
+  async function queueBulk() {
+    if (bulkBusy) return;
+    const queries = bulkQueries.split("\n").map(q => q.trim()).filter(Boolean);
+    if (!parser.trim() || !queries.length) return;
+    setBulkBusy(true); setBulkErr(""); setBulkResults(null);
+    setBulkTask({ id: 0, status: "…" });
+    try {
+      const d = await call({ op: "add_task", parser: parser.trim(), preset: bulkPreset.trim() || "default", queries, resultsFormat: bulkFormat.trim() || undefined });
+      setBulkTask({ id: d.taskid, status: "queued" });
+      // Poll from the client: the run lives on the instance's own clock, and the tab keeps the
+      // loop as long as it is open — same visibility rule as the status poll above.
+      const id = d.taskid;
+      const poll = async () => {
+        try {
+          const st = await call({ op: "task_state", taskid: id });
+          const status = String(st.status ?? "");
+          setBulkTask({ id, status });
+          if (!/complet/i.test(status) && !/error|fail/i.test(status)) setTimeout(() => void poll(), 5000);
+        } catch { setTimeout(() => void poll(), 8000); }
+      };
+      setTimeout(() => void poll(), 4000);
+    } catch (e: any) {
+      setBulkErr(String(e?.message ?? e));
+      setBulkTask(null);
+    }
+    setBulkBusy(false);
+  }
+
+  async function fetchBulkResults() {
+    if (!bulkTask || bulkBusy) return;
+    setBulkBusy(true); setBulkErr("");
+    try {
+      const d = await call({ op: "task_results", taskid: bulkTask.id });
+      const r = d.results;
+      setBulkResults(typeof r === "string" ? r : typeof r?.link === "string" ? r.link : JSON.stringify(r, null, 2));
+    } catch (e: any) { setBulkErr(String(e?.message ?? e)); }
+    setBulkBusy(false);
+  }
+
+  function downloadBulk() {
+    if (!bulkResults) return;
+    const blob = new Blob([bulkResults], { type: "text/plain;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `aparser-task-${bulkTask?.id ?? "results"}.txt`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
   const installed = new Set(info?.availableParsers ?? []);
   const list = (info?.availableParsers ?? []).filter(p => !filter.trim() || p.toLowerCase().includes(filter.trim().toLowerCase()));
 
@@ -163,6 +230,18 @@ export default function AparserPage() {
           // answer, they just answer with whatever the search engine serves an unproxied server,
           // which is where "success, and an empty result set" comes from.
           <div style={{ marginTop: "10px", fontSize: "12px", color: "var(--color-accent-orange)" }}>⚠ {t("aparserNoProxies")}</div>
+        )}
+        {proxies && proxies.total > 0 && (
+          <>
+            <button onClick={toggleProxyDetail} style={{ ...btn, marginTop: "10px" }}>
+              <RefreshCw size={12} /> {proxyDetail ? t("aparserProxiesHide") : t("aparserProxiesShow")}
+            </button>
+            {proxyDetail && (
+              <pre style={{ ...pre, marginTop: "10px", maxHeight: "240px" }}>
+                {Object.entries(proxyDetail).map(([ep, types]) => `${ep}  ${types.join(", ")}`).join("\n") || "—"}
+              </pre>
+            )}
+          </>
         )}
       </div>
 
@@ -237,6 +316,46 @@ export default function AparserPage() {
               <p style={{ fontSize: "11px", color: "var(--color-text-secondary)", margin: "0 0 4px" }}>{t("aparserResultStringWarn")}</p>
               <pre style={pre}>{testOut.resultStringPreview || "—"}</pre>
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Batch task ─────────────────────────────────────────────────────── */}
+      <div className="panel">
+        <SectionTitle icon={<Layers size={16} color="#ff9f0a" />} title={t("aparserBulkTitle")} sub={t("aparserBulkSub")} />
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "8px" }}>
+          <input value={bulkPreset} onChange={e => setBulkPreset(e.target.value)} placeholder="default"
+            style={{ flex: "0 1 160px", padding: "8px 12px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-primary)", fontSize: "12px", fontFamily: "monospace", outline: "none" }} />
+          <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)", alignSelf: "center" }}>parser: {parser || "—"}</span>
+        </div>
+        <textarea value={bulkQueries} onChange={e => setBulkQueries(e.target.value)} rows={6} placeholder={t("aparserBulkQueriesPh")}
+          style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-primary)", fontSize: "12px", fontFamily: "monospace", outline: "none", boxSizing: "border-box", marginBottom: "8px", resize: "vertical" }} />
+        <input value={bulkFormat} onChange={e => setBulkFormat(e.target.value)} placeholder={t("aparserBulkFormat")}
+          style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-primary)", fontSize: "11px", fontFamily: "monospace", outline: "none", boxSizing: "border-box", marginBottom: "10px" }} />
+        <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+          <button onClick={queueBulk} disabled={bulkBusy || !parser.trim() || !bulkQueries.trim()}
+            style={{ ...btn, background: "rgba(255,159,10,0.15)", color: "#ff9f0a" }}>
+            {bulkBusy ? <Loader2 size={12} className="spin" /> : <Layers size={12} />} {t("aparserBulkQueue")}
+          </button>
+          {bulkTask && bulkTask.id > 0 && (
+            <>
+              <span style={{ fontSize: "12px", fontFamily: "monospace", color: "var(--color-text-secondary)" }}>#{bulkTask.id} · {bulkTask.status}</span>
+              {/complet/i.test(bulkTask.status) && (
+                <button onClick={fetchBulkResults} disabled={bulkBusy} style={btn}>
+                  {bulkBusy ? <Loader2 size={12} className="spin" /> : null} {t("aparserBulkFetch")}
+                </button>
+              )}
+            </>
+          )}
+        </div>
+        {bulkErr && <div style={{ fontSize: "12px", fontFamily: "monospace", color: "#f87171", marginTop: "10px", wordBreak: "break-all" }}>{bulkErr}</div>}
+        {bulkResults && (
+          <div style={{ marginTop: "10px" }}>
+            <div style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: "6px" }}>
+              <button onClick={downloadBulk} style={btn}>{t("aparserBulkDownload")}</button>
+              <span style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>{bulkResults.length.toLocaleString()} bytes</span>
+            </div>
+            <pre style={pre}>{bulkResults.slice(0, 20000)}</pre>
           </div>
         )}
       </div>

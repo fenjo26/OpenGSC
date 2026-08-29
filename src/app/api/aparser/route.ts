@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { getUserSettings } from "@/lib/mcp/shared";
 import {
-  aparserInfo, aparserOneRequest, aparserParserPreset, aparserPing, aparserProxies,
+  aparserAddTask, aparserInfo, aparserOneRequest, aparserParserPreset, aparserPing, aparserProxies,
+  aparserTaskResults, aparserTaskState,
   envPassword, normaliseBaseUrl, resolveBaseUrl, setAparserConcurrency,
   type AparserCreds, type AparserOption,
 } from "@/lib/seo/aparser";
@@ -78,13 +79,48 @@ export async function POST(req: Request) {
   if (op === "proxies") {
     const r = await aparserProxies(creds);
     if (!r.data) return NextResponse.json({ error: r.error ?? "no_data" }, { status: 502 });
-    // Collapsed to counts by type: the list is proxy endpoints, which is the user's
-    // infrastructure and has no business being echoed back through an HTTP response.
     const byType: Record<string, number> = {};
     for (const types of Object.values(r.data)) {
       for (const type of types ?? []) byType[type] = (byType[type] ?? 0) + 1;
     }
-    return NextResponse.json({ total: Object.keys(r.data).length, byType });
+    const total = Object.keys(r.data).length;
+    // detail=1 returns the endpoints themselves. This is the owner's own infrastructure on an
+    // owner-only route — the collapse to counts was for echo hygiene, not a secret, and the
+    // console's proxy panel needs the list to answer "which endpoints are actually alive".
+    if (b?.detail) return NextResponse.json({ total, byType, proxies: r.data });
+    return NextResponse.json({ total, byType });
+  }
+
+  // ── batch: queue on the instance's own schedule, poll, fetch the results file ──
+  if (op === "add_task") {
+    const parser = String(b?.parser ?? "").trim();
+    const queries = Array.isArray(b?.queries) ? b.queries.map((q: any) => String(q)).filter((q: string) => q.trim()) : [];
+    if (!parser) return NextResponse.json({ error: "no_parser" }, { status: 400 });
+    if (!queries.length) return NextResponse.json({ error: "no_queries" }, { status: 400 });
+    const r = await aparserAddTask(creds, {
+      parser,
+      preset: String(b?.preset ?? "default"),
+      queries,
+      resultsFormat: typeof b?.resultsFormat === "string" && b.resultsFormat.trim() ? b.resultsFormat : undefined,
+    });
+    if (!r.data) return NextResponse.json({ error: r.error ?? "no_data" }, { status: 502 });
+    return NextResponse.json({ taskid: r.data });
+  }
+
+  if (op === "task_state") {
+    const taskid = Number(b?.taskid);
+    if (!Number.isFinite(taskid)) return NextResponse.json({ error: "no_taskid" }, { status: 400 });
+    const r = await aparserTaskState(creds, taskid);
+    if (!r.data) return NextResponse.json({ error: r.error ?? "no_data" }, { status: 502 });
+    return NextResponse.json({ status: r.data.status, raw: r.data.raw });
+  }
+
+  if (op === "task_results") {
+    const taskid = Number(b?.taskid);
+    if (!Number.isFinite(taskid)) return NextResponse.json({ error: "no_taskid" }, { status: 400 });
+    const r = await aparserTaskResults(creds, taskid);
+    if (!r.data) return NextResponse.json({ error: r.error ?? "no_data" }, { status: 502 });
+    return NextResponse.json({ results: r.data });
   }
 
   // ── preset: what the option ids on THIS build actually are ─────────────────

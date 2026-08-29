@@ -11,12 +11,13 @@
 //
 // Wire format (https://a-parser.com/docs/api): POST {base}/API, JSON
 // `{ password, action, data }` → `{ success: 0|1, data }`. Actions used here: ping, info,
-// getProxies, getParserPreset, oneRequest.
+// getProxies, getParserPreset, oneRequest, addTask, getTaskState, getTaskResultsFile.
 //
-// What is deliberately NOT here: addTask / getTaskState / getTaskResultsFile. Batch mode is a
-// second transport — it needs a job store and a results-file download step — and nothing in the
-// app needs it yet. `oneRequest` plus the concurrency limiter below covers the bulk cases,
-// because the parallelism that matters happens inside A-Parser, not inside us.
+// What is deliberately NOT here: any task *store* of our own. Batch mode talks to the
+// instance's own queue — the task id lives in the client that queued it, the results file
+// lives on the instance — because a server-side job store would duplicate a scheduler the
+// user already owns. `oneRequest` plus the concurrency limiter covers everything the app
+// itself drives; `addTask` exists for the console, where a human decides what runs.
 
 // ─── Base URL ────────────────────────────────────────────────────────────────
 
@@ -286,6 +287,64 @@ export function parserResultProblem(row: any, contentKeys: string[] = ["serp"]):
   if (total !== undefined && total !== null && String(total).trim() !== "" && Number(total) === 0) return null;
 
   return "aparser_blocked_or_empty";
+}
+
+// ─── Batch mode: addTask / getTaskState / getTaskResultsFile ─────────────────
+
+export interface AparserAddTask {
+  parser: string;
+  preset?: string;
+  queries: string[];
+  /** Optional resultsFormat template; when omitted the preset's own format applies. */
+  resultsFormat?: string;
+}
+
+export interface AparserTaskState {
+  status: string;
+  raw: Record<string, any>;
+}
+
+/**
+ * Batch was deliberately left out of the first cut — "oneRequest plus the concurrency limiter
+ * covers the bulk cases" — and that holds for everything the app itself drives. What it does
+ * not cover is the console: two thousand queries do not belong in a synchronous call through
+ * this server, they belong in A-Parser's own queue, running on the instance's own schedule
+ * with its own thread config. The wrappers stay thin on purpose: field names below are what
+ * the A-Parser API documents, and responses are passed through with minimal normalisation
+ * because the shapes drifted across builds.
+ */
+export async function aparserAddTask(creds: AparserCreds, task: AparserAddTask): Promise<AparserResult<number>> {
+  const queries = task.queries.map(q => q.trim()).filter(Boolean);
+  if (!queries.length) return fail<number>("no_queries");
+  const data: Record<string, unknown> = {
+    parsers: [[task.parser, task.preset || "default"]],
+    configPreset: creds.configPreset || "default",
+    preset: task.preset || "default",
+    queries,
+    resultsSaveTo: `OpenGSC/${Date.now()}-${task.parser.replace(/::/g, "-")}.txt`,
+    doLog: 0,
+    keepLinks: 0,
+    ...(task.resultsFormat ? { resultsFormat: task.resultsFormat } : {}),
+  };
+  const r = await aparserCall<any>(creds, "addTask", data);
+  if (!r.data) return fail<number>(r.error ?? "aparser: no task id");
+  const d = r.data as any;
+  const id = Number(d?.taskid ?? d?.taskId ?? d);
+  return Number.isFinite(id) ? { data: id } : fail<number>("aparser: no task id");
+}
+
+export async function aparserTaskState(creds: AparserCreds, taskid: number): Promise<AparserResult<AparserTaskState>> {
+  const r = await aparserCall<any>(creds, "getTaskState", { taskid }, APARSER_PROBE_TIMEOUT_MS);
+  if (!r.data) return fail<AparserTaskState>(r.error ?? "aparser: no state");
+  const d = r.data as any;
+  return { data: { status: String(d.status ?? d.state ?? ""), raw: d } };
+}
+
+export async function aparserTaskResults(creds: AparserCreds, taskid: number): Promise<AparserResult<any>> {
+  // Whatever this build produces for a finished task: a download-link object on current
+  // builds, raw file text on some older ones. Passed through unmodified — the console
+  // renders either.
+  return aparserCall<any>(creds, "getTaskResultsFile", { taskid });
 }
 
 // ─── Concurrency ─────────────────────────────────────────────────────────────
