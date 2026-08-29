@@ -524,6 +524,7 @@ function SharedLinkSection({ siteDbId, domain }: { siteDbId: string; domain: str
   const [enabled, setEnabled] = useState(false);
   const [token, setToken]     = useState<string | null>(null);
   const [copied, setCopied]   = useState(false);
+  const [copiedTab, setCopiedTab] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -557,6 +558,25 @@ function SharedLinkSection({ siteDbId, domain }: { siteDbId: string; domain: str
   };
 
   const shareUrl = token ? `${typeof window !== 'undefined' ? window.location.origin : ''}/share/${siteDbId}/${token}` : '';
+
+  // The guest view shows a fixed subset of the site page's tabs (its readOnly TABS list —
+  // dashboard, positions, ga4, backlinks profile, health, audit). One copy button per tab, so
+  // a share link can point straight at Health or Audit instead of always the dashboard; the
+  // site page validates ?tab= against the same list, so a stale key falls back to the dashboard.
+  const GUEST_TABS = [
+    { key: "dashboard", label: t("tabDashboard") },
+    { key: "positions", label: t("tabPositions") },
+    { key: "ga4",       label: t("tabGA4") },
+    { key: "backlinks", label: t("shareLinkProfile") },
+    { key: "health",    label: t("tabHealth") },
+    { key: "audit",     label: t("tabAudit") },
+  ];
+
+  const copyTab = async (key: string) => {
+    await navigator.clipboard.writeText(`${shareUrl}?tab=${key}`);
+    setCopiedTab(key);
+    setTimeout(() => setCopiedTab(null), 2000);
+  };
 
   const copy = async () => {
     await navigator.clipboard.writeText(shareUrl);
@@ -611,6 +631,23 @@ function SharedLinkSection({ siteDbId, domain }: { siteDbId: string; domain: str
                 {copied ? <Check size={12} /> : <Copy size={12} />}
                 {copied ? t("setCopied") : t("setCopy")}
               </button>
+            </div>
+          )}
+
+          {/* One copy button per guest-visible tab of the site page (its readOnly TABS list):
+              the link opens the shared dashboard straight on that tab, and the site page
+              validates ?tab= against the same list, so a stale key falls back to the dashboard. */}
+          {enabled && (
+            <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
+              {t("shareTabHint") || "Copy a link that opens the shared dashboard on a specific tab:"}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "6px" }}>
+                {GUEST_TABS.map(gt => (
+                  <button key={gt.key} onClick={() => copyTab(gt.key)}
+                    style={{ padding: "4px 10px", borderRadius: "6px", border: "1px solid var(--color-border)", background: copiedTab === gt.key ? "rgba(16,185,129,0.1)" : "transparent", color: copiedTab === gt.key ? "#10B981" : "var(--color-text-secondary)", fontSize: "12px", cursor: "pointer" }}>
+                    {copiedTab === gt.key ? t("setCopied") : gt.label}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 

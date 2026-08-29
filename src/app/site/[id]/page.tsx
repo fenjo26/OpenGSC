@@ -4872,6 +4872,19 @@ export default function SitePage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Write side of the same param: every tab click mirrors into the URL with router.replace, so
+  // the history stack does not fill with tab clicks, a refresh (and any link copied from the
+  // address bar, guest links included) lands on the tab the user actually left from. Only
+  // `tab` is set — period and shareToken params ride along untouched — and a URL that already
+  // matches (a deep-linked landing) is not rewritten.
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search);
+    if (sp.get("tab") === activeTab) return;
+    sp.set("tab", activeTab);
+    router.replace(`${window.location.pathname}?${sp.toString()}`, { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
   const [syncing, setSyncing] = useState(false);
   const [activeMetrics, setActiveMetrics] = useState<Set<Metric>>(new Set(["clicks", "impressions", "ctr", "position"]));
   const [positionFilter, setPositionFilter] = useState<number | null>(null);
