@@ -17,6 +17,7 @@ import { notifyUser } from "@/lib/notify";
 import { NOTIFY_L, normalizeLang, type NotifyLang } from "@/lib/notifyI18n";
 import { lostSince } from "@/lib/seo/backlinkStore";
 import { detectLossAnomaly, lossCountsForEvent, BASELINE_WINDOW_DAYS } from "@/lib/backlinkDigest";
+import { refreshProviderBalances } from "@/lib/providerBalances";
 import { rawQuery } from "@/lib/db/raw";
 
 const TICK_MS = 60 * 60 * 1000; // hourly
@@ -31,6 +32,8 @@ export interface AlertSettings {
   // или отсутствует по смыслу (favoriteLink — одна испорченная избранная ссылка это уже повод).
   backlinkLoss: { on: boolean };
   favoriteLink: { on: boolean };
+  balanceLow: { on: boolean; percent: number; minUsd: number };
+  providerDown: { on: boolean; failures: number };
   lang: NotifyLang; // language of delivered alerts (saved from the UI language)
 }
 
@@ -46,6 +49,12 @@ export const DEFAULT_ALERT_SETTINGS: AlertSettings = {
   // ни одной завершённой полной выгрузки, поэтому пустым шумом это не станет.
   backlinkLoss: { on: true },
   favoriteLink: { on: true },
+  // Provider watches. Оба молчат сами, пока для них нет данных: balance_low читает кэш
+  // балансов (наполняется refresh'ем и страницей балансов), provider_down — журнал вызовов
+  // провайдеров. percent — «осталось меньше N% лимита»; провайдеры без фиксированной квоты
+  // (DataForSEO) сравнивают остаток с абсолютным полом minUsd.
+  balanceLow: { on: true, percent: 15, minUsd: 10 },
+  providerDown: { on: true, failures: 5 },
   lang: "en",
 };
 
@@ -63,6 +72,8 @@ export async function getAlertSettings(userId: string): Promise<AlertSettings> {
       lostLink: { ...DEFAULT_ALERT_SETTINGS.lostLink, ...(s.lostLink ?? {}) },
       backlinkLoss: { ...DEFAULT_ALERT_SETTINGS.backlinkLoss, ...(s.backlinkLoss ?? {}) },
       favoriteLink: { ...DEFAULT_ALERT_SETTINGS.favoriteLink, ...(s.favoriteLink ?? {}) },
+      balanceLow: { ...DEFAULT_ALERT_SETTINGS.balanceLow, ...(s.balanceLow ?? {}) },
+      providerDown: { ...DEFAULT_ALERT_SETTINGS.providerDown, ...(s.providerDown ?? {}) },
       lang: normalizeLang(s.lang),
     };
   } catch {
@@ -82,6 +93,67 @@ const isoWeek = () => {
 async function checkUser(userId: string, s: AlertSettings): Promise<Pending[]> {
   const L = NOTIFY_L[normalizeLang(s.lang)];
   const out: Pending[] = [];
+
+  // ── balance_low: провайдерские счётчики из локального кэша ProviderBalance. Сам тик ходит
+  // к провайдеру только когда кэш протух (>6ч) — балансовые эндпоинты дёшевы, но
+  // rate-limited, и алерт-тик, который фетчит на каждом проходе, стал бы самым громким
+  // клиентом. Провайдеры без фиксированной квоты (DataForSEO) сравниваются с абсолютным
+  // полом, остальные — процентом остатка от лимита. Скоро ресет → «мало» это норма конца
+  // периода, а не новость, поэтому за 36 часов до resetAt правило молчит.
+  if (s.balanceLow.on) {
+    try {
+      let rows: any[] = await (prisma as any).providerBalance.findMany({ where: { userId } });
+      const freshest = rows.reduce((m: number, r: any) => Math.max(m, new Date(r.fetchedAt).getTime()), 0);
+      if (Date.now() - freshest > 6 * 3600_000) {
+        await refreshProviderBalances(userId);
+        rows = await (prisma as any).providerBalance.findMany({ where: { userId } });
+      }
+      for (const r of rows) {
+        if (!r.ok || r.left == null) continue;
+        if (r.resetAt && new Date(r.resetAt).getTime() - Date.now() < 36 * 3600_000) continue;
+        const pctLeft = r.limit != null && r.limit > 0 ? (r.left / r.limit) * 100 : null;
+        const low = pctLeft != null ? pctLeft < s.balanceLow.percent : r.left < s.balanceLow.minUsd;
+        if (!low) continue;
+        const left = `${Math.round(r.left * 100) / 100} ${r.unit || ""}`.trim();
+        out.push({
+          type: "balance_low",
+          title: L.balanceLowTitle(String(r.provider)),
+          message: L.balanceLowMsg(String(r.provider), left, pctLeft != null ? Math.round(pctLeft) : null),
+          dedupeKey: `balance_low:${r.provider}:${isoDay()}`,
+        });
+      }
+    } catch { /* ProviderBalance ещё не мигрирована */ }
+  }
+
+  // ── provider_down: один провайдер набрал N+ ошибок за последний час по журналу вызовов.
+  // Сама таблица приезжает с provider-log workstream'ом; до её merge правило ничего не читает
+  // и не стреляет (тот же подход отложенной миграции, что и у backlinkLoss ниже).
+  if (s.providerDown.on) {
+    try {
+      const since = new Date(Date.now() - 60 * 60_000);
+      const rows: any[] = await (prisma as any).providerCallLog.findMany({
+        where: { createdAt: { gte: since } },
+        select: { provider: true, status: true },
+        take: 5000,
+      });
+      const fails = new Map<string, number>();
+      for (const r of rows) {
+        const st = String(r.status ?? "").toLowerCase();
+        if (st !== "error" && st !== "failed") continue;
+        fails.set(String(r.provider), (fails.get(String(r.provider)) ?? 0) + 1);
+      }
+      for (const [provider, n] of fails) {
+        if (n < s.providerDown.failures) continue;
+        out.push({
+          type: "provider_down",
+          title: L.providerDownTitle(provider),
+          message: L.providerDownMsg(provider, n),
+          dedupeKey: `provider_down:${provider}:${isoDay()}`,
+        });
+      }
+    } catch { /* журнала вызовов ещё нет */ }
+  }
+
   // Archived properties are excluded: a removed domain's traffic goes to zero by definition,
   // which would fire a traffic-drop alert every single run.
   const sites = await prisma.site.findMany({ where: { userId, archivedAt: null }, select: { id: true, url: true } });

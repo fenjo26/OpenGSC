@@ -1402,6 +1402,25 @@ model ApiUsage {
   @@id([userId, provider, month])
 }
 
+// Latest known balance/quota for one provider, as the provider's own counters report it —
+// authoritative for spend made outside this app too (another tool, a teammate, the same key).
+// Read by the balances page and the balance_low alert; written only by the balance refresh,
+// never on page load. Values live in the provider's own billing unit ("USD", "units", "pages").
+// ok=false means the last fetch failed — provider_down territory, not balance_low's.
+model ProviderBalance {
+  userId    String
+  provider  String
+  unit      String   @default("")
+  left      Float?   // spendable amount right now; null = the provider reports no balance
+  limit     Float?   // total quota for the current period; null = no fixed quota
+  resetAt   DateTime? // when the quota resets (Ahrefs units), null = rolling
+  ok        Boolean  @default(true)
+  error     String?
+  fetchedAt DateTime @default(now())
+
+  @@id([userId, provider])
+}
+
 // ─── Demand ───────────────────────────────────────────────────────────────────
 // One keyword-discovery search, cached whole. Unlike KeywordMetricCache — which answers "what
 // is this keyword worth" and is shared by every feature — this answers "what did this seed

@@ -46,12 +46,17 @@ export async function POST(req: Request) {
     ssl: { ...cur.ssl, ...(b.settings?.ssl ?? {}) },
     audit: { ...cur.audit, ...(b.settings?.audit ?? {}) },
     lostLink: { ...cur.lostLink, ...(b.settings?.lostLink ?? {}) },
+    balanceLow: { ...cur.balanceLow, ...(b.settings?.balanceLow ?? {}) },
+    providerDown: { ...cur.providerDown, ...(b.settings?.providerDown ?? {}) },
     lang: (b.settings?.lang ? normalizeLang(b.settings.lang) : cur.lang ?? "en"),
   };
   s.rankDrop.threshold = Math.min(50, Math.max(1, Number(s.rankDrop.threshold) || DEFAULT_ALERT_SETTINGS.rankDrop.threshold));
   s.trafficDrop.percent = Math.min(95, Math.max(5, Number(s.trafficDrop.percent) || DEFAULT_ALERT_SETTINGS.trafficDrop.percent));
   s.ssl.days = Math.min(60, Math.max(1, Number(s.ssl.days) || DEFAULT_ALERT_SETTINGS.ssl.days));
   s.audit.minScore = Math.min(100, Math.max(0, Number(s.audit.minScore) || DEFAULT_ALERT_SETTINGS.audit.minScore));
+  s.balanceLow.percent = Math.min(90, Math.max(1, Number(s.balanceLow.percent) || DEFAULT_ALERT_SETTINGS.balanceLow.percent));
+  s.balanceLow.minUsd = Math.min(1000, Math.max(0, Number(s.balanceLow.minUsd) || DEFAULT_ALERT_SETTINGS.balanceLow.minUsd));
+  s.providerDown.failures = Math.min(100, Math.max(2, Number(s.providerDown.failures) || DEFAULT_ALERT_SETTINGS.providerDown.failures));
   // 0 is a legitimate value here ("alert on any lost domain"), so the `|| default` idiom used
   // above would be wrong — it would silently rewrite a deliberate 0 into 50.
   {

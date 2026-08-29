@@ -1040,6 +1040,10 @@ function NotificationsSection() {
           <AlertRow id="trafficDrop" label={t("alertTrafficDrop")} value={alerts.trafficDrop} unit="%" field="percent" />
           <AlertRow id="ssl" label={t("alertSsl")} value={alerts.ssl} unit={t("alertDaysUnit")} field="days" />
           <AlertRow id="audit" label={t("alertAudit")} value={alerts.audit} unit={t("alertScoreUnit")} field="minScore" />
+          {/* Провайдерские алерты читают только локальные данные (кэш балансов / журнал
+              вызовов) и сами никогда не ходят в сеть быстрее почасового тика. */}
+          <AlertRow id="balanceLow" label={t("alertBalanceLow")} value={alerts.balanceLow} unit="%" field="percent" />
+          <AlertRow id="providerDown" label={t("alertProviderDown")} value={alerts.providerDown} unit={t("alertFailuresUnit")} field="failures" />
           {/* Off by default and dependent on a loaded backlink profile — it reads stored rows
               and never calls a provider, so enabling it cannot cost anything by itself. */}
           <AlertRow id="lostLink" label={t("alertLostLink")} value={alerts.lostLink} unit={t("alertLostLinkDr")} field="minDr" />

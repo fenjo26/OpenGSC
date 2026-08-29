@@ -70,6 +70,10 @@ type Tpl = {
   alertBacklinkLossBody: (n: number, x: string) => string;
   alertFavoriteLinkTitle: (site: string) => string;
   alertFavoriteLinkBody: (url: string, what: string) => string;
+  balanceLowTitle: (provider: string) => string;
+  balanceLowMsg: (provider: string, left: string, pct: number | null) => string;
+  providerDownTitle: (provider: string) => string;
+  providerDownMsg: (provider: string, failures: number) => string;
 };
 
 export const NOTIFY_L: Record<NotifyLang, Tpl> = {
@@ -132,6 +136,10 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     alertBacklinkLossBody: (n, x) => `${n} backlinks lost since the last check — ${x}× the usual rate.`,
     alertFavoriteLinkTitle: site => `⭐ A favourite link changed on ${site}`,
     alertFavoriteLinkBody: (url, what) => `${url} — ${what}`,
+    balanceLowTitle: provider => `💸 Low balance: ${provider}`,
+    balanceLowMsg: (provider, left, pct) => pct != null ? `*${provider}*: ${left} left (${pct}% of the limit).` : `*${provider}*: ${left} left.`,
+    providerDownTitle: provider => `🚨 Provider down: ${provider}`,
+    providerDownMsg: (provider, n) => `*${provider}* failed ${n}× in the last hour.`,
   },
   ru: {
     rankDropTitle: kw => `📉 Падение позиции: ${kw}`,
@@ -192,6 +200,10 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     alertBacklinkLossBody: (n, x) => `С прошлой проверки потеряно ссылок: ${n} — это ${x}× от обычного.`,
     alertFavoriteLinkTitle: site => `⭐ Изменилась избранная ссылка: ${site}`,
     alertFavoriteLinkBody: (url, what) => `${url} — ${what}`,
+    balanceLowTitle: provider => `💸 Низкий баланс: ${provider}`,
+    balanceLowMsg: (provider, left, pct) => pct != null ? `*${provider}*: осталось ${left} (${pct}% от лимита).` : `*${provider}*: осталось ${left}.`,
+    providerDownTitle: provider => `🚨 Провайдер лежит: ${provider}`,
+    providerDownMsg: (provider, n) => `*${provider}* — ${n} ошибок за последний час.`,
   },
   uk: {
     rankDropTitle: kw => `📉 Падіння позиції: ${kw}`,
@@ -252,6 +264,10 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     alertBacklinkLossBody: (n, x) => `З минулої перевірки втрачено посилань: ${n} — це ${x}× від звичайного.`,
     alertFavoriteLinkTitle: site => `⭐ Змінилося обране посилання: ${site}`,
     alertFavoriteLinkBody: (url, what) => `${url} — ${what}`,
+    balanceLowTitle: provider => `💸 Низький баланс: ${provider}`,
+    balanceLowMsg: (provider, left, pct) => pct != null ? `*${provider}*: залишилось ${left} (${pct}% від ліміту).` : `*${provider}*: залишилось ${left}.`,
+    providerDownTitle: provider => `🚨 Провайдер лежить: ${provider}`,
+    providerDownMsg: (provider, n) => `*${provider}* — ${n} помилок за останню годину.`,
   },
   fr: {
     rankDropTitle: kw => `📉 Chute de position : ${kw}`,
@@ -312,6 +328,10 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     alertBacklinkLossBody: (n, x) => `${n} backlinks perdus depuis la dernière vérification — ${x}× le rythme habituel.`,
     alertFavoriteLinkTitle: site => `⭐ Un lien favori a changé sur ${site}`,
     alertFavoriteLinkBody: (url, what) => `${url} — ${what}`,
+    balanceLowTitle: provider => `💸 Solde bas : ${provider}`,
+    balanceLowMsg: (provider, left, pct) => pct != null ? `*${provider}* : ${left} restants (${pct}% de la limite).` : `*${provider}* : ${left} restants.`,
+    providerDownTitle: provider => `🚨 Fournisseur en panne : ${provider}`,
+    providerDownMsg: (provider, n) => `*${provider}* a échoué ${n}× dans la dernière heure.`,
   },
   es: {
     rankDropTitle: kw => `📉 Caída de posición: ${kw}`,
@@ -372,6 +392,10 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     alertBacklinkLossBody: (n, x) => `${n} backlinks perdidos desde la última revisión — ${x}× el ritmo habitual.`,
     alertFavoriteLinkTitle: site => `⭐ Cambió un enlace favorito en ${site}`,
     alertFavoriteLinkBody: (url, what) => `${url} — ${what}`,
+    balanceLowTitle: provider => `💸 Saldo bajo: ${provider}`,
+    balanceLowMsg: (provider, left, pct) => pct != null ? `*${provider}*: quedan ${left} (${pct}% del límite).` : `*${provider}*: quedan ${left}.`,
+    providerDownTitle: provider => `🚨 Proveedor caído: ${provider}`,
+    providerDownMsg: (provider, n) => `*${provider}* falló ${n}× en la última hora.`,
   },
   de: {
     rankDropTitle: kw => `📉 Positionsverlust: ${kw}`,
@@ -432,6 +456,10 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     alertBacklinkLossBody: (n, x) => `${n} Backlinks seit der letzten Prüfung verloren — ${x}× so viel wie üblich.`,
     alertFavoriteLinkTitle: site => `⭐ Ein Favoriten-Link hat sich geändert bei ${site}`,
     alertFavoriteLinkBody: (url, what) => `${url} — ${what}`,
+    balanceLowTitle: provider => `💸 Niedriges Guthaben: ${provider}`,
+    balanceLowMsg: (provider, left, pct) => pct != null ? `*${provider}*: ${left} übrig (${pct}% des Limits).` : `*${provider}*: ${left} übrig.`,
+    providerDownTitle: provider => `🚨 Anbieter ausgefallen: ${provider}`,
+    providerDownMsg: (provider, n) => `*${provider}* ist in der letzten Stunde ${n}× fehlgeschlagen.`,
   },
   zh: {
     rankDropTitle: kw => `📉 排名下降：${kw}`,
@@ -492,5 +520,9 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     alertBacklinkLossBody: (n, x) => `自上次检查以来丢失 ${n} 条外链 — 是常规速率的 ${x}×。`,
     alertFavoriteLinkTitle: site => `⭐ 重点外链发生变化：${site}`,
     alertFavoriteLinkBody: (url, what) => `${url} — ${what}`,
+    balanceLowTitle: provider => `💸 余额不足：${provider}`,
+    balanceLowMsg: (provider, left, pct) => pct != null ? `*${provider}*：剩余 ${left}（限额的 ${pct}%）。` : `*${provider}*：剩余 ${left}。`,
+    providerDownTitle: provider => `🚨 服务商故障：${provider}`,
+    providerDownMsg: (provider, n) => `*${provider}* 最近一小时失败 ${n} 次。`,
   },
 };
