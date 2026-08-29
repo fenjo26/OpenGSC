@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Loader2, AlertTriangle, Search, ArrowLeft, Plus, X } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import { readUrlParam, writeUrlParam } from "@/lib/urlParam";
 import SeoContentAnalysis from "@/components/SeoContentAnalysis";
 import SeoJobProgress from "@/components/SeoJobProgress";
 import SeoRecentList from "@/components/SeoRecentList";
@@ -21,6 +22,13 @@ function host(u: string): string { try { return new URL(u).hostname.replace(/^ww
 export default function AnalysisPage() {
   const { t } = useLanguage();
   const [step, setStep] = useState<1 | 2 | 3>(1);
+  // Deep link (?step=2): restore on mount, mirror on change. The wizard is page-level here (no
+  // modal), so a step in the URL describes something that still exists after a reload.
+  useEffect(() => {
+    const s = Number(readUrlParam("step"));
+    if (s === 1 || s === 2 || s === 3) setStep(s);
+  }, []);
+  useEffect(() => { writeUrlParam("step", String(step)); }, [step]);
 
   // step 1
   const [keyword, setKeyword] = useState("");

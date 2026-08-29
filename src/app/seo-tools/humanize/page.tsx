@@ -14,6 +14,7 @@ import {
   Download, Trash2, Check, Plus, X, Info, Wand2, Copy,
 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import { readUrlParam, writeUrlParam } from "@/lib/urlParam";
 import { getTaskCreds, getSerpCreds, getFirecrawlKey, getConfiguredProviders, AI_PROVIDER_NAMES, loadPolicies, savePolicies, getActivePolicyName } from "@/lib/seo/keys";
 import { COUNTRIES, LANGUAGES, defaultLanguageFor } from "@/lib/seo/regions";
 import { loadHistory } from "@/lib/seo/history";
@@ -40,6 +41,13 @@ export default function HumanizePage() {
   const { t } = useLanguage();
   const [mounted, setMounted] = useState(false);
   const [tab, setTab] = useState<Tab>("analyze");
+  // Deep link (?tab=corpus): restore on mount, mirror on change. Validated against the Tab
+  // union, so a stale param falls back to the default.
+  useEffect(() => {
+    const p = readUrlParam("tab");
+    if (p === "analyze" || p === "corpus" || p === "bench") setTab(p);
+  }, []);
+  useEffect(() => { writeUrlParam("tab", tab); }, [tab]);
   const [models, setModels] = useState<StoredModel[]>([]);
   const [activeName, setActive] = useState("");
 

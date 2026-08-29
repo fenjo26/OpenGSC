@@ -7,6 +7,7 @@ import {
   FileText, ListTree, Target, Hash, HelpCircle, ArrowUp, Loader2,
 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import { readUrlParam, writeUrlParam } from "@/lib/urlParam";
 import { OutlineStructure, OutlineEntities } from "@/components/SeoRenderers";
 import SeoContentAnalysis from "@/components/SeoContentAnalysis";
 import SeoTextDetail from "@/components/SeoTextDetail";
@@ -26,6 +27,13 @@ export default function TaskDetailPage() {
 
   const [item, setItem] = useState<HistoryItem | null | undefined>(undefined);
   const [tab, setTab] = useState<"structure" | "entities">("structure");
+  // Deep link (?tab=entities): restore on mount, mirror on change. Validated against the union,
+  // so a stale param falls back to the default.
+  useEffect(() => {
+    const p = readUrlParam("tab");
+    if (p === "structure" || p === "entities") setTab(p);
+  }, []);
+  useEffect(() => { writeUrlParam("tab", tab); }, [tab]);
   const [showHtml, setShowHtml] = useState(false);
   const [dlOpen, setDlOpen] = useState(false);
   const [edit, setEdit] = useState(false);
