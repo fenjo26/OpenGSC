@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { authOptions } from '@/lib/auth';
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from '@/lib/prisma';
+import { loggedFetch } from '@/lib/providerLog/log';
 
 const BASE = 'https://inderixingbot.com/api';
 
@@ -34,12 +35,12 @@ export async function POST(req: Request) {
 
   try {
     // Step 1: Schedule the check — api_key goes in JSON body, not query string
-    const schedRes = await fetch(`${BASE}/check-index-task.php`, {
+    const { res: schedRes, call } = await loggedFetch(`${BASE}/check-index-task.php`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ api_key: token, links: urls }),
       signal: AbortSignal.timeout(15000),
-    });
+    }, { provider: 'neuralindexer' });
 
     const schedData = await schedRes.json().catch(() => ({}));
 
@@ -47,6 +48,10 @@ export async function POST(req: Request) {
     console.log('[neural/check] schedule response HTTP', schedRes.status, JSON.stringify(schedData));
 
     if (!schedRes.ok || schedData?.error) {
+      call.finish({
+        error: String(schedData?.error ?? schedData?.message ?? `HTTP ${schedRes.status}`).slice(0, 300),
+        responseBody: schedData,
+      });
       return NextResponse.json(
         { error: schedData?.error ?? schedData?.message ?? `HTTP ${schedRes.status}`, debug: schedData },
         { status: schedRes.ok ? 400 : schedRes.status },
@@ -58,6 +63,9 @@ export async function POST(req: Request) {
 
     if (!checkId) {
       // Some accounts get sync results directly (no check_id)
+      // `balance_usd` below is what is LEFT on the account, not what this cost, so it stays out
+      // of the row: costUsd holds a price a provider stated, never a balance it reported.
+      call.finish({ responseBody: schedData });
       const results: Array<{ url: string; indexed: boolean }> = schedData?.results ?? schedData?.links ?? [];
       return NextResponse.json({
         ok: true,
@@ -70,6 +78,7 @@ export async function POST(req: Request) {
     }
 
     // Step 2: Return checkId immediately — client polls /api/indexing/neural/status
+    call.finish({ responseBody: schedData });
     const actualCheckId: string = schedData?.check_id ?? `m${checkId}`;
     console.log('[neural/check] task created', actualCheckId, 'for', urls.length, 'urls');
 

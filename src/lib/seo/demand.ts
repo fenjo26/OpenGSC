@@ -26,6 +26,8 @@
 // Pricing (DataForSEO Labs, live endpoints): $0.01 per task + $0.0001 per returned row.
 // Google Ads live endpoints are flat $0.075 regardless of row count.
 
+import { loggedFetch, type CallHandle } from "@/lib/providerLog/log";
+
 const DFS_BASE = "https://api.dataforseo.com";
 const DFS_TIMEOUT_MS = 60_000;
 
@@ -208,8 +210,9 @@ async function dfsPost<T = any>(
   pick: (task: any) => T[],
 ): Promise<DfsCall<T>> {
   let res: Response;
+  let call: CallHandle;
   try {
-    res = await fetch(`${DFS_BASE}${path}`, {
+    ({ res, call } = await loggedFetch(`${DFS_BASE}${path}`, {
       method: "POST",
       headers: {
         Authorization: `Basic ${dfsAuth(credential)}`,
@@ -217,31 +220,44 @@ async function dfsPost<T = any>(
       },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(DFS_TIMEOUT_MS),
-    });
+    }, { provider: "dataforseo" }));
   } catch (e: any) {
     const reason = e?.cause?.code || e?.cause?.message || e?.message || "fetch failed";
     return { items: [], error: `сеть DataForSEO: ${reason}` };
   }
 
   if (!res.ok) {
-    return { items: [], error: `dataforseo ${res.status}: ${(await res.text()).slice(0, 200)}` };
+    const error = `dataforseo ${res.status}: ${(await res.text()).slice(0, 200)}`;
+    call.finish({ error });
+    return { items: [], error };
   }
 
   let data: any;
   try {
     data = await res.json();
   } catch {
+    call.finish({ error: "dataforseo: ответ не JSON" });
     return { items: [], error: "dataforseo: ответ не JSON" };
   }
 
+  // What DataForSEO says this request cost, in dollars, in its own envelope. Read before the
+  // status checks, because a task that failed inside a 200 was still charged for. The `cost`
+  // fields elsewhere in this module are our estimates from a rate table and are not this.
+  const costUsd = Number.isFinite(Number(data?.cost)) ? Number(data.cost) : null;
+
   if (data?.status_code && data.status_code !== 20000) {
-    return { items: [], error: `dataforseo ${data.status_code}: ${data.status_message}` };
+    const error = `dataforseo ${data.status_code}: ${data.status_message}`;
+    call.finish({ error, costUsd });
+    return { items: [], error };
   }
   const task = data?.tasks?.[0];
   if (task?.status_code && task.status_code !== 20000) {
-    return { items: [], error: `dataforseo task ${task.status_code}: ${task.status_message}` };
+    const error = `dataforseo task ${task.status_code}: ${task.status_message}`;
+    call.finish({ error, costUsd });
+    return { items: [], error };
   }
 
+  call.finish({ costUsd });
   return { items: pick(task) ?? [] };
 }
 

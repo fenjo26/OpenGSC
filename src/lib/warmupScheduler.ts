@@ -6,6 +6,8 @@ import {
   withinCap, normalizeKeyword,
 } from "@/lib/seo/metricsStore";
 import { marketFor } from "@/lib/seo/market";
+import { resolveCaptureBodies } from '@/lib/providerLog/bodies';
+import { withCallContext } from "@/lib/providerLog/context";
 
 // Keeps the keyword cache warm without anyone pressing anything.
 //
@@ -174,8 +176,12 @@ async function tick() {
   try {
     const users = await prisma.user.findMany({ select: { id: true } });
     for (const u of users) {
-      try { await warmOneUser(u.id); }
-      catch (e) { console.warn(`[warmup-cron] user ${u.id} failed:`, e); }
+      // This is money leaving a specific person's budget on a timer; the log has to say whose.
+      const captureBodies = await resolveCaptureBodies(u.id);
+      await withCallContext({ userId: u.id, feature: "warmup-cron", captureBodies }, async () => {
+        try { await warmOneUser(u.id); }
+        catch (e) { console.warn(`[warmup-cron] user ${u.id} failed:`, e); }
+      });
     }
   } catch (e) {
     console.warn("[warmup-cron] tick failed:", e);

@@ -2,6 +2,7 @@
 // Supports Serper.dev and DataForSEO (both Google and Bing engines).
 // Keys are passed in from the client (stored in the browser, never on the server).
 
+import { loggedFetch, type CallHandle } from "@/lib/providerLog/log";
 import { goanySerp } from "./goanyapi";
 import { defaultLanguageFor } from "./regions";
 
@@ -105,14 +106,20 @@ async function serperFetchPage(
   const body: Record<string, unknown> = { q: keyword, gl, hl, num: 10, page };
   if (location) body.location = location;
   try {
-    const res = await fetch(endpoint, {
+    const { res, call } = await loggedFetch(endpoint, {
       method: "POST",
       headers: { "X-API-KEY": apiKey, "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(20000),
-    });
-    if (!res.ok) return { ok: false, error: `serper ${res.status}: ${(await res.text()).slice(0, 200)}` };
-    return { ok: true, data: await res.json() };
+    }, { provider: "serper" });
+    if (!res.ok) {
+      const error = `serper ${res.status}: ${(await res.text()).slice(0, 200)}`;
+      call.finish({ error });
+      return { ok: false, error };
+    }
+    const data = await res.json();
+    call.finish({ responseBody: data });
+    return { ok: true, data };
   } catch (e: any) {
     return { ok: false, error: `сеть Serper: ${e?.cause?.code || e?.message || "fetch failed"}` };
   }
@@ -183,6 +190,19 @@ export const DFS_LOC: Record<string, number> = {
   ba: 2070, me: 2499, mk: 2807, al: 2008, si: 2705,
 };
 
+/**
+ * What DataForSEO says the request cost, in dollars.
+ *
+ * The envelope carries `cost` as the total charged for the tasks in it, which is the only
+ * cost figure in this file that comes from a provider rather than from arithmetic. Anything
+ * that is not a finite number is null: a missing field is not a free request, it is a
+ * request whose price we were not told.
+ */
+export function dfsCostUsd(data: any): number | null {
+  const n = Number(data?.cost);
+  return Number.isFinite(n) ? n : null;
+}
+
 // Docs: https://docs.dataforseo.com — SERP API (Live Advanced). Auth: HTTP Basic.
 // Credential field accepts EITHER "login:password" OR the ready Base64 token from the dashboard.
 async function dataForSeoSearch(
@@ -207,27 +227,38 @@ async function dataForSeoSearch(
   }];
 
   let res: Response;
+  let call: CallHandle;
   try {
-    res = await fetch(path, {
+    ({ res, call } = await loggedFetch(path, {
       method: "POST",
       headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
       body: JSON.stringify(task),
       signal: AbortSignal.timeout(45000),
-    });
+    }, { provider: "dataforseo" }));
   } catch (e: any) {
     return { engine, provider: "dataforseo", keyword, results: [], error: `сеть DataForSEO: ${e?.cause?.code || e?.cause?.message || e?.message || "fetch failed"}` };
   }
   if (!res.ok) {
-    return { engine, provider: "dataforseo", keyword, results: [], error: `dataforseo ${res.status}: ${(await res.text()).slice(0, 200)}` };
+    const error = `dataforseo ${res.status}: ${(await res.text()).slice(0, 200)}`;
+    call.finish({ error });
+    return { engine, provider: "dataforseo", keyword, results: [], error };
   }
   const data = await res.json();
+  // The one provider in this file that states what the request cost, in dollars, in the
+  // response itself. Read, never computed — an absent or non-numeric `cost` stays null.
+  const costUsd = dfsCostUsd(data);
   if (data?.status_code && data.status_code !== 20000) {
-    return { engine, provider: "dataforseo", keyword, results: [], error: `dataforseo ${data.status_code}: ${data.status_message}` };
+    const error = `dataforseo ${data.status_code}: ${data.status_message}`;
+    call.finish({ error, costUsd, responseBody: data });
+    return { engine, provider: "dataforseo", keyword, results: [], error };
   }
   const taskObj = data?.tasks?.[0];
   if (taskObj?.status_code && taskObj.status_code !== 20000) {
-    return { engine, provider: "dataforseo", keyword, results: [], error: `dataforseo task ${taskObj.status_code}: ${taskObj.status_message}` };
+    const error = `dataforseo task ${taskObj.status_code}: ${taskObj.status_message}`;
+    call.finish({ error, costUsd, responseBody: data });
+    return { engine, provider: "dataforseo", keyword, results: [], error };
   }
+  call.finish({ costUsd, responseBody: data });
   const items: any[] = taskObj?.result?.[0]?.items ?? [];
   const organic = items.filter((it) => it.type === "organic");
   const results: SerpResultItem[] = organic.slice(0, opts.num || 10).map((r, i) => ({
@@ -301,8 +332,9 @@ async function scrapingRobotModulePage(
   apiKey: string, keyword: string, gl: string, hl: string, page: number,
 ): Promise<{ ok: boolean; results?: any; error?: string }> {
   let res: Response;
+  let call: CallHandle;
   try {
-    res = await fetch(`${SR_ENDPOINT}?token=${encodeURIComponent(apiKey)}`, {
+    ({ res, call } = await loggedFetch(`${SR_ENDPOINT}?token=${encodeURIComponent(apiKey)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -311,15 +343,22 @@ async function scrapingRobotModulePage(
         params: { query: keyword, countryCode: gl, languageCode: hl, ...(page > 1 ? { page } : {}) },
       }),
       signal: AbortSignal.timeout(120000), // SR recommends a 2-minute timeout (it retries internally)
-    });
+    }, { provider: "scrapingrobot" }));
   } catch (e: any) {
     return { ok: false, error: `сеть ScrapingRobot: ${e?.cause?.code || e?.message || "fetch failed"}` };
   }
   let data: any;
-  try { data = await res.json(); } catch { return { ok: false, error: `scrapingrobot: non-JSON response (${res.status})` }; }
-  if (!res.ok || String(data?.status).toUpperCase() !== "SUCCESS") {
-    return { ok: false, error: `scrapingrobot: ${data?.error || data?.status || res.status}` };
+  try { data = await res.json(); } catch {
+    const error = `scrapingrobot: non-JSON response (${res.status})`;
+    call.finish({ error });
+    return { ok: false, error };
   }
+  if (!res.ok || String(data?.status).toUpperCase() !== "SUCCESS") {
+    const error = `scrapingrobot: ${data?.error || data?.status || res.status}`;
+    call.finish({ error, responseBody: data });
+    return { ok: false, error };
+  }
+  call.finish({ responseBody: data });
   return { ok: true, results: data.result };
 }
 
@@ -330,8 +369,9 @@ async function scrapingRobotHtmlPage(
 ): Promise<{ ok: boolean; items?: { url: string; title: string }[]; error?: string }> {
   const gUrl = `https://www.google.com/search?q=${encodeURIComponent(keyword)}&hl=${hl}&gl=${gl}&num=10${start > 0 ? `&start=${start}` : ""}`;
   let res: Response;
+  let call: CallHandle;
   try {
-    res = await fetch(`${SR_ENDPOINT}?token=${encodeURIComponent(apiKey)}`, {
+    ({ res, call } = await loggedFetch(`${SR_ENDPOINT}?token=${encodeURIComponent(apiKey)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -340,15 +380,22 @@ async function scrapingRobotHtmlPage(
         params: { proxyCountry: gl.toUpperCase() },
       }),
       signal: AbortSignal.timeout(120000),
-    });
+    }, { provider: "scrapingrobot" }));
   } catch (e: any) {
     return { ok: false, error: `сеть ScrapingRobot: ${e?.cause?.code || e?.message || "fetch failed"}` };
   }
   let data: any;
-  try { data = await res.json(); } catch { return { ok: false, error: `scrapingrobot: non-JSON response (${res.status})` }; }
-  if (!res.ok || String(data?.status).toUpperCase() !== "SUCCESS") {
-    return { ok: false, error: `scrapingrobot: ${data?.error || data?.status || res.status}` };
+  try { data = await res.json(); } catch {
+    const error = `scrapingrobot: non-JSON response (${res.status})`;
+    call.finish({ error });
+    return { ok: false, error };
   }
+  if (!res.ok || String(data?.status).toUpperCase() !== "SUCCESS") {
+    const error = `scrapingrobot: ${data?.error || data?.status || res.status}`;
+    call.finish({ error, responseBody: data });
+    return { ok: false, error };
+  }
+  call.finish({ responseBody: data });
   const html = typeof data?.result === "string" ? data.result : (data?.result?.html ?? "");
   return { ok: true, items: parseGoogleHtml(html) };
 }

@@ -19,6 +19,8 @@
 // `lastUpdate` is therefore surfaced on every SERP response instead of being dropped, and
 // `lib/rank.ts` refuses this provider outright.
 
+import { loggedFetch, type CallHandle } from "@/lib/providerLog/log";
+
 const BASE = "https://goanyapi.com/api/v1";
 
 /**
@@ -73,32 +75,55 @@ async function get<T>(
   if (!apiKey.trim()) return fail<T>("no_key");
   const qs = new URLSearchParams(params).toString();
   let res: Response;
+  let call: CallHandle;
   try {
-    res = await fetch(`${BASE}/${path}?${qs}`, {
+    // `attempt` counts from 0 here and from 1 in the log, where attempt 1 is a single-shot call.
+    ({ res, call } = await loggedFetch(`${BASE}/${path}?${qs}`, {
       headers: { Authorization: `Bearer ${apiKey.trim()}`, Accept: "application/json" },
       signal: AbortSignal.timeout(30_000),
-    });
+    }, { provider: "goanyapi", attempt: attempt + 1 }));
   } catch (e: any) {
     return fail<T>(`goanyapi network: ${e?.cause?.code || e?.message || "fetch failed"}`);
   }
 
   if (res.status === 429 && attempt === 0) {
+    // A rate-limited request is still a request the provider answered, and the retry below opens
+    // a row of its own. Two rows is the truth here; one would hide a round trip.
+    call.finish({ error: "goanyapi 429" });
     const wait = Math.min(10, Math.max(1, parseInt(res.headers.get("Retry-After") || "2", 10) || 2));
     await new Promise(r => setTimeout(r, wait * 1000));
     return get<T>(apiKey, path, params, 1);
   }
-  if (!res.ok) return fail<T>(classify(res.status, await res.text().catch(() => "")));
+  if (!res.ok) {
+    const error = classify(res.status, await res.text().catch(() => ""));
+    call.finish({ error });
+    return fail<T>(error);
+  }
 
   let body: any;
-  try { body = await res.json(); } catch { return fail<T>("goanyapi: non-JSON response"); }
+  try { body = await res.json(); } catch {
+    call.finish({ error: "goanyapi: non-JSON response" });
+    return fail<T>("goanyapi: non-JSON response");
+  }
 
   // A 200 with `code !== "ok"` is their in-band error channel. Treating it as success is how a
   // failure becomes an empty result three layers away.
   if (body?.code && body.code !== "ok") {
-    return fail<T>(`goanyapi ${body.code}: ${String(body.message ?? "").slice(0, 200)}`);
+    const error = `goanyapi ${body.code}: ${String(body.message ?? "").slice(0, 200)}`;
+    call.finish({ error, responseBody: body });
+    return fail<T>(error);
   }
   const d = body?.data;
-  if (!d) return fail<T>("goanyapi: empty data");
+  if (!d) {
+    call.finish({ error: "goanyapi: empty data", responseBody: body });
+    return fail<T>("goanyapi: empty data");
+  }
+
+  // `costCredits` below is what this request cost in GoAnyAPI credits, and credits are not
+  // dollars: what a credit is worth depends on the plan the key was bought on, which this app
+  // never sees. Putting it in `costUsd` would produce a number that reads as money and is not,
+  // so the row's cost stays null and the credit count keeps travelling in the result as before.
+  call.finish({ responseBody: body });
 
   return {
     data: d as T,

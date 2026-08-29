@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { authOptions } from '@/lib/auth';
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from '@/lib/prisma';
+import { loggedFetch } from '@/lib/providerLog/log';
 
 const BASE = 'https://inderixingbot.com/api';
 
@@ -30,7 +31,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const res = await fetch(`${BASE}/v2/submissions`, {
+    const { res, call } = await loggedFetch(`${BASE}/v2/submissions`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${user.neuralIndexerToken}`,
@@ -42,16 +43,29 @@ export async function POST(req: Request) {
         ...(label ? { label } : {}),
       }),
       signal: AbortSignal.timeout(15000),
-    });
+    }, { provider: 'neuralindexer' });
 
     const data = await res.json().catch(() => ({}));
 
     if (!res.ok) {
+      call.finish({
+        error: String(data?.error ?? data?.message ?? `HTTP ${res.status}`).slice(0, 300),
+        responseBody: data,
+      });
       return NextResponse.json(
         { error: data?.error ?? data?.message ?? `HTTP ${res.status}` },
         { status: res.status },
       );
     }
+
+    // `charged_amount` is NeuralIndexer's own figure for what this submission cost, in dollars,
+    // and it is the one field here that belongs in `costUsd`. `balance_usd` beside it is what is
+    // left on the account and is not a price. A cached submission reports its own charge, which
+    // may be zero — recorded as stated rather than assumed either way.
+    call.finish({
+      costUsd: typeof data?.charged_amount === 'number' ? data.charged_amount : null,
+      responseBody: data,
+    });
 
     // Persist submission status to SitemapUrl records if siteDbId provided
     if (siteDbId) {
@@ -104,7 +118,8 @@ export async function GET() {
   }
 
   try {
-    const res = await fetch(
+    // Asking what is left is not an action, and NeuralIndexer bills for submissions and checks.
+    const res = await fetch( // providerLog-exempt: balance read, not a billed action
       `${BASE}/balance.php?api_key=${encodeURIComponent(user.neuralIndexerToken)}`,
       { signal: AbortSignal.timeout(8000) },
     );

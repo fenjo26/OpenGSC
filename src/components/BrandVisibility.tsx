@@ -20,7 +20,7 @@ import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { formatUsd } from "@/lib/seo/metricsClient";
 import { getDataForSeoKey } from "@/lib/seo/keys";
-import { LLM_PLATFORMS, PLATFORM_LABEL, type LlmPlatform } from "@/lib/seo/llmMentions";
+import { LLM_PLATFORMS, PLATFORM_LABEL, type LlmPlatform } from "@/lib/seo/llmPlatforms";
 
 interface Totals { platform: LlmPlatform; mentions: number; aiSearchVolume: number; impressions: number }
 interface Mention {

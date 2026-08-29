@@ -20,7 +20,8 @@ import { COUNTRIES } from "@/lib/seo/regions";
 import {
   getMetricsCreds, estimateCostUsd, formatUsd,
 } from "@/lib/seo/metricsClient";
-import { estimateCompetitorUnits, estimateOrganicKeywordUnits } from "@/lib/seo/metrics";
+// Prices only, from the module that has no network half — see `metricsPricing.ts`.
+import { estimateCompetitorUnits, estimateOrganicKeywordUnits } from "@/lib/seo/metricsPricing";
 
 interface GapRow {
   keyword: string; competitor: string;

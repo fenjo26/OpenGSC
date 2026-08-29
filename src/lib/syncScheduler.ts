@@ -14,6 +14,8 @@
 import { runGscSync, isSyncInProgress } from "@/lib/gscSync";
 import { getSyncSchedule, saveSyncSchedule, isDue } from "@/lib/syncSchedule";
 import { rawQuery } from "@/lib/db/raw";
+import { resolveCaptureBodies } from '@/lib/providerLog/bodies';
+import { withCallContext } from "@/lib/providerLog/context";
 
 const TICK_MS = 15 * 60 * 1000;
 
@@ -40,7 +42,17 @@ async function tick() {
   }
 
   console.log(`[sync-cron] starting scheduled sync (due for ${due.length} user(s))`);
-  await runGscSync();
+  // A null user, deliberately. `runGscSync()` is one instance-wide run serving everyone who is
+  // due, so there is no single owner to name — and naming one of the due users would bill their
+  // account for calls made on everybody's behalf. An admitted gap beats an invented owner; the
+  // `feature` still says which run these calls belong to.
+  //
+  // The same reasoning decides the bodies switch, which is why it is asked with `null` rather
+  // than skipped: this run has no owner whose consent could be read, so nothing short of the
+  // instance-wide `OPENGSC_LOG_BODIES` override turns capture on here. Reading the first due
+  // user's setting would store everybody's payloads on one person's say-so.
+  const captureBodies = await resolveCaptureBodies(null);
+  await withCallContext({ userId: null, feature: "sync-cron", captureBodies }, () => runGscSync());
 
   // Written after the run, not before: a run that crashed halfway should be retried on the next
   // tick rather than counted as this day's sync.

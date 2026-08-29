@@ -4,7 +4,13 @@
 // No third-party HTML-parsing deps — pure regex extraction.
 
 import { extractMainContent } from "./readability";
+import { loggedFetch, type CallHandle } from "@/lib/providerLog/log";
 import { safeFetch, type SafeFetchResponse } from "@/lib/security/safeFetch";
+
+// Only the Firecrawl calls in this file are logged as provider calls. Everything else here goes
+// out through `safeFetch` to the customer's own target sites, which nobody bills for and which
+// would swamp the provider log with the one thing it is not about — so this module is
+// deliberately absent from the enumeration in providerModules.test.ts.
 
 export interface ScrapedPage {
   url: string;
@@ -174,13 +180,16 @@ export async function scrapeStructure(url: string, firecrawlKey?: string): Promi
     return { url, ok: true, via: "fetch", title, nodes, totalWords: nodes.reduce((s, n) => s + n.words, 0) };
   } catch (e: any) {
     if (firecrawlKey) {
+      let call: CallHandle | undefined;
       try {
-        const res = await fetch("https://api.firecrawl.dev/v1/scrape", {
+        const opened = await loggedFetch("https://api.firecrawl.dev/v1/scrape", {
           method: "POST",
           headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
           body: JSON.stringify({ url, formats: ["html", "markdown"], onlyMainContent: true }),
           signal: AbortSignal.timeout(45000),
-        });
+        }, { provider: "firecrawl" });
+        const res = opened.res;
+        call = opened.call;
         if (!res.ok) throw new Error(`firecrawl ${res.status}`);
         const data = await res.json();
         const html: string = data?.data?.html ?? "";
@@ -188,8 +197,10 @@ export async function scrapeStructure(url: string, firecrawlKey?: string): Promi
         const meta = data?.data?.metadata ?? {};
         const nodes = html ? extractStructure(html) : extractStructureFromMarkdown(md);
         if (!nodes.length) throw new Error("no_headings");
+        call.finish();
         return { url, ok: true, via: "firecrawl", title: meta.title || "", nodes, totalWords: nodes.reduce((s, n) => s + n.words, 0) };
       } catch (e2: any) {
+        call?.finish({ error: e2?.message ?? "firecrawl_failed" });
         return { url, ok: false, via: "failed", title: "", nodes: [], totalWords: 0, error: `fetch:${e?.message}; firecrawl:${e2?.message}` };
       }
     }
@@ -242,14 +253,18 @@ async function directFetch(url: string): Promise<ScrapedPage> {
 
 // Firecrawl fallback. Docs: https://firecrawl.dev — returns clean markdown + html.
 async function firecrawlFetch(url: string, apiKey: string): Promise<ScrapedPage> {
-  const res = await fetch("https://api.firecrawl.dev/v1/scrape", {
+  const { res, call } = await loggedFetch("https://api.firecrawl.dev/v1/scrape", {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({ url, formats: ["html", "markdown"], onlyMainContent: true }),
     signal: AbortSignal.timeout(45000),
-  });
-  if (!res.ok) throw new Error(`firecrawl ${res.status}`);
+  }, { provider: "firecrawl" });
+  if (!res.ok) {
+    call.finish({ error: `firecrawl ${res.status}` });
+    throw new Error(`firecrawl ${res.status}`);
+  }
   const data = await res.json();
+  call.finish();
   const html: string = data?.data?.html ?? "";
   const md: string = data?.data?.markdown ?? "";
   const meta = data?.data?.metadata ?? {};

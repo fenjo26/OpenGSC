@@ -320,6 +320,48 @@ function ToggleRowSetting({ label, desc, on, onToggle }: { label: string; desc: 
   );
 }
 
+/**
+ * The one switch that makes the provider call log keep payloads.
+ *
+ * It is off by default and says why in the copy rather than in a doc nobody opens: capture stores
+ * the prompt and the model's reply verbatim, so it is a debugging tool to be turned on for one
+ * problem and off again — not a setting to leave on.
+ *
+ * The note about a running job is not padding. The value is resolved once, when a job or a
+ * request starts, and carried for the length of that work, because the logger is synchronous and
+ * cannot re-read a setting mid-call. So a generation that began before the switch was turned off
+ * keeps capturing to its end. Stated here, where the switch is, instead of being discovered by
+ * someone watching bodies keep appearing after they thought they had stopped it.
+ *
+ * `seoProviderLogBodies` rides SeoKeysSync's mirror to `User.seoSettings`, like the scheduled
+ * warm-up before it, because the thing that reads it is a server process with no browser.
+ */
+function BodyCaptureSetting() {
+  const { t } = useLanguage();
+  const [on, setOn] = useState(false);
+  useEffect(() => { setOn((localStorage.getItem("seoProviderLogBodies") ?? "0") === "1"); }, []);
+  const toggle = () => {
+    const v = !on;
+    setOn(v);
+    // Written as "0" rather than removed: the mirror only pushes non-empty values, so an erased
+    // key would leave the server's last "1" standing and capture would carry on server-side.
+    localStorage.setItem("seoProviderLogBodies", v ? "1" : "0");
+  };
+
+  return (
+    <div style={{ marginBottom: "18px", paddingBottom: "16px", borderBottom: "1px solid var(--color-border)" }}>
+      <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--color-text-primary)", marginBottom: "4px" }}>🧾 {t("seoLogBodiesTitle")}</div>
+      <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", margin: "0 0 4px" }}>{t("seoLogBodiesSub")}</div>
+      <ToggleRowSetting label={t("seoLogBodiesLabel")} desc={t("seoLogBodiesDesc")} on={on} onToggle={toggle} />
+      {on && (
+        <div style={{ padding: "10px 12px", borderRadius: "8px", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)", fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.55 }}>
+          ⚠ {t("seoLogBodiesWarn")}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FactCheckSettings() {
   const { t } = useLanguage();
   const [autoFc, setAutoFc] = useState(true);
@@ -637,6 +679,7 @@ export default function SeoToolsSettings() {
       <CustomProviderCard />
       <PerTaskProviders />
       <FactCheckSettings />
+      <BodyCaptureSetting />
 
       <div style={{ marginBottom: "14px" }}>
         <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "7px" }}>{t("seoSetActiveProvider")}</div>

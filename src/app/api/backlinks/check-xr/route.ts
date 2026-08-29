@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { authOptions } from '@/lib/auth';
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from '@/lib/prisma';
+import { loggedFetch } from '@/lib/providerLog/log';
 
 // POST { siteDbId, ids?: string[] }  — checks XML River index status for backlinks
 export async function POST(req: Request) {
@@ -33,8 +34,9 @@ export async function POST(req: Request) {
   for (const link of links) {
     try {
       const apiUrl = `https://xmlriver.com/search_console/json/?user=${encodeURIComponent(user.xmlRiverUserId)}&key=${encodeURIComponent(user.xmlRiverApiKey)}&url=${encodeURIComponent(link.url)}`;
-      const res = await fetch(apiUrl, { signal: AbortSignal.timeout(8000) });
+      const { res, call } = await loggedFetch(apiUrl, { signal: AbortSignal.timeout(8000) }, { provider: 'xmlriver' });
       const data = await res.json().catch(() => ({}));
+      call.finish(data?.error ? { error: String(data.error).slice(0, 300), responseBody: data } : { responseBody: data });
       const xrStatus = data?.error ? 'error' : data?.indexed ? 'indexed' : 'not_indexed';
       await prisma.backlink.update({
         where: { id: link.id },

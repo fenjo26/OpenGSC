@@ -5,15 +5,16 @@ import { signIn, useSession } from "next-auth/react";
 import {
   ArrowLeft, Plus, X, CheckCircle, AlertCircle,
   Users, Settings, Globe, Key, KeyRound, Edit2, Copy,
-  ChevronDown, Crown, Zap, Star, Eye, Sparkles, BarChart3,
+  ChevronDown, Crown, Zap, Star, Eye, Sparkles, BarChart3, ScrollText,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import TeamMembersPanel from "@/components/TeamMembersPanel";
 import SeoToolsSettings, { SeoProviderKeysSection, AeoProviderKeysSection } from "@/components/SeoToolsSettings";
 import MetricsSettingsSection from "@/components/MetricsSettingsSection";
+import ProviderLogSection from "@/components/ProviderLogSection";
 
-type NavItem = "accounts" | "bing" | "yandex" | "teams" | "api" | "api-keys" | "indexing-api" | "metrics" | "seo-tools" | "notifications" | "members" | "preferences" | "supersites";
+type NavItem = "accounts" | "bing" | "yandex" | "teams" | "api" | "api-keys" | "indexing-api" | "metrics" | "seo-tools" | "provider-log" | "notifications" | "members" | "preferences" | "supersites";
 
 // These screens predate a real organization/member authorization model. Keep them available to
 // contributors who are working on that RFC, but do not present client-only mock state as a
@@ -2209,7 +2210,7 @@ export default function SettingsPage() {
     const tab = new URLSearchParams(window.location.search).get("tab");
     const valid: NavItem[] = [
       "accounts", "bing", "yandex", "api", "api-keys", "indexing-api", "metrics",
-      "seo-tools", "notifications", "preferences",
+      "seo-tools", "provider-log", "notifications", "preferences",
       "members",
       ...(EXPERIMENTAL_TEAM_UI ? ["teams", "supersites"] as NavItem[] : []),
     ];
@@ -2279,6 +2280,7 @@ export default function SettingsPage() {
             <NavBtn id="indexing-api" icon={<Globe size={14} />} label={t("navIndexingApi")} />
             <NavBtn id="metrics" icon={<BarChart3 size={14} />} label={t("navMetrics")} />
             <NavBtn id="seo-tools" icon={<Sparkles size={14} />} label={t("navSeoTools")} />
+            <NavBtn id="provider-log" icon={<ScrollText size={14} />} label={t("navProviderLog")} />
             <NavBtn id="notifications" icon={<Zap size={14} />} label={t("navNotifications")} />
           </div>
 
@@ -2354,6 +2356,7 @@ export default function SettingsPage() {
           {nav === "indexing-api" && <IndexApiSection />}
           {nav === "metrics"      && <MetricsSettingsSection />}
           {nav === "seo-tools"    && <SeoToolsSettings />}
+          {nav === "provider-log" && <SectionCard><ProviderLogSection /></SectionCard>}
           {nav === "notifications" && <NotificationsSection />}
           {nav === "members" && <TeamMembersPanel />}
           {nav === "preferences"  && <PreferencesSection user={user} />}
