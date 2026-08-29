@@ -129,7 +129,7 @@ export default function AuditsPage() {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
+    <div className="main-content">
       <div>
         <h2 style={{ fontSize: "20px", fontWeight: 700, color: "var(--color-text-primary)", margin: "0 0 4px" }}>{t("auditsGTitle")}</h2>
         <p style={{ fontSize: "13px", color: "var(--color-text-secondary)", margin: 0 }}>{t("auditsGSub")}</p>
