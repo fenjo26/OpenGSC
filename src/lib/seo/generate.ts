@@ -901,6 +901,8 @@ async function writeTextInChunks(outline: any, ctx: {
    * carries.
    */
   chunkSections?: number;
+  /** Phase-level progress reporter (the background job's __onProgress hook). Optional — the synchronous route runs without one. */
+  onProgress?: (pct: number, stage?: string) => void;
 }): Promise<ChunkedTextResult> {
   // FAQ-like sections[] entries are dropped up front (defensive — outlines saved before the
   // sanitizer existed still carry the template's "H2: FAQ" duplicate): the FAQ is rendered
@@ -1061,7 +1063,13 @@ async function writeTextInChunks(outline: any, ctx: {
     const first = String(c[0]?.heading || "").trim();
     if (first && md.toLowerCase().includes(first.slice(0, Math.min(30, first.length)).toLowerCase())) parts[i] = md;
   };
-  await runPool(chunks.map((c, i) => ({ c, i })), 2, writeChunk);
+  // Success-based, so the bar only ever moves forward: a chunk that failed both its attempts
+  // doesn't count until a retry round lands it.
+  const reportWrite = () => {
+    const done = parts.filter(p => p != null).length;
+    ctx.onProgress?.(10 + Math.round((52 * done) / chunks.length), "write");
+  };
+  await runPool(chunks.map((c, i) => ({ c, i })), 2, async (item) => { await writeChunk(item); reportWrite(); });
 
   // A failed chunk is retried ON ITS OWN, and this is the whole point of the change. One null
   // part used to discard every sibling chunk that had already been written AND paid for; the
@@ -1074,7 +1082,7 @@ async function writeTextInChunks(outline: any, ctx: {
     if (!missing.length) break;
     console.error(`[text] ${missing.length}/${chunks.length} chunks missing — retry round ${round + 1}${lastChunkError ? ` (last: ${lastChunkError})` : ""}`);
     await new Promise(r => setTimeout(r, 10_000 * (round + 1)));
-    for (const i of missing) await writeChunk({ c: chunks[i], i });
+    for (const i of missing) { await writeChunk({ c: chunks[i], i }); reportWrite(); }
   }
 
   // Frozen BEFORE the FAQ pass, which rewrites `parts` in place and would otherwise turn a
@@ -1100,6 +1108,7 @@ async function writeTextInChunks(outline: any, ctx: {
   const canonFaq = (md: string) => md
     .replace(/^(##\s*FAQ[^\n]*)\n+[\s\S]*?(?=^###\s)/m, "$1\n\n"); // strip prose between H2 and 1st question
   if (faq.length) {
+    ctx.onProgress?.(66, "faq");
     for (let i = 0; i < parts.length; i++) if (parts[i] != null) parts[i] = stripFaqSection(parts[i] as string);
     try {
       const faqPrompt = buildFaqSectionPrompt({
@@ -1213,6 +1222,7 @@ export async function genText(b: any): Promise<GenResult> {
   let sources: { title: string; snippet: string; url: string; domain: string }[] = [];
   let effMode: "off" | "facts" | "cited" = sourceMode;
   if (sourceMode !== "off" && b.serpKey && keyword) {
+    b.__onProgress?.(8, "serp");
     try {
       const serp = await runSerp(String(b.serpProvider || "serper"), String(b.serpKey), keyword, { gl: b.gl, hl: b.hl, num: 10, engine: "google", baseUrl: b.serpBaseUrl ? String(b.serpBaseUrl) : undefined });
       const top = (serp.results || []).slice(0, Math.max(1, Math.min(10, Number(b.scrapeCount ?? 6))));
@@ -1340,6 +1350,7 @@ export async function genText(b: any): Promise<GenResult> {
   // the exact failure the chunked writer exists to prevent) or the prose held and the prompt was
   // ignored. Now the instruction rides in every chunk as the highest-priority block instead.
   if (b.chunkedText !== false && secCount >= 10) {
+    b.__onProgress?.(10, "write");
     try {
       chunked = await writeTextInChunks(slimOutline, {
         keyword: keyword || String(slimOutline.meta?.keyword ?? ""),
@@ -1352,6 +1363,7 @@ export async function genText(b: any): Promise<GenResult> {
         custom: authorInstruction,
         promptType: b.promptType === "custom" ? "custom" : "service",
         chunkSections: b.chunkSections != null ? Number(b.chunkSections) : undefined,
+        onProgress: b.__onProgress,
       });
     } catch { chunked = null; }
   }
@@ -1382,6 +1394,10 @@ export async function genText(b: any): Promise<GenResult> {
     if (/\b(401|402|403|413)\b|insufficient_balance|invalid_api_key/i.test(chunked?.lastError || "")) {
       return { ok: false, error: `generation_failed: ${chunked!.lastError}` };
     }
+    // Single-shot write (small outline, or the chunked writer already failed). Only when the
+    // chunked path never ran: after it has, the bar already sits at its last honest value and
+    // must not be walked back for the fallback call.
+    if (!chunked) b.__onProgress?.(15, "write");
     const prompt = buildTextPrompt({
       outlineJson: slimOutline,
       policy: b.policy,
@@ -1431,6 +1447,7 @@ export async function genText(b: any): Promise<GenResult> {
   let autoCleaned = false;
   const bank = Array.isArray(b.outline?.meta?.facts_bank) ? b.outline.meta.facts_bank : [];
   if (b.autoFactCheck !== false && bank.length && text) {
+    b.__onProgress?.(72, "factcheck");
     try {
       const bankText = bank.map((x: any, i: number) => `[${i + 1}]${x.official ? " (ОФИЦИАЛЬНЫЙ)" : ""} ${x.domain || x.source}\n${x.facts}`).join("\n\n");
       let cleaned = await fetchLLM(buildAutoFactCleanPrompt({
@@ -1455,6 +1472,7 @@ export async function genText(b: any): Promise<GenResult> {
   // and pad the surviving sections to cover words that belong to text nobody wrote.
   const finalTargetWc = targetWc;
   if (b.expandText !== false && finalTargetWc >= 500 && !incomplete) {
+    b.__onProgress?.(78, "volume");
     text = await enforceVolumeTarget(text, finalTargetWc, {
       language, provider, apiKey, model, baseUrl,
       custom: authorInstruction, bannedWords: Array.isArray(b.bannedWords) ? b.bannedWords : undefined,
@@ -1504,6 +1522,7 @@ export async function genText(b: any): Promise<GenResult> {
     mechIssues = first.issues;
     const toRepair = repairableIssues(mechIssues);
     if (toRepair.length && b.mechanicsRepair !== false) {
+      b.__onProgress?.(84, "mechanics");
       try {
         const repaired = await fetchLLM(
           buildMechanicsRepairPrompt({ article: text, defects: toRepair.map(i => i.detail), language }),
@@ -1532,6 +1551,7 @@ export async function genText(b: any): Promise<GenResult> {
   // judge rejecting it for being incomplete would destroy work the design chose to keep.
   let judgeConcerns: string[] = [];
   if (b.judge !== false && !incomplete) {
+    b.__onProgress?.(90, "judge");
     const verdict = await judgeArticle(
       text,
       {
