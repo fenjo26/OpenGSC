@@ -372,6 +372,7 @@ function FactCheckSettings() {
   const [srcCount, setSrcCount] = useState(6);
   const [mech, setMech] = useState(true);
   const [mechRepair, setMechRepair] = useState(true);
+  const [marks, setMarks] = useState(true);
   useEffect(() => {
     setAutoFc((localStorage.getItem("seoAutoFactcheck") ?? "1") !== "0");
     setAutoImg((localStorage.getItem("seoAutoImages") ?? "1") !== "0");
@@ -381,6 +382,7 @@ function FactCheckSettings() {
     setSrcCount(parseInt(localStorage.getItem("seoFactSources") ?? "6", 10) || 6);
     setMech((localStorage.getItem("seoMechanics") ?? "1") !== "0");
     setMechRepair((localStorage.getItem("seoMechanicsRepair") ?? "1") !== "0");
+    setMarks((localStorage.getItem("seoMarksScrub") ?? "1") !== "0");
   }, []);
   const toggleFc = () => { const v = !autoFc; setAutoFc(v); localStorage.setItem("seoAutoFactcheck", v ? "1" : "0"); };
   const toggleImg = () => { const v = !autoImg; setAutoImg(v); localStorage.setItem("seoAutoImages", v ? "1" : "0"); };
@@ -389,6 +391,7 @@ function FactCheckSettings() {
   const toggleReuse = () => { const v = !reuseCorpus; setReuseCorpus(v); localStorage.setItem("seoFactReuseCorpus", v ? "1" : "0"); };
   const toggleMech = () => { const v = !mech; setMech(v); localStorage.setItem("seoMechanics", v ? "1" : "0"); };
   const toggleMechRepair = () => { const v = !mechRepair; setMechRepair(v); localStorage.setItem("seoMechanicsRepair", v ? "1" : "0"); };
+  const toggleMarks = () => { const v = !marks; setMarks(v); localStorage.setItem("seoMarksScrub", v ? "1" : "0"); };
   const setSrc = (n: number) => { const v = Math.max(0, Math.min(10, n)); setSrcCount(v); localStorage.setItem("seoFactSources", String(v)); };
 
   return (
@@ -401,6 +404,7 @@ function FactCheckSettings() {
       <ToggleRowSetting label={t("seoFactReuseLabel")} desc={t("seoFactReuseDesc")} on={reuseCorpus} onToggle={toggleReuse} />
       <ToggleRowSetting label={t("seoMechanicsLabel")} desc={t("seoMechanicsDesc")} on={mech} onToggle={toggleMech} />
       {mech && <ToggleRowSetting label={t("seoMechanicsRepairLabel")} desc={t("seoMechanicsRepairDesc")} on={mechRepair} onToggle={toggleMechRepair} />}
+      <ToggleRowSetting label={t("seoMarksScrubLabel")} desc={t("seoMarksScrubDesc")} on={marks} onToggle={toggleMarks} />
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "14px", padding: "10px 0" }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--color-text-primary)" }}>{t("seoFactSourcesLabel")}</div>

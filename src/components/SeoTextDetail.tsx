@@ -61,6 +61,7 @@ function DiagnosticsPanel({ diag }: { diag: NonNullable<NonNullable<HistoryItem[
           {fixed.length > 0 && <span style={chip(green)}>{fixed.length} {t("seoDiagFixed")}</span>}
           {typeof diag.usedSources === "number" && <span style={chip(grey)}>{diag.usedSources} {t("seoDiagSources")}</span>}
           {diag.autoCleaned && <span style={chip(grey)}>{t("seoDiagAutoCleaned")}</span>}
+          {diag.marksScrub && <span title={t("seoDiagMarksHint")} style={chip("#8B5CF6")}>−{diag.marksScrub.total} {t("seoDiagMarks")}</span>}
         </span>
         <ChevronDown size={16} style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 0.2s", flexShrink: 0 }} />
       </button>

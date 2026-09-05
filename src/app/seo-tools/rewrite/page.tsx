@@ -16,7 +16,7 @@ import { slugFromSource, renderAs, downloadFile, extensionFor, EXPORT_FORMATS, t
 import { uniquenessPct, wordCount, type KeywordCoverage } from "@/lib/seo/textMetrics";
 
 type StructureCheck = { expected: number[]; got: number[]; ok: boolean };
-type Variant = { content: string; uniqueness: number; words: number; aiScore?: number; drift?: FactDrift; structure?: StructureCheck; repaired?: boolean; coverage?: KeywordCoverage };
+type Variant = { content: string; uniqueness: number; words: number; aiScore?: number; drift?: FactDrift; structure?: StructureCheck; repaired?: boolean; coverage?: KeywordCoverage; marksScrub?: { total: number; byClass: Record<string, number> } };
 type Snippet = { sourceTitle: string; sourceDescription: string; title: string; description: string };
 
 // Google truncates around these lengths; the counter turns red past them.
@@ -456,6 +456,11 @@ export default function RewritePage() {
             {v.repaired && (
               <span title={t("rwRepairedHint" as never)} style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "11px", fontWeight: 700, padding: "2px 9px", borderRadius: "20px", color: "#2997ff", background: "rgba(41,151,255,0.12)" }}>
                 <Wrench size={11} /> {t("rwRepaired" as never)}
+              </span>
+            )}
+            {v.marksScrub && (
+              <span title={t("rwMarksHint" as never)} style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "11px", fontWeight: 700, padding: "2px 9px", borderRadius: "20px", color: "#8B5CF6", background: "rgba(139,92,246,0.12)" }}>
+                <Sparkles size={11} /> −{v.marksScrub.total} {t("rwMarks" as never)}
               </span>
             )}
             <span style={{ flex: 1 }} />

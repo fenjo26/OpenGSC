@@ -21,6 +21,7 @@ import { loadHistory } from "@/lib/seo/history";
 import { trainModel, scoreText, suggestBannedWords, modelStats, type AiDetectReport } from "@/lib/seo/aidetect";
 import { loadModels, upsertModel, removeModel, getActiveName, setActiveName, effectiveBannedWords, type StoredModel } from "@/lib/seo/aidetectStore";
 import { factDrift, driftSeverity, type FactDrift } from "@/lib/seo/factDrift";
+import { scanMarks, scrubMarks, type MarkScan } from "@/lib/seo/marksScrub";
 import FactDriftPanel from "@/components/FactDriftPanel";
 
 const ACCENT = "#ff6482";
@@ -104,6 +105,13 @@ function AnalyzeTab({ active }: { active: StoredModel | null }) {
   const [exported, setExported] = useState(false);
   const [hzBusy, setHzBusy] = useState(false);
   const [hz, setHz] = useState<{ before: number; after: number; text: string; drift: FactDrift } | null>(null);
+  // Layer A scan, recomputed as the text changes — deterministic and local, so it costs nothing
+  // and cannot lag behind the textarea the way a server round-trip would.
+  const marks: MarkScan | null = useMemo(() => (text ? scanMarks(text) : null), [text]);
+  const marksBreakdown = useMemo(
+    () => Object.entries(marks?.byClass ?? {}).map(([k, n]) => `${k} ×${n}`).join(", "),
+    [marks],
+  );
 
   const history = useMemo(() => loadHistory().filter(h => h.type === "text" && typeof h.data === "string"), []);
 
@@ -191,12 +199,28 @@ function AnalyzeTab({ active }: { active: StoredModel | null }) {
           </label>
         )}
         <textarea value={text} onChange={e => setText(e.target.value)} placeholder={t("hmTextPlaceholder" as any)} rows={10} style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit", lineHeight: 1.6 }} />
+        {marks && marks.total > 0 && (
+          <div style={{ border: "1px solid rgba(255,159,10,0.35)", background: "rgba(255,159,10,0.06)", borderRadius: "10px", padding: "12px 14px", display: "flex", gap: "10px", alignItems: "flex-start", flexWrap: "wrap" }}>
+            <AlertTriangle size={16} color="var(--color-accent-orange)" style={{ flexShrink: 0, marginTop: "1px" }} />
+            <div style={{ flex: 1, minWidth: "200px", fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+              <b style={{ color: "var(--color-text-primary)" }}>{t("hmMarksFound").replace("{n}", String(marks.total))}</b>
+              <div>{marksBreakdown}</div>
+            </div>
+            <button onClick={() => setText(scrubMarks(text).text)} style={ghostBtn}>{t("hmMarksClean")}</button>
+          </div>
+        )}
         {err && <div style={{ fontSize: "12px", color: "#f87171", display: "flex", alignItems: "center", gap: "6px" }}><AlertTriangle size={14} /> {err}</div>}
         <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
           <button onClick={run} disabled={!active} style={btn(ACCENT, !active)}><Play size={14} /> {t("hmAnalyze" as any)}</button>
           <button onClick={() => humanize()} disabled={!active || hzBusy} style={btn("#8B5CF6", !active || hzBusy)}>
             {hzBusy ? <><Loader2 size={14} className="spin" /> {t("hmHumanizing" as any)}</> : <><Wand2 size={14} /> {t("hmHumanize" as any)}</>}
           </button>
+        </div>
+        {/* The one lever this lab cannot measure locally: statistical watermarks break best when
+            the rewriter is not the model that wrote the text. Said once, above the fold. */}
+        <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.6, display: "flex", gap: "8px", alignItems: "flex-start" }}>
+          <Info size={14} color="var(--color-accent-blue)" style={{ flexShrink: 0, marginTop: "2px" }} />
+          <span>{t("hmSwapModelHint")}</span>
         </div>
       </div>
 

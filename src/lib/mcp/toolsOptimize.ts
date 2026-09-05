@@ -334,6 +334,7 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
         forbiddenBrands: { type: "array", items: { type: "string" }, description: "Names that must not appear in the rewritten body. Checked deterministically after each page and reported per page as `mechanics`; never fails a page." },
         custom: { type: "string", description: "Free-text instruction applied to every page in this job — what the rewrite must not mention, placeholders it must keep verbatim, links it must add. Use this for one-off rules; a standing house style belongs in the editorial policy instead." },
         maskAI: { type: "boolean", description: "Strip common machine tells from the output (default true)" },
+        marksScrub: { type: "boolean", description: "Strip invisible Unicode marks from the output — zero-width spaces, bidi controls, soft hyphens, exotic spaces (default true). Set false only to reproduce the raw model output." },
         bannedWords: { type: "array", items: { type: "string" }, description: "Words the model must not use — the AI-Fingerprint Lab's marker export goes here" },
         temperature: { type: "number", description: "Sampling temperature; omit for the provider default" },
         snippet: { type: "boolean", description: "Also propose a refreshed title + meta description per page" },
@@ -403,6 +404,7 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
         custom: args.custom ? String(args.custom) : undefined,
         forbiddenBrands: Array.isArray(args.forbiddenBrands) ? args.forbiddenBrands.map(String) : undefined,
         maskAI: args.maskAI !== false,
+        marksScrub: args.marksScrub !== false,
         bannedWords: Array.isArray(args.bannedWords) ? args.bannedWords.map(String) : undefined,
         temperature: args.temperature != null ? Number(args.temperature) : undefined,
         snippet: args.snippet === true,
@@ -458,6 +460,7 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
         chunkSections: { type: "number", description: "type=text: how many sections one writing call covers (2–5, default 5). Lower it only when a page keeps losing a rule the instruction demonstrably carries — each step down adds provider calls, which is what a rate limit counts." },
         forbiddenBrands: { type: "array", items: { type: "string" }, description: "type=text: names that must not appear in the body. Checked deterministically after writing and repaired in one scoped pass; with sourceMode=facts the source domains are used automatically and this only adds to them." },
         judge: { type: "boolean", description: "Independent QA pass on the finished result (default true): a fresh-context model call — on the per-task 'judge' slot, which can be a DIFFERENT model than the writer — checks a finished article is complete and publishable (rejects truncated stubs, planning notes, wrong language) and an outline actually covers the keyword, before anything is saved as completed." },
+        marksScrub: { type: "boolean", description: "type=text: strip invisible Unicode marks from the finished article — zero-width spaces, bidi controls, soft hyphens, exotic spaces (default true). Reported in the result as `marksScrub` when anything was found." },
         payload: { type: "object", description: "Pipeline payload, the same shape the /seo-tools UI posts — e.g. { competitors, paa, related } for outline, { gl, hl, keywords } for cluster, { generate } for landing. The common knobs above are top-level arguments; payload wins when both are given." },
         policyName: { type: "string", description: "Editorial policy to write under, by name. Omit to use the instance's active policy — it is applied either way." },
       },
@@ -495,7 +498,7 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
       // the pipeline read payload.keyword, so an agent following the docs got `no_keyword`
       // unless it ALSO nested the keyword inside payload.
       const knobs: Record<string, unknown> = {};
-      for (const k of ["keyword", "language", "country", "tone", "promptType", "custom", "sourceMode", "includeToc", "targetWordCount", "temperature", "bannedWords", "judge", "chunkSections", "forbiddenBrands"]) {
+        for (const k of ["keyword", "language", "country", "tone", "promptType", "custom", "sourceMode", "includeToc", "targetWordCount", "temperature", "bannedWords", "judge", "chunkSections", "forbiddenBrands", "marksScrub"]) {
         if (args[k] !== undefined && args[k] !== null) knobs[k] = args[k];
       }
       const payload: any = { ...knobs, ...((args.payload as object) ?? {}), ...creds, ...(serpCreds ?? {}), ...(policy ? { policy } : {}) };

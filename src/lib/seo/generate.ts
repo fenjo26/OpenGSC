@@ -22,6 +22,7 @@ import {
 } from "@/lib/seo/prompts";
 import { findRagFacts } from "@/lib/seo/rag";
 import { decodeHtmlEntities } from "@/lib/seo/outlineFormat";
+import { scrubMarks } from "@/lib/seo/marksScrub";
 
 // Language-agnostic "this heading is a FAQ section" test — templates carry "H2: FAQ" and the
 // localization pass renames it («FAQ : Tout savoir…», «Часто задаваемые вопросы»…).
@@ -1485,6 +1486,20 @@ export async function genText(b: any): Promise<GenResult> {
   // later expand/trim/fact-clean pass, could otherwise leave/reintroduce a wrong-language word).
   text = ensureTocLabel(text, language);
 
+  // Layer A marks scrub (marksScrub.ts): strip the invisible fingerprints a model can leave
+  // behind — zero-width characters, bidi controls, soft hyphens, exotic spaces, tag and
+  // private-use code points — and straighten curly quotes in Latin-quote text. Deterministic,
+  // free, and placed here so the mechanics gate, the judge and the saved article all see the
+  // final characters. Off with marksScrub:false.
+  let marks: { total: number; byClass: Record<string, number> } | undefined;
+  if (b.marksScrub !== false) {
+    const scrub = scrubMarks(text);
+    if (scrub.total > 0) {
+      text = scrub.text;
+      marks = { total: scrub.total, byClass: scrub.byClass };
+    }
+  }
+
   // ── MECHANICS GATE ────────────────────────────────────────────────────────────────────
   // Everything above this line is the pipeline trying to get the page right by asking. This is
   // the part that checks. The rules are derived rather than configured, so the check costs the
@@ -1583,6 +1598,7 @@ export async function genText(b: any): Promise<GenResult> {
       // Present only when something was actually found, so a clean article keeps the exact shape
       // consumers already parse. `fixed: true` entries are informational (the text already
       // carries the correction); the rest are what still needs a human.
+      ...(marks ? { marksScrub: marks } : {}),
       ...(mechIssues.length ? { mechanics: mechIssues } : {}),
       ...(judgeConcerns.length ? { judgeConcerns } : {}),
       // Present only when sections are genuinely absent, so existing consumers see the same

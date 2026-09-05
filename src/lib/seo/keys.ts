@@ -339,6 +339,15 @@ export function getMechanicsRepairOn(): boolean {
   if (typeof window === "undefined") return true;
   return (localStorage.getItem("seoMechanicsRepair") ?? "1") !== "0";
 }
+/**
+ * Layer A marks scrub (marksScrub.ts): strips the invisible characters a model can leave in the
+ * output — zero-width spaces, bidi controls, soft hyphens, exotic spaces. Deterministic and free,
+ * so the only reason to turn it off is reproducing the raw model output; default ON.
+ */
+export function getMarksScrubOn(): boolean {
+  if (typeof window === "undefined") return true;
+  return (localStorage.getItem("seoMarksScrub") ?? "1") !== "0";
+}
 export function getFactSourceCount(): number {
   if (typeof window === "undefined") return 6;
   const n = parseInt(localStorage.getItem("seoFactSources") ?? "6", 10);

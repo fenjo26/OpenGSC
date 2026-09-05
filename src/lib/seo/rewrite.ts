@@ -10,6 +10,7 @@ import { uniquenessPct, wordCount, keywordCoverage, stripPageFurniture, type Key
 import { renderPolicy, type EditorialPolicy } from "@/lib/seo/policy";
 import { contentGate } from "@/lib/seo/rewriteGate";
 import { judgeArticle, type JudgeOutcome } from "@/lib/seo/judge";
+import { scrubMarks } from "@/lib/seo/marksScrub";
 import {
   checkMechanics, placeholdersFromInstruction, linksFromInstruction,
   type MechanicsIssue,
@@ -22,6 +23,7 @@ export interface RewriteBody {
   language?: string;        // target language NAME (e.g. "Greek"); empty = keep source language
   tone?: string;            // optional tone hint
   maskAI?: boolean;         // strip common AI patterns (default true)
+  marksScrub?: boolean;     // strip invisible Unicode marks from the output (default true)
   bannedWords?: string[];   // domain vocabulary to avoid AT GENERATION TIME (see note below)
   /**
    * The queries this page is meant to rank for, with volumes where known.
@@ -100,6 +102,13 @@ export interface RewriteVariant {
    * check and a QA judge, and none of the three can see any of this.
    */
   mechanics?: MechanicsIssue[];
+  /**
+   * Layer A marks scrub report (marksScrub.ts): how many invisible characters the shipped text
+   * was carrying — zero-width spaces, bidi controls, soft hyphens, exotic spaces — and where
+   * they came from, by class. Absent when the text was clean, so a clean variant keeps the
+   * shape consumers already parse.
+   */
+  marksScrub?: { total: number; byClass: Record<string, number> };
 }
 
 /** Refreshed search snippet alongside the current one, so the change is judged by comparison. */
@@ -248,6 +257,7 @@ export function buildRewritePrompt(args: {
   custom?: string;
   bannedWords?: string[];
   targetKeywords?: { keyword: string; volume?: number | null; globalVolume?: number | null }[];
+  maskAI?: boolean;
 }): string {
   const source = args.source;
   const variants = Math.min(5, Math.max(1, Number(args.variants) || 1));
@@ -266,6 +276,14 @@ export function buildRewritePrompt(args: {
   const banned = (args.bannedWords || []).map(w => String(w).trim()).filter(Boolean).slice(0, 80);
   const bannedLine = banned.length
     ? `Do not use these words or their inflected forms anywhere in the output: ${banned.join(", ")}. Express the same ideas with different wording. `
+    : "";
+
+  // Same philosophy as `bannedLine`, one level up: concrete surface tokens, not vague style
+  // directives. These are exactly the characters maskAIPatterns() and the Layer A scrub strip
+  // post-hoc — asking for them at generation time too means those passes have nothing left to
+  // fix, and every pass between keeps seeing the same text the reader will.
+  const styleLine = args.maskAI !== false
+    ? `Typography: use straight quotes (") and apostrophes ('), a plain hyphen (-) instead of em or en dashes, and "-" for bullets. Never insert invisible or zero-width characters. `
     : "";
 
   // Scraped pages arrive as Markdown with the heading tree intact, and that tree is the page's SEO
@@ -326,7 +344,7 @@ export function buildRewritePrompt(args: {
     `You are an expert SEO copywriter. Rewrite the content below so it is UNIQUE and original, ` +
     `while preserving the exact meaning, all facts, numbers, named entities, and links. ` +
     `Keep the same format as the input (HTML stays HTML, Markdown stays Markdown, plain stays plain). ` +
-    `${structureLine}${currencyLine}${keepLine}${targetLine}${langLine} ${toneLine} ${bannedLine}${customBlock}` +
+    `${structureLine}${currencyLine}${keepLine}${targetLine}${langLine} ${toneLine} ${bannedLine}${styleLine}${customBlock}` +
     (variants > 1 ? `This is variant #${i + 1} — make it clearly different from the other variants. ` : "") +
     `Output ONLY the rewritten content, with no preamble, notes, or explanations.\n\n` +
     `CONTENT:\n${source}`;
@@ -387,7 +405,7 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
   const basePrompt = (i: number) => buildRewritePrompt({
     source, variantIndex: i, variants,
     language: b.language, tone: b.tone, policy: b.policy, custom: b.custom,
-    bannedWords: b.bannedWords, targetKeywords: b.targetKeywords,
+    bannedWords: b.bannedWords, targetKeywords: b.targetKeywords, maskAI: b.maskAI,
   });
 
   // Targeted second pass, run only when the audit finds something wrong. It names the specific
@@ -448,6 +466,16 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
     }
     let content = clean(gen.text ?? "");
     if (!content) return null;
+    // Layer A marks scrub (marksScrub.ts) runs FIRST, before any downstream regex — a zero-width
+    // character inside "€30" or "moreover" would make the currency and phrase passes miss both.
+    let marks: RewriteVariant["marksScrub"];
+    if (b.marksScrub !== false) {
+      const scrub = scrubMarks(content);
+      if (scrub.total > 0) {
+        content = scrub.text;
+        marks = { total: scrub.total, byClass: scrub.byClass };
+      }
+    }
     content = normalizeCurrency(source, content);
 
     // Audit, then repair once if needed. A single scoped pass is deliberate: repeated correction
@@ -515,6 +543,7 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
     return {
       content, uniqueness: uniquenessPct(source, content), words: wordCount(content),
       drift, structure, repaired, coverage, judge: judged,
+      ...(marks ? { marksScrub: marks } : {}),
       ...(mech.issues.length ? { mechanics: mech.issues } : {}),
     };
   });

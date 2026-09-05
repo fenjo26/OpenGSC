@@ -16,6 +16,8 @@ export interface SeoDiagnostics {
   autoCleaned?: boolean;
   incomplete?: boolean;
   missingHeadings?: string[];
+  /** Layer A marks scrub (marksScrub.ts): what the final text was carrying before the strip. */
+  marksScrub?: { total: number; byClass: Record<string, number> };
 }
 
 // A text record keeps only the article STRING in `data`, so everything the generator reported
@@ -29,6 +31,7 @@ export function textDiagnostics(result: any): SeoDiagnostics | null {
     ...(typeof result.usedSources === "number" ? { usedSources: result.usedSources } : {}),
     ...(result.autoCleaned ? { autoCleaned: true } : {}),
     ...(result.incomplete ? { incomplete: true, missingHeadings: result.missingHeadings ?? [] } : {}),
+    ...(result.marksScrub && result.marksScrub.total > 0 ? { marksScrub: result.marksScrub } : {}),
   };
   return Object.keys(diag).length ? (diag as SeoDiagnostics) : null;
 }
