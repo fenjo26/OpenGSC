@@ -297,6 +297,34 @@ export async function countPendingAvailability(userId: string, runId?: string): 
   });
 }
 
+/**
+ * Candidates that still carry no DR, oldest first, optionally scoped to one run.
+ *
+ * The free DR endpoint answers one domain per request, so a row that already has a rating is
+ * never asked again — the post-import sweep drains this queue until it stops shrinking, and the
+ * names the endpoint cannot rate (never-indexed domains) are exactly what makes it stop instead
+ * of looping.
+ */
+export async function pendingDrCandidates(
+  userId: string,
+  opts: { runId?: string; limit?: number } = {},
+): Promise<string[]> {
+  const rows = (await db.dropCandidate.findMany({
+    where: { userId, dr: null, ...(opts.runId ? { runId: opts.runId } : {}) },
+    orderBy: { createdAt: "asc" },
+    take: Math.min(Math.max(opts.limit ?? 60, 1), 250),
+    select: { domain: true },
+  })) as { domain: string }[];
+  return rows.map(r => r.domain);
+}
+
+/** How many still lack a DR — the sweep's progress line and its no-progress stop condition. */
+export async function countPendingDr(userId: string, runId?: string): Promise<number> {
+  return db.dropCandidate.count({
+    where: { userId, dr: null, ...(runId ? { runId } : {}) },
+  });
+}
+
 /** Backoff after a refusal, in minutes: 6h → 12h → 24h, then held at 24h. */
 const REFUSAL_BACKOFF_MIN = [6 * 60, 12 * 60, 24 * 60, 24 * 60];
 

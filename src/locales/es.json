@@ -3753,5 +3753,10 @@
   "dropsEnrichHistoryDone": "Veredictos de historial: {n}",
   "dropsHistoryNoCreds": "No hay proveedor de IA configurado en los ajustes",
   "dropsEnrichNoDrKey": "No se encontró clave de Ahrefs — añade la clave DR gratuita (Ajustes → SEO Metrics) o cualquier clave de pago de Ahrefs",
-  "dropsWaybackLink": "Historial en Wayback Machine"
+  "dropsWaybackLink": "Historial en Wayback Machine",
+  "dropsEnrichAutoHint": "El DR se carga solo para la página visible; tras una importación, todo el run se recorre en segundo plano.",
+  "dropsEnrichAutoNoKey": "DR automático silenciado — no hay clave de Ahrefs configurada (Ajustes → SEO Metrics)",
+  "dropsEnrichSweepStarted": "Importación completada — cargando DR para {n} dominios en segundo plano",
+  "dropsEnrichSweepStalled": "El barrido de DR terminó antes de tiempo: {n} dominios sin rating — sin datos o el endpoint no respondió",
+  "dropsEnrichStopped": "Detenido — filas actualizadas: {n}"
 }

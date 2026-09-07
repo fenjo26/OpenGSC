@@ -3753,5 +3753,10 @@
   "dropsEnrichHistoryDone": "Вердикти історії: {n}",
   "dropsHistoryNoCreds": "AI-провайдер не налаштовано в налаштуваннях",
   "dropsEnrichNoDrKey": "Ключ Ahrefs не знайдено — додайте безкоштовний DR-ключ (Налаштування → SEO Metrics) або будь-який платний ключ Ahrefs",
-  "dropsWaybackLink": "Історія в Wayback Machine"
+  "dropsWaybackLink": "Історія в Wayback Machine",
+  "dropsEnrichAutoHint": "DR підтягується сам для видимої сторінки; після імпорту весь ран обходиться у фоні",
+  "dropsEnrichAutoNoKey": "Автозавантаження DR вимкнено — не налаштовано ключ Ahrefs (Налаштування → SEO Metrics)",
+  "dropsEnrichSweepStarted": "Імпорт готово — довантажую DR для {n} доменів у фоні",
+  "dropsEnrichSweepStalled": "Обхід DR закінчився раніше: {n} доменів без рейтингу — немає даних або ендпоінт не відповів",
+  "dropsEnrichStopped": "Зупинено — оновлено рядків: {n}"
 }

@@ -3753,5 +3753,10 @@
   "dropsEnrichHistoryDone": "历史判定：{n}",
   "dropsHistoryNoCreds": "设置中未配置 AI 提供商",
   "dropsEnrichNoDrKey": "未找到 Ahrefs 密钥 — 请添加免费 DR 密钥（设置 → SEO Metrics）或任意付费 Ahrefs 密钥",
-  "dropsWaybackLink": "Wayback Machine 历史"
+  "dropsWaybackLink": "Wayback Machine 历史",
+  "dropsEnrichAutoHint": "DR 会为当前可见页面自动加载；导入后整个 run 会在后台自动补齐",
+  "dropsEnrichAutoNoKey": "自动 DR 已静默 — 未配置 Ahrefs 密钥（设置 → SEO Metrics）",
+  "dropsEnrichSweepStarted": "导入完成 — 正在后台为 {n} 个域名加载 DR",
+  "dropsEnrichSweepStalled": "DR 扫描提前结束：{n} 个域名没有评分 — 无数据或接口未响应",
+  "dropsEnrichStopped": "已停止 — 已更新行：{n}"
 }

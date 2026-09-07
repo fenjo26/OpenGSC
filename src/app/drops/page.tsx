@@ -18,6 +18,7 @@ type Candidate = {
   corroborated: boolean; lastError?: string | null;
 };
 type ImportSummary = {
+  runId: string;
   accepted: number; inserted: number; reattached: number;
   skipped: number; skipReport: Record<string, number>;
 };
@@ -130,9 +131,20 @@ export default function DropsPage() {
 
   // Enrichment (DR / Wayback / refdomains). One busy-flag family and one progress line — they
   // are free, free and paid respectively, but they share the shape "walk the target list in
-  // bounded batches until it is done".
+  // bounded batches until it is done". `enrichStop` is a ref, not state: the walkers read it
+  // between batches, and a state read there would be the value captured when the loop started.
   const [enrichBusy, setEnrichBusy] = useState<"" | "dr" | "wayback" | "refs" | "history">("");
   const [enrichProgress, setEnrichProgress] = useState<{ done: number; total: number; updated: number } | null>(null);
+  const enrichStop = useRef(false);
+
+  // DR also moves without being asked, dashboard-style: the visible page's unrated domains go
+  // out in the background, and a fresh import starts a run-wide sweep. Two one-way guards keep
+  // that polite — a domain is auto-attempted once per session, and one "no key anywhere" answer
+  // mutes auto attempts for the session (the manual button still says "настроить ключ" out loud
+  // when actually pressed).
+  const autoDrTried = useRef<Set<string>>(new Set());
+  const autoDrNoKey = useRef(false);
+  const [drKeyMissing, setDrKeyMissing] = useState(false);
 
   const loadRuns = useCallback(async () => {
     try {
@@ -175,6 +187,41 @@ export default function DropsPage() {
     const id = setTimeout(() => { void loadRows(); }, 250);
     return () => clearTimeout(id);
   }, [loadRows]);
+
+  // Dashboard parity for the DR column: whatever the table is showing gets filled in by itself,
+  // the same way /api/dr fills the dashboard cards — silently, from DrCache where possible, in
+  // 60-domain batches. It only ever touches the visible page; sweeping a whole run is the
+  // import sweep's job, and while any enrichment is running the walkers own the pipeline.
+  // The setRows inside fires only after an awaited fetch, so it cannot cascade a second render
+  // before paint — the shape the set-state-in-effect rule actually worries about.
+  useEffect(() => {
+    if (notMigrated || enrichBusy || autoDrNoKey.current) return;
+    const targets = rows
+      .filter(r => r.dr == null && !autoDrTried.current.has(r.domain))
+      .map(r => r.domain);
+    if (!targets.length) return;
+    targets.forEach(d => autoDrTried.current.add(d));
+    let cancelled = false;
+    (async () => {
+      for (let i = 0; i < targets.length; i += 60) {
+        if (cancelled) return;
+        try {
+          const res = await fetch("/api/drops/dr", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ domains: targets.slice(i, i + 60) }),
+          });
+          const body = await res.json();
+          if (!res.ok) return;
+          if (body.keyFound === false) { autoDrNoKey.current = true; setDrKeyMissing(true); return; }
+          const ratings = (body?.ratings ?? {}) as Record<string, number>;
+          if (Object.keys(ratings).length && !cancelled) {
+            setRows(prev => prev.map(r => (ratings[r.domain] != null ? { ...r, dr: ratings[r.domain] } : r)));
+          }
+        } catch { return; }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [rows, enrichBusy, notMigrated]);
 
   // Any filter change invalidates the current page number — page 4 of the old result set is not
   // page 4 of the new one, and staying there shows an empty table for a filter that has matches.
@@ -236,6 +283,11 @@ export default function DropsPage() {
       setRaw("");
       await loadRuns();
       await loadRows();
+      // The import's own DR pass, in the background: reattached rows keep their old rating, so
+      // only what actually lacks one gets asked. Fire-and-forget — the sweep owns the same
+      // progress line as the manual buttons and stops the same way.
+      const expected = Number(body.inserted ?? 0) + Number(body.reattached ?? 0);
+      if (expected > 0 && typeof body.runId === "string") void sweepDr(body.runId, expected);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -321,17 +373,21 @@ export default function DropsPage() {
     sliceSize: number,
     step: (slice: string[]) => Promise<number>,
   ) {
+    enrichStop.current = false;
     setEnrichBusy(kind); setError(""); setNotice("");
     setEnrichProgress({ done: 0, total: targets.length, updated: 0 });
     let done = 0, updated = 0;
     try {
       for (let i = 0; i < targets.length; i += sliceSize) {
+        if (enrichStop.current) break;
         const slice = targets.slice(i, i + sliceSize);
         updated += await step(slice);
         done += slice.length;
         setEnrichProgress({ done, total: targets.length, updated });
       }
-      setNotice(tr("dropsEnrichDone").replace("{n}", String(updated)));
+      setNotice(enrichStop.current
+        ? tr("dropsEnrichStopped").replace("{n}", String(updated))
+        : tr("dropsEnrichDone").replace("{n}", String(updated)));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -365,6 +421,52 @@ export default function DropsPage() {
     const ratings = (body?.ratings ?? {}) as Record<string, number>;
     return persistMetrics(Object.entries(ratings).map(([domain, dr]) => ({ domain, dr })));
   });
+
+  /**
+   * The run-wide DR sweep an import starts by itself. Same loop shape as the DNS and registry
+   * walkers, but the server names each batch: the client keeps asking until `done`, until a
+   * batch rates nothing, or until the user hits Stop. A zero-rated batch is the honest ending —
+   * the rest of the run is names Ahrefs has no number for (or the endpoint just refused), and
+   * looping further would only hammer it.
+   */
+  async function sweepDr(sweepRunId: string, expected: number) {
+    if (enrichBusy) return;
+    enrichStop.current = false;
+    setEnrichBusy("dr"); setError("");
+    setNotice(tr("dropsEnrichSweepStarted").replace("{n}", expected.toLocaleString()));
+    setEnrichProgress({ done: 0, total: Math.max(expected, 1), updated: 0 });
+    let updated = 0;
+    try {
+      for (;;) {
+        const res = await fetch("/api/drops/dr", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ runId: sweepRunId }),
+        });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body?.error || "dr_failed");
+        if (body.keyFound === false) throw new Error(tr("dropsEnrichNoDrKey"));
+        updated += body.updated ?? 0;
+        const remaining = Number(body.remaining ?? 0);
+        setEnrichProgress({
+          done: Math.max(expected - remaining, 0),
+          total: Math.max(expected, 1),
+          updated,
+        });
+        const stalled = body.updated === 0 && !body.done;
+        if (body.done || stalled || enrichStop.current) {
+          if (stalled) setNotice(tr("dropsEnrichSweepStalled").replace("{n}", remaining.toLocaleString()));
+          else if (enrichStop.current) setNotice(tr("dropsEnrichStopped").replace("{n}", String(updated)));
+          else setNotice(tr("dropsEnrichDone").replace("{n}", String(updated)));
+          break;
+        }
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setEnrichBusy("");
+      await loadRows();
+    }
+  }
 
   // Wayback is served by the app itself in bounded 12-domain slices (see the wayback route).
   const enrichWayback = () => walkEnrichment("wayback", enrichTargets(), 12, async slice => {
@@ -607,9 +709,12 @@ export default function DropsPage() {
         bill Ahrefs units and asks first. Acts on the selection, or on the visible page. */}
     {(rows.length > 0 || enrichBusy) && <div className="panel" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12.5 }}>
       <span style={{ color: "var(--color-text-tertiary)" }}>{tr("dropsEnrichLabel")}</span>
-      <button onClick={enrichDr} disabled={enrichBusy !== ""} style={ghostBtn}>
-        {enrichBusy === "dr" ? <Loader2 className="spin" size={13} /> : <Star size={13} />}
-        {enrichBusy === "dr" ? tr("dropsEnrichDrBusy") : tr("dropsEnrichDr")}
+      {/* While a DR pass is running this is its Stop button — same pattern as the DNS and
+          registry stages, because a run-wide sweep can legitimately run for a while. */}
+      <button onClick={enrichBusy === "dr" ? () => { enrichStop.current = true; } : enrichDr}
+        disabled={enrichBusy !== "" && enrichBusy !== "dr"} style={ghostBtn}>
+        {enrichBusy === "dr" ? <Square size={13} /> : <Star size={13} />}
+        {enrichBusy === "dr" ? tr("dropsDnsStop") : tr("dropsEnrichDr")}
       </button>
       <button onClick={enrichWayback} disabled={enrichBusy !== ""} style={ghostBtn}>
         {enrichBusy === "wayback" ? <Loader2 className="spin" size={13} /> : <History size={13} />}
@@ -627,8 +732,9 @@ export default function DropsPage() {
       {enrichBusy && enrichProgress && <span style={{ color: "var(--color-text-secondary)" }}>
         {enrichProgress.done.toLocaleString()} / {enrichProgress.total.toLocaleString()} · <b>{enrichProgress.updated.toLocaleString()}</b> {tr("dropsEnrichUpdated")}
       </span>}
+      {drKeyMissing && <span style={{ color: "var(--color-accent-orange, #ff9f0a)" }}>{tr("dropsEnrichAutoNoKey")}</span>}
       <span style={{ flex: 1, minWidth: 160, color: "var(--color-text-tertiary)", fontSize: 12 }}>
-        {tr("dropsAttribution")}
+        {tr("dropsEnrichAutoHint")} {tr("dropsAttribution")}
       </span>
     </div>}
 

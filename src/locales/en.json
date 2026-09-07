@@ -3753,5 +3753,10 @@
   "dropsEnrichHistoryDone": "History verdicts: {n}",
   "dropsHistoryNoCreds": "No AI provider configured in settings",
   "dropsEnrichNoDrKey": "No Ahrefs key found — add the free DR key (Settings → SEO Metrics) or any paid Ahrefs key",
-  "dropsWaybackLink": "Wayback Machine history"
+  "dropsWaybackLink": "Wayback Machine history",
+  "dropsEnrichAutoHint": "DR fills in on its own for the visible page; after an import the whole run is swept in the background.",
+  "dropsEnrichAutoNoKey": "Auto DR is muted — no Ahrefs key configured (Settings → SEO Metrics)",
+  "dropsEnrichSweepStarted": "Import done — loading DR for {n} domains in the background",
+  "dropsEnrichSweepStalled": "DR sweep ended early: {n} domains have no rating — no data, or the endpoint refused",
+  "dropsEnrichStopped": "Stopped — rows updated: {n}"
 }

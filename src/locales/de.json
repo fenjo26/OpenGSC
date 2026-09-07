@@ -3753,5 +3753,10 @@
   "dropsEnrichHistoryDone": "Verlaufs-Ergebnisse: {n}",
   "dropsHistoryNoCreds": "Kein KI-Anbieter in den Einstellungen konfiguriert",
   "dropsEnrichNoDrKey": "Kein Ahrefs-Schlüssel gefunden — hinterlege den kostenlosen DR-Schlüssel (Einstellungen → SEO Metrics) oder einen beliebigen kostenpflichtigen Ahrefs-Schlüssel",
-  "dropsWaybackLink": "Wayback-Machine-Verlauf"
+  "dropsWaybackLink": "Wayback-Machine-Verlauf",
+  "dropsEnrichAutoHint": "DR lädt für die sichtbare Seite von selbst; nach einem Import wird der komplette Run im Hintergrund durchlaufen.",
+  "dropsEnrichAutoNoKey": "Auto-DR ist stumm — kein Ahrefs-Schlüssel konfiguriert (Einstellungen → SEO Metrics)",
+  "dropsEnrichSweepStarted": "Import fertig — DR für {n} Domains wird im Hintergrund geladen",
+  "dropsEnrichSweepStalled": "DR-Durchlauf endete früh: {n} Domains ohne Rating — keine Daten oder Endpoint hat nicht geantwortet",
+  "dropsEnrichStopped": "Gestoppt — Zeilen aktualisiert: {n}"
 }
