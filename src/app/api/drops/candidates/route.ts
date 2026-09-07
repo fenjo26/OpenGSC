@@ -15,6 +15,8 @@ function filterFromParams(p: URLSearchParams) {
   const stage = p.get("stage");
   const source = p.get("source");
   const minScore = Number(p.get("minScore"));
+  const drMin = Number(p.get("drMin"));
+  const drMax = Number(p.get("drMax"));
   return {
     runId: p.get("runId") ?? undefined,
     // An unrecognised value is dropped rather than passed through: a typo in the query string
@@ -24,6 +26,9 @@ function filterFromParams(p: URLSearchParams) {
     tld: p.get("tld")?.toLowerCase().replace(/^\./, "") || undefined,
     q: p.get("q") ?? undefined,
     minScore: Number.isFinite(minScore) && p.get("minScore") ? minScore : undefined,
+    drMin: Number.isFinite(drMin) && p.get("drMin") ? drMin : undefined,
+    drMax: Number.isFinite(drMax) && p.get("drMax") ? drMax : undefined,
+    drNull: p.get("drNull") === "1" ? true : undefined,
     starred: p.get("starred") === "1" ? true : undefined,
     watched: p.get("watched") === "1" ? true : undefined,
   };
@@ -71,6 +76,9 @@ function filterFromBody(raw: unknown) {
     ...(s("tld") ? { tld: s("tld")! } : {}),
     ...(s("q") ? { q: s("q")! } : {}),
     ...(Number.isFinite(minScore) && o.minScore != null && o.minScore !== "" ? { minScore: String(minScore) } : {}),
+    ...(s("drMin") ? { drMin: s("drMin")! } : {}),
+    ...(s("drMax") ? { drMax: s("drMax")! } : {}),
+    ...(o.drNull === "1" || o.drNull === 1 ? { drNull: "1" } : {}),
     ...(o.starred === "1" || o.starred === 1 ? { starred: "1" } : {}),
     ...(o.watched === "1" || o.watched === 1 ? { watched: "1" } : {}),
   }));

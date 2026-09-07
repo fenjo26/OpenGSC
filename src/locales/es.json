@@ -3767,5 +3767,8 @@
   "dropsEnrichAutoNoKey": "DR automático silenciado — no hay clave de Ahrefs configurada (Ajustes → SEO Metrics)",
   "dropsEnrichSweepStarted": "Importación completada — cargando DR para {n} dominios en segundo plano",
   "dropsEnrichSweepStalled": "El barrido de DR terminó antes de tiempo: {n} dominios sin rating — sin datos o el endpoint no respondió",
-  "dropsEnrichStopped": "Detenido — filas actualizadas: {n}"
+  "dropsEnrichStopped": "Detenido — filas actualizadas: {n}",
+  "dropsDrAll": "DR: cualquiera",
+  "dropsDrNone": "sin DR (—)",
+  "dropsDrNoneHint": "«sin DR» = sin enriquecer o sin rating de Ahrefs; «≤ 10» = descartables, «≥ 20» = prometedores"
 }

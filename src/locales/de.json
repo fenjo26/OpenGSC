@@ -3767,5 +3767,8 @@
   "dropsEnrichAutoNoKey": "Auto-DR ist stumm — kein Ahrefs-Schlüssel konfiguriert (Einstellungen → SEO Metrics)",
   "dropsEnrichSweepStarted": "Import fertig — DR für {n} Domains wird im Hintergrund geladen",
   "dropsEnrichSweepStalled": "DR-Durchlauf endete früh: {n} Domains ohne Rating — keine Daten oder Endpoint hat nicht geantwortet",
-  "dropsEnrichStopped": "Gestoppt — Zeilen aktualisiert: {n}"
+  "dropsEnrichStopped": "Gestoppt — Zeilen aktualisiert: {n}",
+  "dropsDrAll": "DR: beliebig",
+  "dropsDrNone": "kein DR (—)",
+  "dropsDrNoneHint": "„kein DR“ = noch nicht angereichert oder ohne Ahrefs-Bewertung; „≤ 10“ = Ausschuss, „≥ 20“ = vielversprechend"
 }

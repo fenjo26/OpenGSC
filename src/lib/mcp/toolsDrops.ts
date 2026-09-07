@@ -59,7 +59,7 @@ export const DROPS_TOOLS: McpTool[] = [
     name: "drops_list",
     cost: "local",
     description:
-      "List the expired-domain catalogue (/drops): candidates with stage, DR, refdomains, Wayback snapshots, score and AI history verdict. Filters: runId, stage, tld, q (domain substring), starred, minScore; sorted page. Returns the funnel stage counts alongside, so one call answers 'what does the catalogue look like'.",
+      "List the expired-domain catalogue (/drops): candidates with stage, DR, refdomains, Wayback snapshots, score and AI history verdict. Filters: runId, stage, tld, q (domain substring), starred, watched, minScore, and a DR band (drMin/drMax inclusive range; drNull=true for rows never rated — a different thing from DR 0); sorted page. Returns the funnel stage counts alongside, so one call answers 'what does the catalogue look like'.",
     inputSchema: {
       type: "object",
       properties: {
@@ -70,6 +70,9 @@ export const DROPS_TOOLS: McpTool[] = [
         starred: { type: "boolean" },
         watched: { type: "boolean", description: "only rows the watch loop is polling" },
         minScore: { type: "number" },
+        drMin: { type: "number", description: "minimum DR, inclusive — e.g. 10 for 'DR ≥ 10'" },
+        drMax: { type: "number", description: "maximum DR, inclusive — e.g. 5 for the garbage band 0–5" },
+        drNull: { type: "boolean", description: "true = only rows with no DR yet (never enriched, or Ahrefs has no rating); independent of drMin/drMax" },
         limit: { type: "number", description: "rows per page, default 50, max 200" },
         offset: { type: "number" },
         orderBy: { type: "string", description: `one of: ${SORT_FIELDS.join(", ")} (default score)` },
@@ -90,6 +93,9 @@ export const DROPS_TOOLS: McpTool[] = [
         starred: args.starred === true ? true : undefined,
         watched: args.watched === true ? true : undefined,
         minScore: typeof args.minScore === "number" ? args.minScore : undefined,
+        drMin: typeof args.drMin === "number" ? args.drMin : undefined,
+        drMax: typeof args.drMax === "number" ? args.drMax : undefined,
+        drNull: args.drNull === true ? true : undefined,
         limit: lim(args.limit, 50, 200),
         offset: lim(args.offset, 0, 1_000_000) - 1,
         orderBy: sortField,

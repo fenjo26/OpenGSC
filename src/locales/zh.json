@@ -3767,5 +3767,8 @@
   "dropsEnrichAutoNoKey": "自动 DR 已静默 — 未配置 Ahrefs 密钥（设置 → SEO Metrics）",
   "dropsEnrichSweepStarted": "导入完成 — 正在后台为 {n} 个域名加载 DR",
   "dropsEnrichSweepStalled": "DR 扫描提前结束：{n} 个域名没有评分 — 无数据或接口未响应",
-  "dropsEnrichStopped": "已停止 — 已更新行：{n}"
+  "dropsEnrichStopped": "已停止 — 已更新行：{n}",
+  "dropsDrAll": "DR：任意",
+  "dropsDrNone": "无 DR（—）",
+  "dropsDrNoneHint": "「无 DR」= 尚未加载或 Ahrefs 无评分；「≤ 10」= 垃圾，「≥ 20」= 有潜力"
 }

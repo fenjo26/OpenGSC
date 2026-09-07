@@ -165,6 +165,14 @@ export interface CandidateFilter {
   /** Substring match on the domain, for the search box. */
   q?: string;
   minScore?: number;
+  /**
+   * DR band. `drNull` is its own option, not the bottom of the range: "—" means never enriched
+   * or rated, and the garbage-cleanup flow (фильтр ≤ 5 → выбрать все → удалить) must not sweep
+   * up rows that simply have not been asked yet.
+   */
+  drMin?: number;
+  drMax?: number;
+  drNull?: boolean;
   starred?: boolean;
   /** Only rows the watch loop is polling (see scheduler.ts). */
   watched?: boolean;
@@ -187,6 +195,15 @@ function buildCandidateWhere(userId: string, f: CandidateFilter = {}): Record<st
   if (f.starred !== undefined) where.starred = f.starred;
   if (f.watched !== undefined) where.watched = f.watched;
   if (typeof f.minScore === "number") where.score = { gte: f.minScore };
+  // `drNull` cannot share the range object: `{ gte: 0 }` would read as "enriched and non-zero",
+  // which is the one thing the garbage-cleanup band must not imply.
+  if (f.drNull) where.dr = null;
+  else {
+    const dr: Record<string, number> = {};
+    if (typeof f.drMin === "number") dr.gte = f.drMin;
+    if (typeof f.drMax === "number") dr.lte = f.drMax;
+    if (Object.keys(dr).length) where.dr = dr;
+  }
   // `contains` without `mode: "insensitive"`: that option is Postgres-only, and domains are
   // stored lower-cased on the way in, so folding the needle is enough and works on both engines.
   if (f.q?.trim()) where.domain = { contains: f.q.trim().toLowerCase() };

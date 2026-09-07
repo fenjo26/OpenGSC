@@ -26,6 +26,27 @@ type ImportSummary = {
 type SortField = "score" | "domain" | "createdAt" | "dr" | "refdomains" | "snapshots" | "checkedAt";
 const PAGE_SIZES = [25, 50, 100, 200];
 
+/**
+ * DR bands for the filter select — the garbage-cleanup flow is "≤ 5 → выбрать все по фильтру →
+ * удалить", so the bands lean low. `none` is deliberately its own entry rather than the bottom
+ * of the range: "—" means never enriched or rated, and a deletion sweep must not eat rows that
+ * were simply never asked. Params mirror the candidates API's drMin/drMax/drNull verbatim.
+ */
+const DR_BANDS: { value: string; label: string; i18n?: boolean; params: Record<string, string> }[] = [
+  { value: "", label: "dropsDrAll", i18n: true, params: {} },
+  { value: "none", label: "dropsDrNone", i18n: true, params: { drNull: "1" } },
+  { value: "le5", label: "≤ 5", params: { drMax: "5" } },
+  { value: "le10", label: "≤ 10", params: { drMax: "10" } },
+  { value: "ge10", label: "≥ 10", params: { drMin: "10" } },
+  { value: "ge20", label: "≥ 20", params: { drMin: "20" } },
+  { value: "ge30", label: "≥ 30", params: { drMin: "30" } },
+];
+
+/** The query params behind a band value — shared by the list query and the bulk-action filter. */
+function drBandParams(value: string): Record<string, string> {
+  return DR_BANDS.find(b => b.value === value)?.params ?? {};
+}
+
 const SOURCES: { value: DropSource; key: string }[] = [
   { value: "csv", key: "dropsSourceCsv" },
   { value: "ahrefs_refdomains", key: "dropsSourceAhrefsRef" },
@@ -97,6 +118,7 @@ export default function DropsPage() {
   const [tld, setTld] = useState("");
   const [q, setQ] = useState("");
   const [watched, setWatchedFilter] = useState<"" | "1">("");
+  const [drBand, setDrBand] = useState("");
   const [orderBy, setOrderBy] = useState<SortField>("score");
   const [orderDir, setOrderDir] = useState<"asc" | "desc">("desc");
   const [pageSize, setPageSize] = usePersistedState<number>("dropsPageSize", 50, isPageSize);
@@ -165,6 +187,7 @@ export default function DropsPage() {
       if (tld.trim()) p.set("tld", tld.trim());
       if (q.trim()) p.set("q", q.trim());
       if (watched) p.set("watched", watched);
+      for (const [k, v] of Object.entries(drBandParams(drBand))) p.set(k, v);
       const res = await fetch(`/api/drops/candidates?${p}`, { cache: "no-store" });
       const body = await res.json();
       if (body?.notMigrated) { setNotMigrated(true); setRows([]); setTotal(0); return; }
@@ -176,7 +199,7 @@ export default function DropsPage() {
     } finally {
       setLoading(false);
     }
-  }, [runId, stage, tld, q, watched, orderBy, orderDir, pageSize, offset]);
+  }, [runId, stage, tld, q, watched, drBand, orderBy, orderDir, pageSize, offset]);
 
   // The rule guards against a setState that cascades a second render before paint. This one
   // cannot: every state write inside `loadRuns` happens after an awaited fetch, several ticks
@@ -231,7 +254,7 @@ export default function DropsPage() {
   // Reset during render rather than in an effect: an effect would let one render commit with the
   // new filter and the old offset, which is a real request for a page that may not exist, and it
   // trips react-hooks/set-state-in-effect besides.
-  const filterKey = `${runId}|${stage}|${tld.trim()}|${q.trim()}|${watched}|${orderBy}|${orderDir}|${pageSize}`;
+  const filterKey = `${runId}|${stage}|${tld.trim()}|${q.trim()}|${watched}|${drBand}|${orderBy}|${orderDir}|${pageSize}`;
   const [lastFilterKey, setLastFilterKey] = useState(filterKey);
   if (filterKey !== lastFilterKey) {
     setLastFilterKey(filterKey);
@@ -540,7 +563,7 @@ export default function DropsPage() {
     if (action === "delete" && !window.confirm(tr("dropsConfirmDelete").replace("{n}", String(selectedCount)))) return;
     try {
       const payload = selectAllFilter
-        ? { matchAll: true, action, filter: { runId: runId || "", stage: stage || "", tld: tld.trim(), q: q.trim(), watched } }
+        ? { matchAll: true, action, filter: { runId: runId || "", stage: stage || "", tld: tld.trim(), q: q.trim(), watched, ...drBandParams(drBand) } }
         : { ids: [...selectedIds], action };
       const res = await fetch("/api/drops/candidates", {
         method: action === "delete" ? "DELETE" : "PATCH",
@@ -723,6 +746,12 @@ export default function DropsPage() {
         <option value="">{tr("dropsAllZones")}</option>
         {zones.map(z => <option key={z} value={z}>.{z}</option>)}
       </select>
+      <select className="tool-input" style={{ width: 130 }} value={drBand} title={tr("dropsDrNoneHint")}
+        onChange={e => setDrBand(e.target.value)}>
+        {DR_BANDS.map(b => <option key={b.value} value={b.value}>
+          {b.i18n ? tr(b.label) : b.label}
+        </option>)}
+      </select>
       <select className="tool-input" style={{ width: 170 }} value={watched}
         onChange={e => setWatchedFilter(e.target.value as "" | "1")}>
         <option value="">{tr("dropsWatchFilterAll")}</option>
@@ -812,10 +841,13 @@ export default function DropsPage() {
             </tr>
           </thead>
           <tbody>
-            {rows.map(r => {
+            {rows.map((r, i) => {
               const s = STAGES.find(x => x.value === r.stage);
               const checked = selectAllFilter || selectedIds.has(r.id);
-              return <tr key={r.id} style={{ borderTop: "1px solid var(--color-border)" }}>
+              // Zebra. A translucent grey survives both themes; the tier-1 way to read a wide
+              // table is "which cells belong to this row".
+              const stripe = i % 2 === 1 ? { background: "var(--color-row-alt, rgba(127,127,127,0.055))" } : undefined;
+              return <tr key={r.id} style={{ borderTop: "1px solid var(--color-border)", ...stripe }}>
                 <td style={td}>
                   <input type="checkbox" checked={checked} onChange={() => toggleRow(r.id)}
                     aria-label={r.domain} style={{ cursor: "pointer" }} />

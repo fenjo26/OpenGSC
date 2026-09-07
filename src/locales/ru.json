@@ -3767,5 +3767,8 @@
   "dropsEnrichAutoNoKey": "Автоподгрузка DR отключена — не настроен ключ Ahrefs (Настройки → SEO Metrics)",
   "dropsEnrichSweepStarted": "Импорт готов — догружаю DR для {n} доменов в фоне",
   "dropsEnrichSweepStalled": "Обход DR закончился раньше: {n} доменов без рейтинга — нет данных или эндпоинт не ответил",
-  "dropsEnrichStopped": "Остановлено — обновлено строк: {n}"
+  "dropsEnrichStopped": "Остановлено — обновлено строк: {n}",
+  "dropsDrAll": "DR: любой",
+  "dropsDrNone": "без DR (—)",
+  "dropsDrNoneHint": "«без DR» — ещё не обогащённые или без оценки Ahrefs; «≤ 10» — мусор, «≥ 20» — перспектива"
 }

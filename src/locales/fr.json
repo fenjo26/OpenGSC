@@ -3767,5 +3767,8 @@
   "dropsEnrichAutoNoKey": "DR automatique désactivé — aucune clé Ahrefs configurée (Paramètres → SEO Metrics)",
   "dropsEnrichSweepStarted": "Import terminé — chargement du DR pour {n} domaines en arrière-plan",
   "dropsEnrichSweepStalled": "Parcours DR interrompu tôt : {n} domaines sans note — pas de données ou endpoint sans réponse",
-  "dropsEnrichStopped": "Arrêté — lignes mises à jour : {n}"
+  "dropsEnrichStopped": "Arrêté — lignes mises à jour : {n}",
+  "dropsDrAll": "DR : tous",
+  "dropsDrNone": "sans DR (—)",
+  "dropsDrNoneHint": "« sans DR » = jamais enrichis ou sans note Ahrefs ; « ≤ 10 » = à jeter, « ≥ 20 » = prometteurs"
 }
