@@ -595,6 +595,30 @@ export interface WaybackUpdate {
 }
 
 /** Persist a Wayback CDX pass. `historyAt` stamps the run so the UI can show staleness. */
+/**
+ * Timestamps a recent Wayback pass already left on the row — first and last capture, the two
+ * ends the AI history pass needs. `null` when the row has no profile or the stamp is stale
+ * enough that CDX should be asked again. Reading these instead of re-querying the archive is
+ * the point: the CDX endpoint is the one the archive throttles the server IP for.
+ */
+export async function storedWaybackTimestamps(
+  userId: string,
+  domain: string,
+  freshMs = 30 * 86_400_000,
+): Promise<string[] | null> {
+  const rows = (await db.dropCandidate.findMany({
+    where: { userId, domain },
+    select: { waybackFirstAt: true, waybackLastAt: true, historyAt: true },
+    take: 1,
+  })) as { waybackFirstAt: Date | null; waybackLastAt: Date | null; historyAt: Date | null }[];
+  const row = rows[0];
+  if (!row?.historyAt || Date.now() - row.historyAt.getTime() > freshMs) return null;
+  if (!row.waybackFirstAt || !row.waybackLastAt) return null;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const stamp = (d: Date) => `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}`;
+  return [stamp(row.waybackFirstAt), stamp(row.waybackLastAt)];
+}
+
 export async function writeWaybackResults(userId: string, results: WaybackUpdate[]): Promise<number> {
   let touched = 0;
   for (const r of results) {

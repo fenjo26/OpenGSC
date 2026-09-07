@@ -3779,5 +3779,6 @@
   "dropsHistoryVerdictClean": "История: чистая — одна тематика всю жизнь",
   "dropsHistoryVerdictTopicShift": "История: тематика менялась",
   "dropsHistoryVerdictSpam": "История: был спам-период",
-  "dropsHistoryVerdictUnknown": "История: недостаточно данных"
+  "dropsHistoryVerdictUnknown": "История: недостаточно данных",
+  "dropsHistoryErrThrottled": "Wayback троттлит IP сервера — попробуй позже"
 }

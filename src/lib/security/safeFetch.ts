@@ -84,6 +84,15 @@ const DEFAULT_TIMEOUT_MS = 20_000;
 const DEFAULT_MAX_BYTES = 2 * 1024 * 1024;
 const DEFAULT_MAX_REDIRECTS = 5;
 
+/**
+ * Sent when the caller supplies no User-Agent of its own. A UA-less request reads as an
+ * anonymous script to every CDN that shapes traffic, and the API endpoints this app leans on
+ * (web.archive.org CDX, api.ahrefs.com) throttle anonymous datacenter traffic hardest —
+ * requests went from systematic refusals to normal answers on nothing but this header.
+ * Identifiable-bot UAs get the polite treatment; callers may still override it.
+ */
+export const DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; OpenGSC; +https://seogets.net.ru)";
+
 function ipv4Number(value: string): number | null {
   const parts = value.split(".");
   if (parts.length !== 4) return null;
@@ -372,6 +381,7 @@ export async function safeFetch(input: string | URL, options: SafeFetchOptions =
   const headers = new Headers(options.headers);
   if (!headers.has("accept")) headers.set("accept", "*/*");
   if (!headers.has("accept-encoding")) headers.set("accept-encoding", "identity");
+  if (!headers.has("user-agent")) headers.set("user-agent", DEFAULT_USER_AGENT);
   headers.delete("host");
   headers.delete("connection");
   headers.delete("transfer-encoding");

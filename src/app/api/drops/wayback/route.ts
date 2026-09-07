@@ -31,19 +31,26 @@ export async function POST(req: Request) {
     if (!domains.length) return NextResponse.json({ updated: 0, results: [] });
 
     const results: { domain: string; snapshots: number; firstAt: string | null; lastAt: string | null; gapDays: number | null }[] = [];
+    let throttled = 0, unreachable = 0;
     let cursor = 0;
 
     async function worker() {
       while (cursor < domains.length) {
         const domain = domains[cursor++];
-        const profile = await fetchWaybackProfile(domain);
-        if (!profile) continue;
+        const out = await fetchWaybackProfile(domain);
+        // A domain the archive refused is reported, not silently dropped — "Обновлено: 0" with
+        // the reason still in our hands is the failure mode this module keeps regressing to.
+        if (!out.ok) {
+          if (out.reason === "throttled") throttled++;
+          else unreachable++;
+          continue;
+        }
         results.push({
           domain,
-          snapshots: profile.snapshots,
-          firstAt: profile.firstAt?.toISOString() ?? null,
-          lastAt: profile.lastAt?.toISOString() ?? null,
-          gapDays: profile.gapDays,
+          snapshots: out.profile!.snapshots,
+          firstAt: out.profile!.firstAt?.toISOString() ?? null,
+          lastAt: out.profile!.lastAt?.toISOString() ?? null,
+          gapDays: out.profile!.gapDays,
         });
       }
     }
@@ -57,7 +64,7 @@ export async function POST(req: Request) {
       gapDays: r.gapDays,
     })));
 
-    return NextResponse.json({ updated, results });
+    return NextResponse.json({ updated, results, throttled, unreachable });
   } catch (e) {
     if (schemaMissing(e)) return NextResponse.json({ error: "drops_not_migrated" }, { status: 503 });
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

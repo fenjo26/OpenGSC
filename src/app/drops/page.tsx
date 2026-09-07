@@ -61,6 +61,7 @@ const HISTORY_VERDICTS: Record<string, { key: string; color: string; Icon: typeo
 
 /** Row-level failure codes the AI history route reports, mapped to words. Unknown codes show raw. */
 const HISTORY_ERRORS: Record<string, string> = {
+  wayback_throttled: "dropsHistoryErrThrottled",
   wayback_unreachable: "dropsHistoryErrWayback",
   deadline: "dropsHistoryErrDeadline",
   not_a_domain: "dropsHistoryErrNotDomain",
@@ -520,6 +521,11 @@ export default function DropsPage() {
     });
     const body = await res.json();
     if (!res.ok) throw new Error(body?.error || "wayback_failed");
+    // A slice where the archive refused every domain is an answer, not a zero: saying
+    // "updated 12" hides it, and staying silent hides the throttle the user cannot otherwise see.
+    if (body.updated === 0 && Number(body.throttled ?? 0) >= slice.length) {
+      throw new Error(tr("dropsHistoryErrThrottled"));
+    }
     return body.updated ?? 0;
   });
 

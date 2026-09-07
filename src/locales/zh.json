@@ -3779,5 +3779,6 @@
   "dropsHistoryVerdictClean": "历史：干净 — 一生主题一致",
   "dropsHistoryVerdictTopicShift": "历史：主题曾变更",
   "dropsHistoryVerdictSpam": "历史：曾有垃圾邮件期",
-  "dropsHistoryVerdictUnknown": "历史：数据不足"
+  "dropsHistoryVerdictUnknown": "历史：数据不足",
+  "dropsHistoryErrThrottled": "Wayback 正在限制服务器 IP — 请稍后再试"
 }

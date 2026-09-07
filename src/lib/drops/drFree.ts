@@ -14,6 +14,7 @@
 import { rawQuery } from "@/lib/db/raw";
 import { runUpsert } from "@/lib/db/upsert";
 import { getOwnerSettings } from "@/lib/engineKeysServer";
+import { DEFAULT_USER_AGENT } from "@/lib/security/safeFetch";
 
 const TTL_MS = 7 * 24 * 3600 * 1000;
 const FREE_CAP = 60;
@@ -21,7 +22,7 @@ const FREE_CAP = 60;
 async function fetchFreeDr(domain: string, apiKey: string): Promise<number | null> {
   try {
     const res = await fetch(`https://api.ahrefs.com/v3/public/domain-rating-free?target=${encodeURIComponent(domain)}&output=json`, {
-      headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
+      headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}`, "User-Agent": DEFAULT_USER_AGENT },
       signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) return null;

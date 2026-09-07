@@ -12,7 +12,7 @@ import {
   type Json, type McpTool, lim,
 } from "./shared";
 import { resolveAiCreds, assertConfirmed } from "./shared";
-import { createRun, listCandidates, stageCounts, pendingDnsCandidates, countPendingDns, recordDnsResults, pendingAvailabilityCandidates, countPendingAvailability, markUncheckableZones, recordAvailabilityResults, writeWaybackResults, writeMetricsUpdates, setHistoryVerdict, setWatchedByDomains, countWatched, type CandidateSortField } from "@/lib/drops/store";
+import { createRun, listCandidates, stageCounts, pendingDnsCandidates, countPendingDns, recordDnsResults, pendingAvailabilityCandidates, countPendingAvailability, markUncheckableZones, recordAvailabilityResults, writeWaybackResults, writeMetricsUpdates, setHistoryVerdict, setWatchedByDomains, countWatched, storedWaybackTimestamps, type CandidateSortField } from "@/lib/drops/store";
 import { checkDnsBatch } from "@/lib/drops/dns";
 import { checkAvailabilityBatch } from "@/lib/drops/availability";
 import { profileForDomain, registryAnswerable } from "@/lib/drops/registries";
@@ -226,14 +226,22 @@ export const DROPS_TOOLS: McpTool[] = [
     handler: async (userId, args) => {
       const domains = domainsArg(args).slice(0, 12);
       if (!domains.length) throw new Error("domains required");
-      const results = [];
+      const results: { domain: string; snapshots: number; firstAt: Date | null; lastAt: Date | null; gapDays: number | null }[] = [];
+      const skipped: { domain: string; reason: string }[] = [];
       for (const domain of domains) {
-        const profile = await fetchWaybackProfile(domain);
-        if (!profile) continue;
-        results.push({ domain, ...profile });
+        const out = await fetchWaybackProfile(domain);
+        // A refused domain is reported with its reason — a silent skip read as "the tool lost it".
+        if (!out.ok) { skipped.push({ domain, reason: out.reason }); continue; }
+        results.push({
+          domain,
+          snapshots: out.profile!.snapshots,
+          firstAt: out.profile!.firstAt,
+          lastAt: out.profile!.lastAt,
+          gapDays: out.profile!.gapDays,
+        });
       }
       const updated = await writeWaybackResults(userId, results);
-      return { updated, results };
+      return { updated, results, ...(skipped.length ? { skipped } : {}) };
     },
   },
 
@@ -338,9 +346,17 @@ export const DROPS_TOOLS: McpTool[] = [
       if (!creds.aiApiKey) throw new Error("no_ai_creds: configure an AI provider in settings");
       const results: { domain: string; verdict?: string; note?: string; error?: string }[] = [];
       for (const domain of domains) {
-        const timestamps = await fetchSnapshotTimestamps(domain);
-        if (timestamps === null) { results.push({ domain, error: "wayback_unreachable" }); continue; }
-        const verdict = await analyseDomainHistory(domain, timestamps, {
+        // Stored Wayback profile first — same rule the UI route follows: CDX is the endpoint
+        // the archive throttles, so numbers already on the row are never re-asked for.
+        const stored = await storedWaybackTimestamps(userId, domain);
+        const snapshots = stored
+          ? ({ ok: true, timestamps: stored } as const)
+          : await fetchSnapshotTimestamps(domain);
+        if (!snapshots.ok) {
+          results.push({ domain, error: snapshots.reason === "throttled" ? "wayback_throttled" : "wayback_unreachable" });
+          continue;
+        }
+        const verdict = await analyseDomainHistory(domain, snapshots.timestamps, {
           aiProvider: creds.aiProvider, aiApiKey: creds.aiApiKey, model: creds.model, aiBaseUrl: creds.aiBaseUrl,
         }, fetchLLM);
         if (!verdict) { results.push({ domain, error: "not_a_domain" }); continue; }

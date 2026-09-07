@@ -3779,5 +3779,6 @@
   "dropsHistoryVerdictClean": "History: clean — one topic all its life",
   "dropsHistoryVerdictTopicShift": "History: topic changed",
   "dropsHistoryVerdictSpam": "History: spam period",
-  "dropsHistoryVerdictUnknown": "History: not enough data"
+  "dropsHistoryVerdictUnknown": "History: not enough data",
+  "dropsHistoryErrThrottled": "Wayback is rate-limiting the server IP — try again later"
 }

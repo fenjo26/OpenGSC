@@ -29,6 +29,11 @@ const EXACT_KEYS = [
   // The keyword-source selector and its behaviour flags — same reason the metrics layer is
   // mirrored: restoring a browser without them silently reverts the content tools to "off".
   "seoKwSource", "seoKwAuto", "seoKwLimit",
+  // The free Ahrefs DR key. Everything server-side that fetches DR (the drops auto-load, the
+  // sweep after an import, MCP enrich_dr) resolves its key from this mirror — leaving it out
+  // meant the browser's working key never reached the server and drops DR 401'd forever while
+  // the dashboard (which sends the browser's key in a header) kept working.
+  "ahrefsDrApiKey",
 ];
 // `seoMetrics` covers the whole metrics layer: mode, base URL, monthly cap, active provider.
 //

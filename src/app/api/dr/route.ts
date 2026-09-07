@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { runUpsert } from "@/lib/db/upsert";
 import { rawQuery } from "@/lib/db/raw";
 import { goanyDr } from "@/lib/seo/goanyapi";
+import { DEFAULT_USER_AGENT } from "@/lib/security/safeFetch";
 
 // GET /api/dr?domains=a.com,b.com — Ahrefs Domain Rating via the free public endpoint.
 // Cached in SQLite for 7 days so the dashboard doesn't hammer Ahrefs on every load. License:
@@ -21,7 +22,7 @@ const TTL_MS = 7 * 24 * 3600 * 1000;
 async function fetchDr(domain: string, apiKey: string): Promise<number | null> {
   try {
     const res = await fetch(`https://api.ahrefs.com/v3/public/domain-rating-free?target=${encodeURIComponent(domain)}&output=json`, {
-      headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
+      headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}`, "User-Agent": DEFAULT_USER_AGENT },
       signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) return null;

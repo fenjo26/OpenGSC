@@ -25,6 +25,37 @@ export interface WaybackProfile {
 const CDX_LIMIT = 2000;
 
 /**
+ * What a CDX request actually said, beyond the old collapsed `null`. The archive refuses this
+ * app's IP in two very different moods — a 429/403 throttle that clears itself, and a genuine
+ * network failure — and everything downstream (error messages, retries, "try later" advice)
+ * needs to know which one happened.
+ */
+export type WaybackFetch =
+  | { ok: true; timestamps: string[] }
+  | { ok: false; reason: "throttled" | "unreachable" };
+
+/**
+ * One shared gate for every CDX call in this process — the history pass, the Wayback slices,
+ * the MCP tools all queue through it. The archive rate-limits per IP, and the app is its own
+ * worst neighbor: two workers in one request, or two features running at once, used to fire
+ * concurrent identical queries. A chain that pins each call at least CDX_MIN_INTERVAL_MS after
+ * the previous one settles turns all of those loops into one polite client.
+ */
+const CDX_MIN_INTERVAL_MS = 1500;
+let cdxChain: Promise<unknown> = Promise.resolve();
+
+function cdxGate<T>(task: () => Promise<T>): Promise<T> {
+  const run = cdxChain.then(task, task);
+  cdxChain = run.then(
+    () => new Promise(resolve => setTimeout(resolve, CDX_MIN_INTERVAL_MS)),
+    () => new Promise(resolve => setTimeout(resolve, CDX_MIN_INTERVAL_MS)),
+  );
+  return run;
+}
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
  * CDX rows (JSON array, first row is the header) to a profile.
  *
  * Split from the network so the interesting part — which rows count and what a broken reply
@@ -60,13 +91,15 @@ export function parseCdxRows(raw: unknown, now = new Date()): WaybackProfile {
 }
 
 /**
- * One CDX query for one domain, subdomains included. `null` on any failure — the archive being
- * down, rate-limiting, or slow is information about the archive, not about the domain.
+ * One CDX query for one domain. Host match, not domain match: ingest already reduces every row
+ * to its registrable apex, and a host query is a far cheaper class of archive work than a
+ * whole-domain scan — which matters, because the domain scans are exactly what got the server
+ * IP throttled in the first place.
  */
-export async function fetchWaybackProfile(domain: string): Promise<WaybackProfile | null> {
-  const rows = await fetchCdxTimestamps(domain);
-  if (rows === null) return null;
-  return profileFromTimestamps(rows);
+export async function fetchWaybackProfile(domain: string): Promise<WaybackFetch & { profile?: WaybackProfile }> {
+  const out = await fetchSnapshotTimestamps(domain);
+  if (!out.ok) return out;
+  return { ok: true, timestamps: out.timestamps, profile: profileFromTimestamps(out.timestamps) };
 }
 
 /** Months from a collapsed timeline → the profile. Split out so it can be tested offline. */
@@ -97,18 +130,24 @@ function cdxToDates(cells: string[]): Date[] {
 
 /**
  * The collapsed timeline itself — one 14-digit timestamp per month, for the history pass to pick
- * its snapshots from. `null` on archive failure, `[]` when the archive simply has nothing.
+ * its snapshots from. `{ ok: false, reason: "throttled" }` when the archive is rate-limiting the
+ * server IP, `"unreachable"` when it simply could not be asked.
  */
-export async function fetchSnapshotTimestamps(domain: string): Promise<string[] | null> {
-  const rows = await fetchCdxTimestamps(domain);
-  return rows;
+export async function fetchSnapshotTimestamps(domain: string): Promise<WaybackFetch> {
+  const first = await cdxGate(() => fetchCdxTimestampsOnce(domain));
+  // A burst (a 12-domain slice, a 5-row AI pass) trips the per-IP limiter even when the IP is
+  // in good standing; one spaced-out retry passes. Two throttles in a row mean the IP itself
+  // is in the penalty box — retrying again would only deepen it.
+  if (first.ok || first.reason !== "throttled") return first;
+  await sleep(2_000);
+  return cdxGate(() => fetchCdxTimestampsOnce(domain));
 }
 
-async function fetchCdxTimestamps(domain: string): Promise<string[] | null> {
+async function fetchCdxTimestampsOnce(domain: string): Promise<WaybackFetch> {
   const clean = sanitiseForUrl(domain);
-  if (!clean) return null;
+  if (!clean) return { ok: false, reason: "unreachable" };
   const url = "https://web.archive.org/cdx/search/cdx/?url=" + encodeURIComponent(clean) +
-    "&matchType=domain&output=json&fl=timestamp&collapse=timestamp:4&limit=" + CDX_LIMIT;
+    "&matchType=host&output=json&fl=timestamp&collapse=timestamp:4&limit=" + CDX_LIMIT;
   try {
     const res = await safeFetch(url, {
       headers: { accept: "application/json" },
@@ -116,11 +155,12 @@ async function fetchCdxTimestamps(domain: string): Promise<string[] | null> {
       maxBytes: 512 * 1024,
       allowPrivate: false,
     });
-    if (!res.ok) return null;
+    if (res.status === 429 || res.status === 403 || res.status === 503) return { ok: false, reason: "throttled" };
+    if (!res.ok) return { ok: false, reason: "unreachable" };
     const raw: unknown = await res.json();
-    if (!Array.isArray(raw) || raw.length < 2) return [];
-    return raw.slice(1).map(row => String(Array.isArray(row) ? row[0] ?? "" : ""));
+    if (!Array.isArray(raw) || raw.length < 2) return { ok: true, timestamps: [] };
+    return { ok: true, timestamps: raw.slice(1).map(row => String(Array.isArray(row) ? row[0] ?? "" : "")) };
   } catch {
-    return null;
+    return { ok: false, reason: "unreachable" };
   }
 }

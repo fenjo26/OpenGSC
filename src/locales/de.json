@@ -3779,5 +3779,6 @@
   "dropsHistoryVerdictClean": "Verlauf: sauber — durchgehend ein Thema",
   "dropsHistoryVerdictTopicShift": "Verlauf: Thema hat gewechselt",
   "dropsHistoryVerdictSpam": "Verlauf: Spam-Periode vorhanden",
-  "dropsHistoryVerdictUnknown": "Verlauf: zu wenig Daten"
+  "dropsHistoryVerdictUnknown": "Verlauf: zu wenig Daten",
+  "dropsHistoryErrThrottled": "Wayback drosselt die Server-IP — später erneut versuchen"
 }

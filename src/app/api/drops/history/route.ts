@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
-import { setHistoryVerdict, schemaMissing } from "@/lib/drops/store";
-import { fetchSnapshotTimestamps } from "@/lib/drops/wayback";
+import { setHistoryVerdict, schemaMissing, storedWaybackTimestamps } from "@/lib/drops/store";
+import { fetchSnapshotTimestamps, type WaybackFetch } from "@/lib/drops/wayback";
 import { analyseDomainHistory } from "@/lib/drops/history";
 import { fetchLLM } from "@/lib/llm";
 import { resolveAiCreds } from "@/lib/mcp/shared";
@@ -36,7 +36,6 @@ export async function POST(req: Request) {
       select: { id: true, domain: true },
     })) as { id: string; domain: string }[];
     if (!rows.length) return NextResponse.json({ results: [] });
-
     // The dedicated drops-history slot (Settings → per-task AI), falling back through the
     // usual chain — this pass is small and mechanical, so it does not have to run on the
     // expensive writer the main SEO provider may be set to.
@@ -53,12 +52,18 @@ export async function POST(req: Request) {
       while (cursor < rows.length && Date.now() < deadline) {
         const row = rows[cursor++];
         try {
-          const timestamps = await fetchSnapshotTimestamps(row.domain);
-          if (timestamps === null) {
-            results.push({ id: row.id, domain: row.domain, error: "wayback_unreachable" });
+          // A fresh Wayback pass already sitting on the row wins: its first/last captures are
+          // the ends this pass needs, and skipping CDX for it is one fewer request against the
+          // endpoint the archive throttles this server's IP for.
+          const stored = await storedWaybackTimestamps(uid, row.domain);
+          const snapshots: WaybackFetch = stored
+            ? { ok: true, timestamps: stored }
+            : await fetchSnapshotTimestamps(row.domain);
+          if (!snapshots.ok) {
+            results.push({ id: row.id, domain: row.domain, error: snapshots.reason === "throttled" ? "wayback_throttled" : "wayback_unreachable" });
             continue;
           }
-          const verdict = await analyseDomainHistory(row.domain, timestamps, {
+          const verdict = await analyseDomainHistory(row.domain, snapshots.timestamps, {
             aiProvider: creds.aiProvider, aiApiKey: creds.aiApiKey, model: creds.model, aiBaseUrl: creds.aiBaseUrl,
           }, fetchLLM);
           if (!verdict) {

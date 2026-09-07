@@ -3779,5 +3779,6 @@
   "dropsHistoryVerdictClean": "Historique : propre — un seul thème toute sa vie",
   "dropsHistoryVerdictTopicShift": "Historique : thème changé",
   "dropsHistoryVerdictSpam": "Historique : période de spam",
-  "dropsHistoryVerdictUnknown": "Historique : données insuffisantes"
+  "dropsHistoryVerdictUnknown": "Historique : données insuffisantes",
+  "dropsHistoryErrThrottled": "Wayback limite l'IP du serveur — réessayez plus tard"
 }
