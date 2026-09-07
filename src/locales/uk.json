@@ -3752,5 +3752,6 @@
   "dropsEnrichHistoryConfirm": "AI-прохід історії по {n} домену(ах) витратить кредити LLM. Продовжити?",
   "dropsEnrichHistoryDone": "Вердикти історії: {n}",
   "dropsHistoryNoCreds": "AI-провайдер не налаштовано в налаштуваннях",
-  "dropsEnrichNoDrKey": "Ключ Ahrefs не знайдено — додайте безкоштовний DR-ключ (Налаштування → SEO Metrics) або будь-який платний ключ Ahrefs"
+  "dropsEnrichNoDrKey": "Ключ Ahrefs не знайдено — додайте безкоштовний DR-ключ (Налаштування → SEO Metrics) або будь-який платний ключ Ahrefs",
+  "dropsWaybackLink": "Історія в Wayback Machine"
 }

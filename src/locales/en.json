@@ -3752,5 +3752,6 @@
   "dropsEnrichHistoryConfirm": "The AI history pass over {n} domain(s) will spend LLM credits. Continue?",
   "dropsEnrichHistoryDone": "History verdicts: {n}",
   "dropsHistoryNoCreds": "No AI provider configured in settings",
-  "dropsEnrichNoDrKey": "No Ahrefs key found — add the free DR key (Settings → SEO Metrics) or any paid Ahrefs key"
+  "dropsEnrichNoDrKey": "No Ahrefs key found — add the free DR key (Settings → SEO Metrics) or any paid Ahrefs key",
+  "dropsWaybackLink": "Wayback Machine history"
 }

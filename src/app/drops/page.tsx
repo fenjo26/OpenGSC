@@ -687,7 +687,16 @@ export default function DropsPage() {
                   <input type="checkbox" checked={checked} onChange={() => toggleRow(r.id)}
                     aria-label={r.domain} style={{ cursor: "pointer" }} />
                 </td>
-                <td style={{ ...td, fontWeight: 600, color: "var(--color-text-primary)" }}>{r.domain}</td>
+                <td style={{ ...td, fontWeight: 600, color: "var(--color-text-primary)" }}>
+                  {r.domain}
+                  {/* The domain's Wayback timeline, one click away — always, not only after the
+                      Wayback pass has filled the snapshots column. */}
+                  <a href={`https://web.archive.org/web/*/${r.domain}*`} target="_blank" rel="noreferrer"
+                    title={tr("dropsWaybackLink")}
+                    style={{ marginLeft: 6, color: "var(--color-accent-blue)", display: "inline-flex", verticalAlign: "-2px" }}>
+                    <History size={12} />
+                  </a>
+                </td>
                 <td style={td}>
                   <span style={{ color: s?.color ?? "var(--color-text-secondary)" }}>{s ? tr(s.key) : r.stage}</span>
                   {/* An `available` seen by one source only is not shown as free — it is shown as

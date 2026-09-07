@@ -3752,5 +3752,6 @@
   "dropsEnrichHistoryConfirm": "Le passage IA sur {n} domaine(s) consommera des crédits LLM. Continuer ?",
   "dropsEnrichHistoryDone": "Verdicts d'historique : {n}",
   "dropsHistoryNoCreds": "Aucun fournisseur d'IA configuré dans les paramètres",
-  "dropsEnrichNoDrKey": "Aucune clé Ahrefs trouvée — ajoutez la clé DR gratuite (Paramètres → SEO Metrics) ou toute clé Ahrefs payante"
+  "dropsEnrichNoDrKey": "Aucune clé Ahrefs trouvée — ajoutez la clé DR gratuite (Paramètres → SEO Metrics) ou toute clé Ahrefs payante",
+  "dropsWaybackLink": "Historique Wayback Machine"
 }
