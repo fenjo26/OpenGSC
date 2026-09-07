@@ -184,6 +184,18 @@ export function resolveProfile(tld: string): RegistryProfile {
   };
 }
 
+/**
+ * Whether this zone's registry can answer a check at all.
+ *
+ * `.gr` ships with neither an RDAP endpoint nor a WHOIS host on purpose (phase 0: the registry's
+ * port 43 is dark and IANA publishes nothing). Asking anyway costs the zone's `minIntervalMs` of
+ * polite silence per row and ends in the same error, so the check route skips such zones up
+ * front and tells the user why, instead of backing off into nothing.
+ */
+export function registryAnswerable(p: RegistryProfile): boolean {
+  return Boolean(p.rdap || p.whoisHost);
+}
+
 /** Convenience: the profile that governs a whole domain rather than a bare zone. */
 export function profileForDomain(domain: string): RegistryProfile | null {
   const tld = tldOf(domain);

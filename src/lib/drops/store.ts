@@ -137,6 +137,25 @@ export async function listRuns(userId: string, limit = 50) {
   });
 }
 
+/**
+ * Columns the table may sort by. Kept as a union rather than a free string because each entry
+ * maps to a real column — the route whitelists with this list, so a crafted `orderBy` cannot
+ * reach the query.
+ */
+export type CandidateSortField =
+  | "score" | "createdAt" | "domain" | "dr" | "refdomains" | "snapshots" | "checkedAt";
+
+/** The column behind a sort field. `refdomains` sorts by the dofollow count the score uses. */
+const SORT_COLUMNS: Record<CandidateSortField, string> = {
+  score: "score",
+  createdAt: "createdAt",
+  domain: "domain",
+  dr: "dr",
+  refdomains: "refdomainsDofollow",
+  snapshots: "waybackSnapshots",
+  checkedAt: "lastCheckedAt",
+};
+
 export interface CandidateFilter {
   runId?: string;
   stage?: DropStage;
@@ -148,17 +167,16 @@ export interface CandidateFilter {
   starred?: boolean;
   limit?: number;
   offset?: number;
-  orderBy?: "score" | "createdAt" | "domain";
+  orderBy?: CandidateSortField;
+  orderDir?: "asc" | "desc";
 }
 
 /**
- * A page of the catalogue plus the total behind the current filter.
- *
- * The count is what the UI shows as "По фильтру: 1 910 доменов", and it is a separate query on
- * purpose — `take`/`skip` cannot produce it, and loading 50 000 rows to length them would defeat
- * the pagination.
+ * The where behind every catalogue query — the list, the "По фильтру" count, and the bulk
+ * operations ("выбрать все по фильтру" then удалить). One builder, so a filter can never mean
+ * one set of rows in the table and a different set in the bulk action that came after it.
  */
-export async function listCandidates(userId: string, f: CandidateFilter = {}) {
+function buildCandidateWhere(userId: string, f: CandidateFilter = {}): Record<string, unknown> {
   const where: Record<string, unknown> = { userId };
   if (f.runId) where.runId = f.runId;
   if (f.stage) where.stage = f.stage;
@@ -169,16 +187,29 @@ export async function listCandidates(userId: string, f: CandidateFilter = {}) {
   // stored lower-cased on the way in, so folding the needle is enough and works on both engines.
   if (f.q?.trim()) where.domain = { contains: f.q.trim().toLowerCase() };
   if (f.source) where.run = { source: f.source };
+  return where;
+}
+
+/**
+ * A page of the catalogue plus the total behind the current filter.
+ *
+ * The count is what the UI shows as "По фильтру: 1 910 доменов", and it is a separate query on
+ * purpose — `take`/`skip` cannot produce it, and loading 50 000 rows to length them would defeat
+ * the pagination.
+ */
+export async function listCandidates(userId: string, f: CandidateFilter = {}) {
+  const where = buildCandidateWhere(userId, f);
 
   const take = Math.min(Math.max(f.limit ?? 100, 1), 500);
   const skip = Math.max(f.offset ?? 0, 0);
-  const orderBy =
-    f.orderBy === "domain" ? { domain: "asc" as const }
-    : f.orderBy === "createdAt" ? { createdAt: "desc" as const }
-    // Nulls sort first on SQLite for a desc order, which would put every unscored row at the top
-    // of a list whose whole purpose is ranking. Score-descending is therefore paired with a
-    // stable second key, and unscored rows are expected to be filtered out by stage instead.
-    : [{ score: "desc" as const }, { createdAt: "desc" as const }];
+  const column = SORT_COLUMNS[f.orderBy ?? "score"];
+  const dir = f.orderDir === "asc" ? "asc" as const : "desc" as const;
+  // Both SQLite and MySQL order NULL lowest, so asc puts unscored rows on top and desc sinks
+  // them — consistent across engines without dialect-specific null clauses. Score-descending
+  // (the default) additionally carries a stable second key so equal scores keep a fixed order.
+  const orderBy = column === "score" && dir === "desc"
+    ? [{ score: "desc" as const }, { createdAt: "desc" as const }]
+    : { [column]: dir };
 
   const [rows, total] = await Promise.all([
     db.dropCandidate.findMany({ where, orderBy, take, skip }),
@@ -234,13 +265,16 @@ export async function countPendingDns(userId: string, runId?: string): Promise<n
  */
 export async function pendingAvailabilityCandidates(
   userId: string,
-  opts: { runId?: string; limit?: number } = {},
+  opts: { runId?: string; limit?: number; domains?: string[] } = {},
 ): Promise<string[]> {
   const rows = (await db.dropCandidate.findMany({
     where: {
       userId,
       stage: { in: ["dns_checked", "checking"] as DropStage[] },
       ...(opts.runId ? { runId: opts.runId } : {}),
+      // A bulk "проверить выбранных" narrows the queue to the named rows; rows outside the
+      // selection — including ones already backed off — are nobody's business this round.
+      ...(opts.domains?.length ? { domain: { in: opts.domains } } : {}),
       // Rows the registry refused earlier wait for their backoff to expire; without this a
       // throttled zone would be retried on every pass and never recover.
       OR: [{ nextCheckAt: null }, { nextCheckAt: { lte: new Date() } }],
@@ -391,4 +425,140 @@ export async function recordDnsResults(
   }
 
   return { retired, advanced };
+}
+
+/**
+ * Rows whose zone has no registry that can answer (`.gr` today).
+ *
+ * They are not errored into a backoff the user cannot see — they get a named marker, a trail
+ * entry saying exactly what is missing, and a week off. The week, not the 6h refusal ladder,
+ * because nothing will have changed about the zone by tonight: without a registrar API these
+ * rows are not checkable, and re-learning that every six hours is pure cost. If a registrar
+ * integration ever arrives, clearing `lastError` puts them back in the queue.
+ */
+export async function markUncheckableZones(userId: string, domains: string[]): Promise<number> {
+  if (!domains.length) return 0;
+  let touched = 0;
+  for (const domain of domains) {
+    const res = await db.dropCandidate.updateMany({
+      where: { userId, domain, stage: { in: ["dns_checked", "checking"] as DropStage[] } },
+      data: {
+        lastStatus: "error",
+        lastError: "zone_uncheckable",
+        lastCheckedAt: new Date(),
+        nextCheckAt: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+      },
+    });
+    touched += res.count;
+    if (res.count) await addEventByDomain(userId, domain, "info",
+      "zone has no working RDAP or WHOIS — registry check needs a registrar API");
+  }
+  return touched;
+}
+
+/**
+ * Bulk delete. `ids` covers the checked rows; `filter` alone covers "выбрать все по фильтру" —
+ * the same builder the table reads with, so what the user saw selected is exactly what goes.
+ * Events cascade away with their candidates by schema design.
+ */
+export async function deleteCandidates(
+  userId: string,
+  scope: { ids?: string[]; filter?: CandidateFilter },
+): Promise<number> {
+  if (scope.ids?.length) {
+    let deleted = 0;
+    for (let i = 0; i < scope.ids.length; i += CHUNK) {
+      const res = await db.dropCandidate.deleteMany({
+        where: { userId, id: { in: scope.ids.slice(i, i + CHUNK) } },
+      });
+      deleted += res.count;
+    }
+    return deleted;
+  }
+  if (scope.filter) {
+    const res = await db.dropCandidate.deleteMany({ where: buildCandidateWhere(userId, scope.filter) });
+    return res.count;
+  }
+  return 0;
+}
+
+/** Bulk star / unstar over a row selection or a whole filter. */
+export async function setStarred(
+  userId: string,
+  scope: { ids?: string[]; filter?: CandidateFilter },
+  starred: boolean,
+): Promise<number> {
+  const data = { starred };
+  if (scope.ids?.length) {
+    let touched = 0;
+    for (let i = 0; i < scope.ids.length; i += CHUNK) {
+      const res = await db.dropCandidate.updateMany({
+        where: { userId, id: { in: scope.ids.slice(i, i + CHUNK) } }, data,
+      });
+      touched += res.count;
+    }
+    return touched;
+  }
+  if (scope.filter) {
+    const res = await db.dropCandidate.updateMany({ where: buildCandidateWhere(userId, scope.filter), data });
+    return res.count;
+  }
+  return 0;
+}
+
+export interface MetricsUpdate {
+  domain: string;
+  dr?: number | null;
+  refdomains?: number | null;
+  /** Total live backlinks, when the source reports them. */
+  backlinks?: number | null;
+}
+
+/**
+ * Persist enrichment numbers (DR from the free endpoint, refdomains/backlinks from the paid
+ * metrics call) onto candidates. The numbers are computed elsewhere and arrive ready; this only
+ * decides what a missing value means — `undefined` leaves the column alone, `null` would clear
+ * it, and the callers never send `null`: a check that failed says nothing and overwrites less.
+ */
+export async function writeMetricsUpdates(userId: string, entries: MetricsUpdate[]): Promise<number> {
+  let touched = 0;
+  for (const e of entries) {
+    const data: Record<string, unknown> = { metricsAt: new Date() };
+    if (e.dr != null) data.dr = e.dr;
+    if (e.refdomains != null) data.refdomains = e.refdomains;
+    if (e.backlinks != null) data.liveBacklinks = e.backlinks;
+    const res = await db.dropCandidate.updateMany({
+      where: { userId, domain: e.domain },
+      data,
+    });
+    touched += res.count;
+  }
+  return touched;
+}
+
+export interface WaybackUpdate {
+  domain: string;
+  snapshots: number;
+  firstAt: Date | null;
+  lastAt: Date | null;
+  gapDays: number | null;
+}
+
+/** Persist a Wayback CDX pass. `historyAt` stamps the run so the UI can show staleness. */
+export async function writeWaybackResults(userId: string, results: WaybackUpdate[]): Promise<number> {
+  let touched = 0;
+  for (const r of results) {
+    const res = await db.dropCandidate.updateMany({
+      where: { userId, domain: r.domain },
+      data: {
+        waybackSnapshots: r.snapshots,
+        waybackFirstAt: r.firstAt,
+        waybackLastAt: r.lastAt,
+        waybackGapDays: r.gapDays,
+        historyAt: new Date(),
+      },
+    });
+    touched += res.count;
+  }
+  return touched;
 }

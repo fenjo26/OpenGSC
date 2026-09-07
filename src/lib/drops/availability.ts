@@ -219,13 +219,20 @@ export async function checkAvailability(domain: string): Promise<AvailabilityRes
  * enforced: 500 `.com` and 500 `.de` can run side by side, 200 sequential `.com` cannot. Domains
  * are therefore grouped by zone, each zone is walked in order with its own `minIntervalMs`, and
  * the zones run in parallel. Doing it any other way either wastes hours or earns a ban.
+ *
+ * `deadlineMs` bounds the whole call in wall-clock time: a zone whose queue is long and slow
+ * (its own `minIntervalMs`, or a registry answering at its own pace) must not hold an HTTP
+ * request open past the proxy timeout in front of the app. Domains not reached before the
+ * deadline simply get no result — the caller recomputes its pending count and the client asks
+ * for the next slice, so nothing is lost, only deferred.
  */
 export async function checkAvailabilityBatch(
   domains: string[],
-  opts: { onResult?: (domain: string, res: AvailabilityResult) => void } = {},
+  opts: { onResult?: (domain: string, res: AvailabilityResult) => void; deadlineMs?: number } = {},
 ): Promise<Map<string, AvailabilityResult>> {
   const out = new Map<string, AvailabilityResult>();
   const byZone = new Map<string, string[]>();
+  const deadline = opts.deadlineMs != null ? Date.now() + opts.deadlineMs : Number.POSITIVE_INFINITY;
 
   for (const domain of domains) {
     const profile = profileForDomain(domain);
@@ -237,7 +244,12 @@ export async function checkAvailabilityBatch(
   await Promise.all([...byZone.entries()].map(async ([tld, list]) => {
     const interval = tld ? (profileForDomain(list[0])?.minIntervalMs ?? 3000) : 0;
     for (let i = 0; i < list.length; i++) {
-      if (i > 0) await new Promise(r => setTimeout(r, interval));
+      // Checked twice on purpose: before the sleep so a slow zone does not spend its whole
+      // budget waiting, and after it because the interval itself can outlast the budget — the
+      // sleep is capped at the remaining time so the overshoot is at most one jittered check.
+      if (Date.now() >= deadline) break;
+      if (i > 0) await new Promise(r => setTimeout(r, Math.max(0, Math.min(interval, deadline - Date.now()))));
+      if (Date.now() >= deadline) break;
       const res = await checkAvailability(list[i]);
       out.set(list[i], res);
       opts.onResult?.(list[i], res);
