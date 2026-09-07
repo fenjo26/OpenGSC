@@ -23,11 +23,22 @@ const HISTORY_WEIGHT: Record<HistoryVerdict, number> = {
   unknown: 0,
 };
 
-/** Long-dead names lose links every month; four years is where the profile stops resembling the metrics. */
-const STALE_DAYS = 1460;
+/**
+ * Hard vetoes (dropops report, \u00a7consensus). A veto is not a low score \u2014 it is "do not buy",
+ * because each of these conditions has sunk every domain that carried it regardless of what the
+ * metrics said: a spam interlude poisons the link neighbourhood, and a name dead for over two
+ * years has usually been re-registered and burned at least once since.
+ *
+ * `topic_shift` is deliberately a warning (+5), not a veto: that veto fits white-site
+ * repurposing, but this catalogue's primary use is donor glue, where a changed topic discounts
+ * the links without disqualifying the domain. Revisit if it starts feeding white projects.
+ */
+const VETO_IDLE_DAYS = 730;
 
 export interface ScoreBreakdown {
   score: number;
+  /** Set when a hard veto fired; the score is then capped at 0 so vetoes sort last. */
+  veto: "spam_history" | "idle_over_2y" | null;
   parts: { label: string; value: number }[];
 }
 
@@ -58,12 +69,17 @@ export function scoreCandidateDetailed(c: ScoreInput): ScoreBreakdown {
   }
 
   const gap = num(c.waybackGapDays);
-  if (gap !== null && gap > STALE_DAYS) {
-    parts.push({ label: "stale", value: -15 });
-  }
 
-  const score = round(parts.reduce((sum, p) => sum + p.value, 0));
-  return { score, parts };
+  const raw = round(parts.reduce((sum, p) => sum + p.value, 0));
+
+  // Vetoes read from the same fields the weights just used, so they are decided after the sum.
+  // A domain with a spam interlude scores below every non-vetoed row no matter how good its DR.
+  const veto: ScoreBreakdown["veto"] =
+    verdict === "spam_period" ? "spam_history"
+    : gap !== null && gap > VETO_IDLE_DAYS ? "idle_over_2y"
+    : null;
+
+  return { score: veto ? Math.min(raw, 0) : raw, veto, parts };
 }
 
 export function scoreCandidate(c: ScoreInput): number {

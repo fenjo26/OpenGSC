@@ -3745,5 +3745,11 @@
   "dropsZoneUncheckable": "Zone hat kein funktionierendes RDAP/WHOIS — nur über eine Registrar-API prüfbar",
   "dropsCheckUncheckable": "Zone ohne Registry",
   "dropsCheckUncheckableNotice": "Zonen ohne öffentliche Registry (z. B. .gr) wurden übersprungen: Ihre Prüfung erfordert eine Registrar-API. Zeilen sind markiert.",
-  "dropsSnapshotsHint": "Wayback Machine: Monate mit archivierten Kopien"
+  "dropsSnapshotsHint": "Wayback Machine: Monate mit archivierten Kopien",
+  "dropsEnrichHistory": "Daten + KI neu berechnen",
+  "dropsEnrichHistoryBusy": "KI-Durchlauf…",
+  "dropsEnrichHistoryPick": "Bis zu 5 Zeilen auswählen — der KI-Durchlauf läuft nur über handverlesene Zeilen",
+  "dropsEnrichHistoryConfirm": "Der KI-Verlaufsdurchlauf über {n} Domain(s) verbraucht LLM-Guthaben. Fortfahren?",
+  "dropsEnrichHistoryDone": "Verlaufs-Ergebnisse: {n}",
+  "dropsHistoryNoCreds": "Kein KI-Anbieter in den Einstellungen konfiguriert"
 }

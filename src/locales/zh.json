@@ -3745,5 +3745,11 @@
   "dropsZoneUncheckable": "该区域没有可用的 RDAP/WHOIS — 仅能通过注册商 API 检查",
   "dropsCheckUncheckable": "无注册局的区域",
   "dropsCheckUncheckableNotice": "没有公共注册局的区域（如 .gr）已跳过：检查它们需要注册商 API。相关行已标记。",
-  "dropsSnapshotsHint": "Wayback Machine：有存档副本的月数"
+  "dropsSnapshotsHint": "Wayback Machine：有存档副本的月数",
+  "dropsEnrichHistory": "重新计算数据 + AI",
+  "dropsEnrichHistoryBusy": "AI 分析中…",
+  "dropsEnrichHistoryPick": "最多选择 5 行 — AI 分析仅针对手动挑选的行",
+  "dropsEnrichHistoryConfirm": "对 {n} 个域名进行 AI 历史分析将消耗 LLM 额度。继续？",
+  "dropsEnrichHistoryDone": "历史判定：{n}",
+  "dropsHistoryNoCreds": "设置中未配置 AI 提供商"
 }

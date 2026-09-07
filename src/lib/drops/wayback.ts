@@ -64,6 +64,47 @@ export function parseCdxRows(raw: unknown, now = new Date()): WaybackProfile {
  * down, rate-limiting, or slow is information about the archive, not about the domain.
  */
 export async function fetchWaybackProfile(domain: string): Promise<WaybackProfile | null> {
+  const rows = await fetchCdxTimestamps(domain);
+  if (rows === null) return null;
+  return profileFromTimestamps(rows);
+}
+
+/** Months from a collapsed timeline → the profile. Split out so it can be tested offline. */
+export function profileFromTimestamps(timestamps: string[], now = new Date()): WaybackProfile {
+  const empty: WaybackProfile = { snapshots: 0, firstAt: null, lastAt: null, gapDays: null };
+  const times = cdxToDates(timestamps);
+  if (!times.length) return empty;
+  const firstAt = times[0];
+  const lastAt = times[times.length - 1];
+  return {
+    snapshots: times.length,
+    firstAt,
+    lastAt,
+    gapDays: Math.max(0, Math.floor((now.getTime() - lastAt.getTime()) / 86_400_000)),
+  };
+}
+
+function cdxToDates(cells: string[]): Date[] {
+  const times: Date[] = [];
+  for (const cell of cells) {
+    const m = cell.match(/^(\d{4})(\d{2})?(\d{2})?/);
+    if (!m) continue;
+    const date = new Date(Number(m[1]), Number(m[2] ?? "01") - 1, Number(m[3] ?? "01"));
+    if (!Number.isNaN(date.getTime())) times.push(date);
+  }
+  return times.sort((a, b) => a.getTime() - b.getTime());
+}
+
+/**
+ * The collapsed timeline itself — one 14-digit timestamp per month, for the history pass to pick
+ * its snapshots from. `null` on archive failure, `[]` when the archive simply has nothing.
+ */
+export async function fetchSnapshotTimestamps(domain: string): Promise<string[] | null> {
+  const rows = await fetchCdxTimestamps(domain);
+  return rows;
+}
+
+async function fetchCdxTimestamps(domain: string): Promise<string[] | null> {
   const clean = sanitiseForUrl(domain);
   if (!clean) return null;
   const url = "https://web.archive.org/cdx/search/cdx/?url=" + encodeURIComponent(clean) +
@@ -76,7 +117,9 @@ export async function fetchWaybackProfile(domain: string): Promise<WaybackProfil
       allowPrivate: false,
     });
     if (!res.ok) return null;
-    return parseCdxRows(await res.json());
+    const raw: unknown = await res.json();
+    if (!Array.isArray(raw) || raw.length < 2) return [];
+    return raw.slice(1).map(row => String(Array.isArray(row) ? row[0] ?? "" : ""));
   } catch {
     return null;
   }

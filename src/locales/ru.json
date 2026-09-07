@@ -3745,5 +3745,11 @@
   "dropsZoneUncheckable": "У зоны нет рабочего RDAP/WHOIS — проверка только через API регистратора",
   "dropsCheckUncheckable": "зона без реестра",
   "dropsCheckUncheckableNotice": "Зоны без публичного реестра (например .gr) пропущены: их проверка требует API регистратора. Строки помечены.",
-  "dropsSnapshotsHint": "Wayback Machine: месяцев с архивными копиями"
+  "dropsSnapshotsHint": "Wayback Machine: месяцев с архивными копиями",
+  "dropsEnrichHistory": "Пересчитать данные + AI",
+  "dropsEnrichHistoryBusy": "AI-проход…",
+  "dropsEnrichHistoryPick": "Выберите до 5 строк — AI-проход идёт только по отобранным вручную",
+  "dropsEnrichHistoryConfirm": "AI-проход истории по {n} домену(ам) потратит кредиты LLM. Продолжить?",
+  "dropsEnrichHistoryDone": "Вердикты истории: {n}",
+  "dropsHistoryNoCreds": "AI-провайдер не настроен в настройках"
 }

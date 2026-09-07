@@ -3745,5 +3745,11 @@
   "dropsZoneUncheckable": "Zone has no working RDAP/WHOIS — checkable only via a registrar API",
   "dropsCheckUncheckable": "zone w/o registry",
   "dropsCheckUncheckableNotice": "Zones without a public registry (e.g. .gr) were skipped: checking them needs a registrar API. Rows are marked.",
-  "dropsSnapshotsHint": "Wayback Machine: months with archived copies"
+  "dropsSnapshotsHint": "Wayback Machine: months with archived copies",
+  "dropsEnrichHistory": "Recount data + AI",
+  "dropsEnrichHistoryBusy": "AI pass…",
+  "dropsEnrichHistoryPick": "Select up to 5 rows — the AI pass runs on hand-picked rows only",
+  "dropsEnrichHistoryConfirm": "The AI history pass over {n} domain(s) will spend LLM credits. Continue?",
+  "dropsEnrichHistoryDone": "History verdicts: {n}",
+  "dropsHistoryNoCreds": "No AI provider configured in settings"
 }

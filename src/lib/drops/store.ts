@@ -532,6 +532,7 @@ export async function writeMetricsUpdates(userId: string, entries: MetricsUpdate
       data,
     });
     touched += res.count;
+    if (res.count) await recomputeScore(userId, e.domain);
   }
   return touched;
 }
@@ -559,6 +560,53 @@ export async function writeWaybackResults(userId: string, results: WaybackUpdate
       },
     });
     touched += res.count;
+    if (res.count) await recomputeScore(userId, r.domain);
   }
   return touched;
+}
+
+/**
+ * Recompute one candidate's score from the columns enrichment has filled so far.
+ *
+ * Called after every write that can change the inputs (metrics, wayback, history verdict), so
+ * the "Скор" column comes alive progressively instead of waiting for a phase that computes
+ * everything at once. The detailed breakdown is not persisted — the number is, and the pure
+ * module behind it can always explain any row.
+ */
+export async function recomputeScore(userId: string, domain: string): Promise<void> {
+  const row = (await db.dropCandidate.findFirst({
+    where: { userId, domain },
+    select: {
+      dr: true, refdomains: true, refdomainsDofollow: true,
+      waybackSnapshots: true, waybackGapDays: true, historyVerdict: true,
+    },
+  })) as {
+    dr: number | null; refdomains: number | null; refdomainsDofollow: number | null;
+    waybackSnapshots: number | null; waybackGapDays: number | null; historyVerdict: string | null;
+  } | null;
+  if (!row) return;
+  const { scoreCandidate } = await import("./score");
+  const score = scoreCandidate({
+    dr: row.dr,
+    refdomains: row.refdomains,
+    refdomainsDofollow: row.refdomainsDofollow,
+    waybackSnapshots: row.waybackSnapshots,
+    waybackGapDays: row.waybackGapDays,
+    historyVerdict: (row.historyVerdict as import("./types").HistoryVerdict | null) ?? undefined,
+  });
+  await db.dropCandidate.updateMany({ where: { userId, domain }, data: { score } });
+}
+
+/** Persist the AI history pass. The note is human-readable, the verdict drives score and veto. */
+export async function setHistoryVerdict(
+  userId: string,
+  domain: string,
+  verdict: import("./types").HistoryVerdict,
+  note: string,
+): Promise<void> {
+  await db.dropCandidate.updateMany({
+    where: { userId, domain },
+    data: { historyVerdict: verdict, historyNote: note.slice(0, 1000), historyAt: new Date() },
+  });
+  await recomputeScore(userId, domain);
 }

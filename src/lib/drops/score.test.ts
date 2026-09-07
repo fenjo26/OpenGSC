@@ -46,11 +46,12 @@ test("a domain nobody ever archived is penalised", () => {
   assert.ok(none < scoreCandidate({ dr: 20 }), "zero snapshots is worse than not having looked");
 });
 
-test("a domain dead for years loses points", () => {
-  const fresh = scoreCandidate({ refdomainsDofollow: 30, waybackGapDays: 400 });
-  const stale = scoreCandidate({ refdomainsDofollow: 30, waybackGapDays: 2000 });
-  // Two values each rounded to one decimal; their difference still carries float noise.
-  assert.ok(Math.abs((fresh - stale) - 15) < 1e-6, `fresh=${fresh} stale=${stale}`);
+test("a young gap costs nothing, a two-year-old one vetoes — no in-between penalty", () => {
+  // The old -15 gradation at 1460 days is gone: the veto at 730 supersedes it entirely, and a
+  // gap short of the veto is simply not penalised.
+  assert.equal(scoreCandidateDetailed({ refdomainsDofollow: 30, waybackGapDays: 400 }).veto, null);
+  assert.equal(scoreCandidateDetailed({ refdomainsDofollow: 30, waybackGapDays: 400 }).score,
+               scoreCandidateDetailed({ refdomainsDofollow: 30 }).score);
 });
 
 test("DR is clamped, so a bad value cannot dominate the list", () => {
@@ -60,9 +61,39 @@ test("DR is clamped, so a bad value cannot dominate the list", () => {
 });
 
 test("the breakdown adds up to the score, so a row can be explained", () => {
-  const c = { dr: 18, refdomainsDofollow: 45, waybackSnapshots: 44, waybackGapDays: 2000, historyVerdict: "clean" as const };
+  const c = { dr: 18, refdomainsDofollow: 45, waybackSnapshots: 44, waybackGapDays: 400, historyVerdict: "clean" as const };
   const d = scoreCandidateDetailed(c);
   const sum = Math.round(d.parts.reduce((a, p) => a + p.value, 0) * 10) / 10;
   assert.equal(d.score, sum);
-  assert.deepEqual(d.parts.map(p => p.label), ["refdomains", "dr", "history", "snapshots", "stale"]);
+  assert.deepEqual(d.parts.map(p => p.label), ["refdomains", "dr", "history", "snapshots"]);
+  // A vetoed row explains itself differently: the parts still add up, but the returned score
+  // is the sum capped at 0, and the veto says why.
+  const v = scoreCandidateDetailed({ ...c, waybackGapDays: 2000 });
+  assert.equal(v.veto, "idle_over_2y");
+  assert.equal(v.score, Math.min(v.parts.reduce((a, p) => a + p.value, 0), 0));
+});
+
+// Hard vetoes from the dropops report §consensus: a spam interlude or a two-year death is
+// "do not buy" no matter what the metrics say, so the score is capped at 0 and the veto named.
+test("a spam period vetoes the score below every clean row", () => {
+  const good = scoreCandidate({ dr: 40, refdomainsDofollow: 25 });
+  const vetoed = scoreCandidate({ dr: 40, refdomainsDofollow: 25, historyVerdict: "spam_period" });
+  assert.ok(good > 0);
+  assert.equal(vetoed, Math.min(vetoed, 0));
+  const detailed = scoreCandidateDetailed({ dr: 40, refdomainsDofollow: 25, historyVerdict: "spam_period" });
+  assert.equal(detailed.veto, "spam_history");
+});
+
+test("a domain dead for over two years is vetoed as burned", () => {
+  const detailed = scoreCandidateDetailed({ dr: 30, waybackGapDays: 731 });
+  assert.equal(detailed.veto, "idle_over_2y");
+  assert.ok(detailed.score <= 0);
+  // 730 exactly is inside the threshold: the veto is "over two years", not "two years".
+  assert.equal(scoreCandidateDetailed({ dr: 30, waybackGapDays: 730 }).veto, null);
+});
+
+test("a topic shift warns but does not veto — donor glue survives a changed topic", () => {
+  const detailed = scoreCandidateDetailed({ dr: 30, historyVerdict: "topic_shift" });
+  assert.equal(detailed.veto, null);
+  assert.ok(detailed.score > 0);
 });

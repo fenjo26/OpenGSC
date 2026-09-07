@@ -3745,5 +3745,11 @@
   "dropsZoneUncheckable": "La zone n'a pas de RDAP/WHOIS fonctionnel — vérifiable uniquement via une API de registraire",
   "dropsCheckUncheckable": "zone sans registre",
   "dropsCheckUncheckableNotice": "Les zones sans registre public (ex. .gr) ont été ignorées : leur vérification nécessite une API de registraire. Les lignes sont marquées.",
-  "dropsSnapshotsHint": "Wayback Machine : mois avec copies archivées"
+  "dropsSnapshotsHint": "Wayback Machine : mois avec copies archivées",
+  "dropsEnrichHistory": "Recalculer les données + IA",
+  "dropsEnrichHistoryBusy": "Passage IA…",
+  "dropsEnrichHistoryPick": "Sélectionnez jusqu'à 5 lignes — le passage IA ne traite que les lignes choisies à la main",
+  "dropsEnrichHistoryConfirm": "Le passage IA sur {n} domaine(s) consommera des crédits LLM. Continuer ?",
+  "dropsEnrichHistoryDone": "Verdicts d'historique : {n}",
+  "dropsHistoryNoCreds": "Aucun fournisseur d'IA configuré dans les paramètres"
 }

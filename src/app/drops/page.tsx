@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Boxes, Database, Globe2, History, Loader2, Plus, Radar, Search, Square, Star, Trash2, Upload } from "lucide-react";
+import { AlertTriangle, Boxes, Database, Globe2, History, Loader2, Plus, Radar, Search, Sparkles, Square, Star, Trash2, Upload } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import type { DropSource, DropStage } from "@/lib/drops/types";
 import { usePersistedState } from "@/lib/usePersistedState";
@@ -375,6 +375,36 @@ export default function DropsPage() {
     return body.updated ?? 0;
   });
 
+  // The AI history pass: the reference tool's "Пересчитать данные + AI". Runs on hand-picked
+  // rows only — it spends LLM credits, so five at a time behind a confirm, never on a list.
+  async function enrichHistory() {
+    if (enrichBusy) return;
+    const targets = selectAllFilter ? [] : rows.filter(r => selectedIds.has(r.id));
+    if (!targets.length || targets.length > 5) { setNotice(tr("dropsEnrichHistoryPick")); return; }
+    if (!window.confirm(tr("dropsEnrichHistoryConfirm").replace("{n}", String(targets.length)))) return;
+    setEnrichBusy("history"); setError(""); setNotice("");
+    setEnrichProgress({ done: 0, total: targets.length, updated: 0 });
+    try {
+      const res = await fetch("/api/drops/history", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: targets.map(r => r.id) }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        if (body?.error === "no_ai_creds") throw new Error(tr("dropsHistoryNoCreds"));
+        throw new Error(body?.error || "history_failed");
+      }
+      const done = (body.results as { verdict?: string }[] | undefined) ?? [];
+      const decided = done.filter(r => r.verdict).length;
+      setNotice(tr("dropsEnrichHistoryDone").replace("{n}", `${decided}/${done.length}`));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setEnrichBusy("");
+      await loadRows();
+    }
+  }
+
   // Refdomains go through the existing paid metrics route, which owns the unit reservation and
   // the cap. Explicit creds, same pattern as the dashboard's DR chip: keys live in this browser.
   const enrichRefs = () => {
@@ -586,6 +616,11 @@ export default function DropsPage() {
       <button onClick={enrichRefs} disabled={enrichBusy !== ""} style={ghostBtn}>
         {enrichBusy === "refs" ? <Loader2 className="spin" size={13} /> : <Database size={13} />}
         {enrichBusy === "refs" ? tr("dropsEnrichRefsBusy") : tr("dropsEnrichRefs")}
+      </button>
+      <button onClick={() => void enrichHistory()} disabled={enrichBusy !== ""} style={ghostBtn}
+        title={tr("dropsEnrichHistoryPick")}>
+        {enrichBusy === "history" ? <Loader2 className="spin" size={13} /> : <Sparkles size={13} />}
+        {enrichBusy === "history" ? tr("dropsEnrichHistoryBusy") : tr("dropsEnrichHistory")}
       </button>
       {enrichBusy && enrichProgress && <span style={{ color: "var(--color-text-secondary)" }}>
         {enrichProgress.done.toLocaleString()} / {enrichProgress.total.toLocaleString()} · <b>{enrichProgress.updated.toLocaleString()}</b> {tr("dropsEnrichUpdated")}
