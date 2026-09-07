@@ -3751,5 +3751,6 @@
   "dropsEnrichHistoryPick": "最多选择 5 行 — AI 分析仅针对手动挑选的行",
   "dropsEnrichHistoryConfirm": "对 {n} 个域名进行 AI 历史分析将消耗 LLM 额度。继续？",
   "dropsEnrichHistoryDone": "历史判定：{n}",
-  "dropsHistoryNoCreds": "设置中未配置 AI 提供商"
+  "dropsHistoryNoCreds": "设置中未配置 AI 提供商",
+  "dropsEnrichNoDrKey": "未找到 Ahrefs 密钥 — 请添加免费 DR 密钥（设置 → SEO Metrics）或任意付费 Ahrefs 密钥"
 }

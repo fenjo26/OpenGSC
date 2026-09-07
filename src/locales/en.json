@@ -3751,5 +3751,6 @@
   "dropsEnrichHistoryPick": "Select up to 5 rows — the AI pass runs on hand-picked rows only",
   "dropsEnrichHistoryConfirm": "The AI history pass over {n} domain(s) will spend LLM credits. Continue?",
   "dropsEnrichHistoryDone": "History verdicts: {n}",
-  "dropsHistoryNoCreds": "No AI provider configured in settings"
+  "dropsHistoryNoCreds": "No AI provider configured in settings",
+  "dropsEnrichNoDrKey": "No Ahrefs key found — add the free DR key (Settings → SEO Metrics) or any paid Ahrefs key"
 }

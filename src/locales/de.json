@@ -3751,5 +3751,6 @@
   "dropsEnrichHistoryPick": "Bis zu 5 Zeilen auswählen — der KI-Durchlauf läuft nur über handverlesene Zeilen",
   "dropsEnrichHistoryConfirm": "Der KI-Verlaufsdurchlauf über {n} Domain(s) verbraucht LLM-Guthaben. Fortfahren?",
   "dropsEnrichHistoryDone": "Verlaufs-Ergebnisse: {n}",
-  "dropsHistoryNoCreds": "Kein KI-Anbieter in den Einstellungen konfiguriert"
+  "dropsHistoryNoCreds": "Kein KI-Anbieter in den Einstellungen konfiguriert",
+  "dropsEnrichNoDrKey": "Kein Ahrefs-Schlüssel gefunden — hinterlege den kostenlosen DR-Schlüssel (Einstellungen → SEO Metrics) oder einen beliebigen kostenpflichtigen Ahrefs-Schlüssel"
 }

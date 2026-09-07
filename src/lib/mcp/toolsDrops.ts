@@ -17,10 +17,11 @@ import { checkDnsBatch } from "@/lib/drops/dns";
 import { checkAvailabilityBatch } from "@/lib/drops/availability";
 import { profileForDomain, registryAnswerable } from "@/lib/drops/registries";
 import { fetchSnapshotTimestamps, fetchWaybackProfile } from "@/lib/drops/wayback";
+import { drForDomains } from "@/lib/drops/drFree";
+import { getOwnerSettings } from "@/lib/engineKeysServer";
 import { analyseDomainHistory } from "@/lib/drops/history";
 import { fetchLLM } from "@/lib/llm";
 import { fetchDomainMetrics, DOMAIN_UNITS, type MetricsProvider } from "@/lib/seo/metrics";
-import { getOwnerSettings } from "@/lib/engineKeysServer";
 import type { DropSource, DropStage } from "@/lib/drops/types";
 
 const STAGES: DropStage[] = [
@@ -244,28 +245,10 @@ export const DROPS_TOOLS: McpTool[] = [
     handler: async (userId, args) => {
       const domains = domainsArg(args).slice(0, 60);
       if (!domains.length) throw new Error("domains required");
-      const settings = await getOwnerSettings(userId);
-      // The free endpoint needs an APIv3 key; the paid Ahrefs key is one too, so it serves as
-      // the fallback rather than making the user configure two keys for one number.
-      const key = String(settings.ahrefsDrApiKey || settings.seoKey_ahrefs || "").trim();
-      if (!key) throw new Error("no_ahrefs_key: set the free DR key in Settings → SEO Metrics");
-      const ratings: Record<string, number> = {};
-      await Promise.all(Array.from({ length: 4 }, async () => {
-        let i = 0;
-        while (i < domains.length) {
-          const domain = domains[i++];
-          try {
-            const res = await fetch(`https://api.ahrefs.com/v3/public/domain-rating-free?target=${encodeURIComponent(domain)}&output=json`, {
-              headers: { Accept: "application/json", Authorization: `Bearer ${key}` },
-              signal: AbortSignal.timeout(10_000),
-            });
-            if (!res.ok) continue;
-            const d = await res.json() as { domain_rating?: { domain_rating?: number } | number; dr?: number };
-            const dr = Number(d?.domain_rating && typeof d.domain_rating === "object" ? d.domain_rating.domain_rating : d?.domain_rating ?? d?.dr);
-            if (Number.isFinite(dr)) ratings[domain] = dr;
-          } catch { /* one miss is not an error for the batch */ }
-        }
-      }));
+      // One resolver for both surfaces (this tool and the page's button): free DR key first,
+      // paid Ahrefs key as fallback — an APIv3 key is an APIv3 key, and DrCache is shared.
+      const { ratings, keyFound } = await drForDomains(userId, domains);
+      if (!keyFound) throw new Error("no_ahrefs_key: set the free DR key in Settings → SEO Metrics (or any paid Ahrefs key)");
       const updated = await writeMetricsUpdates(userId, Object.entries(ratings).map(([domain, dr]) => ({ domain, dr })));
       return { updated, ratings, attribution: "Domain Rating by Ahrefs — https://ahrefs.com/" };
     },

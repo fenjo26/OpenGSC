@@ -3751,5 +3751,6 @@
   "dropsEnrichHistoryPick": "Выберите до 5 строк — AI-проход идёт только по отобранным вручную",
   "dropsEnrichHistoryConfirm": "AI-проход истории по {n} домену(ам) потратит кредиты LLM. Продолжить?",
   "dropsEnrichHistoryDone": "Вердикты истории: {n}",
-  "dropsHistoryNoCreds": "AI-провайдер не настроен в настройках"
+  "dropsHistoryNoCreds": "AI-провайдер не настроен в настройках",
+  "dropsEnrichNoDrKey": "Ключ Ahrefs не найден — добавьте бесплатный DR-ключ (Настройки → SEO Metrics) или любой платный ключ Ahrefs"
 }

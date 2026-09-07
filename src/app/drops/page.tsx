@@ -5,7 +5,6 @@ import { AlertTriangle, Boxes, Database, Globe2, History, Loader2, Plus, Radar, 
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import type { DropSource, DropStage } from "@/lib/drops/types";
 import { usePersistedState } from "@/lib/usePersistedState";
-import { getAhrefsDrKey } from "@/lib/seo/keys";
 import { getMetricsCreds } from "@/lib/seo/metricsClient";
 
 type Run = {
@@ -352,16 +351,19 @@ export default function DropsPage() {
     return body.updated ?? 0;
   }
 
-  // Free DR via /api/dr: the 7-day DrCache there means re-running this is cheap, and rows the
-  // endpoint does not know are simply skipped — a failed lookup must not clear a column.
+  // Free DR via /api/drops/dr: the server resolves the key itself (free DR key, paid Ahrefs
+  // key as fallback) and writes both its DrCache and the candidates — so the button works in
+  // any browser, and says "настроить ключ" out loud when no key exists anywhere.
   const enrichDr = () => walkEnrichment("dr", enrichTargets(), 60, async slice => {
-    const key = getAhrefsDrKey();
-    const res = await fetch(`/api/dr?domains=${encodeURIComponent(slice.join(","))}`,
-      { headers: key ? { "x-ahrefs-dr-key": key } : {} });
+    const res = await fetch("/api/drops/dr", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ domains: slice }),
+    });
     const body = await res.json();
     if (!res.ok) throw new Error(body?.error || "dr_failed");
-    const ratings = (body?.ratings ?? {}) as Record<string, { dr?: number }>;
-    return persistMetrics(Object.entries(ratings).map(([domain, r]) => ({ domain, dr: r?.dr })));
+    if (body.keyFound === false) throw new Error(tr("dropsEnrichNoDrKey"));
+    const ratings = (body?.ratings ?? {}) as Record<string, number>;
+    return persistMetrics(Object.entries(ratings).map(([domain, dr]) => ({ domain, dr })));
   });
 
   // Wayback is served by the app itself in bounded 12-domain slices (see the wayback route).

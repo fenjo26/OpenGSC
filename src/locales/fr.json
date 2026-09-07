@@ -3751,5 +3751,6 @@
   "dropsEnrichHistoryPick": "Sélectionnez jusqu'à 5 lignes — le passage IA ne traite que les lignes choisies à la main",
   "dropsEnrichHistoryConfirm": "Le passage IA sur {n} domaine(s) consommera des crédits LLM. Continuer ?",
   "dropsEnrichHistoryDone": "Verdicts d'historique : {n}",
-  "dropsHistoryNoCreds": "Aucun fournisseur d'IA configuré dans les paramètres"
+  "dropsHistoryNoCreds": "Aucun fournisseur d'IA configuré dans les paramètres",
+  "dropsEnrichNoDrKey": "Aucune clé Ahrefs trouvée — ajoutez la clé DR gratuite (Paramètres → SEO Metrics) ou toute clé Ahrefs payante"
 }
