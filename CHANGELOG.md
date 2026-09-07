@@ -3,6 +3,58 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
+## [1.6.0] — 2026-09-07
+
+### Added
+
+- **The /drops expired-domain catalogue.** A full drop-screening funnel: paste a list (or feed it
+  from Ahrefs/crawler exports) and every row is normalised to its registrable apex, the delegated
+  names are retired by a free DNS pre-filter, and the registries are walked for availability at
+  each zone's own pace — RDAP first, WHOIS as the corroborating source, refusals on a
+  6h→12h→24h backoff ladder, and zones without a public registry (like .gr) marked instead of
+  silently stuck. Enrichment: free Ahrefs Domain Rating that loads itself (the visible page fills
+  in like the dashboard cards, a finished import starts a run-wide background sweep, and the key
+  is resolved server-side, so it works in any browser), Wayback snapshot counts with a per-domain
+  archive link, and paid refdomains behind an explicit confirm. A veto score down-weights
+  spam-history and long-idle names, the AI history pass asks an LLM what the domain used to be,
+  and the table is sortable, striped and filterable down to a DR band — filter "≤ 5", select all
+  by filter, delete: that is the garbage sweep. Nine new MCP tools (drops_list, drops_ingest,
+  drops_prefilter, drops_check, drops_enrich_dr, drops_enrich_wayback, drops_enrich_refdomains,
+  drops_history_ai, drops_watch) and a drops-research skill mirror the UI flows.
+- **Watch loop for taken domains.** Mark a taken or still-resolving name as watched and a
+  five-minute scheduler re-checks it on a per-registry cadence (15 minutes for pendingDelete, an
+  hour for redemptionPeriod), alerting once when it actually frees. A corroborated free ends the
+  watch; a single-source free gets a silent one-hour re-check before celebrating.
+- **Self-hosted A-Parser as a SERP and GEO provider**, with a console page and a batch queue
+  (addTask / poll / results) over a detailed proxy list.
+- **Provider call log and provider alerts.** Every outbound provider call is recorded per
+  request; the hourly alert engine learned balance_low and provider_down against that merged log —
+  a 5xx or a transport failure is a failure, a 4xx the provider actually answered is not.
+- **GEO audit of your own page**: the audit compares an AI answer against a URL you control, adds
+  a verdict card and markdown export to the report.
+- **URL-addressable views.** Site tabs ("?tab="), seo-tools tabs and modes, and the history,
+  humanize and analysis views all live in the query string — a refresh or a shared link
+  reproduces the exact view.
+- **Workspace-wide audits history**: every site's audit runs in one table.
+- **Invisible-marks scrub.** Generation and rewrite output is deterministically stripped of
+  zero-width, bidirectional and other invisible Unicode characters; quoted text is spared.
+- Picking a country in the research tools now preselects its market language (Ukraine 2804 →
+  uk/ru, instead of a 40501 from Labs).
+- Text generation jobs report real phase progress (chunks, FAQ, fact-check, volume, mechanics,
+  judge) instead of a bar stuck at 5%.
+
+### Fixed
+
+- The dashboard's portfolio metrics could end up showing one site's numbers: a slow discovery
+  response arrived last and clobbered the merged state. Responses now merge by id.
+- Digests and the portfolio-wide MCP site resolution skip hidden and archived sites, matching
+  what the dashboard already did.
+- GEO search calls to openai/kie providers stream instead of hanging past proxy timeouts, and the
+  wall-clock cap names what it killed.
+- A-Parser paired credentials: an explicitly entered credential now wins over the environment for
+  both halves of the pair, not just one.
+- The /audits page stretched past the layout width.
+
 ## [1.5.2] — 2026-08-29
 
 ### Changed
