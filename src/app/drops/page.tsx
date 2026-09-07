@@ -132,7 +132,7 @@ export default function DropsPage() {
   // Enrichment (DR / Wayback / refdomains). One busy-flag family and one progress line — they
   // are free, free and paid respectively, but they share the shape "walk the target list in
   // bounded batches until it is done".
-  const [enrichBusy, setEnrichBusy] = useState<"" | "dr" | "wayback" | "refs">("");
+  const [enrichBusy, setEnrichBusy] = useState<"" | "dr" | "wayback" | "refs" | "history">("");
   const [enrichProgress, setEnrichProgress] = useState<{ done: number; total: number; updated: number } | null>(null);
 
   const loadRuns = useCallback(async () => {
@@ -697,7 +697,16 @@ export default function DropsPage() {
                 </td>
                 <td style={tdNum}>{r.dr ?? "—"}</td>
                 <td style={tdNum}>{r.refdomainsDofollow ?? r.refdomains ?? "—"}</td>
-                <td style={tdNum} title={tr("dropsSnapshotsHint")}>{r.waybackSnapshots ?? "—"}</td>
+                <td style={tdNum} title={tr("dropsSnapshotsHint")}>
+                  {/* The number is the summary; the link is the archive itself. The starred
+                      wildcard form is Wayback's own timeline view for the whole domain. */}
+                  {r.waybackSnapshots != null
+                    ? <a href={`https://web.archive.org/web/*/${r.domain}*`} target="_blank" rel="noreferrer"
+                        style={{ color: "var(--color-accent-blue)", textDecoration: "none" }}>
+                        {r.waybackSnapshots}
+                      </a>
+                    : "—"}
+                </td>
                 <td style={{ ...tdNum, fontWeight: 800, color: r.score != null ? "var(--color-text-primary)" : "var(--color-text-tertiary)" }}>
                   {r.score != null ? Math.round(r.score) : "—"}
                 </td>
