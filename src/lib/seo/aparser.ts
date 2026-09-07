@@ -83,6 +83,11 @@ export function resolveBaseUrl(fromSettings?: string): { url: string; fromEnv: b
   return { url: r.url, fromEnv: !!env };
 }
 
+/** The env base URL, if the deployment set one. The route layers: explicit body, then this. */
+export function envBaseUrl(): string {
+  return (process.env.OPENGSC_APARSER_BASE_URL || "").trim();
+}
+
 export function envPassword(): string {
   return (process.env.OPENGSC_APARSER_PASSWORD || "").trim();
 }

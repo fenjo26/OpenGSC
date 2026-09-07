@@ -4,7 +4,7 @@ import { getUserSettings } from "@/lib/mcp/shared";
 import {
   aparserAddTask, aparserInfo, aparserOneRequest, aparserParserPreset, aparserPing, aparserProxies,
   aparserTaskResults, aparserTaskState,
-  envPassword, normaliseBaseUrl, resolveBaseUrl, setAparserConcurrency,
+  envBaseUrl, envPassword, normaliseBaseUrl, resolveBaseUrl, setAparserConcurrency,
   type AparserCreds, type AparserOption,
 } from "@/lib/seo/aparser";
 
@@ -70,11 +70,17 @@ export async function POST(req: Request) {
   const op = String(b?.op ?? "ping");
 
   const settings = await getUserSettings(ownerId);
-  const rawBase = String(b?.baseUrl ?? "").trim() || String(settings.seoBaseUrl_aparser ?? "");
-  const resolved = resolveBaseUrl(rawBase);
-  if ("problem" in resolved) {
-    return NextResponse.json({ error: `aparser_url_${resolved.problem}` }, { status: URL_PROBLEM_STATUS });
+  // Explicit body values win for BOTH halves of the pair, then env, then the settings mirror.
+  // The host used to be env-first while the password was body-first — which quietly assembled
+  // "env host + typed password" whenever env was configured, a pair that cannot auth unless the
+  // typed password happens to be the env one, and presented as a random "Auth failed".
+  const rawBase = String(b?.baseUrl ?? "").trim() || envBaseUrl() || String(settings.seoBaseUrl_aparser ?? "");
+  const fromEnv = !String(b?.baseUrl ?? "").trim() && !!envBaseUrl();
+  const norm = normaliseBaseUrl(rawBase);
+  if ("problem" in norm) {
+    return NextResponse.json({ error: `aparser_url_${norm.problem}` }, { status: URL_PROBLEM_STATUS });
   }
+  const resolved = { url: norm.url, fromEnv };
 
   const password = String(b?.password ?? "").trim() || envPassword() || String(settings.seoKey_aparser ?? "");
   if (!password) return NextResponse.json({ error: "no_aparser_password" }, { status: 400 });
