@@ -6,7 +6,7 @@
 // has a record for 192.0.2.1. Every rejection below is a row that would otherwise have become a
 // confident wrong answer downstream.
 
-import { tldOf } from "./registries";
+import { apexOf } from "./registries";
 
 export type SkipReason =
   | "empty"
@@ -25,13 +25,11 @@ export interface IngestResult {
 }
 
 /**
- * 191, not the 253 the DNS spec allows.
- *
- * Prisma maps `String` to `VARCHAR(191)` on MySQL to stay under the index limit, and `domain`
- * is half of `DropCandidate`'s composite unique key. A longer value passes `prisma db push`
- * and then errors at write time on MySQL only — a bug that never reproduces on the SQLite
- * instance it was written on. Rejecting it here keeps both databases behaving the same, and
- * costs nothing real: no drop list contains a 200-character name.
+ * 191, not the 253 the DNS spec allows — and since `apexOf` the stored value (suffix plus one
+ * label) can never get near it anyway. The cap is the sanitation gate on a raw row: a list has
+ * no business carrying a 200-character name, and rejecting it costs nothing real. (History:
+ * `domain` is half of `DropCandidate`'s composite unique key, which MySQL maps to VARCHAR(191);
+ * apex reduction removed the write-time hazard, the gate stays.)
  */
 const MAX_DOMAIN_LENGTH = 191;
 const MAX_LABEL_LENGTH = 63;
@@ -47,10 +45,11 @@ function looksLikeIp(host: string): boolean {
 /**
  * One row to a bare host, or `null` with a reason.
  *
- * Accepts what real lists contain: full URLs, `www.` prefixes, trailing dots, ports, upper case,
- * surrounding quotes and whitespace. Punycode and Unicode both pass through unchanged — the
- * checker canonicalises IDN later, and converting here would make two spellings of one name look
- * like two candidates.
+ * Accepts what real lists contain: full URLs, `www.` prefixes and other hosts (each row is
+ * reduced to its registrable apex — registries answer host-shaped questions with "no match",
+ * which reads as free), trailing dots, ports, upper case, surrounding quotes and whitespace.
+ * Punycode and Unicode both pass through unchanged — the checker canonicalises IDN later, and
+ * converting here would make two spellings of one name look like two candidates.
  */
 export function normaliseDomain(input: string): { domain: string } | { reason: SkipReason } {
   let value = (input ?? "").trim().replace(/^["'<]+|["'>,;]+$/g, "").trim();
@@ -78,10 +77,14 @@ export function normaliseDomain(input: string): { domain: string } | { reason: S
     if (label.startsWith("-") || label.endsWith("-")) return { reason: "bad_label" };
   }
 
-  // "co.uk" and "com" are zones, not names anyone can register.
-  if (!tldOf(value)) return { reason: "not_registrable" };
+  // A host row ("www.example.com", "blog.example.co.uk", a crawler outlink) is reduced to the
+  // name a person could register. Kept as-is it is worse than noise: registries answer
+  // host-shaped questions with "no match", which the funnel would corroborate into a false
+  // "available" on a domain somebody owns. "co.uk" alone never forms an apex — rejected above.
+  const apex = apexOf(value);
+  if (!apex) return { reason: "not_registrable" };
 
-  return { domain: value };
+  return { domain: apex };
 }
 
 /**

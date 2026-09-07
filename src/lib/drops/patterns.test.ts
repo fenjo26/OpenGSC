@@ -94,3 +94,27 @@ test("statuses drive the fast re-check", () => {
   assert.equal(isDroppingSoon(["redemptionPeriod"]), true);
   assert.equal(isDroppingSoon(["pending delete"]), true);
 });
+
+// Phase 0, 2026-09-07: the TERMS OF USE ride along on every Verisign reply, "No match" and
+// full records alike, and their mid-sentence "You are not authorized" made an unanchored
+// refusal match turn every normal .com/.net answer into a refusal — taking the whole zone
+// queue down as rate_limited with it.
+const VERISIGN_FREE_WITH_TERMS = `${VERISIGN_FREE}
+
+TERMS OF USE: You are not authorized to access or query our Whois
+database through the use of electronic processes that are high-volume and
+automated except as reasonably necessary to register domain names or
+modify existing registrations; the Data in Verisign Global Registry
+Services' ("VeriSign") Whois database is provided by VeriSign for
+information purposes only.`;
+
+const VERISIGN_TAKEN_WITH_TERMS = `${VERISIGN_TAKEN}
+TERMS OF USE: You are not authorized to access or query our Whois
+database through the use of electronic processes that are high-volume and
+automated except as reasonably necessary to register domain names or
+modify existing registrations.`;
+
+test("registry boilerplate is not a refusal", () => {
+  assert.equal(parseWhoisAvailability(VERISIGN_FREE_WITH_TERMS), "available");
+  assert.equal(parseWhoisAvailability(VERISIGN_TAKEN_WITH_TERMS), "registered");
+});

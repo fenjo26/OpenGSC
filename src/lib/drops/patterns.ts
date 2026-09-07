@@ -32,7 +32,11 @@ export const AVAILABLE_PATTERNS: RegExp[] = [
  */
 export const REFUSAL_PATTERNS: RegExp[] = [
   /query rate|rate limit|too many requests|exceeded the maximum/i,
-  /access denied|not authorized|permission denied/i,
+  // Line-anchored on purpose. Verisign's TERMS OF USE boilerplate — present on every reply,
+  // "No match" and full records alike — says "You are not authorized to access or query our
+  // Whois database" mid-sentence, and an unanchored match read every normal .com answer as a
+  // refusal (phase 0, 2026-09-07). Registries that refuse put the words at a line start.
+  /^\s*(access denied|not authorized|permission denied)/im,
   /temporarily unavailable|try again later|service unavailable/i,
   /captcha/i,
 ];

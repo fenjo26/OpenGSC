@@ -32,9 +32,12 @@ test("every spelling of one name collapses to the same host", () => {
   }
 });
 
-test("www is not stripped — it is a different host and a different registration question", () => {
-  // Left deliberately: a list of subdomains must not silently collapse into one row.
-  assert.equal(ok("www.example.com"), "www.example.com");
+test("host rows are reduced to the registrable apex the funnel is about", () => {
+  assert.equal(ok("www.example.com"), "example.com");
+  assert.equal(ok("blog.example.co.uk"), "example.co.uk");
+  assert.equal(ok("deep.sub.example.com"), "example.com");
+  assert.equal(ok("example.com"), "example.com", "an apex already is one");
+  assert.equal(ok("example.co.uk"), "example.co.uk", "two-label suffix plus one label");
 });
 
 // The row class that made it through the source post's whole pipeline and came out "free",
@@ -59,13 +62,13 @@ test("malformed rows are rejected with a reason rather than passed through", () 
   assert.equal(rejected("a".repeat(64) + ".com"), "bad_label");
 });
 
-// 191, not 253: `domain` is half of DropCandidate's composite unique key, and Prisma maps a
-// String key to VARCHAR(191) on MySQL. Accepting a longer name here would produce a row that
-// writes fine on SQLite and throws on MySQL — a bug that never reproduces where it was written.
+// 191, not 253: the cap is the sanitation gate on a raw row. Since phase 0 the stored value is
+// the registrable apex, which can never approach the limit (one label + suffix), so the cap
+// rejects oversized garbage rather than protecting the key it used to protect.
 test("the length cap is the storage limit, not the DNS one", () => {
   const label = "a".repeat(60);
-  const long = [label, label, label, "com"].join(".");   // 63*3 + 4 = 187 chars, still fine
-  assert.equal(ok(long), long);
+  const long = [label, label, label, "com"].join(".");   // 187 chars: accepted, then reduced
+  assert.equal(ok(long), [label, "com"].join("."));
   assert.equal(rejected([label, label, label, label, "com"].join(".")), "too_long");
 });
 
@@ -115,4 +118,13 @@ test("a mixed real-world blob reports what it dropped and why", () => {
   assert.equal(summary.no_dot, 1);
   assert.equal(summary.bad_characters, 1);
   assert.equal(res.skipped.length, 3, "blank lines are not 'skipped rows'");
+});
+
+// Phase 0, 2026-09-07: registries answer host-shaped queries as if the name were free —
+// Verisign RDAP and WHOIS both report "www.google.com" as no match. A kept host row is a
+// corroborated false "available" on a registered domain, one dirty row away from a purchase.
+test("a www.-prefixed row survives as its apex, not as a host", () => {
+  assert.equal(ok("www.example.com"), "example.com");
+  assert.equal(ok("https://www.example.com/path"), "example.com");
+  assert.equal(ok("www.com"), "www.com", "one label after www. is the apex itself");
 });

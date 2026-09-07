@@ -146,6 +146,10 @@ async function askWhois(domain: string, profile: RegistryProfile): Promise<Whois
  *                           "registered" wins (a record beats an absence); anything else gives
  *                           `available` with `corroborated: false`, which is a prompt to look
  *                           again, not a green row.
+ * - RDAP says 429         → WHOIS still gets asked: a throttled RDAP does not speak for the
+ *                           zone's WHOIS, which live probing showed healthy through an RDAP
+ *                           rate-limit burst. Only a WHOIS that also refuses records the row
+ *                           as throttled.
  * - RDAP unusable/absent  → WHOIS alone decides, and can never corroborate itself.
  * - Both rate-limited     → `rate_limited`, so the caller backs off instead of recording a
  *                           verdict it did not get.
@@ -165,6 +169,17 @@ export async function checkAvailability(domain: string): Promise<AvailabilityRes
     };
   }
   if (rdap.kind === "rate_limited") {
+    const whois = await askWhois(domain, profile);
+    if (whois.kind === "registered") {
+      return {
+        ok: true, status: "registered", http: 429, via: "whois",
+        expiresAt: whois.expiresAt, createdAt: whois.createdAt,
+        registryStatus: whois.registryStatus, nameServers: whois.nameServers,
+      };
+    }
+    if (whois.kind === "absent") {
+      return { ok: true, status: "available", http: 429, via: "whois", corroborated: false };
+    }
     return { ok: false, status: "rate_limited", http: 429, retryAfterSec: rdap.retryAfterSec };
   }
 

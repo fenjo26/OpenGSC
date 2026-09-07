@@ -99,37 +99,64 @@ const PROFILES: RegistryProfile[] = [
   { tld: "info", whoisHost: "whois.afilias.net", minIntervalMs: 1500, verified: true },
   { tld: "biz", whoisHost: "whois.nic.biz", minIntervalMs: 1500, verified: true },
   { tld: "co", rdap: "https://rdap.registry.co/co/", whoisHost: "whois.nic.co", minIntervalMs: 1500, verified: true },
-
-  // ─── Unverified: endpoints to confirm in phase 0 ───────────────────────────
+  {
+    tld: "xyz",
+    rdap: "https://rdap.centralnic.com/xyz/",
+    whoisHost: "whois.nic.xyz",
+    minIntervalMs: 1500,
+    verified: true,
+    notes:
+      "CentralNic registry backend. Phase 0, 2026-09-07: 404 on a free name, 200 on a " +
+      "registered one. The explicit endpoint matters twice over here: rdap.org does not route " +
+      "the zone despite its IANA bootstrap entry, and rdap.org itself 403s in bursts — leaning " +
+      "on the bootstrap would have meant no RDAP at all or a throttled one.",
+  },
   {
     tld: "fr",
     rdap: "https://rdap.nic.fr/",
     whoisHost: "whois.nic.fr",
+    // AFNIC words its free answer "%% NOT FOUND" — the shared `^not found` is anchored to the
+    // line start and cannot match past the `%` comment marks, so the zone needs its own pattern.
+    availablePatterns: [/^%+\s*not found/im],
     minIntervalMs: 2000,
-    verified: false,
+    verified: true,
     notes:
-      "AFNIC. RDAP host is a guess — confirm against data.iana.org/rdap/dns.json before trusting " +
-      "a 404. AFNIC also publishes .fr open data, which may remove the need to poll at all.",
+      "AFNIC. Phase 0, 2026-09-07: endpoint confirmed against the IANA bootstrap and live — " +
+      "404 on a free name, 200 with events on a registered one; WHOIS phrasing captured. " +
+      "AFNIC also publishes .fr open data, which may remove the need to poll at all.",
   },
   {
     tld: "eu",
+    whoisHost: "whois.eu",
     minIntervalMs: 2000,
-    verified: false,
-    notes: "EURid. RDAP endpoint unconfirmed; WHOIS host discovered via IANA until then.",
+    verified: true,
+    notes:
+      "EURid. Phase 0, 2026-09-07: no RDAP exists — the zone is absent from the IANA bootstrap " +
+      "and rdap.eu does not answer — so WHOIS is the only source and every free verdict from " +
+      "here stays uncorroborated by design. Free phrasing is \"Status: AVAILABLE\", which the " +
+      "shared pattern already reads; the legal boilerplate above it parses as registered " +
+      "evidence, so the status line is what decides — worth re-checking if EURid rewords it.",
   },
+
+  // ─── Unverified: endpoints to confirm in phase 0 ───────────────────────────
   {
     tld: "gr",
     // No RDAP entry on purpose: guessing one here is exactly the failure this file exists to
     // prevent. With no `rdap`, the checker goes straight to WHOIS and never sees a 404 it
     // could misread as "free".
-    whoisHost: "whois.ics.forth.gr",
+    // No `whoisHost` either: the registry's port 43 accepts connections and never answers
+    // (phase 0, 2026-09-07), the old whois.ics.forth.gr host no longer resolves, and IANA
+    // publishes an empty `whois:` line for the zone — so discovery correctly finds nothing
+    // and every check lands on "no_usable_source" with its backoff, instead of hanging 8s
+    // per row against a dark port or, worse, reading RIPE's "not found" as an answer.
     minIntervalMs: 10_000,
     needsRegistrarConfirm: true,
     verified: false,
     notes:
-      "ICS-FORTH. Expected to be WHOIS-only and heavily rate-limited — 10s between queries is a " +
-      "guess on the safe side. Treat .gr as a watchlist of hundreds on a daily interval, not as " +
-      "a zone to sweep. Never buy on the registry answer alone here.",
+      "ICS-FORTH. Uncheckable from here as of 2026-09-07: no RDAP, no working public WHOIS. " +
+      "Treat .gr as a watchlist of dozens served by a registrar API (phase 6), never as a " +
+      "zone to sweep; gr.whois-servers.net points at RIPE, whose \"not found\" proves nothing. " +
+      "Never buy on the registry answer alone here.",
   },
 ];
 
@@ -161,4 +188,23 @@ export function resolveProfile(tld: string): RegistryProfile {
 export function profileForDomain(domain: string): RegistryProfile | null {
   const tld = tldOf(domain);
   return tld ? resolveProfile(tld) : null;
+}
+
+/**
+ * The registrable name inside a host: the zone suffix plus one label.
+ *
+ * `www.example.com` and `blog.example.co.uk` are hosts, not registrations — but the registries
+ * answer questions about them as if they were free (a third-level name has no record at
+ * Verisign, whose RDAP and WHOIS both report "no match"), so a kept host row is a corroborated
+ * false "available" on a domain somebody owns. Lists arrive with hosts in them — crawler
+ * outlinks, `www.`-prefixed refdomains — so the row is reduced to the name a person could
+ * actually register, which is also the name the whole funnel is about.
+ */
+export function apexOf(host: string): string | null {
+  const clean = host.trim().toLowerCase().replace(/\.$/, "");
+  const tld = tldOf(clean);
+  if (!tld) return null;
+  const labels = clean.split(".");
+  const suffixLabels = tld.split(".").length;
+  return labels.slice(-(suffixLabels + 1)).join(".");
 }
