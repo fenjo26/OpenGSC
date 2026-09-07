@@ -70,30 +70,75 @@ export async function POST(req: Request) {
   const op = String(b?.op ?? "ping");
 
   const settings = await getUserSettings(ownerId);
-  // Explicit body values win for BOTH halves of the pair, then env, then the settings mirror.
-  // The host used to be env-first while the password was body-first — which quietly assembled
-  // "env host + typed password" whenever env was configured, a pair that cannot auth unless the
-  // typed password happens to be the env one, and presented as a random "Auth failed".
-  const rawBase = String(b?.baseUrl ?? "").trim() || envBaseUrl() || String(settings.seoBaseUrl_aparser ?? "");
-  const fromEnv = !String(b?.baseUrl ?? "").trim() && !!envBaseUrl();
-  const norm = normaliseBaseUrl(rawBase);
-  if ("problem" in norm) {
-    return NextResponse.json({ error: `aparser_url_${norm.problem}` }, { status: URL_PROBLEM_STATUS });
+  const typedUrl = String(b?.baseUrl ?? "").trim();
+  const typedPassword = String(b?.password ?? "").trim();
+
+  // Credential candidates, in the order they deserve trust: what the caller typed explicitly
+  // (the settings form tests exactly what was typed), then the env pair the deployment
+  // configured, then the settings mirror a green settings test wrote. Historically the host
+  // was env-first while the password was body-first — which quietly assembled "env host +
+  // typed password", a pair that cannot auth, and presented as a random "Auth failed".
+  //
+  // For calls without explicit credentials (console, batch, pollers) the candidates are
+  // PROBED with a real ping and the first that answers wins: an instance whose password was
+  // rotated under a stale env var heals itself the moment the settings mirror holds the new
+  // one — no SSH, no support thread. A probe against localhost costs single-digit
+  // milliseconds; the console polls every 15s and never notices.
+  const candidates: { creds: AparserCreds; source: string }[] = [];
+  if (typedUrl || typedPassword) {
+    const rawBase = typedUrl || envBaseUrl() || String(settings.seoBaseUrl_aparser ?? "");
+    const password = typedPassword || envPassword() || String(settings.seoKey_aparser ?? "");
+    const norm = normaliseBaseUrl(rawBase);
+    if ("problem" in norm) {
+      return NextResponse.json({ error: `aparser_url_${norm.problem}` }, { status: URL_PROBLEM_STATUS });
+    }
+    if (!password) return NextResponse.json({ error: "no_aparser_password" }, { status: 400 });
+    candidates.push({ creds: { baseUrl: norm.url, password, configPreset: undefined }, source: "form" });
+  } else {
+    const envUrl = envBaseUrl(), envPass = envPassword();
+    if (envUrl && envPass) {
+      const norm = normaliseBaseUrl(envUrl);
+      if (!("problem" in norm)) candidates.push({ creds: { baseUrl: norm.url, password: envPass }, source: "env" });
+    }
+    const mirrorUrl = String(settings.seoBaseUrl_aparser ?? "").trim();
+    const mirrorPass = String(settings.seoKey_aparser ?? "").trim();
+    if (mirrorUrl && mirrorPass) {
+      const norm = normaliseBaseUrl(mirrorUrl);
+      if (!("problem" in norm)) candidates.push({ creds: { baseUrl: norm.url, password: mirrorPass }, source: "settings" });
+    }
   }
-  const resolved = { url: norm.url, fromEnv };
 
-  const password = String(b?.password ?? "").trim() || envPassword() || String(settings.seoKey_aparser ?? "");
-  if (!password) return NextResponse.json({ error: "no_aparser_password" }, { status: 400 });
+  let creds: AparserCreds;
+  let credSource: string;
+  if (candidates.length === 1 || typedUrl || typedPassword) {
+    // A single candidate (or an explicit test) goes straight through — its answer IS the answer.
+    ({ creds, source: credSource } = candidates[0]);
+  } else {
+    let lastError = "";
+    const tried: string[] = [];
+    let picked: { creds: AparserCreds; source: string } | null = null;
+    for (const c of candidates) {
+      tried.push(c.source);
+      const pong = await aparserPing(c.creds);
+      if (pong.data) { picked = c; break; }
+      lastError = pong.error ?? "no answer";
+    }
+    if (!picked) {
+      return NextResponse.json({ error: `${lastError || "aparser_no_answer"} [tried: ${tried.join(", ")}]` }, { status: 502 });
+    }
+    ({ creds, source: credSource } = picked);
+  }
 
+  const fromEnv = !typedUrl && !typedPassword && credSource === "env";
+  const resolved = { url: creds.baseUrl, fromEnv };
   // Which credential actually went out. An auth failure is unreadable without this: "Auth
   // failed" from A-Parser looks identical whether the stale env password, the mirrored
   // settings password or the typed one was used — and each has a different fix. Host and
   // source only, never the password itself.
-  const credSource = String(b?.password ?? "").trim() ? "form" : envPassword() ? "env" : "settings";
-  const credTag = ` [${hostOf(resolved.url)} · creds: ${credSource}]`;
+  const credTag = ` [${hostOf(creds.baseUrl)} · creds: ${credSource}]`;
 
   const configPreset = String(b?.configPreset ?? "").trim() || String(settings.seoAparserConfig ?? "") || "default";
-  const creds: AparserCreds = { baseUrl: resolved.url, password, configPreset };
+  creds.configPreset = configPreset;
 
   const concurrency = Number(settings.seoAparserConcurrency);
   if (Number.isFinite(concurrency)) setAparserConcurrency(concurrency);
