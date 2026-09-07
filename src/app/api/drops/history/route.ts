@@ -37,7 +37,10 @@ export async function POST(req: Request) {
     })) as { id: string; domain: string }[];
     if (!rows.length) return NextResponse.json({ results: [] });
 
-    const creds = await resolveAiCreds(userId);
+    // The dedicated drops-history slot (Settings → per-task AI), falling back through the
+    // usual chain — this pass is small and mechanical, so it does not have to run on the
+    // expensive writer the main SEO provider may be set to.
+    const creds = await resolveAiCreds(userId, {}, "dropsHistory");
     if (!creds.aiApiKey) {
       return NextResponse.json({ error: "no_ai_creds" }, { status: 400 });
     }

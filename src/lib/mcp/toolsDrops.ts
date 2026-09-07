@@ -318,20 +318,23 @@ export const DROPS_TOOLS: McpTool[] = [
     cost: "paid",
     idempotent: false,
     description:
-      "PAID: run the AI history pass over up to 5 hand-picked domains — fetches three Wayback snapshots across the domain's life and asks the configured LLM what the site was about, whether the topic shifted and whether a spam period shows. Writes historyVerdict (clean | topic_shift | spam_period | unknown) + a factual note, and re-scores the row (spam_period vetoes). Needs confirm: true — it spends LLM credits. Never run this for whole lists.",
+      "PAID: run the AI history pass over up to 5 hand-picked domains — fetches three Wayback snapshots across the domain's life and asks the configured LLM what the site was about, whether the topic shifted and whether a spam period shows. Writes historyVerdict (clean | topic_shift | spam_period | unknown) + a factual note, and re-scores the row (spam_period vetoes). Uses the dedicated drops-history AI slot (Settings → per-task AI) and falls back to the main AI provider; an explicit aiProvider/aiApiKey argument wins over both. Needs confirm: true — it spends LLM credits. Never run this for whole lists.",
     inputSchema: {
       type: "object",
       required: ["domains", "confirm"],
       properties: {
         domains: { type: "array", items: { type: "string" }, description: "up to 5 hand-picked domains" },
         confirm: { type: "boolean", description: "must be true — this spends LLM credits" },
+        aiProvider: { type: "string", description: "override the AI provider for this call" },
+        aiApiKey: { type: "string", description: "override the AI key for this call" },
+        model: { type: "string", description: "override the model for this call" },
       },
     },
     handler: async (userId, args) => {
       assertConfirmed(args, "drops_history_ai spends LLM credits");
       const domains = domainsArg(args).slice(0, 5);
       if (!domains.length) throw new Error("domains required");
-      const creds = await resolveAiCreds(userId);
+      const creds = await resolveAiCreds(userId, args, "dropsHistory");
       if (!creds.aiApiKey) throw new Error("no_ai_creds: configure an AI provider in settings");
       const results: { domain: string; verdict?: string; note?: string; error?: string }[] = [];
       for (const domain of domains) {

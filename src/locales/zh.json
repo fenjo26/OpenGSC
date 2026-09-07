@@ -3770,5 +3770,14 @@
   "dropsEnrichStopped": "已停止 — 已更新行：{n}",
   "dropsDrAll": "DR：任意",
   "dropsDrNone": "无 DR（—）",
-  "dropsDrNoneHint": "「无 DR」= 尚未加载或 Ahrefs 无评分；「≤ 10」= 垃圾，「≥ 20」= 有潜力"
+  "dropsDrNoneHint": "「无 DR」= 尚未加载或 Ahrefs 无评分；「≤ 10」= 垃圾，「≥ 20」= 有潜力",
+  "seoTaskDropsHistory": "域名历史 AI（/drops）",
+  "seoTaskDropsHistoryDesc": "域名目录中的「重算数据 + AI」过程：每个域名的三个存档页面交给一个小模型，返回结论（干净 / 主题变更 / 垃圾邮件期）。过程小而机械——用便宜快速的模型即可。",
+  "dropsHistoryErrWayback": "Wayback Machine 未响应",
+  "dropsHistoryErrDeadline": "未能在时间预算内完成",
+  "dropsHistoryErrNotDomain": "看起来不像可检查的域名",
+  "dropsHistoryVerdictClean": "历史：干净 — 一生主题一致",
+  "dropsHistoryVerdictTopicShift": "历史：主题曾变更",
+  "dropsHistoryVerdictSpam": "历史：曾有垃圾邮件期",
+  "dropsHistoryVerdictUnknown": "历史：数据不足"
 }

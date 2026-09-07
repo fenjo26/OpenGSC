@@ -3770,5 +3770,14 @@
   "dropsEnrichStopped": "Остановлено — обновлено строк: {n}",
   "dropsDrAll": "DR: любой",
   "dropsDrNone": "без DR (—)",
-  "dropsDrNoneHint": "«без DR» — ещё не обогащённые или без оценки Ahrefs; «≤ 10» — мусор, «≥ 20» — перспектива"
+  "dropsDrNoneHint": "«без DR» — ещё не обогащённые или без оценки Ahrefs; «≤ 10» — мусор, «≥ 20» — перспектива",
+  "seoTaskDropsHistory": "AI истории доменов (/drops)",
+  "seoTaskDropsHistoryDesc": "Проход «Пересчитать данные + AI» в каталоге доменов: три архивных страницы домена уходят в небольшую модель, которая возвращает вердикт (чистая / смена тематики / спам-период). Проход мелкий и механический — дешёвая быстрая модель подходит, писателя тратить не нужно.",
+  "dropsHistoryErrWayback": "Wayback Machine не ответил",
+  "dropsHistoryErrDeadline": "не уложился в отведённое время",
+  "dropsHistoryErrNotDomain": "не похоже на проверяемый домен",
+  "dropsHistoryVerdictClean": "История: чистая — одна тематика всю жизнь",
+  "dropsHistoryVerdictTopicShift": "История: тематика менялась",
+  "dropsHistoryVerdictSpam": "История: был спам-период",
+  "dropsHistoryVerdictUnknown": "История: недостаточно данных"
 }

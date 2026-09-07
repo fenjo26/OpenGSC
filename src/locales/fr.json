@@ -3770,5 +3770,14 @@
   "dropsEnrichStopped": "Arrêté — lignes mises à jour : {n}",
   "dropsDrAll": "DR : tous",
   "dropsDrNone": "sans DR (—)",
-  "dropsDrNoneHint": "« sans DR » = jamais enrichis ou sans note Ahrefs ; « ≤ 10 » = à jeter, « ≥ 20 » = prometteurs"
+  "dropsDrNoneHint": "« sans DR » = jamais enrichis ou sans note Ahrefs ; « ≤ 10 » = à jeter, « ≥ 20 » = prometteurs",
+  "seoTaskDropsHistory": "IA historique des domaines (/drops)",
+  "seoTaskDropsHistoryDesc": "Le passage « Recalculer les données + IA » du catalogue : trois pages archivées par domaine sont envoyées à un petit modèle qui rend un verdict (propre / changement de thème / période de spam). Petit et mécanique — un modèle rapide et bon marché suffit.",
+  "dropsHistoryErrWayback": "Wayback Machine n'a pas répondu",
+  "dropsHistoryErrDeadline": "n'a pas tenu dans le temps imparti",
+  "dropsHistoryErrNotDomain": "ne ressemble pas à un domaine vérifiable",
+  "dropsHistoryVerdictClean": "Historique : propre — un seul thème toute sa vie",
+  "dropsHistoryVerdictTopicShift": "Historique : thème changé",
+  "dropsHistoryVerdictSpam": "Historique : période de spam",
+  "dropsHistoryVerdictUnknown": "Historique : données insuffisantes"
 }

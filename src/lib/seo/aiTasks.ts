@@ -41,6 +41,11 @@ export const AI_TASKS: AiTaskDef[] = [
   // a DIFFERENT model than the writer: same-model judges share the writer's blind spots, which
   // is the entire reason this check exists as an independent opinion.
   { id: "judge",    labelKey: "seoTaskJudge",    descKey: "seoTaskJudgeDesc",    tier: "balanced" },
+  // The /drops AI history pass ("Пересчитать данные + AI"): three archived pages in, one verdict
+  // out. Its own slot because the vetting call is small and mechanical — a cheap fast model is
+  // fine here — while the main SEO provider may be an expensive writer the user does not want
+  // burning credits on catalogue passes.
+  { id: "dropsHistory", labelKey: "seoTaskDropsHistory", descKey: "seoTaskDropsHistoryDesc", tier: "cheap" },
 ];
 
 export const AI_TASK_BY_ID: Record<string, AiTaskDef> =
@@ -63,6 +68,9 @@ export const PATH_TASKS: Record<string, SeoTask[]> = {
   // the search trace into a report runs on `utility`. Listing it keeps that pass visible instead
   // of leaving it as an unexplained line on the OpenAI bill.
   "/seo-tools/geo":      ["utility"],
+  // The drops catalogue is not an /seo-tools page, but its AI history pass is a real spend —
+  // listing it keeps the "used by" column honest about where this slot fires.
+  "/drops":              ["dropsHistory"],
 };
 
 export function tasksForPath(pathname: string): AiTaskDef[] {

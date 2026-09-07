@@ -3770,5 +3770,14 @@
   "dropsEnrichStopped": "Detenido — filas actualizadas: {n}",
   "dropsDrAll": "DR: cualquiera",
   "dropsDrNone": "sin DR (—)",
-  "dropsDrNoneHint": "«sin DR» = sin enriquecer o sin rating de Ahrefs; «≤ 10» = descartables, «≥ 20» = prometedores"
+  "dropsDrNoneHint": "«sin DR» = sin enriquecer o sin rating de Ahrefs; «≤ 10» = descartables, «≥ 20» = prometedores",
+  "seoTaskDropsHistory": "IA de historial de dominios (/drops)",
+  "seoTaskDropsHistoryDesc": "El pase «Recalcular datos + IA» del catálogo: tres páginas archivadas por dominio van a un modelo pequeño que devuelve un veredicto (limpio / cambio de tema / período de spam). Pase pequeño y mecánico — basta un modelo rápido y barato.",
+  "dropsHistoryErrWayback": "Wayback Machine no respondió",
+  "dropsHistoryErrDeadline": "no cupo en el tiempo asignado",
+  "dropsHistoryErrNotDomain": "no parece un dominio comprobable",
+  "dropsHistoryVerdictClean": "Historial: limpio — un solo tema toda su vida",
+  "dropsHistoryVerdictTopicShift": "Historial: cambió de tema",
+  "dropsHistoryVerdictSpam": "Historial: período de spam",
+  "dropsHistoryVerdictUnknown": "Historial: datos insuficientes"
 }

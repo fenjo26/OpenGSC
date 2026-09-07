@@ -3770,5 +3770,14 @@
   "dropsEnrichStopped": "Gestoppt — Zeilen aktualisiert: {n}",
   "dropsDrAll": "DR: beliebig",
   "dropsDrNone": "kein DR (—)",
-  "dropsDrNoneHint": "„kein DR“ = noch nicht angereichert oder ohne Ahrefs-Bewertung; „≤ 10“ = Ausschuss, „≥ 20“ = vielversprechend"
+  "dropsDrNoneHint": "„kein DR“ = noch nicht angereichert oder ohne Ahrefs-Bewertung; „≤ 10“ = Ausschuss, „≥ 20“ = vielversprechend",
+  "seoTaskDropsHistory": "Domain-Verlaufs-KI (/drops)",
+  "seoTaskDropsHistoryDesc": "Der Durchlauf „Daten neu berechnen + KI“ im Domain-Katalog: drei archivierte Seiten gehen an ein kleines Modell, das ein Urteil liefert (sauber / Themawechsel / Spam-Periode). Klein und mechanisch — ein günstiges schnelles Modell genügt.",
+  "dropsHistoryErrWayback": "Wayback Machine hat nicht geantwortet",
+  "dropsHistoryErrDeadline": "hat das Zeitbudget nicht eingehalten",
+  "dropsHistoryErrNotDomain": "wirkt nicht wie eine prüfbare Domain",
+  "dropsHistoryVerdictClean": "Verlauf: sauber — durchgehend ein Thema",
+  "dropsHistoryVerdictTopicShift": "Verlauf: Thema hat gewechselt",
+  "dropsHistoryVerdictSpam": "Verlauf: Spam-Periode vorhanden",
+  "dropsHistoryVerdictUnknown": "Verlauf: zu wenig Daten"
 }

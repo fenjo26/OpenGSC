@@ -3770,5 +3770,14 @@
   "dropsEnrichStopped": "Stopped — rows updated: {n}",
   "dropsDrAll": "DR: any",
   "dropsDrNone": "no DR (—)",
-  "dropsDrNoneHint": "“no DR” = never enriched or unrated by Ahrefs; “≤ 10” catches the garbage, “≥ 20” the prospects"
+  "dropsDrNoneHint": "“no DR” = never enriched or unrated by Ahrefs; “≤ 10” catches the garbage, “≥ 20” the prospects",
+  "seoTaskDropsHistory": "Domain history AI (/drops)",
+  "seoTaskDropsHistoryDesc": "The 'Recount data + AI' pass in the drops catalogue: three archived pages per domain go to a small model that returns a verdict (clean / topic shift / spam period). Small and mechanical — a cheap fast model is fine, no need to burn the writer here.",
+  "dropsHistoryErrWayback": "Wayback Machine did not answer",
+  "dropsHistoryErrDeadline": "did not fit into the time budget",
+  "dropsHistoryErrNotDomain": "does not look like a checkable domain",
+  "dropsHistoryVerdictClean": "History: clean — one topic all its life",
+  "dropsHistoryVerdictTopicShift": "History: topic changed",
+  "dropsHistoryVerdictSpam": "History: spam period",
+  "dropsHistoryVerdictUnknown": "History: not enough data"
 }

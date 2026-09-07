@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Boxes, Database, Globe2, History, Loader2, Plus, Radar, Search, Sparkles, Square, Star, Trash2, Upload } from "lucide-react";
+import { AlertTriangle, BadgeCheck, Boxes, CircleHelp, Database, Globe2, History, Loader2, Plus, Radar, RefreshCw, Search, ShieldAlert, Sparkles, Square, Star, Upload } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import type { DropSource, DropStage } from "@/lib/drops/types";
 import { usePersistedState } from "@/lib/usePersistedState";
@@ -16,6 +16,7 @@ type Candidate = {
   dr: number | null; refdomains: number | null; refdomainsDofollow: number | null;
   waybackSnapshots: number | null; score: number | null; lastCheckedAt: string | null;
   corroborated: boolean; watched: boolean; lastError?: string | null;
+  historyVerdict?: string | null; historyNote?: string | null;
 };
 type ImportSummary = {
   runId: string;
@@ -46,6 +47,24 @@ const DR_BANDS: { value: string; label: string; i18n?: boolean; params: Record<s
 function drBandParams(value: string): Record<string, string> {
   return DR_BANDS.find(b => b.value === value)?.params ?? {};
 }
+
+/**
+ * The AI history verdict, as the row badge shows it. The note travels in the tooltip: a verdict
+ * without its "was a school site, parked since 2019" is just a coloured dot.
+ */
+const HISTORY_VERDICTS: Record<string, { key: string; color: string; Icon: typeof History }> = {
+  clean: { key: "dropsHistoryVerdictClean", color: "var(--color-accent-green, #34c759)", Icon: BadgeCheck },
+  topic_shift: { key: "dropsHistoryVerdictTopicShift", color: "var(--color-accent-orange, #ff9f0a)", Icon: RefreshCw },
+  spam_period: { key: "dropsHistoryVerdictSpam", color: "#ff6b62", Icon: ShieldAlert },
+  unknown: { key: "dropsHistoryVerdictUnknown", color: "var(--color-text-tertiary)", Icon: CircleHelp },
+};
+
+/** Row-level failure codes the AI history route reports, mapped to words. Unknown codes show raw. */
+const HISTORY_ERRORS: Record<string, string> = {
+  wayback_unreachable: "dropsHistoryErrWayback",
+  deadline: "dropsHistoryErrDeadline",
+  not_a_domain: "dropsHistoryErrNotDomain",
+};
 
 const SOURCES: { value: DropSource; key: string }[] = [
   { value: "csv", key: "dropsSourceCsv" },
@@ -523,9 +542,19 @@ export default function DropsPage() {
         if (body?.error === "no_ai_creds") throw new Error(tr("dropsHistoryNoCreds"));
         throw new Error(body?.error || "history_failed");
       }
-      const done = (body.results as { verdict?: string }[] | undefined) ?? [];
+      const done = (body.results as { domain?: string; verdict?: string; error?: string }[] | undefined) ?? [];
       const decided = done.filter(r => r.verdict).length;
-      setNotice(tr("dropsEnrichHistoryDone").replace("{n}", `${decided}/${done.length}`));
+      // The route reports a per-row reason for every row that came back without a verdict —
+      // a bare "0/1" with the reason still in the response is what made this notice exist.
+      const failed = done.filter(r => !r.verdict);
+      const failPart = failed.length
+        ? " — " + failed.map(r => {
+            const code = r.error ?? "";
+            const reason = HISTORY_ERRORS[code] ? tr(HISTORY_ERRORS[code]) : (code || "?");
+            return `${r.domain ?? "?"}: ${reason}`;
+          }).join("; ")
+        : "";
+      setNotice(tr("dropsEnrichHistoryDone").replace("{n}", `${decided}/${done.length}`) + failPart);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -861,6 +890,16 @@ export default function DropsPage() {
                     style={{ marginLeft: 6, color: "var(--color-accent-blue)", display: "inline-flex", verticalAlign: "-2px" }}>
                     <History size={12} />
                   </a>
+                  {/* The AI history verdict next to the name it is about — the pass is no use
+                      if its answer only exists in the database. The note rides in the tooltip. */}
+                  {(() => {
+                    const v = r.historyVerdict ? HISTORY_VERDICTS[r.historyVerdict] : undefined;
+                    if (!v) return null;
+                    return <span title={`${tr(v.key)}${r.historyNote ? ` — ${r.historyNote}` : ""}`}
+                      style={{ marginLeft: 5, color: v.color, display: "inline-flex", verticalAlign: "-2px" }}>
+                      <v.Icon size={12} />
+                    </span>;
+                  })()}
                   {/* The watch toggle. Lit means the scheduler is polling this domain and will
                       notify once it frees; the funnel stages stay the source of truth about the
                       row, the watch only decides whether the row keeps being re-asked. */}
