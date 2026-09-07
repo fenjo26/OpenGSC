@@ -1497,3 +1497,111 @@ model DemandSearch {
   @@id([userId, cacheKey])
   @@index([userId, createdAt])
 }
+
+// ─── Drop catalogue (/drops) — expired domains with a live link profile ──────────────
+//
+// A drop is a domain the user does NOT own and, for 49 999 rows out of 50 000, never will.
+// That is why it is not a `Site` with extra columns: it has its own funnel, its own lifecycle
+// and its own throwaway volume, and only becomes a `Site` on the rare occasion it is bought.
+//
+// `userId` is a bare column with no relation, matching EnginePortfolioCache and ProviderBalance:
+// nothing here is ever loaded through the user, so a relation would only add a join.
+
+/// One import or extraction — a pasted list, a donor's referring domains, a zone diff.
+/// Exists so the catalogue can be filtered by "Запуск" instead of being one flat 50k table.
+model DropRun {
+  id         String    @id @default(cuid())
+  userId     String
+  label      String?
+  source     String    // csv | ahrefs_refdomains | ahrefs_broken | crawler | zone_diff
+  sourceRef  String?   // donor domain, file name, or the zone date this came from
+  total      Int       @default(0)   // rows accepted after normalisation
+  skipped    Int       @default(0)   // rows rejected on the way in
+  skipReport String?                 // JSON: Record<SkipReason, number>
+  createdAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  candidates DropCandidate[]
+
+  @@index([userId, createdAt])
+}
+
+/// One candidate domain.
+///
+/// Unique per (userId, domain), not per run: the same name arriving from three sources is one
+/// thing to check, not three. `runId` records where it was last seen, so a run can still be
+/// filtered on, and is nulled rather than cascaded when a run is deleted — losing the checking
+/// history because an import was tidied away would be the wrong trade.
+model DropCandidate {
+  id     String  @id @default(cuid())
+  userId String
+  runId  String?
+  domain String
+  tld    String
+
+  // ── funnel ───────────────────────────────────────────────────────────────────────
+  stage             String    @default("ingested")
+  // ingested | dns_checked | resolved_taken | checking | available | taken
+  // | confirmed | rejected | acquired
+  dnsHasRecords     Boolean?
+  lastStatus        String?   // registered | available | rate_limited | error
+  lastHttp          Int?
+  lastError         String?
+  lastVia           String?   // rdap | whois | dns | aparser
+  /// An `available` seen by only one source. Never alert on it, never show it as free.
+  corroborated      Boolean   @default(false)
+  consecutiveErrors Int       @default(0)
+  checkIntervalMin  Int       @default(1440)
+  nextCheckAt       DateTime?
+  lastCheckedAt     DateTime?
+  registryExpiresAt DateTime?
+  registryCreatedAt DateTime?
+  registryStatus    String?   // comma-separated EPP statuses, e.g. "pendingDelete"
+  nameServers       String?   // JSON: string[]
+
+  // ── enrichment (Ahrefs) ──────────────────────────────────────────────────────────
+  dr                 Float?
+  refdomains         Int?
+  refdomainsDofollow Int?
+  liveBacklinks      Int?
+  topAnchors         String?   // JSON: { anchor: string, count: number }[]
+  metricsAt          DateTime?
+
+  // ── history (Wayback) ────────────────────────────────────────────────────────────
+  waybackSnapshots Int?
+  waybackFirstAt   DateTime?
+  waybackLastAt    DateTime?
+  waybackGapDays   Int?
+  historyVerdict   String?   // clean | topic_shift | spam_period | unknown
+  historyNote      String?
+  historyAt        DateTime?
+
+  score     Float?
+  starred   Boolean  @default(false)
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  run    DropRun?    @relation(fields: [runId], references: [id], onDelete: SetNull)
+  events DropEvent[]
+
+  @@unique([userId, domain])
+  @@index([userId, stage])
+  @@index([userId, score])
+  @@index([runId])
+  @@index([nextCheckAt])
+}
+
+/// Append-only trail. Without it there is no way to answer why a domain read "free" yesterday
+/// and "taken" today, or which registry reply produced either verdict.
+model DropEvent {
+  id          String   @id @default(cuid())
+  candidateId String
+  type        String   // info | available | taken | rate_limited | error | bought
+  message     String
+  createdAt   DateTime @default(now())
+
+  candidate DropCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([candidateId, createdAt])
+}

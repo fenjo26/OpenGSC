@@ -4,11 +4,12 @@ import { usePathname, useRouter } from "next/navigation";
 import PasswordChangeGate from "@/components/PasswordChangeGate";
 import { useSession, signOut } from "next-auth/react";
 import { useState, useEffect, Suspense } from "react";
-import { Settings, LogOut, Sparkles, Globe, Newspaper, LayoutDashboard, TrendingUp, Anchor, BarChart2, Users, Compass, Radar, Server, ClipboardCheck } from "lucide-react";
+import { Settings, LogOut, Sparkles, Globe, Newspaper, LayoutDashboard, TrendingUp, Anchor, BarChart2, Users, Compass, Radar, Server, ClipboardCheck, Menu, Boxes } from "lucide-react";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { useTheme } from "@/lib/ThemeContext";
 import { useLayout } from "@/lib/LayoutContext";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import { aparserConfiguredLocally, isAparserConfigured, resetAparserConfiguredCache } from "@/lib/seo/aparserConfigured";
 import UpdateBanner from "@/components/UpdateBanner";
 import SchemaBanner from "@/components/SchemaBanner";
 
@@ -477,36 +478,57 @@ function ChromeExtensionModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-// ─── NavLinks component for top navigation ────────────────────────────────────
-function NavLinks() {
-  const router = useRouter();
-  const pathname = usePathname();
+// ─── Navigation items ────────────────────────────────────────────────────────
+/**
+ * The item list is read by two components now — the horizontal bar and the mobile
+ * sheet — so it lives in a hook instead of inside one of them. Duplicating ten
+ * entries across two renderers is how a nav item ends up existing on desktop and
+ * not on a phone.
+ *
+ * A-Parser is the only nav item that can be absent, and the reason is that it is the only one
+ * that depends on hardware the app cannot provide. Everything else in this bar works out of
+ * the box; a permanent eighth entry whose page can only ever say "not configured" costs every
+ * user attention to buy nothing. It appears the moment a connection is saved.
+ */
+export interface NavItem {
+  href: string;
+  label: string;
+  key: string;
+  exact?: boolean;
+  icon: React.ReactNode;
+}
+
+function useNavItems(): NavItem[] {
   const { t } = useLanguage();
 
-  /**
-   * A-Parser is the only nav item that can be absent, and the reason is that it is the only one
-   * that depends on hardware the app cannot provide. Everything else in this bar works out of
-   * the box; a permanent eighth entry whose page can only ever say "not configured" costs every
-   * user attention to buy nothing. It appears the moment a connection is saved.
-   */
   const [hasAparser, setHasAparser] = useState(false);
   useEffect(() => {
+    let alive = true;
     const read = () => {
-      try { setHasAparser(!!localStorage.getItem("seoBaseUrl_aparser") && !!localStorage.getItem("seoKey_aparser")); }
-      catch { setHasAparser(false); }
+      // The local answer is synchronous, so a browser that has the settings renders the item
+      // with no request and no flicker.
+      const local = aparserConfiguredLocally();
+      setHasAparser(local);
+      if (local) return;
+      // It is not, though, the only way an instance can be configured: the env vars win over the
+      // settings value server-side, and a Docker deployment is told to use them. Asking the
+      // server is what keeps the recommended setup from having an invisible menu entry.
+      void isAparserConfigured().then(ok => { if (alive && ok) setHasAparser(true); });
     };
     read();
     // Settings write straight to localStorage; this is the same event SeoKeysSync fires after a
     // restore, so the item also appears on a machine that has just pulled the backup.
-    window.addEventListener("seo-keys-restored", read);
-    window.addEventListener("storage", read);
+    const reread = () => { resetAparserConfiguredCache(); read(); };
+    window.addEventListener("seo-keys-restored", reread);
+    window.addEventListener("storage", reread);
     return () => {
-      window.removeEventListener("seo-keys-restored", read);
-      window.removeEventListener("storage", read);
+      alive = false;
+      window.removeEventListener("seo-keys-restored", reread);
+      window.removeEventListener("storage", reread);
     };
   }, []);
 
-  const items = [
+  return [
     { href: "/", label: t("menuDashboard"), key: "sites", exact: true, icon: <LayoutDashboard size={14} /> },
     { href: "/striking", label: t("menuStriking"), key: "striking", icon: <TrendingUp size={14} /> },
     { href: "/cannibalization", label: t("menuCannibalization"), key: "cannibalization", icon: <Anchor size={14} /> },
@@ -522,34 +544,40 @@ function NavLinks() {
     // Sits next to the portfolio tools but points outward: everything above reads this instance's
     // own data, this one looks at somebody else's site.
     { href: "/crawler", label: t("crawlerNavTitle"), key: "crawler", icon: <Radar size={14} /> },
+    // Between the crawler and the digest for the same reason the crawler sits where it does:
+    // it looks outward at domains this instance does not own. Unlike the crawler it looks at
+    // ones nobody owns yet.
+    { href: "/drops", label: t("dropsNavTitle"), key: "drops", icon: <Boxes size={14} /> },
     { href: "/digest", label: t("digestNavTitle"), key: "digest", icon: <Newspaper size={14} /> },
     // Points inward at the user's own machine rather than at this instance's data or at
     // somebody else's site — hence last, and hidden until that machine exists.
     ...(hasAparser ? [{ href: "/aparser", label: t("aparserNavTitle"), key: "aparser", icon: <Server size={14} /> }] : []),
   ];
+}
+
+function isNavActive(item: NavItem, pathname: string | null): boolean {
+  return item.exact ? pathname === "/" : !!pathname?.startsWith(item.href);
+}
+
+function navAccent(key: string): { color: string; bg: string } {
+  if (key === "seo-tools") return { color: "var(--color-accent-purple)", bg: "rgba(191,90,242,0.12)" };
+  if (key === "indexer") return { color: "var(--color-accent-blue)", bg: "rgba(41,151,255,0.12)" };
+  if (key === "digest") return { color: "var(--color-accent-green, #34c759)", bg: "rgba(52,199,89,0.12)" };
+  if (key === "drops") return { color: "var(--color-accent-orange, #ff9f0a)", bg: "rgba(255,159,10,0.12)" };
+  return { color: "var(--color-accent-blue)", bg: "rgba(59,130,246,0.12)" };
+}
+
+// ─── NavLinks component for top navigation ────────────────────────────────────
+function NavLinks() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const items = useNavItems();
 
   return (
-    <nav style={{ display: "flex", alignItems: "center", gap: "4px", marginLeft: "20px", flex: 1 }}>
+    <nav className="nav-desktop">
       {items.map(item => {
-        const isActive = item.exact
-          ? pathname === "/"
-          : pathname?.startsWith(item.href);
-
-        const activeColor = item.key === "seo-tools" 
-          ? "var(--color-accent-purple)" 
-          : item.key === "indexer" 
-            ? "var(--color-accent-blue)" 
-            : item.key === "digest" 
-              ? "var(--color-accent-green, #34c759)" 
-              : "var(--color-accent-blue)";
-
-        const bgActive = item.key === "seo-tools" 
-          ? "rgba(191,90,242,0.12)" 
-          : item.key === "indexer" 
-            ? "rgba(41,151,255,0.12)" 
-            : item.key === "digest" 
-              ? "rgba(52,199,89,0.12)" 
-              : "rgba(59,130,246,0.12)";
+        const isActive = isNavActive(item, pathname);
+        const { color: activeColor, bg: bgActive } = navAccent(item.key);
 
         return (
           <button
@@ -563,6 +591,7 @@ function NavLinks() {
               color: isActive ? activeColor : "var(--color-text-secondary)",
               background: isActive ? bgActive : "transparent",
               transition: "all 0.15s",
+              whiteSpace: "nowrap",
             }}
             onMouseOver={e => { if (!isActive) e.currentTarget.style.background = "var(--color-card-hover)"; }}
             onMouseOut={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
@@ -573,6 +602,69 @@ function NavLinks() {
         );
       })}
     </nav>
+  );
+}
+
+// ─── Burger + sheet for narrow viewports ──────────────────────────────────────
+/**
+ * Both this and NavLinks are always in the DOM; `.nav-burger` / `.nav-desktop` in
+ * globals.css decide which one is visible. Nothing here measures the viewport, so
+ * the server and the first client render agree.
+ */
+function NavBurger() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const items = useNavItems();
+  const { t } = useLanguage();
+  const [open, setOpen] = useState(false);
+
+  // Without this the sheet stays open on top of the page the user just navigated to. Closing
+  // inside the click handler alone is not enough: a route can also change from a link inside
+  // the page, from the browser's back button, or from a redirect.
+  //
+  // Adjusted during render rather than in an effect. React re-runs the component immediately
+  // with the new state and never commits the stale frame, so the sheet is gone in the same
+  // paint as the new route; an effect would flash it for one frame and trips the
+  // react-hooks/set-state-in-effect rule this repo lints with.
+  const [sheetPath, setSheetPath] = useState(pathname);
+  if (pathname !== sheetPath) {
+    setSheetPath(pathname);
+    if (open) setOpen(false);
+  }
+
+  return (
+    <>
+      <button
+        className="nav-burger"
+        aria-label={t("navMenu")}
+        aria-expanded={open}
+        onClick={() => setOpen(o => !o)}
+      >
+        <Menu size={18} />
+      </button>
+
+      {open && (
+        <>
+          <div style={{ position: "fixed", inset: 0, zIndex: 44 }} onClick={() => setOpen(false)} />
+          <nav className="nav-sheet">
+            {items.map(item => {
+              const isActive = isNavActive(item, pathname);
+              return (
+                <button
+                  key={item.href}
+                  className="nav-sheet-item"
+                  data-active={isActive}
+                  onClick={() => { setOpen(false); router.push(item.href); }}
+                >
+                  {item.icon}
+                  {item.label}
+                </button>
+              );
+            })}
+          </nav>
+        </>
+      )}
+    </>
   );
 }
 
@@ -589,7 +681,7 @@ function TopBar() {
   const user = session?.user;
 
   return (
-    <header style={{
+    <header className="topbar" style={{
       position: "sticky", top: 0, zIndex: 40,
       display: "flex", alignItems: "center", justifyContent: "space-between",
       padding: "0 24px",
@@ -619,9 +711,13 @@ function TopBar() {
         </div>
       </button>
 
-      {/* Primary nav tabs */}
+      {/* Primary nav tabs — the bar on desktop, the burger below 900px. Both render;
+          globals.css picks one. */}
       <Suspense fallback={<div style={{ flex: 1 }} />}>
         <NavLinks />
+      </Suspense>
+      <Suspense fallback={null}>
+        <NavBurger />
       </Suspense>
 
       {/* Avatar */}

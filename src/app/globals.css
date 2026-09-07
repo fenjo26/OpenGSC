@@ -666,3 +666,79 @@ input:-webkit-autofill {
 @media (max-width: 900px) {
   .crawler-grid { grid-template-columns: 1fr; }
 }
+
+/* ── Шапка: горизонтальный бар на десктопе, бургер на телефоне ────────────────
+   Свап делают медиазапросы, а не замер ширины в React: обе версии всегда в DOM.
+   Замер через window.innerWidth дал бы разный HTML на сервере и на клиенте —
+   hydration mismatch и прыгающую шапку при загрузке. Порог тот же 900px, что у
+   сеток выше, чтобы у приложения была одна точка перелома, а не три. */
+.nav-desktop {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 20px;
+  flex: 1;
+  min-width: 0;
+}
+.nav-burger { display: none; }
+
+@media (max-width: 900px) {
+  .nav-desktop { display: none; }
+  .nav-burger {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: auto;
+    margin-right: 10px;
+    width: 34px;
+    height: 34px;
+    border: 1px solid var(--color-border);
+    border-radius: 9px;
+    background: transparent;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+  }
+  .nav-burger[aria-expanded="true"] {
+    color: var(--color-accent-blue);
+    background: rgba(59, 130, 246, 0.12);
+  }
+  .topbar { padding: 0 12px; }
+}
+
+/* Выпадающая панель под шапкой. z-index 45: шапка 40, меню аватара 50 — панель
+   должна перекрывать контент, но не меню пользователя. */
+.nav-sheet {
+  position: absolute;
+  top: 48px;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 6px 0;
+  background: var(--color-card);
+  border-bottom: 1px solid var(--color-border);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  z-index: 45;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+.nav-sheet-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 18px;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+.nav-sheet-item:hover { background: var(--color-card-hover); }
+.nav-sheet-item[data-active="true"] {
+  font-weight: 700;
+  color: var(--color-accent-blue);
+  background: rgba(59, 130, 246, 0.12);
+}

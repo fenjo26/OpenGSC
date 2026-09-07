@@ -22,6 +22,7 @@ import {
   AlertTriangle, CheckCircle2, Layers, Loader2, Play, RefreshCw, Search, Server, Settings2, XCircle,
 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import { aparserConfiguredLocally, isAparserConfigured } from "@/lib/seo/aparserConfigured";
 import { APARSER_CAPABILITIES } from "@/lib/seo/aparserCatalog";
 
 interface Info {
@@ -60,7 +61,12 @@ export default function AparserPage() {
   const [bulkErr, setBulkErr] = useState("");
 
   useEffect(() => {
-    setConfigured(!!localStorage.getItem("seoBaseUrl_aparser") && !!localStorage.getItem("seoKey_aparser"));
+    // Same two sources as the nav item: this browser first, then the instance's env vars and the
+    // owner's stored settings. Without the second, a server configured through OPENGSC_APARSER_*
+    // told its owner the tool was not set up while every call on the page worked.
+    const local = aparserConfiguredLocally();
+    setConfigured(local);
+    if (!local) void isAparserConfigured().then(ok => { if (ok) setConfigured(true); });
     // Show the last known parser list immediately: the whole screen is otherwise blank until a
     // round trip to a machine that may be asleep.
     try {

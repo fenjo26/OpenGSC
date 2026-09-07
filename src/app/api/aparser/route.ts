@@ -29,6 +29,39 @@ export const dynamic = "force-dynamic";
 
 const URL_PROBLEM_STATUS = 400;
 
+/**
+ * GET /api/aparser — "is this instance wired to an A-Parser at all?"
+ *
+ * It exists because the answer was, until now, only knowable in one browser. Both the nav item
+ * and this feature's own page decided whether A-Parser was configured by reading `localStorage`,
+ * while the server resolves the connection from `OPENGSC_APARSER_BASE_URL` /
+ * `OPENGSC_APARSER_PASSWORD` first and the owner's settings mirror second. The env vars are the
+ * DEPLOYMENT this module recommends — see the comment on `resolveBaseUrl` — so the recommended
+ * setup was exactly the one where the tool worked and was unreachable from the menu.
+ *
+ * Nothing here returns the URL or the password: two booleans answer the question, and neither
+ * says anything a workspace owner does not already know about their own instance.
+ */
+export async function GET() {
+  const ownerId = await workspaceUserId("manageSecrets");
+  // Same guard as POST. Someone who cannot use this route cannot use the screen either, so
+  // "unauthorized" and "not configured" are the same answer as far as the menu is concerned.
+  if (!ownerId) return NextResponse.json({ configured: false, fromEnv: false });
+
+  try {
+    const settings = await getUserSettings(ownerId);
+    const resolved = resolveBaseUrl(String(settings.seoBaseUrl_aparser ?? ""));
+    const hasUrl = !("problem" in resolved);
+    const hasPassword = !!(envPassword() || String(settings.seoKey_aparser ?? "").trim());
+    return NextResponse.json({
+      configured: hasUrl && hasPassword,
+      fromEnv: hasUrl && !("problem" in resolved) && resolved.fromEnv,
+    });
+  } catch {
+    return NextResponse.json({ configured: false, fromEnv: false });
+  }
+}
+
 export async function POST(req: Request) {
   const ownerId = await workspaceUserId("manageSecrets");
   if (!ownerId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
