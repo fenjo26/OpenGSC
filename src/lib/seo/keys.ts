@@ -41,11 +41,13 @@ export function getCustomProvider(): { baseUrl: string; apiKey: string; model: s
   };
 }
 
-// Providers the user has configured a key for (for the live model selector).
-export function getConfiguredProviders(): { id: string; key: string }[] {
+// Providers the user has configured a key for (for the live model selector). The endpoint
+// override rides along: the catalogue probe must query the same gateway the paid calls run
+// on — a proxy key against the official /models is a guaranteed 401 and an empty picker.
+export function getConfiguredProviders(): { id: string; key: string; baseUrl: string }[] {
   if (typeof window === "undefined") return [];
   return AI_PROVIDER_IDS
-    .map(id => ({ id, key: localStorage.getItem(`aiKey_${id}`) || "" }))
+    .map(id => ({ id, key: localStorage.getItem(`aiKey_${id}`) || "", baseUrl: localStorage.getItem(`aiBaseUrl_${id}`) || "" }))
     .filter(p => p.key.trim().length > 4);
 }
 

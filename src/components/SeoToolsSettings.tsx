@@ -241,7 +241,7 @@ function ModelSelector() {
     setLoading(true); setFetchErr(false);
     const results = await Promise.all(providers.map(async (p) => {
       try {
-        const res = await fetch("/api/seo/models", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider: p.id, apiKey: p.key }) });
+        const res = await fetch("/api/seo/models", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider: p.id, apiKey: p.key, baseUrl: p.baseUrl || undefined }) });
         const data = await res.json();
         if (!res.ok || !data.models?.length) { if (!res.ok) setFetchErr(true); return null; }
         return { provider: p.id, name: AI_PROVIDER_NAMES[p.id] || p.id, models: data.models as { id: string; label: string }[] };
@@ -484,7 +484,7 @@ function PerTaskProviders() {
       try {
         const res = await fetch("/api/seo/models", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider: p.id, apiKey: p.key }),
+          body: JSON.stringify({ provider: p.id, apiKey: p.key, baseUrl: p.baseUrl || undefined }),
         });
         const d = await res.json();
         const list: ModelOpt[] = Array.isArray(d?.models) ? d.models : [];

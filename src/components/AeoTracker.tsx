@@ -23,7 +23,7 @@ import {
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { COUNTRIES, LANGUAGES } from "@/lib/seo/regions";
-import { getOpenAiKey } from "@/lib/seo/geoClient";
+import { getOpenAiKey, getOpenAiBaseUrl } from "@/lib/seo/geoClient";
 import { rankModels, OPENAI_FALLBACK_MODELS, type ModelOpt } from "@/lib/seo/models";
 import BrandVisibility from "@/components/BrandVisibility";
 
@@ -149,7 +149,7 @@ function SettingsPanel({ siteDbId, settings, onChange }: {
     setModelsState("loading");
     fetch("/api/seo/models", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ provider: "openai", apiKey }),
+      body: JSON.stringify({ provider: "openai", apiKey, baseUrl: getOpenAiBaseUrl() || undefined }),
     })
       .then(r => r.json())
       .then(d => {
