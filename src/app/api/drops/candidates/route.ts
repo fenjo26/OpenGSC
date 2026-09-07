@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
-import { deleteCandidates, listCandidates, setStarred, stageCounts, schemaMissing, type CandidateSortField } from "@/lib/drops/store";
+import { deleteCandidates, listCandidates, setStarred, setWatched, stageCounts, schemaMissing, type CandidateSortField } from "@/lib/drops/store";
 import type { DropSource, DropStage } from "@/lib/drops/types";
 
 const STAGES: DropStage[] = [
@@ -25,6 +25,7 @@ function filterFromParams(p: URLSearchParams) {
     q: p.get("q") ?? undefined,
     minScore: Number.isFinite(minScore) && p.get("minScore") ? minScore : undefined,
     starred: p.get("starred") === "1" ? true : undefined,
+    watched: p.get("watched") === "1" ? true : undefined,
   };
 }
 
@@ -71,6 +72,7 @@ function filterFromBody(raw: unknown) {
     ...(s("q") ? { q: s("q")! } : {}),
     ...(Number.isFinite(minScore) && o.minScore != null && o.minScore !== "" ? { minScore: String(minScore) } : {}),
     ...(o.starred === "1" || o.starred === 1 ? { starred: "1" } : {}),
+    ...(o.watched === "1" || o.watched === 1 ? { watched: "1" } : {}),
   }));
 }
 
@@ -102,6 +104,12 @@ async function bulk(req: Request): Promise<NextResponse> {
     }
     if (action === "star" || action === "unstar") {
       const updated = await setStarred(userId, scope, action === "star");
+      return NextResponse.json({ updated });
+    }
+    // Watching is the star that does something: a watched row is re-checked by the scheduler
+    // until the registry frees it. Enabling makes the rows due immediately.
+    if (action === "watch" || action === "unwatch") {
+      const updated = await setWatched(userId, scope, action === "watch");
       return NextResponse.json({ updated });
     }
     return NextResponse.json({ error: "unknown_action" }, { status: 400 });

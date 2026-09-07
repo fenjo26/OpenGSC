@@ -74,6 +74,9 @@ type Tpl = {
   balanceLowMsg: (provider: string, left: string, pct: number | null) => string;
   providerDownTitle: (provider: string) => string;
   providerDownMsg: (provider: string, failures: number) => string;
+  // drops watch: a watched domain became free
+  dropsWatchTitle: (n: number) => string;
+  dropsWatchRow: (domain: string, dr: string, refs: string) => string;
 };
 
 export const NOTIFY_L: Record<NotifyLang, Tpl> = {
@@ -140,6 +143,8 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     balanceLowMsg: (provider, left, pct) => pct != null ? `*${provider}*: ${left} left (${pct}% of the limit).` : `*${provider}*: ${left} left.`,
     providerDownTitle: provider => `🚨 Provider down: ${provider}`,
     providerDownMsg: (provider, n) => `*${provider}* failed ${n}× in the last hour.`,
+    dropsWatchTitle: (n) => `\u{1F3AF} Watched domain${n > 1 ? "s" : ""} freed (${n}):`,
+    dropsWatchRow: (d, dr, refs) => `\u{1F7E2} ${d} \u2014 DR ${dr}, refdomains ${refs}`,
   },
   ru: {
     rankDropTitle: kw => `📉 Падение позиции: ${kw}`,
@@ -204,6 +209,8 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     balanceLowMsg: (provider, left, pct) => pct != null ? `*${provider}*: осталось ${left} (${pct}% от лимита).` : `*${provider}*: осталось ${left}.`,
     providerDownTitle: provider => `🚨 Провайдер лежит: ${provider}`,
     providerDownMsg: (provider, n) => `*${provider}* — ${n} ошибок за последний час.`,
+    dropsWatchTitle: (n) => `\u{1F3AF} Домены со списка наблюдения освободились (${n}):`,
+    dropsWatchRow: (d, dr, refs) => `\u{1F7E2} ${d} \u2014 DR ${dr}, реферальных доменов ${refs}`,
   },
   uk: {
     rankDropTitle: kw => `📉 Падіння позиції: ${kw}`,
@@ -268,6 +275,8 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     balanceLowMsg: (provider, left, pct) => pct != null ? `*${provider}*: залишилось ${left} (${pct}% від ліміту).` : `*${provider}*: залишилось ${left}.`,
     providerDownTitle: provider => `🚨 Провайдер лежить: ${provider}`,
     providerDownMsg: (provider, n) => `*${provider}* — ${n} помилок за останню годину.`,
+    dropsWatchTitle: (n) => `\u{1F3AF} Домени зі списку спостереження звільнилися (${n}):`,
+    dropsWatchRow: (d, dr, refs) => `\u{1F7E2} ${d} \u2014 DR ${dr}, реферальних доменів ${refs}`,
   },
   fr: {
     rankDropTitle: kw => `📉 Chute de position : ${kw}`,
@@ -332,6 +341,8 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     balanceLowMsg: (provider, left, pct) => pct != null ? `*${provider}* : ${left} restants (${pct}% de la limite).` : `*${provider}* : ${left} restants.`,
     providerDownTitle: provider => `🚨 Fournisseur en panne : ${provider}`,
     providerDownMsg: (provider, n) => `*${provider}* a échoué ${n}× dans la dernière heure.`,
+    dropsWatchTitle: (n) => `\u{1F3AF} Domaine${n > 1 ? "s" : ""} surveillé${n > 1 ? "s" : ""} libéré${n > 1 ? "s" : ""} (${n}) :`,
+    dropsWatchRow: (d, dr, refs) => `\u{1F7E2} ${d} \u2014 DR ${dr}, domaines référents ${refs}`,
   },
   es: {
     rankDropTitle: kw => `📉 Caída de posición: ${kw}`,
@@ -396,6 +407,8 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     balanceLowMsg: (provider, left, pct) => pct != null ? `*${provider}*: quedan ${left} (${pct}% del límite).` : `*${provider}*: quedan ${left}.`,
     providerDownTitle: provider => `🚨 Proveedor caído: ${provider}`,
     providerDownMsg: (provider, n) => `*${provider}* falló ${n}× en la última hora.`,
+    dropsWatchTitle: (n) => `\u{1F3AF} Dominio${n > 1 ? "s" : ""} vigilado${n > 1 ? "s" : ""} libre${n > 1 ? "s" : ""} (${n}):`,
+    dropsWatchRow: (d, dr, refs) => `\u{1F7E2} ${d} \u2014 DR ${dr}, dominios de referencia ${refs}`,
   },
   de: {
     rankDropTitle: kw => `📉 Positionsverlust: ${kw}`,
@@ -460,6 +473,8 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     balanceLowMsg: (provider, left, pct) => pct != null ? `*${provider}*: ${left} übrig (${pct}% des Limits).` : `*${provider}*: ${left} übrig.`,
     providerDownTitle: provider => `🚨 Anbieter ausgefallen: ${provider}`,
     providerDownMsg: (provider, n) => `*${provider}* ist in der letzten Stunde ${n}× fehlgeschlagen.`,
+    dropsWatchTitle: (n) => `\u{1F3AF} \u00DCberwachte Domain${n > 1 ? "s" : ""} freigeworden (${n}):`,
+    dropsWatchRow: (d, dr, refs) => `\u{1F7E2} ${d} \u2014 DR ${dr}, verweisende Domains ${refs}`,
   },
   zh: {
     rankDropTitle: kw => `📉 排名下降：${kw}`,
@@ -524,5 +539,7 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     balanceLowMsg: (provider, left, pct) => pct != null ? `*${provider}*：剩余 ${left}（限额的 ${pct}%）。` : `*${provider}*：剩余 ${left}。`,
     providerDownTitle: provider => `🚨 服务商故障：${provider}`,
     providerDownMsg: (provider, n) => `*${provider}* 最近一小时失败 ${n} 次。`,
+    dropsWatchTitle: (n) => `\u{1F3AF} \u76D1\u63A7\u7684\u57DF\u540D\u5DF2\u91CA\u653E\uFF08${n}\uFF09\uFF1A`,
+    dropsWatchRow: (d, dr, refs) => `\u{1F7E2} ${d} \u2014 DR ${dr}\uFF0C\u53C2\u8003\u57DF ${refs}`,
   },
 };

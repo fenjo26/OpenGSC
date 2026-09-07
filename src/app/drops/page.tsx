@@ -15,7 +15,7 @@ type Candidate = {
   id: string; domain: string; tld: string; stage: DropStage;
   dr: number | null; refdomains: number | null; refdomainsDofollow: number | null;
   waybackSnapshots: number | null; score: number | null; lastCheckedAt: string | null;
-  corroborated: boolean; lastError?: string | null;
+  corroborated: boolean; watched: boolean; lastError?: string | null;
 };
 type ImportSummary = {
   runId: string;
@@ -96,6 +96,7 @@ export default function DropsPage() {
   const [stage, setStage] = useState<"" | DropStage>("");
   const [tld, setTld] = useState("");
   const [q, setQ] = useState("");
+  const [watched, setWatchedFilter] = useState<"" | "1">("");
   const [orderBy, setOrderBy] = useState<SortField>("score");
   const [orderDir, setOrderDir] = useState<"asc" | "desc">("desc");
   const [pageSize, setPageSize] = usePersistedState<number>("dropsPageSize", 50, isPageSize);
@@ -163,6 +164,7 @@ export default function DropsPage() {
       if (stage) p.set("stage", stage);
       if (tld.trim()) p.set("tld", tld.trim());
       if (q.trim()) p.set("q", q.trim());
+      if (watched) p.set("watched", watched);
       const res = await fetch(`/api/drops/candidates?${p}`, { cache: "no-store" });
       const body = await res.json();
       if (body?.notMigrated) { setNotMigrated(true); setRows([]); setTotal(0); return; }
@@ -174,7 +176,7 @@ export default function DropsPage() {
     } finally {
       setLoading(false);
     }
-  }, [runId, stage, tld, q, orderBy, orderDir, pageSize, offset]);
+  }, [runId, stage, tld, q, watched, orderBy, orderDir, pageSize, offset]);
 
   // The rule guards against a setState that cascades a second render before paint. This one
   // cannot: every state write inside `loadRuns` happens after an awaited fetch, several ticks
@@ -229,7 +231,7 @@ export default function DropsPage() {
   // Reset during render rather than in an effect: an effect would let one render commit with the
   // new filter and the old offset, which is a real request for a page that may not exist, and it
   // trips react-hooks/set-state-in-effect besides.
-  const filterKey = `${runId}|${stage}|${tld.trim()}|${q.trim()}|${orderBy}|${orderDir}|${pageSize}`;
+  const filterKey = `${runId}|${stage}|${tld.trim()}|${q.trim()}|${watched}|${orderBy}|${orderDir}|${pageSize}`;
   const [lastFilterKey, setLastFilterKey] = useState(filterKey);
   if (filterKey !== lastFilterKey) {
     setLastFilterKey(filterKey);
@@ -533,12 +535,12 @@ export default function DropsPage() {
     });
   };
 
-  /** Bulk delete / star. `matchAll` hands the server the live filter for "выбрать все". */
-  async function bulk(action: "delete" | "star" | "unstar") {
+  /** Bulk delete / star / watch. `matchAll` hands the server the live filter for "выбрать все". */
+  async function bulk(action: "delete" | "star" | "unstar" | "watch" | "unwatch") {
     if (action === "delete" && !window.confirm(tr("dropsConfirmDelete").replace("{n}", String(selectedCount)))) return;
     try {
       const payload = selectAllFilter
-        ? { matchAll: true, action, filter: { runId: runId || "", stage: stage || "", tld: tld.trim(), q: q.trim() } }
+        ? { matchAll: true, action, filter: { runId: runId || "", stage: stage || "", tld: tld.trim(), q: q.trim(), watched } }
         : { ids: [...selectedIds], action };
       const res = await fetch("/api/drops/candidates", {
         method: action === "delete" ? "DELETE" : "PATCH",
@@ -549,11 +551,29 @@ export default function DropsPage() {
       if (!res.ok) throw new Error(body?.error || "bulk_failed");
       setNotice(action === "delete"
         ? tr("dropsDeleted").replace("{n}", String(body.deleted ?? 0))
-        : tr("dropsStarred").replace("{n}", String(body.updated ?? 0)));
+        : action === "watch" || action === "unwatch"
+          ? tr("dropsWatchUpdated").replace("{n}", String(body.updated ?? 0))
+          : tr("dropsStarred").replace("{n}", String(body.updated ?? 0)));
       clearSelection();
       await Promise.all([loadRows(), loadRuns()]);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  /** One-row watch toggle — optimistic, like a star: the flag is the whole change. */
+  async function toggleWatch(r: Candidate) {
+    const next = !r.watched;
+    setRows(prev => prev.map(x => (x.id === r.id ? { ...x, watched: next } : x)));
+    try {
+      const res = await fetch("/api/drops/candidates", {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: [r.id], action: next ? "watch" : "unwatch" }),
+      });
+      if (!res.ok) throw new Error("watch_failed");
+    } catch {
+      setRows(prev => prev.map(x => (x.id === r.id ? { ...x, watched: !next } : x)));
+      setError(tr("dropsWatchFailed"));
     }
   }
 
@@ -703,6 +723,11 @@ export default function DropsPage() {
         <option value="">{tr("dropsAllZones")}</option>
         {zones.map(z => <option key={z} value={z}>.{z}</option>)}
       </select>
+      <select className="tool-input" style={{ width: 170 }} value={watched}
+        onChange={e => setWatchedFilter(e.target.value as "" | "1")}>
+        <option value="">{tr("dropsWatchFilterAll")}</option>
+        <option value="1">{tr("dropsWatchFilterWatched")}</option>
+      </select>
     </div>
 
     {/* Enrichment. Every source states its cost up front: DR and Wayback are free, refdomains
@@ -755,6 +780,8 @@ export default function DropsPage() {
           </span>
           <button onClick={() => void bulk("delete")} style={pagerBtn(false)}>{tr("dropsBulkDelete")}</button>
           <button onClick={() => void bulk("star")} style={pagerBtn(false)}>{tr("dropsBulkStar")}</button>
+          <button onClick={() => void bulk("watch")} style={pagerBtn(false)}>{tr("dropsBulkWatch")}</button>
+          <button onClick={() => void bulk("unwatch")} style={pagerBtn(false)}>{tr("dropsBulkUnwatch")}</button>
           <button onClick={() => {
             const targets = selectAllFilter ? undefined : [...selectedIds];
             void runRegistryCheck(targets);
@@ -802,6 +829,19 @@ export default function DropsPage() {
                     style={{ marginLeft: 6, color: "var(--color-accent-blue)", display: "inline-flex", verticalAlign: "-2px" }}>
                     <History size={12} />
                   </a>
+                  {/* The watch toggle. Lit means the scheduler is polling this domain and will
+                      notify once it frees; the funnel stages stay the source of truth about the
+                      row, the watch only decides whether the row keeps being re-asked. */}
+                  <button onClick={() => void toggleWatch(r)}
+                    title={r.watched ? tr("dropsWatchHintOff") : tr("dropsWatchHint")}
+                    aria-label={r.watched ? tr("dropsWatchHintOff") : tr("dropsWatch")}
+                    style={{
+                      marginLeft: 4, display: "inline-flex", verticalAlign: "-2px", cursor: "pointer",
+                      background: "none", border: "none", padding: 0,
+                      color: r.watched ? "var(--color-accent-green, #34c759)" : "var(--color-text-tertiary)",
+                    }}>
+                    <Radar size={12} />
+                  </button>
                 </td>
                 <td style={td}>
                   <span style={{ color: s?.color ?? "var(--color-text-secondary)" }}>{s ? tr(s.key) : r.stage}</span>

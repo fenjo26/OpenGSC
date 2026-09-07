@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { parseDomainList, summariseSkips } from "./ingest";
 import { tldOf } from "./registries";
 import type { DropSource, DropStage } from "./types";
+import { WATCH_STAGES, nextWatchCheckMin, watchAcceleration } from "./watch";
 
 /**
  * Rows per statement.
@@ -165,6 +166,8 @@ export interface CandidateFilter {
   q?: string;
   minScore?: number;
   starred?: boolean;
+  /** Only rows the watch loop is polling (see scheduler.ts). */
+  watched?: boolean;
   limit?: number;
   offset?: number;
   orderBy?: CandidateSortField;
@@ -182,6 +185,7 @@ function buildCandidateWhere(userId: string, f: CandidateFilter = {}): Record<st
   if (f.stage) where.stage = f.stage;
   if (f.tld) where.tld = f.tld;
   if (f.starred !== undefined) where.starred = f.starred;
+  if (f.watched !== undefined) where.watched = f.watched;
   if (typeof f.minScore === "number") where.score = { gte: f.minScore };
   // `contains` without `mode: "insensitive"`: that option is Postgres-only, and domains are
   // stored lower-cased on the way in, so folding the needle is enough and works on both engines.
@@ -637,4 +641,227 @@ export async function setHistoryVerdict(
     data: { historyVerdict: verdict, historyNote: note.slice(0, 1000), historyAt: new Date() },
   });
   await recomputeScore(userId, domain);
+}
+
+/**
+ * Watch / unwatch rows. Turning a watch ON makes the row due immediately — the user asked to be
+ * told when it drops, and "in up to one day" is a worse answer than "on the next scheduler tick".
+ */
+export async function setWatched(
+  userId: string,
+  scope: { ids?: string[]; filter?: CandidateFilter },
+  watched: boolean,
+): Promise<number> {
+  const data: Record<string, unknown> = watched ? { watched, nextCheckAt: new Date() } : { watched };
+  if (scope.ids?.length) {
+    let touched = 0;
+    for (let i = 0; i < scope.ids.length; i += CHUNK) {
+      const res = await db.dropCandidate.updateMany({
+        where: { userId, id: { in: scope.ids.slice(i, i + CHUNK) } }, data,
+      });
+      touched += res.count;
+    }
+    return touched;
+  }
+  if (scope.filter) {
+    const res = await db.dropCandidate.updateMany({ where: buildCandidateWhere(userId, scope.filter), data });
+    return res.count;
+  }
+  return 0;
+}
+
+/** How many rows the watch loop is currently polling. */
+export async function countWatched(userId: string): Promise<number> {
+  return db.dropCandidate.count({ where: { userId, watched: true } });
+}
+
+/**
+ * Watch / unwatch by domain names, scoped to the caller — the surface the MCP tool speaks
+ * (agents name domains, not row ids). Unknown names are silently absent, the way list filters
+ * treat them; the return is how many of the caller's rows actually changed.
+ */
+export async function setWatchedByDomains(
+  userId: string,
+  domains: string[],
+  watched: boolean,
+): Promise<number> {
+  if (!domains.length) return 0;
+  const rows = (await db.dropCandidate.findMany({
+    where: { userId, domain: { in: domains } },
+    select: { id: true },
+  })) as { id: string }[];
+  if (!rows.length) return 0;
+  return setWatched(userId, { ids: rows.map(r => r.id) }, watched);
+}
+
+/**
+ * Watched rows the registry owes an answer about, oldest due first, across all users — the
+ * scheduler is a background process with no signed-in user, and rows carry their owner so every
+ * write below stays scoped to that owner (a domain is unique per (userId, domain), not globally).
+ *
+ * Rows already known free (`available`) are never returned: a free name ended its watch. The
+ * backoff columns are shared with the manual check route, so a registry refusal pushes a watched
+ * row out exactly as far as it pushes a funnel row.
+ */
+export async function dueWatchedRows(limit = 60): Promise<WatchRow[]> {
+  return db.dropCandidate.findMany({
+    where: {
+      watched: true,
+      stage: { in: WATCH_STAGES as unknown as string[] },
+      OR: [{ nextCheckAt: null }, { nextCheckAt: { lte: new Date() } }],
+    },
+    orderBy: { nextCheckAt: "asc" },
+    take: Math.min(Math.max(limit, 1), 200),
+    select: { id: true, userId: true, domain: true, checkIntervalMin: true },
+  });
+}
+
+export interface WatchRow {
+  id: string;
+  userId: string;
+  domain: string;
+  checkIntervalMin: number;
+}
+
+export interface WatchAlert {
+  domain: string;
+  userId: string;
+  dr: number | null;
+  refdomains: number | null;
+  score: number | null;
+}
+
+export interface WatchWriteResult {
+  checked: number;
+  /** Confirmed free — alerted, and the watch turned itself off. */
+  freed: WatchAlert[];
+  /** Looked free through one source only — re-check scheduled, no alert raised. */
+  uncertain: string[];
+  accelerated: number;
+}
+
+/**
+ * Write one scheduler batch of registry verdicts onto watched rows.
+ *
+ * Iterated by row rather than by verdict so the owner scope is the row's own: the same domain
+ * can exist for two users, and a batch keyed by domain alone would write one user's verdict over
+ * the other's row.
+ *
+ * The rules differ from the funnel writer in exactly the ways watching requires:
+ *
+ * - a `registered` verdict is not an ending — the row is rescheduled on its interval (or the
+ *   lifecycle acceleration, if the registry reports pendingDelete/redemption) and keeps being
+ *   polled. That is the entire difference between the watch and the catalogue check, which stops
+ *   at "taken".
+ * - only a corroborated `available` ends a watch: alert once, stop watching, leave the name for
+ *   the human. An uncorroborated one schedules a near-term re-check and stays quiet — the rule
+ *   from availability.ts, applied to notifications.
+ * - a refusal keeps the watch and rides the same 6h→12h→24h ladder as the funnel.
+ */
+export async function recordWatchResults(
+  rows: WatchRow[],
+  results: Map<string, import("./types").AvailabilityResult>,
+): Promise<WatchWriteResult> {
+  const out: WatchWriteResult = { checked: 0, freed: [], uncertain: [], accelerated: 0 };
+
+  for (const row of rows) {
+    const res = results.get(row.domain);
+    if (!res) continue; // not reached before the batch deadline — still due, next tick re-asks
+    out.checked++;
+    const now = new Date();
+    const scope = { userId: row.userId, domain: row.domain };
+
+    if (res.ok && res.status === "registered") {
+      const nextMin = nextWatchCheckMin(row.checkIntervalMin, res.registryStatus);
+      const acceleration = watchAcceleration(res.registryStatus);
+      const prev = (await db.dropCandidate.findFirst({
+        where: scope,
+        select: { registryStatus: true },
+      })) as { registryStatus: string | null } | null;
+      await db.dropCandidate.updateMany({
+        where: scope,
+        data: {
+          stage: "taken" satisfies DropStage,
+          lastStatus: "registered", lastHttp: res.http, lastVia: res.via, lastError: null,
+          consecutiveErrors: 0, corroborated: false, lastCheckedAt: now,
+          nextCheckAt: new Date(Date.now() + nextMin * 60_000),
+          registryExpiresAt: res.expiresAt ?? null,
+          registryCreatedAt: res.createdAt ?? null,
+          registryStatus: res.registryStatus?.join(",") || null,
+          nameServers: res.nameServers?.length ? JSON.stringify(res.nameServers) : null,
+        },
+      });
+      // The one expected change in a watched domain's life gets a trail line, so the suddenly
+      // shorter interval in the schedule has a visible cause. The needle drops the underscore:
+      // stored statuses are the registry's EPP spellings ("pendingDelete"), lowercased here.
+      if (acceleration && !(prev?.registryStatus ?? "").toLowerCase().includes(acceleration.replace("_", ""))) {
+        out.accelerated++;
+        await addEvent(row.id, "info", acceleration === "pending_delete"
+          ? "registry reports pendingDelete — watch interval tightened to 15 min"
+          : "registry reports redemptionPeriod — watch interval tightened to 60 min");
+      }
+    } else if (res.ok && res.status === "available" && res.corroborated) {
+      await db.dropCandidate.updateMany({
+        where: scope,
+        data: {
+          stage: "available" satisfies DropStage,
+          lastStatus: "available", lastHttp: res.http, lastVia: res.via, lastError: null,
+          consecutiveErrors: 0, corroborated: true, lastCheckedAt: now,
+          nextCheckAt: null, watched: false,
+        },
+      });
+      await addEvent(row.id, "available",
+        `${row.domain} is free (confirmed by two sources) — watch complete, notification sent`);
+      const facts = (await db.dropCandidate.findFirst({
+        where: scope,
+        select: { dr: true, refdomains: true, refdomainsDofollow: true, score: true },
+      })) as { dr: number | null; refdomains: number | null; refdomainsDofollow: number | null; score: number | null } | null;
+      out.freed.push({
+        domain: row.domain,
+        userId: row.userId,
+        dr: facts?.dr ?? null,
+        refdomains: facts?.refdomainsDofollow ?? facts?.refdomains ?? null,
+        score: facts?.score ?? null,
+      });
+    } else if (res.ok && res.status === "available") {
+      // One source says free, the other said nothing usable. Not an alert; a prompt to look
+      // again within the hour, in case the silent source answers then.
+      await db.dropCandidate.updateMany({
+        where: scope,
+        data: {
+          stage: "available" satisfies DropStage,
+          lastStatus: "available", lastHttp: res.http, lastVia: res.via, lastError: null,
+          consecutiveErrors: 0, corroborated: false, lastCheckedAt: now,
+          nextCheckAt: new Date(Date.now() + 60 * 60_000),
+        },
+      });
+      await addEvent(row.id, "info",
+        `${row.domain} looks free via ${res.via} only — re-check scheduled, not alerted`);
+      out.uncertain.push(row.domain);
+    } else {
+      // Registry refused. Same ladder as the funnel: 6h → 12h → 24h, held at 24h. The stage
+      // returns to dns_checked exactly as the funnel writer leaves it — the watch loop re-picks
+      // the row from there, and the stage dance is cosmetic next to the schedule.
+      const prev = (await db.dropCandidate.findFirst({
+        where: scope,
+        select: { consecutiveErrors: true },
+      })) as { consecutiveErrors: number } | null;
+      const n = Math.min((prev?.consecutiveErrors ?? 0) + 1, REFUSAL_BACKOFF_MIN.length);
+      const waitMin = REFUSAL_BACKOFF_MIN[n - 1];
+      await db.dropCandidate.updateMany({
+        where: scope,
+        data: {
+          stage: "dns_checked" satisfies DropStage,
+          lastStatus: res.status,
+          lastHttp: res.status === "rate_limited" ? 429 : res.http,
+          lastError: res.status === "error" ? res.error : "rate_limited",
+          consecutiveErrors: n,
+          lastCheckedAt: now,
+          nextCheckAt: new Date(Date.now() + waitMin * 60_000),
+        },
+      });
+    }
+  }
+
+  return out;
 }

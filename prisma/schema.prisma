@@ -1578,6 +1578,9 @@ model DropCandidate {
 
   score     Float?
   starred   Boolean  @default(false)
+  /// Watched rows are re-checked by the drops scheduler until the registry says they are free,
+  /// then alert once (corroborated verdicts only) and stop watching. See lib/drops/scheduler.ts.
+  watched   Boolean  @default(false)
   note      String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1590,6 +1593,7 @@ model DropCandidate {
   @@index([userId, score])
   @@index([runId])
   @@index([nextCheckAt])
+  @@index([watched, nextCheckAt])
 }
 
 /// Append-only trail. Without it there is no way to answer why a domain read "free" yesterday

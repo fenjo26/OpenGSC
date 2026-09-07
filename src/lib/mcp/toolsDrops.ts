@@ -12,7 +12,7 @@ import {
   type Json, type McpTool, lim,
 } from "./shared";
 import { resolveAiCreds, assertConfirmed } from "./shared";
-import { createRun, listCandidates, stageCounts, pendingDnsCandidates, countPendingDns, recordDnsResults, pendingAvailabilityCandidates, countPendingAvailability, markUncheckableZones, recordAvailabilityResults, writeWaybackResults, writeMetricsUpdates, setHistoryVerdict, type CandidateSortField } from "@/lib/drops/store";
+import { createRun, listCandidates, stageCounts, pendingDnsCandidates, countPendingDns, recordDnsResults, pendingAvailabilityCandidates, countPendingAvailability, markUncheckableZones, recordAvailabilityResults, writeWaybackResults, writeMetricsUpdates, setHistoryVerdict, setWatchedByDomains, countWatched, type CandidateSortField } from "@/lib/drops/store";
 import { checkDnsBatch } from "@/lib/drops/dns";
 import { checkAvailabilityBatch } from "@/lib/drops/availability";
 import { profileForDomain, registryAnswerable } from "@/lib/drops/registries";
@@ -50,7 +50,7 @@ const row = (r: Record<string, unknown>) => ({
   dr: r.dr ?? null, refdomains: r.refdomainsDofollow ?? r.refdomains ?? null,
   waybackSnapshots: r.waybackSnapshots ?? null, waybackGapDays: r.waybackGapDays ?? null,
   score: r.score ?? null, historyVerdict: r.historyVerdict ?? null, historyNote: r.historyNote ?? null,
-  corroborated: r.corroborated === true, lastError: r.lastError ?? null,
+  corroborated: r.corroborated === true, watched: r.watched === true, lastError: r.lastError ?? null,
   lastCheckedAt: r.lastCheckedAt ?? null,
 });
 
@@ -68,6 +68,7 @@ export const DROPS_TOOLS: McpTool[] = [
         tld: { type: "string", description: "zone without the dot, e.g. gr" },
         q: { type: "string", description: "domain substring" },
         starred: { type: "boolean" },
+        watched: { type: "boolean", description: "only rows the watch loop is polling" },
         minScore: { type: "number" },
         limit: { type: "number", description: "rows per page, default 50, max 200" },
         offset: { type: "number" },
@@ -87,6 +88,7 @@ export const DROPS_TOOLS: McpTool[] = [
         tld: typeof args.tld === "string" && args.tld ? args.tld.toLowerCase().replace(/^\./, "") : undefined,
         q: typeof args.q === "string" ? args.q : undefined,
         starred: args.starred === true ? true : undefined,
+        watched: args.watched === true ? true : undefined,
         minScore: typeof args.minScore === "number" ? args.minScore : undefined,
         limit: lim(args.limit, 50, 200),
         offset: lim(args.offset, 0, 1_000_000) - 1,
@@ -337,6 +339,40 @@ export const DROPS_TOOLS: McpTool[] = [
         results.push({ domain, verdict: verdict.verdict, note: verdict.note });
       }
       return { results };
+    },
+  },
+
+  {
+    name: "drops_watch",
+    cost: "local",
+    idempotent: false,
+    description:
+      "Watch taken (registered) domains from the catalogue and get told when one becomes free. Watched rows are re-checked by the in-app scheduler (default daily; 15 min once the registry reports pendingDelete, 60 min on redemptionPeriod); a corroborated free verdict sends ONE Telegram/Slack notification (Settings → Notifications) and ends that watch — an uncorroborated one is silently re-checked within the hour instead. Rows must have passed the funnel's DNS + registry stages to be watched meaningfully. `watch: true` makes rows due immediately; without `watch`, returns the current watchlist with the count.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        watch: { type: "boolean", description: "true = start watching, false = stop watching; omit to list" },
+        domains: { type: "array", items: { type: "string" }, description: "domains to (un)watch, max 200" },
+      },
+    },
+    handler: async (userId, args) => {
+      const domains = domainsArg(args).slice(0, 200);
+      if (typeof args.watch !== "boolean") {
+        const page = await listCandidates(userId, { watched: true, limit: 200, orderBy: "domain", orderDir: "asc" });
+        return {
+          watched: await countWatched(userId),
+          rows: (page.rows as Record<string, unknown>[]).map(row),
+        };
+      }
+      if (!domains.length) throw new Error("domains required when watch is true/false");
+      const updated = await setWatchedByDomains(userId, domains, args.watch);
+      return {
+        updated,
+        watched: await countWatched(userId),
+        note: args.watch
+          ? "rows are due on the next scheduler tick (≤5 min); alerts go to Telegram/Slack from Settings → Notifications"
+          : undefined,
+      };
     },
   },
 ];

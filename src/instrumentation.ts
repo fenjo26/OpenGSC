@@ -15,6 +15,11 @@ export async function register() {
     startDigestScheduler();
     const { startSyncScheduler } = await import('@/lib/syncScheduler');
     startSyncScheduler();
+    // The drops watch loop: re-checks rows the user marked as watched until a registry says
+    // they are free, then notifies once (Telegram/Slack) and stops that watch. Free registry
+    // calls only, and a tick with nothing due is a single indexed query.
+    const { startDropsScheduler } = await import('@/lib/drops/scheduler');
+    startDropsScheduler();
     // The only scheduler here that can spend money, so it is also the only one that does nothing
     // until a user turns it on and gives it a budget of its own.
     const { startWarmupScheduler } = await import('@/lib/warmupScheduler');
