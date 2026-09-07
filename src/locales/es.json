@@ -3567,7 +3567,7 @@
   "aparserOpenConsole": "Consola",
   "aparserParsersWord": "parsers",
   "aparserConnHint": "Funciona en tu hardware y con tus proxies, así que una petición no cuesta nada — pero la calidad del resultado la pone tu pool de proxies, no un proveedor.",
-  "aparserConnInstr": "A-Parser → Ajustes → API: activa el servidor, copia la contraseña e indica el host y el puerto en el que escucha (9091 por defecto).",
+  "aparserConnInstr": "A-Parser → Ajustes → API: activa el servidor, copia la contraseña e indica host:puerto de escucha. Si A-Parser está en el mismo servidor que OpenGSC, es http://127.0.0.1:9091; la IP externa suele estar cerrada.",
   "aparserFromEnv": "definido en .env",
   "aparserNotConfigured": "Todavía no hay conexión con A-Parser. Añade la dirección y la contraseña de la API de tu instancia para ver aquí su estado.",
   "aparserOpenSettings": "Ajustes",

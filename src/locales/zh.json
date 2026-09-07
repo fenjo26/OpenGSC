@@ -3567,7 +3567,7 @@
   "aparserOpenConsole": "控制台",
   "aparserParsersWord": "个解析器",
   "aparserConnHint": "跑在你自己的硬件和代理上，所以单次请求不花钱——但结果质量取决于你的代理池，而不是某个服务商。",
-  "aparserConnInstr": "A-Parser → 设置 → API：打开服务器，复制密码，并填写它监听的主机和端口（默认 9091）。",
+  "aparserConnInstr": "A-Parser → 设置 → API：启用服务器，复制密码，并填写其监听的 host:port。若 A-Parser 与 OpenGSC 在同一台服务器上，请填 http://127.0.0.1:9091；外部 IP 通常是关闭的。",
   "aparserFromEnv": "在 .env 中设置",
   "aparserNotConfigured": "尚未连接 A-Parser。填写实例地址和 API 密码后即可在这里查看它的状态。",
   "aparserOpenSettings": "设置",
