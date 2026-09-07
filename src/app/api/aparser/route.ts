@@ -85,6 +85,13 @@ export async function POST(req: Request) {
   const password = String(b?.password ?? "").trim() || envPassword() || String(settings.seoKey_aparser ?? "");
   if (!password) return NextResponse.json({ error: "no_aparser_password" }, { status: 400 });
 
+  // Which credential actually went out. An auth failure is unreadable without this: "Auth
+  // failed" from A-Parser looks identical whether the stale env password, the mirrored
+  // settings password or the typed one was used — and each has a different fix. Host and
+  // source only, never the password itself.
+  const credSource = String(b?.password ?? "").trim() ? "form" : envPassword() ? "env" : "settings";
+  const credTag = ` [${hostOf(resolved.url)} · creds: ${credSource}]`;
+
   const configPreset = String(b?.configPreset ?? "").trim() || String(settings.seoAparserConfig ?? "") || "default";
   const creds: AparserCreds = { baseUrl: resolved.url, password, configPreset };
 
@@ -98,7 +105,7 @@ export async function POST(req: Request) {
   // and the second is the one that decides what the UI may offer.
   if (op === "ping") {
     const pong = await aparserPing(creds);
-    if (!pong.data) return NextResponse.json({ error: pong.error ?? "aparser_no_answer", fromEnv: resolved.fromEnv }, { status: 502 });
+    if (!pong.data) return NextResponse.json({ error: (pong.error ?? "aparser_no_answer") + credTag, fromEnv: resolved.fromEnv }, { status: 502 });
     const info = await aparserInfo(creds);
     return NextResponse.json({
       ok: true,
@@ -111,13 +118,13 @@ export async function POST(req: Request) {
 
   if (op === "info") {
     const r = await aparserInfo(creds);
-    if (!r.data) return NextResponse.json({ error: r.error ?? "no_data" }, { status: 502 });
+    if (!r.data) return NextResponse.json({ error: (r.error ?? "no_data") + credTag }, { status: 502 });
     return NextResponse.json({ info: r.data, host: hostOf(resolved.url), fromEnv: resolved.fromEnv });
   }
 
   if (op === "proxies") {
     const r = await aparserProxies(creds);
-    if (!r.data) return NextResponse.json({ error: r.error ?? "no_data" }, { status: 502 });
+    if (!r.data) return NextResponse.json({ error: (r.error ?? "no_data") + credTag }, { status: 502 });
     const byType: Record<string, number> = {};
     for (const types of Object.values(r.data)) {
       for (const type of types ?? []) byType[type] = (byType[type] ?? 0) + 1;
@@ -142,7 +149,7 @@ export async function POST(req: Request) {
       queries,
       resultsFormat: typeof b?.resultsFormat === "string" && b.resultsFormat.trim() ? b.resultsFormat : undefined,
     });
-    if (!r.data) return NextResponse.json({ error: r.error ?? "no_data" }, { status: 502 });
+    if (!r.data) return NextResponse.json({ error: (r.error ?? "no_data") + credTag }, { status: 502 });
     return NextResponse.json({ taskid: r.data });
   }
 
@@ -150,7 +157,7 @@ export async function POST(req: Request) {
     const taskid = Number(b?.taskid);
     if (!Number.isFinite(taskid)) return NextResponse.json({ error: "no_taskid" }, { status: 400 });
     const r = await aparserTaskState(creds, taskid);
-    if (!r.data) return NextResponse.json({ error: r.error ?? "no_data" }, { status: 502 });
+    if (!r.data) return NextResponse.json({ error: (r.error ?? "no_data") + credTag }, { status: 502 });
     return NextResponse.json({ status: r.data.status, raw: r.data.raw });
   }
 
@@ -158,7 +165,7 @@ export async function POST(req: Request) {
     const taskid = Number(b?.taskid);
     if (!Number.isFinite(taskid)) return NextResponse.json({ error: "no_taskid" }, { status: 400 });
     const r = await aparserTaskResults(creds, taskid);
-    if (!r.data) return NextResponse.json({ error: r.error ?? "no_data" }, { status: 502 });
+    if (!r.data) return NextResponse.json({ error: (r.error ?? "no_data") + credTag }, { status: 502 });
     return NextResponse.json({ results: r.data });
   }
 
@@ -173,7 +180,7 @@ export async function POST(req: Request) {
     const parser = String(b?.parser ?? "").trim();
     if (!parser) return NextResponse.json({ error: "no_parser" }, { status: 400 });
     const r = await aparserParserPreset(creds, parser, String(b?.preset ?? "default"));
-    if (!r.data) return NextResponse.json({ error: r.error ?? "no_data" }, { status: 502 });
+    if (!r.data) return NextResponse.json({ error: (r.error ?? "no_data") + credTag }, { status: 502 });
     return NextResponse.json({ parser, preset: r.data });
   }
 
@@ -189,7 +196,7 @@ export async function POST(req: Request) {
         }))
       : [];
     const r = await aparserOneRequest(creds, parser, query, options, { preset: String(b?.preset ?? "default") });
-    if (!r.data) return NextResponse.json({ error: r.error ?? "no_data" }, { status: 502 });
+    if (!r.data) return NextResponse.json({ error: (r.error ?? "no_data") + credTag }, { status: 502 });
     // `results` is returned and `resultString` is returned beside it, explicitly labelled, so the
     // screen can show what the preset's template produced WITHOUT anyone being tempted to parse
     // it. See the comment on `aparserOneRequest`.
