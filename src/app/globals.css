@@ -742,3 +742,16 @@ input:-webkit-autofill {
   color: var(--color-accent-blue);
   background: rgba(59, 130, 246, 0.12);
 }
+
+/* Периодный дропдаун дашборда: две колонки на десктопе (сравнение слева,
+   пресеты периодов справа), на узких экранах — одна колонка. Разделитель
+   колонки тоже переезжает с вертикали на горизонталь. */
+.period-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+}
+.period-col-compare { border-right: 1px solid var(--color-border); }
+@media (max-width: 680px) {
+  .period-grid { grid-template-columns: 1fr; }
+  .period-col-compare { border-right: none; border-bottom: 1px solid var(--color-border); }
+}

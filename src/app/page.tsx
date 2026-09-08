@@ -23,7 +23,6 @@ import { getAhrefsDrKey } from "@/lib/seo/keys";
 type Metric = "clicks" | "impressions" | "ctr" | "position";
 type SortBy = "az" | "total" | "growth" | "growth_pct" | "decline" | "decline_imp" | "decline_pos" | "tags";
 type Comparison = "disabled" | "previous" | "yoy" | "prev_month" | "custom";
-type PeriodView = "day" | "week" | "month";
 type SearchType = "web" | "discover" | "news" | "image" | "video";
 type BrandedFilter = "all" | "branded" | "nonbranded";
 
@@ -493,7 +492,7 @@ function CardBtn({ children, tooltip, onClick, active, activeColor }: {
 }
 
 // ─── Dropdown ─────────────────────────────────────────────────────────────────
-function Dropdown({ trigger, children, align = "left" }: { trigger: React.ReactNode; children: React.ReactNode; align?: "left" | "right" }) {
+function Dropdown({ trigger, children, align = "left", width }: { trigger: React.ReactNode; children: React.ReactNode; align?: "left" | "right"; width?: number }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -504,7 +503,9 @@ function Dropdown({ trigger, children, align = "left" }: { trigger: React.ReactN
     return () => document.removeEventListener("mousedown", h);
   }, []);
 
-  // Clamp panel inside viewport after it renders
+  // Clamp panel inside the viewport after it renders: horizontally shift away
+  // from the right edge, vertically cap the height so tall panels scroll
+  // inside instead of running past the bottom of the screen.
   useEffect(() => {
     if (!open || !panelRef.current) return;
     const panel = panelRef.current;
@@ -516,13 +517,15 @@ function Dropdown({ trigger, children, align = "left" }: { trigger: React.ReactN
     } else {
       panel.style.transform = "";
     }
+    panel.style.maxHeight = `${window.innerHeight - rect.top - 8}px`;
+    panel.style.overflowY = "auto";
   }, [open]);
 
   return (
     <div ref={ref} style={{ position: "relative" }}>
       <div onClick={() => setOpen(o => !o)}>{trigger}</div>
       {open && (
-        <div ref={panelRef} style={{ position: "absolute", top: "calc(100% + 6px)", [align === "right" ? "right" : "left"]: 0, background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: "12px", boxShadow: "0 8px 32px rgba(0,0,0,0.25)", zIndex: 100, minWidth: "200px", maxWidth: "min(360px, calc(100vw - 16px))", clipPath: "inset(0 round 12px)" }}>
+        <div ref={panelRef} className="dd-panel" style={{ position: "absolute", top: "calc(100% + 6px)", [align === "right" ? "right" : "left"]: 0, background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: "12px", boxShadow: "0 8px 32px rgba(0,0,0,0.25)", zIndex: 100, ...(width !== undefined ? { width: `${width}px`, maxWidth: "calc(100vw - 16px)" } : { minWidth: "200px", maxWidth: "min(360px, calc(100vw - 16px))" }), clipPath: "inset(0 round 12px)" }}>
           {children}
         </div>
       )}
@@ -620,7 +623,6 @@ function PortfolioPageContent() {
   const [engineLoading, setEngineLoading] = useState(false);
   // Chart granularity and the comparison mode are presentation of the same window, so they
   // persist per browser (a shared link does not need to reproduce them) but stay out of the URL.
-  const [periodView, setPeriodView] = usePersistedState<PeriodView>("gsc_period_view", "day", v => v === "day" || v === "week" || v === "month");
   const [comparison, setComparison] = usePersistedState<Comparison>("gsc_comparison", "previous", v => v === "disabled" || v === "previous" || v === "yoy" || v === "prev_month" || v === "custom");
   const [prevTrend, setPrevTrend]   = useState(true);
   const [matchWd, setMatchWd]       = useState(true);
@@ -1342,10 +1344,10 @@ function PortfolioPageContent() {
 
   // Period dropdown
   const PeriodDd = (
-    <Dropdown trigger={<button style={{...tbBtn(),gap:"8px"}}>{getPeriodLabel(period)} <ChevronDown size={13}/></button>} align="right">
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",minWidth:"460px"}}>
-        {/* Left: comparison */}
-        <div style={{borderRight:"1px solid var(--color-border)"}}>
+    <Dropdown trigger={<button style={{...tbBtn(),gap:"8px"}}>{getPeriodLabel(period)} <ChevronDown size={13}/></button>} align="right" width={600}>
+      <div className="period-grid">
+        {/* Left: comparison & search type */}
+        <div className="period-col-compare" style={{minWidth:0}}>
           {ms(t("comparisonPeriod"))}
           {([
             {l: t("compDisabled"),   v:"disabled"},
@@ -1380,35 +1382,22 @@ function PortfolioPageContent() {
             <button key={v} style={mi(searchType===v)} onClick={()=>setSearchType(v)}>{i} {l}{searchType===v&&<Check size={12} style={{marginLeft:"auto"}}/>}</button>
           ))}
         </div>
-        {/* Right: periods */}
-        <div style={{minWidth:0,display:"flex",flexDirection:"column"}}>
-          <div style={{display:"flex",borderBottom:"1px solid var(--color-border)",padding:"6px 8px",gap:"4px"}}>
-            {([
-              {v:"day",   l: t("periodDay")},
-              {v:"week",  l: t("periodWeek")},
-              {v:"month", l: t("periodMonth")},
-            ] as {v:PeriodView;l:string}[]).map(({v,l}) => (
-              <button key={v} onClick={()=>setPeriodView(v)} style={{flex:1,padding:"5px 0",borderRadius:"6px",fontSize:"13px",fontWeight:periodView===v?600:400,cursor:"pointer",background:periodView===v?"rgba(59,130,246,0.12)":"transparent",color:periodView===v?"#3B82F6":"var(--color-text-secondary)",border:"none",transition:"all 0.15s"}}>
-                {l}
-              </button>
-            ))}
-          </div>
-          <div className="period-scroll" style={{maxHeight:"420px",overflowY:"auto",scrollbarGutter:"stable",width:"100%"}}>
-            {periodGroups.map((grp, gi) => (
-              <div key={gi}>
-                {grp.map(({label,value,desc}) => {
-                  const active = period===value;
-                  return (
-                    <button key={value} style={{...mi(active),flexDirection:"column",alignItems:"flex-start",gap:"1px",padding:"8px 16px"}} onClick={()=>setPeriod(value)}>
-                      <span style={{fontWeight:active?700:400,fontSize:"13px"}}>{label}</span>
-                      {desc && <span style={{fontSize:"11px",color:"var(--color-text-secondary)",marginTop:"1px"}}>{desc}</span>}
-                    </button>
-                  );
-                })}
-                {gi < periodGroups.length-1 && md}
-              </div>
-            ))}
-          </div>
+        {/* Right: period presets */}
+        <div style={{minWidth:0}}>
+          {periodGroups.map((grp, gi) => (
+            <div key={gi}>
+              {grp.map(({label,value,desc}) => {
+                const active = period===value;
+                return (
+                  <button key={value} style={{...mi(active),flexDirection:"column",alignItems:"flex-start",gap:"1px",padding:"8px 16px"}} onClick={()=>setPeriod(value)}>
+                    <span style={{fontWeight:active?700:400,fontSize:"13px"}}>{label}</span>
+                    {desc && <span style={{fontSize:"11px",color:"var(--color-text-secondary)",marginTop:"1px"}}>{desc}</span>}
+                  </button>
+                );
+              })}
+              {gi < periodGroups.length-1 && md}
+            </div>
+          ))}
         </div>
       </div>
     </Dropdown>
@@ -1694,10 +1683,10 @@ function PortfolioPageContent() {
     <div className="main-content">
       <style>{`
         @keyframes gsc-spin { to { transform: rotate(360deg); } }
-        .period-scroll::-webkit-scrollbar { width: 6px; }
-        .period-scroll::-webkit-scrollbar-track { background: var(--color-bg-secondary, #1e2130); border-radius: 3px; }
-        .period-scroll::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
-        .period-scroll::-webkit-scrollbar-thumb:hover { background: var(--color-text-secondary); }
+        .dd-panel::-webkit-scrollbar { width: 6px; }
+        .dd-panel::-webkit-scrollbar-track { background: var(--color-bg-secondary, #1e2130); border-radius: 3px; }
+        .dd-panel::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
+        .dd-panel::-webkit-scrollbar-thumb:hover { background: var(--color-text-secondary); }
       `}</style>
 
       {/* ─── Search-engine tabs ─── */}
