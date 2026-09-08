@@ -209,10 +209,15 @@ export async function POST(req: NextRequest) {
   const site = await (prisma as any).site.findFirst({ where: { id: siteId, userId } });
   if (!site) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  // Extract clean hostname
+  // Extract clean hostname. siteId may be a Domain Property ("sc-domain:example.com"),
+  // a URL property with a path, or a bare domain. new URL() on "sc-domain:..." does NOT
+  // throw — it silently returns an empty hostname — so only http(s) values go through URL parsing.
   const rawSiteId = String(site.siteId || site.url || "");
-  let hostname = rawSiteId.replace(/^sc-domain:/, "");
-  try { hostname = new URL(rawSiteId).hostname; } catch { hostname = hostname.split("/")[0]; }
+  const stripped = rawSiteId.replace(/^sc-domain:/, "").split("/")[0];
+  let hostname = stripped;
+  if (/^https?:\/\//i.test(rawSiteId)) {
+    try { hostname = new URL(rawSiteId).hostname || stripped; } catch { hostname = stripped; }
+  }
 
   // Run all checks in parallel
   const [ssl, safeBrowsing, vitals, virusTotal] = await Promise.all([
