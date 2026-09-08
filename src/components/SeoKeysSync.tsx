@@ -52,6 +52,11 @@ const EXACT_KEYS = [
 const PREFIXES = [
   "aiKey_", "aiBaseUrl_", "aiModel_", "seoKey_", "seoBaseUrl_", "seoTaskProvider_", "seoTaskModel_",
   "seoMetrics", "seoAparser",
+  // Health-check keys (Safe Browsing / PageSpeed / VirusTotal). The health POST sends the
+  // browser's key in its body, but without this prefix the keys were never backed up — a
+  // cleared browser silently lost them, and the Settings copy promising team availability
+  // was wrong. Mirroring them also lets server-side callers resolve the same keys later.
+  "healthKey_",
 ];
 
 function snapshot(): Record<string, string> {

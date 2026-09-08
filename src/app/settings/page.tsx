@@ -1864,6 +1864,7 @@ const HEALTH_PROVIDERS = [
     name: "Google Safe Browsing",
     placeholder: "AIzaSy...",
     hint: "Detects malware, phishing, and harmful content on your site.",
+    stepsKey: "healthSbSteps",
     docsUrl: "https://developers.google.com/safe-browsing/v4/get-started",
     color: "#4285F4",
     logo: "SB",
@@ -1874,6 +1875,7 @@ const HEALTH_PROVIDERS = [
     name: "PageSpeed Insights (Core Web Vitals)",
     placeholder: "AIzaSy...",
     hint: "Fetches LCP, INP, CLS, TTFB and overall Performance score via PageSpeed Insights API.",
+    stepsKey: "healthPsSteps",
     docsUrl: "https://developers.google.com/speed/docs/insights/v5/get-started",
     color: "#34A853",
     logo: "PS",
@@ -1884,6 +1886,7 @@ const HEALTH_PROVIDERS = [
     name: "VirusTotal",
     placeholder: "abc123...",
     hint: "Scans domain against 70+ antivirus engines and URL scanners.",
+    stepsKey: "healthVtSteps",
     docsUrl: "https://www.virustotal.com/gui/my-apikey",
     color: "#1565C0",
     logo: "VT",
@@ -1947,6 +1950,9 @@ function HealthKeyCard({ provider }: { provider: typeof HEALTH_PROVIDERS[number]
           {saved ? <><CheckCircle size={12} /> {t("apiKeySaved") || "✓ Saved"}</> : (t("apiKeySave") || "Save")}
         </button>
       </div>
+      <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.55, padding: "9px 11px", marginBottom: "8px", borderRadius: "8px", background: "rgba(255,255,255,0.03)", border: "1px solid var(--color-border)", whiteSpace: "pre-line" }}>
+        {t(provider.stepsKey)}
+      </div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <span style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>{provider.hint}</span>
         <a href={provider.docsUrl} target="_blank" rel="noreferrer" style={{ fontSize: "11px", color: "var(--color-accent-blue)", display: "flex", alignItems: "center", gap: "3px", textDecoration: "none", flexShrink: 0 }}>{t("healthGetKey") || "Get key ↗"}</a>
@@ -1967,8 +1973,12 @@ function HealthApiKeysSection() {
       <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
         {HEALTH_PROVIDERS.map(p => <HealthKeyCard key={p.id} provider={p} />)}
       </div>
-      <div style={{ marginTop: "14px", padding: "11px 14px", borderRadius: "8px", background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.18)", fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
-        {t("healthApiKeysHint")}
+      <div style={{ marginTop: "14px", padding: "11px 14px", borderRadius: "8px", background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.28)", fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+        {t("healthApiKeysServerSide")}
+      </div>
+      <div style={{ marginTop: "10px", padding: "11px 14px", borderRadius: "8px", background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.18)", fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.6, display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+        <span>{t("healthApiKeysHint")}</span>
+        <a href="https://github.com/fenjo26/OpenGSC/blob/main/docs/HEALTH-CHECK-SETUP.md" target="_blank" rel="noreferrer" style={{ fontSize: "12px", fontWeight: 600, color: "var(--color-accent-blue)", textDecoration: "none", flexShrink: 0 }}>{t("healthApiKeysGuide")}</a>
       </div>
     </SectionCard>
   );
