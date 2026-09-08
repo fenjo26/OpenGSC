@@ -110,7 +110,16 @@ async function checkVitals(domain: string, apiKey: string): Promise<{
   if (!apiKey) return { ...empty, error: "no_key" };
   try {
     const url = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=https://${domain}&strategy=mobile&key=${apiKey}&category=PERFORMANCE`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
+    // Lighthouse lab runs routinely exceed 20 s on slow sites; 45 s keeps us under the ~60 s front-proxy cap.
+    let res: Response;
+    try {
+      res = await fetch(url, { signal: AbortSignal.timeout(45000) });
+    } catch (err: any) {
+      if (err?.name === "TimeoutError") {
+        return { ...empty, error: "PageSpeed timed out after 45 s — Lighthouse could not finish on this site" };
+      }
+      throw err;
+    }
     const data = await res.json();
     if (data.error) return { ...empty, error: data.error.message };
 
