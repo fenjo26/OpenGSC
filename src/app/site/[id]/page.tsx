@@ -1404,6 +1404,140 @@ function GoogleUpdatesToggle({ on, onToggle }: { on: boolean; onToggle: () => vo
   );
 }
 
+// ─── Share Link quick access (Dashboard) ─────────────────────────────────────
+// The public share link is managed in full on the Settings tab; this is its discoverable
+// twin on the dashboard toolbar — grab the client link (or create it) without hunting
+// through twelve tabs. State is fetched once on first open and mirrored back on mutate;
+// revoke/reset stay on Settings, the footer link jumps there.
+function ShareLinkButton({ siteDbId, domain, onOpenSettings }: { siteDbId: string; domain: string; onOpenSettings: () => void }) {
+  const { t } = useLanguage();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const [fetched, setFetched] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [enabled, setEnabled] = useState(false);
+  const [token, setToken] = useState<string | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+
+  // One GET per mount, on first open — the Settings tab owns the authoritative state.
+  useEffect(() => {
+    if (!open || fetched || !siteDbId) return;
+    setFetched(true);
+    setLoading(true);
+    fetch(`/api/gsc/site/share?siteId=${siteDbId}`)
+      .then(r => r.json())
+      .then(d => { setEnabled(!!d.shareEnabled); setToken(d.shareToken || null); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [open, siteDbId, fetched]);
+
+  const update = async (action: "generate" | "toggle", val?: boolean) => {
+    try {
+      const res = await fetch("/api/gsc/site/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          siteId: siteDbId,
+          action: action !== "toggle" ? action : undefined,
+          shareEnabled: action === "toggle" ? val : undefined,
+        }),
+      });
+      const d = await res.json();
+      setEnabled(!!d.shareEnabled);
+      setToken(d.shareToken || null);
+    } catch {}
+  };
+
+  const shareUrl = token ? `${typeof window !== "undefined" ? window.location.origin : ""}/share/${siteDbId}/${token}` : "";
+
+  // Same tab set the guest view exposes (and the Settings tab offers as deep links).
+  const GUEST_TABS = [
+    { key: "dashboard", label: t("tabDashboard") },
+    { key: "positions", label: t("tabPositions") },
+    { key: "ga4",       label: t("tabGA4") },
+    { key: "backlinks", label: t("shareLinkProfile") },
+    { key: "health",    label: t("tabHealth") },
+    { key: "audit",     label: t("tabAudit") },
+  ];
+
+  const copy = async (text: string, key: string) => {
+    await navigator.clipboard.writeText(text);
+    setCopied(key);
+    setTimeout(() => setCopied(c => (c === key ? null : c)), 2000);
+  };
+
+  const chipStyle = (on: boolean): React.CSSProperties => ({
+    padding: "3px 9px", borderRadius: "6px", border: "1px solid var(--color-border)",
+    background: on ? "rgba(16,185,129,0.1)" : "transparent",
+    color: on ? "#10B981" : "var(--color-text-secondary)", fontSize: "11px", cursor: "pointer",
+  });
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button onClick={() => setOpen(o => !o)} title={t("setSharedLink")}
+        style={{ display: "flex", alignItems: "center", padding: "6px 10px", borderRadius: "8px", border: `1px solid ${open ? "#3B82F6" : "var(--color-border)"}`, background: open ? "rgba(59,130,246,0.1)" : "var(--color-card)", color: open ? "#3B82F6" : "var(--color-text-secondary)", fontSize: "12px", fontWeight: 500, cursor: "pointer" }}>
+        <Link2 size={13} />
+      </button>
+      {open && (
+        <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: "12px", boxShadow: "0 8px 32px rgba(0,0,0,0.5)", zIndex: 300, width: "330px", padding: "14px", textAlign: "left" }}>
+          <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--color-text-primary)", marginBottom: "4px" }}>{t("setSharedLink")}</div>
+          <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.5, marginBottom: "10px" }}>
+            {t("setSharedLinkDesc1").replace("{domain}", domain)}
+          </div>
+          {loading ? (
+            <div style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>{t("shareSettingsLoading") || "Loading share settings..."}</div>
+          ) : token ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", fontWeight: 600, color: "var(--color-text-primary)", cursor: "pointer" }}>
+                <input type="checkbox" checked={enabled} onChange={e => update("toggle", e.target.checked)} />
+                {t("shareActiveCheckbox")}
+              </label>
+              {enabled && (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "6px 9px", borderRadius: "8px", background: "var(--color-bg)", border: "1px solid var(--color-border)" }}>
+                    <span style={{ flex: 1, fontSize: "11px", fontFamily: "monospace", color: "#3B82F6", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{shareUrl}</span>
+                    <button onClick={() => copy(shareUrl, "url")} style={chipStyle(copied === "url")}>
+                      {copied === "url" ? t("setCopied") : t("setCopy")}
+                    </button>
+                  </div>
+                  <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
+                    {t("shareTabHint")}
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "5px", marginTop: "5px" }}>
+                      {GUEST_TABS.map(gt => (
+                        <button key={gt.key} onClick={() => copy(`${shareUrl}?tab=${gt.key}`)} style={chipStyle(copied === gt.key)}>
+                          {copied === gt.key ? t("setCopied") : gt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          ) : (
+            <button onClick={() => update("generate")}
+              style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "7px 13px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-bg)", color: "var(--color-text-primary)", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>
+              {t("setGenerateLink")}
+            </button>
+          )}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", marginTop: "10px" }}>
+            <span style={{ fontSize: "10px", color: "var(--color-text-secondary)", lineHeight: 1.4 }}>{t("setSharedLinkNote")}</span>
+            <button onClick={() => { setOpen(false); onOpenSettings(); }}
+              style={{ flexShrink: 0, padding: "4px 8px", borderRadius: "6px", border: "none", background: "transparent", color: "#3B82F6", fontSize: "11px", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+              {t("tabSettings")} →
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Filter Dropdown (Dashboard) ─────────────────────────────────────────────
 function FilterDd({ positionFilter, onPositionFilter, filterDimension, filterText, onDimension, onFilterText, preset, onPreset, onApply }: {
   positionFilter: number | null; onPositionFilter: (v: number | null) => void;
@@ -5397,6 +5531,10 @@ export default function SitePage({
                 </button>
               );
             })}
+            {/* Public share link — owner only; guests never see share management */}
+            {!readOnly && siteDbId && (
+              <ShareLinkButton siteDbId={siteDbId} domain={domain} onOpenSettings={() => setActiveTab("settings")} />
+            )}
             <PeriodDropdown period={period} onChange={setPeriod} />
             <button
               onClick={handleSync}
