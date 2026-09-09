@@ -145,10 +145,18 @@ export async function syncRefDomains(
           source, fetchedAt: at,
         },
         update: {
-          dr: "keep", linksToTarget: "keep",
+          // An API pull just measured these values — they overwrite. A CSV import keeps the
+          // keep-semantics it has always had: its file may be weeks old and column-poor, and
+          // it must never erase fresher, richer API data. (This is what let a bad mapping
+          // linger: the wrong links values from the first Majestic pull would have survived
+          // every re-pull had API pulls also kept.)
+          dr: r.dr != null ? "set" : "keep",
+          linksToTarget: source === "api" ? "set" : "keep",
           dofollow: "set",
-          firstSeen: "keepEmpty",
-          cf: "keep", topic: "keep", ip: "keep",
+          firstSeen: source === "api" && r.firstSeen ? "set" : "keepEmpty",
+          cf: r.cf != null ? "set" : "keep",
+          topic: source === "api" && r.topic ? "set" : "keep",
+          ip: source === "api" && r.ip ? "set" : "keep",
           lost: "set", lostAt: "set",
           source: "set", fetchedAt: "set",
         },
