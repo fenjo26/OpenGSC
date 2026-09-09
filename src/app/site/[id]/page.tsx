@@ -1510,7 +1510,7 @@ function ShareLinkButton({ siteDbId, domain, onOpenSettings }: { siteDbId: strin
                     {t("shareTabHint")}
                     <div style={{ display: "flex", flexWrap: "wrap", gap: "5px", marginTop: "5px" }}>
                       {GUEST_TABS.map(gt => (
-                        <button key={gt.key} onClick={() => copy(`${shareUrl}?tab=${gt.key}`)} style={chipStyle(copied === gt.key)}>
+                        <button key={gt.key} onClick={() => copy(`${shareUrl}?tab=${gt.key}`, gt.key)} style={chipStyle(copied === gt.key)}>
                           {copied === gt.key ? t("setCopied") : gt.label}
                         </button>
                       ))}
