@@ -103,7 +103,7 @@ const SUPPORT_PARTNERS = [
   {
     id: "Pay2house",
     name: "Pay2.House",
-    href: "https://pay2.house",
+    href: "https://pay2.house/p/kc9oevv0?utm_source=opengsc",
     logo: "/partners/pay2house-logo.svg",
     imgStyle: { maxWidth: "78px", maxHeight: "18px" } as React.CSSProperties,
   },
