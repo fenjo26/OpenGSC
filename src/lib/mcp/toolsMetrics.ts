@@ -283,4 +283,60 @@ export const METRICS_TOOLS: McpTool[] = [
     },
   },
 
+  {
+    name: "get_ads_intel",
+    description:
+      "Google Ads Transparency intelligence for a domain, from the local cache: which advertisers run " +
+      "ads for it (with creative ID counts), the ad titles with their run windows, weekly ad-count " +
+      "activity per advertiser and country, and image creatives. Read-only and free — the cache is " +
+      "filled when a human presses Load on the site's Ads tab. Sections not loaded yet come back in " +
+      "notLoaded; an empty section means the provider answered and found nothing, not that nobody looked.",
+    cost: "local",
+    inputSchema: {
+      type: "object",
+      properties: {
+        domain: { type: "string", description: "Domain to inspect (normalized; www stripped)" },
+      },
+      required: ["domain"],
+    },
+    handler: async (_userId, args) => {
+      const domain = normDomain(String(args.domain ?? ""));
+      if (!domain.includes(".")) throw new Error("Missing required argument: domain");
+
+      const sections: Record<string, unknown> = {};
+      const loaded: string[] = [];
+      try {
+        const rows: any[] = await rawQuery(
+          `SELECT section, key, payload, checkedAt FROM "AdIntelCache" WHERE domain = ? ORDER BY checkedAt ASC`,
+          domain,
+        );
+        for (const r of rows) {
+          try {
+            const payload = JSON.parse(r.payload);
+            if (r.section === "countries") {
+              const slot = (sections.countries as Record<string, unknown> | undefined) ?? {};
+              slot[String(r.key)] = { countries: payload, checkedAt: r.checkedAt };
+              sections.countries = slot;
+            } else {
+              sections[r.section] = payload;
+              sections[`${r.section}CheckedAt`] = r.checkedAt;
+            }
+            loaded.push(r.section === "countries" ? `countries:${r.key}` : r.section);
+          } catch { /* corrupt row — same as absent */ }
+        }
+      } catch { /* table missing until prisma db push — same as an empty cache */ }
+
+      const notLoaded = ["overview", "titles", "statistics", "images"].filter(s2 => !(s2 in sections));
+      return {
+        domain,
+        sections,
+        loaded,
+        notLoaded,
+        note: notLoaded.length
+          ? "Load the missing sections on the site's Ads tab (GoAnyAPI credits) — this tool cannot fetch."
+          : undefined,
+      };
+    },
+  },
+
 ];

@@ -9,8 +9,10 @@
 //     `difficultyLabel: "Hard"`. `DemandRow` is numeric and the keyword cache is shared across
 //     providers, so turning a bucket into a number would serve an invented figure to an Ahrefs
 //     user as if it had been measured. `keywordSource.ts` exists to prevent exactly that.
-//   • adsense / transparency / ads-statistics are ad intelligence. There is nowhere in a search
-//     console tool for them to live.
+//   • adsense / ads-statistics ad-intelligence endpoints were once left out for having nowhere
+//     to live. The Transparency family and the ads-statistics actions now power the site
+//     dashboard's Ads tab (`AdsIntelTab` + `/api/ads-intel`), so they live here too; the plain
+//     AdSense reverse endpoints still wait for a reason to exist.
 //
 // And one limit that shapes how the SERP half is wired: this data is CACHED. Their own example
 // carries `lastUpdate` several days behind with `source: "Serps"`, and the endpoint takes only
@@ -471,5 +473,162 @@ export async function goanyBacklinks(apiKey: string, domain: string): Promise<Go
         redirectChain: Array.isArray(b?.redirectChain) ? b.redirectChain.map(String) : [],
       })).filter((b: GoAnyBacklink) => b.urlFrom),
     },
+  };
+}
+
+// ─── Ads Transparency (the site dashboard's Ads tab) ───────────────────────────
+//
+// A mirror of Google's Ads Transparency Center: who advertises for a domain, with what copy,
+// which creatives, where, and how the weekly activity develops. Everything here is read-only
+// lookups billed in credits — 4 for the advertiser mapping, 5 per ads-statistics action — and
+// the documented chain matters: domain → `domainSearch` yields the hostId that titles,
+// statistics, image ads and title countries all require. Weekly ranges cap at 48 Google Ads
+// buckets (days 1–7, 8–14, 15–21, 22–month end), so the callers keep spans under ~330 days.
+
+export interface GoAnyAdvertiser {
+  advertiser: string;
+  country: string;
+  adsCount: number | null;
+  creativeIds: string[];
+}
+
+/**
+ * The advertiser mapping for one domain — the overview the Ads tab opens with. This is the
+ * answer no other provider here gives: which advertisers (agencies, affiliate programs, brands)
+ * put Google ads on a domain's behalf.
+ */
+export async function goanyTransparencyDomain(apiKey: string, domain: string): Promise<GoAnyResult<GoAnyAdvertiser[]>> {
+  const r = await get<any>(apiKey, "transparency", { domain });
+  if (!r.data) return { ...r, data: null };
+  const rows = Array.isArray(r.data.advertisers) ? r.data.advertisers : [];
+  return {
+    ...r,
+    data: rows.map((a: any) => ({
+      advertiser: String(a?.advertiser ?? ""),
+      country: String(a?.country ?? ""),
+      adsCount: num(a?.adsCount),
+      creativeIds: Array.isArray(a?.creativeIds) ? a.creativeIds.map(String) : [],
+    })).filter((a: GoAnyAdvertiser) => a.advertiser),
+  };
+}
+
+export interface GoAnyHost { domain: string; host: string; id: number }
+
+/** The hostId every ads-statistics detail action requires. */
+export async function goanyDomainSearch(apiKey: string, domain: string): Promise<GoAnyResult<GoAnyHost | null>> {
+  const r = await get<any>(apiKey, "ads-statistics", { action: "domainSearch", keyword: domain });
+  if (!r.data) return { ...r, data: null };
+  const rows = Array.isArray(r.data.result) ? r.data.result : [];
+  const hit = rows.find((x: any) => String(x?.domain ?? "").replace(/^www\./, "") === domain.replace(/^www\./, "")) ?? rows[0];
+  if (!hit) return { ...r, data: null, error: r.error ?? "no_data" };
+  return { ...r, data: { domain: String(hit.domain ?? domain), host: String(hit.host ?? ""), id: Number(hit.id) } };
+}
+
+export interface GoAnyAdTitle { title: string; startDay: string; endDay: string }
+
+/** Ad copy for one domain, with the window each title ran in. */
+export async function goanyDomainTitles(apiKey: string, hostId: number, startDay: string, endDay: string): Promise<GoAnyResult<GoAnyAdTitle[]>> {
+  const r = await get<any>(apiKey, "ads-statistics", { action: "domainTitles", hostId: String(hostId), startDay, endDay });
+  if (!r.data) return { ...r, data: null };
+  const rows = Array.isArray(r.data.result) ? r.data.result : [];
+  return {
+    ...r,
+    data: rows.map((t: any) => ({
+      title: String(t?.title ?? ""),
+      startDay: String(t?.startDay ?? ""),
+      endDay: String(t?.endDay ?? ""),
+    })).filter((t: GoAnyAdTitle) => t.title),
+  };
+}
+
+export interface GoAnyWeekCountry { country: string; countryName: string; adCount: number | null }
+export interface GoAnyWeekAdvertiser { advertiser: string; country: string; adCount: number | null; countries: GoAnyWeekCountry[] }
+export interface GoAnyWeekRow { month: string; week: number; advertisers: GoAnyWeekAdvertiser[] }
+export interface GoAnyDomainStatistics { weeks: GoAnyWeekRow[]; totals: GoAnyWeekAdvertiser[] }
+
+/**
+ * Weekly ad-count activity for one domain: per week, per advertiser, with each advertiser's
+ * country split. Aggregated here into `weeks` (chronological) and `totals` (per advertiser),
+ * which is the shape the tab's trend bars and top-advertisers table read.
+ */
+export async function goanyDomainStatistics(
+  apiKey: string, hostId: number, startDay: string, endDay: string,
+): Promise<GoAnyResult<GoAnyDomainStatistics>> {
+  const r = await get<any>(apiKey, "ads-statistics", { action: "domainStatistics", hostId: String(hostId), startDay, endDay });
+  if (!r.data) return { ...r, data: null };
+  const result = r.data.result ?? {};
+  const weeks: GoAnyWeekRow[] = (Array.isArray(result.weekAdvertiserStatistics) ? result.weekAdvertiserStatistics : [])
+    .map((w: any) => ({
+      month: String(w?.month ?? ""),
+      week: num(w?.week) ?? 0,
+      advertisers: (Array.isArray(w?.adsHostAdvertiserWeeklyList) ? w.adsHostAdvertiserWeeklyList : []).map((a: any) => ({
+        advertiser: String(a?.advertiser?.advertiser ?? ""),
+        country: String(a?.advertiser?.country ?? ""),
+        adCount: num(a?.adCount),
+        countries: (Array.isArray(a?.countries) ? a.countries : []).map((c: any) => ({
+          country: String(c?.country ?? ""),
+          countryName: String(c?.countryName ?? ""),
+          adCount: num(c?.adCount),
+        })),
+      })).filter((a: GoAnyWeekAdvertiser) => a.advertiser),
+    }))
+    .filter((w: GoAnyWeekRow) => w.month)
+    .sort((a: GoAnyWeekRow, b: GoAnyWeekRow) => (a.month + String(a.week).padStart(2, "0")).localeCompare(b.month + String(b.week).padStart(2, "0")));
+
+  const totals = new Map<string, GoAnyWeekAdvertiser>();
+  for (const w of weeks) {
+    for (const a of w.advertisers) {
+      const cur = totals.get(a.advertiser);
+      if (!cur) totals.set(a.advertiser, { ...a, countries: a.countries.map(c => ({ ...c })) });
+      else {
+        cur.adCount = (cur.adCount ?? 0) + (a.adCount ?? 0);
+        for (const c of a.countries) {
+          const cc = cur.countries.find(x => x.country === c.country);
+          if (cc) cc.adCount = (cc.adCount ?? 0) + (c.adCount ?? 0);
+          else cur.countries.push({ ...c });
+        }
+      }
+    }
+  }
+  return { ...r, data: { weeks, totals: [...totals.values()].sort((a, b) => (b.adCount ?? 0) - (a.adCount ?? 0)) } };
+}
+
+/**
+ * Image creatives for one domain: a map from the Google Ads Transparency detail URL to the
+ * asset it carries (a static image or an HTML bundle — the URL shape tells which). Values are
+ * publicly fetchable Google asset hosts and render directly in an <img>.
+ */
+export async function goanyDomainImageAds(apiKey: string, hostId: number, startDay: string, endDay: string): Promise<GoAnyResult<Record<string, string>>> {
+  const r = await get<any>(apiKey, "ads-statistics", { action: "domainImageAds", hostId: String(hostId), startDay, endDay });
+  if (!r.data) return { ...r, data: null };
+  const result = r.data.result ?? {};
+  const out: Record<string, string> = {};
+  for (const [detailUrl, asset] of Object.entries(result)) {
+    if (typeof asset === "string" && asset) out[detailUrl] = asset;
+  }
+  return { ...r, data: out };
+}
+
+export interface GoAnyTitleCountry { country: string; countryName: string; adCount: number | null }
+
+/** Where one ad title ran. The API answers positional arrays; named here so no consumer ever
+ *  has to know that. */
+export async function goanyTitleCountries(apiKey: string, hostId: number, title: string, startDay: string, endDay: string): Promise<GoAnyResult<GoAnyTitleCountry[]>> {
+  const r = await get<any>(apiKey, "ads-statistics", {
+    action: "domainTitleCountries", hostId: String(hostId), title, startDay, endDay,
+  });
+  if (!r.data) return { ...r, data: null };
+  const rows = Array.isArray(r.data.result) ? r.data.result : [];
+  return {
+    ...r,
+    data: rows.map((row: any) => Array.isArray(row) ? {
+      country: String(row[2] ?? ""),
+      countryName: String(row[1] ?? ""),
+      adCount: num(row[3]),
+    } : {
+      country: String(row?.country ?? ""),
+      countryName: String(row?.countryName ?? ""),
+      adCount: num(row?.adCount),
+    }).filter((c: GoAnyTitleCountry) => c.country || c.countryName),
   };
 }

@@ -1085,6 +1085,19 @@ model TrafficCache {
   @@id([domain, provider])
 }
 
+// Ads Intelligence (GoAnyAPI Ads Transparency), one cached section per row: overview
+// (advertisers + hostId), titles, statistics, images, and countries (key = the ad title).
+// Sections cache independently so detailing a tab never re-buys the overview.
+model AdIntelCache {
+  domain    String
+  section   String
+  key       String   @default("")
+  payload   String
+  checkedAt DateTime @default(now())
+
+  @@id([domain, section, key])
+}
+
 // ─── Link Monitor (Ahrefs API v3) — track fresh quality backlinks to watched brands ──
 model LinkWatchBrand {
   id        String   @id @default(cuid())
