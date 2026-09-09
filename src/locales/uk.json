@@ -3432,6 +3432,8 @@
   "trafficCheckBtn": "Трафік",
   "trafficCheckTitle": "Оцінити візити за місяць і структуру джерел для цього домену (2 кредити GoAnyAPI)",
   "trafficVisitsLabel": "візитів/міс",
+  "trafficNoKeyHint": "Введіть ключ GoAnyAPI або Semrush у налаштуваннях, щоб бачити Traffic Analytics",
+  "trafficSourceMenu": "Джерело трафіку",
   "trafficAsOf": "перевірено",
   "trafficPeriod": "місяць",
   "trafficGenAiTitle": "Частка візитів з AI-асистентів — друга половина вкладки AI Visibility",

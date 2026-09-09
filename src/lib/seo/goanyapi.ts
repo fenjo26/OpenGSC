@@ -263,6 +263,9 @@ export interface TrafficSources {
 
 export interface DomainTraffic {
   domain: string;
+  /** Which vendor estimated these figures — "goanyapi" or "semrush". Old cached rows predate
+   *  the field and read as "goanyapi", the only source there was at the time. */
+  provider?: string;
   siteName: string | null;
   title: string | null;
   description: string | null;
@@ -315,6 +318,7 @@ export async function goanyTraffic(apiKey: string, domain: string): Promise<GoAn
   return {
     ...r,
     data: {
+      provider: "goanyapi",
       domain: String(d?.query?.domain ?? domain),
       siteName: d.SiteName ? String(d.SiteName) : null,
       title: d.Title ? String(d.Title) : null,

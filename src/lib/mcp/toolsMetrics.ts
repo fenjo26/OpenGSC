@@ -254,17 +254,23 @@ export const METRICS_TOOLS: McpTool[] = [
       let rows: any[] = [];
       try {
         rows = await rawQuery(
-          `SELECT domain, payload, checkedAt FROM "TrafficCache" WHERE domain IN (${domains.map(() => "?").join(",")})`,
+          `SELECT domain, provider, payload, checkedAt FROM "TrafficCache" WHERE domain IN (${domains.map(() => "?").join(",")})
+            ORDER BY checkedAt ASC`,
           ...domains,
         );
       } catch { /* table missing until prisma db push — same as an empty cache */ }
 
+      // One row per (domain, provider) since the cache learned Semrush TA; ASC order makes the
+      // latest write per domain win the map, so an agent sees the freshest estimate either way.
       const found = rows.map(r => {
         try {
-          // `checkedAt` rides alongside the payload rather than inside it: these are estimates
-          // with a month's granularity, and an agent quoting them should be able to say how old
-          // the reading is.
-          return { ...JSON.parse(r.payload), checkedAt: r.checkedAt };
+          const payload = JSON.parse(r.payload);
+          return {
+            ...payload,
+            // Rows written before the field existed can only be GoAnyAPI's.
+            provider: String(payload.provider ?? r.provider ?? "goanyapi"),
+            checkedAt: r.checkedAt,
+          };
         } catch { return null; }
       }).filter(Boolean);
 

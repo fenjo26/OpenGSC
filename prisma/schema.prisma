@@ -1075,9 +1075,14 @@ model DrCache {
 // read whole, and pinning it to columns would mean a migration every time the vendor adds a
 // channel — which, given they added GenAI recently, is a live possibility.
 model TrafficCache {
-  domain    String   @id
+  domain    String
+  // One row per (domain, provider): GoAnyAPI and Semrush TA are two vendors estimating the
+  // same truth, and keeping both lets the chip switch sources without refetching.
+  provider  String   @default("goanyapi")
   payload   String
   checkedAt DateTime @default(now())
+
+  @@id([domain, provider])
 }
 
 // ─── Link Monitor (Ahrefs API v3) — track fresh quality backlinks to watched brands ──
