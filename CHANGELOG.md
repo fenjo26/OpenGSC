@@ -3,6 +3,75 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
+## [1.6.1] — 2026-09-09
+
+### Added
+
+- **Majestic as a third metrics provider.** Trust Flow, Citation Flow, referring domains and
+  backlink counts through the groupbuyseo gateway (official `api.majestic.com` speaks the same
+  protocol, so the official/reseller/custom key modes all work). Majestic serves the backlink
+  side — profile pull, domain link counts, snapshots, per-domain Trust Flow — while keyword
+  tools resolve off it onto an Ahrefs or Semrush key automatically, because Majestic has no
+  keyword data at all.
+- **Backlink profile provider tabs.** The Backlinks tab gains All / Ahrefs / Majestic / Semrush
+  views. All merges every provider into unique donors with each metric in its own column (DR,
+  TF/CF, Authority Score) and an A/M/S provenance badge; a provider tab keeps that source's
+  strict live/lost verdicts and history. Refresh pulls per view from that provider's own key,
+  cap and unit currency — no trip to Settings, and per-provider failures report separately.
+  Semrush joins as a profile source through the gateway's backlinks API (40 units/row — priced
+  on the button as the expensive option it is).
+- **Ads Intelligence in the crawler.** Point /crawler at any domain and an optional panel shows
+  what Google Ads Transparency knows about how it advertises: which advertisers run Google ads
+  for the domain, the ad copy with each title's run window, weekly ad-count activity per
+  advertiser and country, the image creatives, and a keyword search that maps who else is
+  buying ads in the niche. Every section prices itself in credits before it is pressed and
+  caches independently for 7 days.
+- **Self-hosted DR history.** The panel accumulates its own monthly DR series for free: every
+  fresh measurement from the free Ahrefs endpoint also writes a monthly snapshot, drops and the
+  site header grow DR sparklines with a penalty flag (a fall of 5+ points is a filter, not lost
+  links), the watch loop refreshes watched domains monthly, and the drops_dr_history MCP tool
+  answers from the local series first — GoAnyAPI's paid history becomes a one-time backfill
+  rather than a subscription.
+- **Semrush Traffic Analytics as a second traffic source** (beta, ~1 unit per report):
+  estimated visits, users, bounce rate, pages per visit, a monthly series and channel shares
+  including GenAI — from the same gateway key as the metrics reports. The traffic cache keeps
+  one row per (domain, provider); the chip names its source and, with both keys configured,
+  switches vendors in one press.
+- **GoAnyAPI extras**: credit balance endpoint, and the DR-history tool with a free preview of
+  which months exist before any spend.
+- **Share-link popover on the dashboard toolbar** — create and copy the client link without
+  opening the Settings tab.
+- **Partner wall in the Support Developer modal** — Pay2.House & GroupBuySEO.
+- **Real setup docs for the health-check keys**: per-key steps in Settings plus a guide.
+
+### Changed
+
+- **Unit prices refreshed to the reseller's September 2026 rate card**: Ahrefs rose fourfold to
+  $0.0001/unit; Majestic joins at $0.000002/unit — which is why the third provider earns its
+  place. Domain metrics are metered at each provider's own price (Semrush had been metered at
+  the Ahrefs rate).
+- **The traffic chip is always visible for the owner** and honest about failure: without a key
+  it says which key to enter and links to Settings, per-provider failures render next to the
+  button, and "no data for this domain" is stated as an answer rather than arriving as a silent
+  502.
+- Model-catalogue probes pass the provider endpoint override; A-Parser auth failures name the
+  host and credential source; the Wayback client sends a User-Agent, matches by host and
+  reports throttling honestly.
+
+### Fixed
+
+- Majestic GetRefDomains mapping: links-to-target now comes from the per-target
+  `BackLinks_<target>` column (the donor's own backlink total was being quoted — 400 000 links
+  from one blog), first-seen dates arrive from `FirstLinkDate_<target>`/`FirstCrawled`, and
+  dofollow%, which the command does not provide, stays null instead of a fabricated 100%.
+- API metric pulls overwrite what they just measured: the CSV-safe keep-semantics had also
+  protected wrong values from ever being corrected by a re-pull.
+- The GoAnyAPI client follows the documented `api.goanyapi.com` host.
+- sc-domain: properties resolve in health checks; PageSpeed lab runs get 45 s instead of 20 s;
+  the dashboard period dropdown is no longer clipped at 360px; insufficient-scope sync errors
+  flag the account for re-auth instead of failing silently; per-tab copy chips show the
+  "Copied" feedback.
+
 ## [1.6.0] — 2026-09-07
 
 ### Added
