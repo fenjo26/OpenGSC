@@ -1,7 +1,8 @@
 "use client";
 
-// Ads Intelligence: what Google Ads Transparency knows about paid activity — for this site's
-// domain or any competitor's, and around any keyword.
+// Ads Intelligence: what Google Ads Transparency knows about how a site advertises — for the
+// scanned domain or any competitor's, and around any keyword. Lives as an optional section of
+// the crawler (/crawler), which is where arbitrary domains already get looked up.
 //
 // Two research directions, and the distinction is the whole tab:
 //
@@ -19,7 +20,7 @@
 // cache independently for 7 days, so detailing the tab never re-buys the overview.
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Megaphone, RefreshCw, Search } from "lucide-react";
+import { Loader2, RefreshCw, Search } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { getGoAnyKey } from "@/lib/seo/keys";
 
@@ -46,9 +47,7 @@ const fmtDay = (d: string) =>
 const normDomain = (d: string) =>
   d.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
 
-export default function AdsIntelTab({
-  siteDbId, domain, shareToken,
-}: { siteDbId: string; domain: string; shareToken?: string }) {
+export default function AdsIntelTab({ domain }: { domain: string }) {
   const { t } = useLanguage();
   const siteDomain = normDomain(domain);
 
@@ -70,34 +69,35 @@ export default function AdsIntelTab({
   const [balance, setBalance] = useState<number | null>(null);
 
   useEffect(() => {
-    setHasKey(!shareToken && getGoAnyKey().trim().length > 4);
-  }, [shareToken]);
+    setHasKey(getGoAnyKey().trim().length > 4);
+  }, []);
 
   // Free wallet read, so the spend buttons sit next to what they will draw from.
   useEffect(() => {
-    if (shareToken || !getGoAnyKey().trim()) return;
+    if (!getGoAnyKey().trim()) return;
     fetch("/api/goanyapi", {
       method: "POST", headers: { "Content-Type": "application/json", "x-goanyapi-key": getGoAnyKey() },
       body: JSON.stringify({ op: "balance" }),
     }).then(r => (r.ok ? r.json() : null)).then(d => {
       if (d && typeof d.remainingCredits === "number") setBalance(d.remainingCredits);
     }).catch(() => {});
-  }, [shareToken]);
+  }, []);
 
   const call = useCallback(async (body: Record<string, unknown>) => {
     const res = await fetch("/api/ads-intel", {
       method: "POST", headers: { "Content-Type": "application/json", "x-goanyapi-key": getGoAnyKey() },
-      body: JSON.stringify({ siteId: siteDbId, domain: target, shareToken, ...body }),
+      body: JSON.stringify({ domain: target, ...body }),
     });
     return res.json().catch(() => ({}));
-  }, [siteDbId, target, shareToken]);
+  }, [target]);
 
   // Cached sections render for free; every domain switch re-reads them.
   const readAll = useCallback(async (forDomain: string) => {
+    if (!forDomain.includes(".")) return;
     const read = async (section: string) => {
       const res = await fetch("/api/ads-intel", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ siteId: siteDbId, domain: forDomain, section, fetch: false, shareToken }),
+        body: JSON.stringify({ domain: forDomain, section, fetch: false }),
       });
       const d = await res.json().catch(() => ({}));
       return d?.payload ? d as { payload: unknown; checkedAt?: string } : null;
@@ -111,7 +111,7 @@ export default function AdsIntelTab({
     setImages(im ? { payload: im.payload as Record<string, string>, cached: true, checkedAt: im.checkedAt } : { payload: null });
     setCountries({});
     setOpenTitle(null);
-  }, [siteDbId, shareToken]);
+  }, []);
 
   useEffect(() => { readAll(target).catch(() => {}); }, [target, readAll]);
 
@@ -169,13 +169,12 @@ export default function AdsIntelTab({
 
   const advertisers = overview.payload?.advertisers ?? [];
   const hostId = overview.payload?.hostId ?? null;
-  const noKey = !shareToken && !hasKey;
-  const guest = !!shareToken;
+  const noKey = !hasKey;
 
   const sectionHeader = (label: string, section: "titles" | "statistics" | "images", state: Cached<any>, emptyText: string) => (
     <div style={{ display: "flex", alignItems: "center", gap: "10px", margin: "22px 0 10px", flexWrap: "wrap" }}>
       <h4 style={{ margin: 0, fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)" }}>{label}</h4>
-      {!guest && (
+      {(
         <button className="metric-action" disabled={busy != null || !hostId || !hasKey}
           onClick={() => load(section)}
           title={!hostId ? t("adsNeedOverview") : !hasKey ? t("adsNoKey") : undefined}>
@@ -199,17 +198,12 @@ export default function AdsIntelTab({
     Math.max(1, ...w.advertisers.map(a => a.adCount ?? 0))));
 
   return (
-    <div style={{ padding: "24px 32px", maxWidth: "1100px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-        <Megaphone size={17} color="var(--color-accent-blue)" />
-        <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "var(--color-text-primary)" }}>{t("adsTitle")}</h3>
-        {!guest && balance != null && (
+    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+      {balance != null && (
+        <div style={{ marginBottom: "10px" }}>
           <span className="metric-chip" style={{ fontWeight: 500 }}>GoAnyAPI · {balance.toLocaleString()} {t("adsCredits")}</span>
-        )}
-      </div>
-      <p style={{ fontSize: "12px", color: "var(--color-text-secondary)", margin: "6px 0 16px", lineHeight: 1.6 }}>
-        {t("adsSub")}
-      </p>
+        </div>
+      )}
 
       {/* Research target — the site is only the default; competitors are the point. */}
       <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px", flexWrap: "wrap" }}>
@@ -235,7 +229,7 @@ export default function AdsIntelTab({
           onChange={e => setKeywordInput(e.target.value)}
           onKeyDown={e => { if (e.key === "Enter") loadKeyword(); }}
           placeholder="online casino…" />
-        <button className="metric-action" disabled={busy != null || !keywordInput.trim() || !hasKey || guest}
+        <button className="metric-action" disabled={busy != null || !keywordInput.trim() || !hasKey}
           onClick={loadKeyword}
           title={!hasKey ? t("adsNoKey") : undefined}>
           {busy === "keyword" ? <Loader2 size={13} className="spin" /> : <Search size={13} />}
@@ -297,7 +291,7 @@ export default function AdsIntelTab({
         <>
           <div style={{ display: "flex", alignItems: "center", gap: "10px", margin: "18px 0 10px", flexWrap: "wrap" }}>
             <h4 style={{ margin: 0, fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)" }}>{t("adsAdvertisers")} · {target}</h4>
-            {!guest && (
+            {(
               <button className="metric-action" disabled={busy != null} onClick={() => load("overview")} title={t("blpRefresh")}>
                 {busy === "overview" ? <Loader2 size={13} className="spin" /> : <RefreshCw size={13} />}
               </button>
@@ -334,9 +328,9 @@ export default function AdsIntelTab({
         <div style={{ marginBottom: "8px", fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
           {t("adsNoData")} · {t("adsOwnSiteHint")}
         </div>
-      ) : !noKey && !err && (
+      ) : !noKey && !err && target && (
         <div style={{ padding: "28px", textAlign: "center", border: "1px dashed var(--color-border)", borderRadius: "var(--radius-md)", fontSize: "13px", color: "var(--color-text-secondary)" }}>
-          {guest ? t("adsNoData") : `${t("adsLoad")} · ${COST_OVERVIEW} ${t("adsCredits")} — ${target}`}
+          {`${t("adsLoad")} · ${COST_OVERVIEW} ${t("adsCredits")} — ${target}`}
         </div>
       )}
 

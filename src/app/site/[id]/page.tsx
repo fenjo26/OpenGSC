@@ -27,7 +27,6 @@ import { usePersistedState, isGscPeriod } from "@/lib/usePersistedState";
 import { getTaskCreds, getAhrefsDrKey } from "@/lib/seo/keys";
 import TrafficChip from "@/components/TrafficChip";
 import { DrSparkline, drSeriesText, type DrPoint } from "@/components/DrSparkline";
-import AdsIntelTab from "@/components/AdsIntelTab";
 import BacklinkProfile from "@/components/BacklinkProfile";
 import BacklinkImportDialog from "@/components/BacklinkImportDialog";
 import type { BacklinkRow, BacklinkListStats } from "@/lib/seo/backlinkTypes";
@@ -4975,7 +4974,7 @@ export default function SitePage({
   }, [domain, shareToken]);
 
   // Use index so tab state doesn't break on language change
-  const TAB_KEYS = ["dashboard", "positions", "aeo", "ga4", "indexing", "backlinks", "ads", "annotations", "optimize", "health", "audit", "ux", "settings"] as const;
+  const TAB_KEYS = ["dashboard", "positions", "aeo", "ga4", "indexing", "backlinks", "annotations", "optimize", "health", "audit", "ux", "settings"] as const;
   type TabKey = typeof TAB_KEYS[number];
   const [activeTab, setActiveTab] = useState<TabKey>("dashboard");
   // Same window vocabulary as the dashboard, same stored value (gsc_period): the dashboard
@@ -5005,7 +5004,6 @@ export default function SitePage({
       { key: "ga4" as const,         label: t("tabGA4") },
       { key: "indexing" as const,    label: t("tabIndexing") },
       { key: "backlinks" as const,   label: t("backlinksTab") },
-      { key: "ads" as const,         label: t("tabAds") },
       { key: "annotations" as const, label: t("tabAnnotations") },
       { key: "optimize" as const,    label: t("tabOptimize") },
       { key: "health" as const,      label: t("tabHealth") },
@@ -5450,11 +5448,6 @@ export default function SitePage({
       {activeTab === "backlinks" && (readOnly
         ? <div style={{ padding: "24px 32px" }}><BacklinkProfile siteDbId={siteDbId} /></div>
         : <BacklinksTab siteDbId={siteDbId} />)}
-
-      {/* ── Ads Intelligence tab (owner only — credit-spending research) ── */}
-      {activeTab === "ads" && !readOnly && (
-        <AdsIntelTab siteDbId={siteDbId} domain={domain} shareToken={shareToken} />
-      )}
 
       {/* ── Annotations tab ── */}
       {activeTab === "annotations" && (

@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  AlertTriangle, CheckCircle2, Download, Fingerprint, Globe2, Info, Layers, Loader2, Radar, Search,
+  AlertTriangle, CheckCircle2, Download, Fingerprint, Globe2, Info, Layers, Loader2, Megaphone, Radar, Search,
   BarChart3, Eye, Server, ShieldAlert, Trash2, XCircle,
 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { buildScanMarkdown } from "@/lib/scanner/exportMd";
 import { getMetricsCreds } from "@/lib/seo/metricsClient";
+import AdsIntelTab from "@/components/AdsIntelTab";
 import { downloadFile } from "@/lib/seo/exportFormats";
 
 type Finding = { id: string; severity: "critical" | "warning" | "info"; evidence?: string };
@@ -49,6 +50,9 @@ export default function CrawlerPage() {
   const [metrics, setMetrics] = useState<Record<string, any> | null>(null);
   const [metricsBusy, setMetricsBusy] = useState(false);
   const [metricsNote, setMetricsNote] = useState("");
+  // Ad intelligence is optional research on top of the scan: collapsed until asked for, since
+  // its sections spend GoAnyAPI credits and not every scanned domain deserves the spend.
+  const [adsOpen, setAdsOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -217,6 +221,22 @@ export default function CrawlerPage() {
             >
               {metricsBusy ? <Loader2 className="spin" size={14} /> : <BarChart3 size={14} />} {t("crawlerMetricsFetch" as any)}
             </button>
+          </div>
+
+          {/* Ads Intelligence — optional, collapsed by default. The metrics panel answers how
+              strong the domain is organically; this one shows what and how it advertises: which
+              advertisers run Google Ads for it, with what copy and creatives, in which countries,
+              and who else buys ads around its keywords. The keyword search is domain-independent
+              and is the competitive map of the niche. */}
+          <div className="panel">
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <h3 style={{ ...sectionTitle, margin: 0 }}><Megaphone size={15} /> {t("adsTitle" as any)}</h3>
+              <button style={ghost} onClick={() => setAdsOpen(o => !o)}>
+                {adsOpen ? t("crawlerAdsHide" as any) : t("crawlerAdsOpen" as any)}
+              </button>
+            </div>
+            <p style={{ ...hint, marginTop: 6 }}>{t("adsSub" as any)}</p>
+            {adsOpen && <div style={{ marginTop: 12 }}><AdsIntelTab domain={report.host} /></div>}
           </div>
 
           {current?.related?.length ? <div className="panel">

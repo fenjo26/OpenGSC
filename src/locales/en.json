@@ -742,7 +742,7 @@
   "backlinksTab": "Backlinks",
   "tabAds": "Ads",
   "adsTitle": "Ads Intelligence",
-  "adsSub": "Two research directions: by domain — which advertisers run Google ads for it, with what copy, creatives and weekly rhythm (your own site often answers empty; competitors are the interesting lookups); by keyword — who buys ads around it and which other domains show up. Data via GoAnyAPI.",
+  "adsSub": "See what and how sites advertise. Point it at any domain — a competitor above all — to see which advertisers run Google ads for it, with what copy and creatives, in which countries, and how the weekly volume moves. Or search a keyword to map who else is buying ads in the niche and which domains show up. Data via GoAnyAPI; every section costs credits and says so before you press it.",
   "adsLoad": "Load",
   "adsCredits": "credits",
   "adsNoKey": "Enter a GoAnyAPI API key in Settings to load ad intelligence.",
@@ -3827,5 +3827,7 @@
   "adsCheckDomain": "Check",
   "adsKeywordSearch": "Keyword ads",
   "adsDomains": "Domains buying ads",
-  "adsOwnSiteHint": "A domain with no Google Ads answers empty — normal for your own site. Look up a competitor above, or search a keyword to see who else is buying."
+  "adsOwnSiteHint": "A domain with no Google Ads answers empty — normal for your own site. Look up a competitor above, or search a keyword to see who else is buying.",
+  "crawlerAdsOpen": "Show ad intel",
+  "crawlerAdsHide": "Hide"
 }

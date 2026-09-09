@@ -742,7 +742,7 @@
   "backlinksTab": "Backlinks",
   "tabAds": "Anuncios",
   "adsTitle": "Inteligencia de anuncios",
-  "adsSub": "Dos direcciones: por dominio — qué anunciantes le sirven Google Ads, con qué textos, creatividades y ritmo semanal (tu propio dominio suele responder vacío; lo interesante son los competidores); por palabra clave — quién compra anuncios alrededor y qué otros dominios aparecen. Datos vía GoAnyAPI.",
+  "adsSub": "Mira qué anuncian los sitios y cómo. Apunta a cualquier dominio — sobre todo a un competidor — y verás qué anunciantes le sirven Google Ads, con qué textos y creatividades, en qué países y cómo evoluciona el volumen semanal. La búsqueda por palabra clave muestra quién más compra anuncios en el nicho y qué dominios aparecen. Datos vía GoAnyAPI; cada sección cuesta créditos e indica el precio antes de pulsar.",
   "adsLoad": "Cargar",
   "adsCredits": "créditos",
   "adsNoKey": "Introduce una clave de GoAnyAPI en Ajustes para cargar la inteligencia de anuncios.",
@@ -3827,5 +3827,7 @@
   "adsCheckDomain": "Comprobar",
   "adsKeywordSearch": "Anuncios por palabra clave",
   "adsDomains": "Dominios que compran anuncios",
-  "adsOwnSiteHint": "Un dominio sin Google Ads responde vacío — es normal para el propio sitio. Busca arriba un dominio competidor, o consulta una palabra clave para ver quién más compra."
+  "adsOwnSiteHint": "Un dominio sin Google Ads responde vacío — es normal para el propio sitio. Busca arriba un dominio competidor, o consulta una palabra clave para ver quién más compra.",
+  "crawlerAdsOpen": "Mostrar inteligencia de anuncios",
+  "crawlerAdsHide": "Ocultar"
 }

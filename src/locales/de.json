@@ -742,7 +742,7 @@
   "backlinksTab": "Backlinks",
   "tabAds": "Ads",
   "adsTitle": "Ads-Intelligenz",
-  "adsSub": "Zwei Richtungen: nach Domain — welche Werbetreibenden Google Ads für sie schalten, mit welchen Texten, Kreativen und welchem Wochenrhythmus (die eigene Domain antwortet oft leer; spannend sind die Wettbewerber); nach Keyword — wer rund um es kauft und welche anderen Domains auftauchen. Daten über GoAnyAPI.",
+  "adsSub": "Sieh, was und wie Seiten bewerben. Richte sie auf eine beliebige Domain — vor allem auf einen Wettbewerber — und sieh, welche Werbetreibenden Google Ads für sie schalten, mit welchen Texten und Kreativen, in welchen Ländern und wie das Wochenvolumen läuft. Die Keyword-Suche zeigt, wer sonst in der Nische kauft und welche Domains auftauchen. Daten über GoAnyAPI; jeder Abschnitt kostet Credits und nennt den Preis vor dem Klick.",
   "adsLoad": "Laden",
   "adsCredits": "Credits",
   "adsNoKey": "Hinterlege einen GoAnyAPI-Schlüssel in den Einstellungen, um Ads-Intelligenz zu laden.",
@@ -3827,5 +3827,7 @@
   "adsCheckDomain": "Prüfen",
   "adsKeywordSearch": "Anzeigen nach Keyword",
   "adsDomains": "Domains, die Anzeigen kaufen",
-  "adsOwnSiteHint": "Eine Domain ohne eigene Google Ads antwortet leer — bei der eigenen Seite normal. Prüfe oben eine Wettbewerbs-Domain oder suche ein Keyword, um zu sehen, wer sonst kauft."
+  "adsOwnSiteHint": "Eine Domain ohne eigene Google Ads antwortet leer — bei der eigenen Seite normal. Prüfe oben eine Wettbewerbs-Domain oder suche ein Keyword, um zu sehen, wer sonst kauft.",
+  "crawlerAdsOpen": "Ads-Intelligenz zeigen",
+  "crawlerAdsHide": "Ausblenden"
 }
