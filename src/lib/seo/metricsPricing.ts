@@ -339,6 +339,24 @@ export function estimateMajesticProfileUnits(domains: number): number {
   return MAJESTIC_STATS_UNITS + pages * MAJESTIC_REFDOMAIN_ANALYSIS_UNITS + rows;
 }
 
+// ─── Semrush Backlinks (the /analytics/v1/ reports on the gateway) ─────────────
+
+/** `backlinks_overview` is the stats call: 40 units flat per request. */
+export const SEMRUSH_BACKLINKS_OVERVIEW_UNITS = 40;
+
+/** Referring domains and backlink rows bill 40 units per line returned. */
+export const SEMRUSH_BACKLINKS_UNITS_PER_ROW = 40;
+
+/**
+ * Reserve for a Semrush referring-domain pull: the flat overview call plus every row the
+ * profile has. At the reseller's Semrush rate this is by far the most expensive way to see a
+ * link profile (≈10× Ahrefs, ≈1000× Majestic per row) — the estimate exists so the button can
+ * say so before it is pressed, and the monthly cap is the real guard.
+ */
+export function estimateSemrushProfileUnits(domains: number): number {
+  return SEMRUSH_BACKLINKS_OVERVIEW_UNITS + SEMRUSH_BACKLINKS_UNITS_PER_ROW * Math.max(1, domains);
+}
+
 /**
  * What one domain-metrics fetch costs, by provider. Replaces the bare `DOMAIN_UNITS` constant in
  * the reservation/reconciliation math, which had been charging Semrush's 10-unit report at the

@@ -2798,7 +2798,7 @@
   "blpFailed": "No se pudo actualizar el perfil",
   "blpAhrefsOnly": "Los datos de backlinks solo están disponibles en Ahrefs",
   "blpTabAll": "Todas (combinado)",
-  "blpRefreshBoth": "Actualizar ambos",
+  "blpRefreshAll": "Actualizar todos",
   "blpTopic": "Tema",
   "blpUnique": "Dominios únicos",
   "blpPartial": "Extracción parcial — nada se marcó como perdido, porque un resultado filtrado no puede demostrar que un enlace ha desaparecido.",

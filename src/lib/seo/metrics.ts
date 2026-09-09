@@ -23,6 +23,7 @@ import { loggedFetch } from "@/lib/providerLog/log";
 import {
   AHREFS_UNIT_FLOOR, DEFAULT_BASE_URL, DOMAIN_UNITS, IDEA_FIELDS_BASE, KEYWORD_FIELDS_BASE, KEYWORD_FIELDS_KD,
   MAJESTIC_REFDOMAIN_ANALYSIS_UNITS, MAJESTIC_REFDOMAIN_PAGE_SIZE, MAJESTIC_STATS_UNITS,
+  SEMRUSH_BACKLINKS_OVERVIEW_UNITS, SEMRUSH_BACKLINKS_UNITS_PER_ROW,
   SEMRUSH_COMPETITOR_UNITS_PER_ROW, SEMRUSH_IDEA_UNITS_PER_ROW, SEMRUSH_ORGANIC_KEYWORD_UNITS_PER_ROW,
   COMPETITOR_FIELDS, ORGANIC_KEYWORD_FIELDS, REFDOMAIN_FIELDS,
   estimateCompetitorUnits, estimateIdeaUnits, estimateOrganicKeywordUnits, estimateUnits,
@@ -424,6 +425,21 @@ export async function fetchBacklinkStats(
       totals: { refDomainsTotal: row.refDomains, backlinksTotal: row.backlinks },
     };
   }
+  if (creds.provider === "semrush") {
+    const r = await semrushBacklinksCall(creds, {
+      type: "backlinks_overview", target: domain, target_type: "root_domain",
+    });
+    if (r.error) return { ok: false, error: r.error };
+    const row = r.rows[0] ?? {};
+    return {
+      ok: true,
+      raw: row,
+      totals: {
+        refDomainsTotal: num(mjPick(row, "refdomains", "referring_domains", "domains_num")),
+        backlinksTotal: num(mjPick(row, "backlinks", "total_backlinks", "links_num")),
+      },
+    };
+  }
   const base = (creds.baseUrl || DEFAULT_BASE_URL.ahrefs).replace(/\/+$/, "");
   const auth = { headers: { Authorization: `Bearer ${creds.apiKey}`, Accept: "application/json" } };
   const date = new Date().toISOString().slice(0, 10);
@@ -588,16 +604,149 @@ export async function fetchBacklinkProfile(
   opts: { minDr?: number; stats?: any } = {},
 ): Promise<MetricsResult<BacklinkProfile> & { sawEnd?: boolean; unitsSpent?: number }> {
   if (!creds.apiKey) return { items: [], units: 0, error: "no_key" };
-  // Semrush charges 40 units a line for the same data against Ahrefs' 5. Rather than offer a
-  // choice that is never the right one, this path is Ahrefs-only and says so.
-  if (creds.provider === "semrush") return { items: [], units: 0, error: "provider_unsupported" };
   try {
     return creds.provider === "majestic"
       ? await majesticProfile(creds, domain, opts)
-      : await ahrefsProfile(creds, domain, opts);
+      : creds.provider === "semrush"
+        ? await semrushProfile(creds, domain, opts)
+        : await ahrefsProfile(creds, domain, opts);
   } catch (e: any) {
     return { items: [], units: 0, error: String(e?.message ?? e) };
   }
+}
+
+// ─── Semrush backlinks (/analytics/v1/ reports) ────────────────────────────────
+//
+// The gateway's backlinks product is what unblocked this provider here: backlinks_overview,
+// backlinks and backlinks_refdomains all answer on the same host and key as the SEO reports.
+// At 40 units a line it is by far the most expensive profile source (≈10× Ahrefs, three orders
+// of magnitude above Majestic) — the estimate functions quote that honestly, and the monthly
+// cap is the real guard. It exists for Semrush-only subscribers, the same reason the keyword
+// gap grew a Semrush path.
+
+const SEMRUSH_BACKLINKS_PAGE_SIZE = 1000;
+
+/**
+ * One /analytics/v1/ call. The official host answers in JSON, the reseller gateway in CSV —
+ * both are accepted: read as text, parsed as JSON when it opens with `{`, CSV otherwise.
+ * The gateway's numeric ERROR codes are restated in HTTP vocabulary so every existing
+ * diagnosis chain keeps working (401 bad key, 132 not enough units → 402); `ERROR 50 ::
+ * NOTHING FOUND` is not an error but an empty profile — a new domain with no links is a
+ * valid answer, the same conclusion `/api/dr` draws.
+ */
+async function semrushBacklinksCall(
+  creds: MetricsCreds,
+  params: Record<string, string>,
+): Promise<{ rows: Record<string, any>[]; total: number | null; error?: string }> {
+  const base = (creds.baseUrl || DEFAULT_BASE_URL.semrush).replace(/\/+$/, "");
+  const search = new URLSearchParams({ key: creds.apiKey, ...params });
+  const res = await requestWithRetry(
+    `${base}/analytics/v1/?${search}`,
+    { headers: { Accept: "text/plain, application/json" } },
+    creds.apiKey, creds.provider,
+  );
+  const text = (await res.text()).trim();
+  if (!res.ok) return { rows: [], total: null, error: `semrush ${res.status}: ${text.slice(0, 300)}` };
+  if (/^ERROR/i.test(text)) {
+    const code = /^ERROR\s*(\d+)/i.exec(text)?.[1] ?? "";
+    const status = code === "401" ? 401 : code === "132" ? 402 : code === "50" ? 200 : 400;
+    if (status === 200) return { rows: [], total: 0 }; // nothing found = empty profile
+    return { rows: [], total: null, error: `semrush ${status}: ${text.slice(0, 300)}` };
+  }
+  if (text.startsWith("{")) {
+    try {
+      const d = JSON.parse(text);
+      const rows = d?.data ?? d?.backlinks ?? d?.refdomains ?? d?.rows;
+      return { rows: Array.isArray(rows) ? rows : [], total: num(d?.total) };
+    } catch { /* fall through to CSV */ }
+  }
+  const rows = parseSemrushCsv(text);
+  return { rows, total: null };
+}
+
+/**
+ * Semrush referring domains — `backlinks_refdomains`, paged with display_offset at 1000 rows
+ * a call and billed 40 units per row returned. Authority Score lands in the `dr` slot of
+ * {@link RefDomainItem} (the UI labels the column AS); the report carries no nofollow flag,
+ * so `dofollowPct` stays null rather than a fabricated figure.
+ */
+async function semrushProfile(
+  creds: MetricsCreds,
+  domain: string,
+  opts: { minDr?: number; stats?: any } = {},
+): Promise<MetricsResult<BacklinkProfile> & { sawEnd?: boolean; unitsSpent?: number }> {
+  let stats = opts.stats ?? null;
+  if (!stats) {
+    const s = await fetchBacklinkStats(creds, domain);
+    if (!s.ok) return { items: [], units: 0, error: s.error, unitsSpent: 0 };
+    stats = s.raw;
+  }
+  // The flat overview call this pull was priced from was spent once, whoever made it.
+  let unitsSpent = SEMRUSH_BACKLINKS_OVERVIEW_UNITS;
+
+  const refDomains: RefDomainItem[] = [];
+  const seen = new Set<string>();
+  const minDr = opts.minDr && opts.minDr > 0 ? opts.minDr : 0;
+
+  let sawEnd = false;
+  let partialError = "";
+  let offset = 0;
+  for (;;) {
+    const res = await semrushBacklinksCall(creds, {
+      type: "backlinks_refdomains",
+      target: domain,
+      target_type: "root_domain",
+      display_limit: String(SEMRUSH_BACKLINKS_PAGE_SIZE),
+      ...(offset ? { display_offset: String(offset) } : {}),
+    });
+    if (res.error) {
+      if (refDomains.length === 0) return { items: [], units: unitsSpent, error: res.error, unitsSpent };
+      partialError = res.error; // keep the pages already paid for, marked incomplete
+      break;
+    }
+    const rows = res.rows;
+    unitsSpent += SEMRUSH_BACKLINKS_UNITS_PER_ROW * rows.length;
+    if (!rows.length) { sawEnd = true; break; }
+
+    let added = 0;
+    for (const r of rows) {
+      const refDomain = String(mjPick(r, "source_domain", "domain", "refdomain") ?? "")
+        .toLowerCase().replace(/^www\./, "");
+      if (!refDomain.includes(".") || seen.has(refDomain)) continue;
+      const as = num(mjPick(r, "domain_ascore", "ascore", "authority_score"));
+      if (minDr && (as == null || as < minDr)) continue;
+      seen.add(refDomain);
+      refDomains.push({
+        refDomain,
+        dr: as,
+        linksToTarget: num(mjPick(r, "backlinks_num", "backlinks")),
+        dofollow: true,
+        firstSeen: String(mjPick(r, "first_seen") ?? ""),
+        ip: String(mjPick(r, "ip") ?? ""),
+      });
+      added++;
+    }
+    if (rows.length < SEMRUSH_BACKLINKS_PAGE_SIZE) { sawEnd = true; break; }
+    if (added === 0) break; // offset drifting in place — same guard as the other loops
+    offset += SEMRUSH_BACKLINKS_PAGE_SIZE;
+  }
+
+  const total = num(mjPick(stats, "refdomains", "referring_domains", "domains_num"));
+  const live = num(mjPick(stats, "backlinks", "total_backlinks", "links_num"));
+
+  const result: MetricsResult<BacklinkProfile> & { sawEnd?: boolean; unitsSpent?: number } = {
+    units: unitsSpent,
+    unitsSpent,
+    sawEnd,
+    items: [{
+      refDomainsTotal: total,
+      backlinksTotal: live,
+      dofollowPct: null, // not in this report — null beats a fabricated 100%
+      refDomains,
+    }],
+  };
+  if (partialError) result.error = partialError;
+  return result;
 }
 
 // ─── Majestic ──────────────────────────────────────────────────────────────────

@@ -94,6 +94,15 @@ missing from the cache, for the visible selection.
 above the manual backlink list rather than replacing it: the profile answers "what points at
 me", the list answers "did the link I built survive".
 
+The tab's provider pills choose where a refresh loads from — **All** merges every provider
+into unique domains (DR from Ahrefs, TF/CF from Majestic, AS from Semrush in their own
+columns), while each provider tab keeps that source's strict live/lost verdicts and refreshes
+from its own key. No trip to Settings needed.
+
+Ahrefs and Majestic are the sensible everyday sources. Semrush's backlinks API works too but
+bills 40 units per row — roughly 10× Ahrefs and three orders of magnitude more than Majestic
+— so it exists for Semrush-only subscribers rather than as a recommendation.
+
 Lost links are derived by diffing pulls, not fetched separately — so the first pull has no lost
 rows, and a filtered pull deliberately marks nothing as lost.
 

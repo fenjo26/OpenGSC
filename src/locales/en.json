@@ -2798,7 +2798,7 @@
   "blpFailed": "Could not refresh the profile",
   "blpAhrefsOnly": "Backlink data is available on Ahrefs only",
   "blpTabAll": "All (merged)",
-  "blpRefreshBoth": "Refresh both",
+  "blpRefreshAll": "Refresh all",
   "blpTopic": "Topic",
   "blpUnique": "Unique domains",
   "blpPartial": "Partial pull — nothing was marked as lost, because a filtered result cannot prove a link is gone.",

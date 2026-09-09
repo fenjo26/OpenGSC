@@ -4,7 +4,7 @@ import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import {
   fetchBacklinkProfile, fetchBacklinkStats, estimateProfileUnits, estimateMajesticProfileUnits,
-  parseMetricsProvider, REFDOMAIN_PAGE_SIZE, MetricsProvider,
+  estimateSemrushProfileUnits, parseMetricsProvider, REFDOMAIN_PAGE_SIZE, MetricsProvider,
 } from "@/lib/seo/metrics";
 import { readUsage, recordUsage, releaseUnusedUnits, withinCap, UsageState } from "@/lib/seo/metricsStore";
 import {
@@ -34,6 +34,8 @@ export interface MergedRefDomain {
   dr: number | null;
   /** Majestic Trust Flow, when Majestic has seen this donor. */
   tf: number | null;
+  /** Semrush Authority Score, when Semrush has seen this donor. */
+  as: number | null;
   cf: number | null;
   links: number | null;
   firstSeen: string;
@@ -55,6 +57,7 @@ function mergeRefDomains(all: RefDomainRecord[]): MergedRefDomain[] {
         refDomain: r.refDomain,
         dr: r.provider === "ahrefs" ? r.dr : null,
         tf: r.provider === "majestic" ? r.dr : null,
+        as: r.provider === "semrush" ? r.dr : null,
         cf: r.cf,
         links: r.linksToTarget,
         firstSeen: r.firstSeen,
@@ -67,7 +70,9 @@ function mergeRefDomains(all: RefDomainRecord[]): MergedRefDomain[] {
       });
       continue;
     }
-    if (r.provider === "ahrefs") cur.dr = r.dr; else cur.tf = r.dr;
+    if (r.provider === "ahrefs") cur.dr = r.dr;
+    else if (r.provider === "majestic") cur.tf = r.dr;
+    else cur.as = r.dr;
     cur.cf = cur.cf ?? r.cf;
     cur.links = cur.links ?? r.linksToTarget;
     if (r.firstSeen && (!cur.firstSeen || r.firstSeen < cur.firstSeen)) cur.firstSeen = r.firstSeen;
@@ -83,7 +88,7 @@ function mergeRefDomains(all: RefDomainRecord[]): MergedRefDomain[] {
   // this ordering is a display heuristic, not a ranking.
   return [...byDomain.values()].sort((a, b) =>
     (a.lost ? 1 : 0) - (b.lost ? 1 : 0)
-    || Math.max(b.dr ?? 0, b.tf ?? 0) - Math.max(a.dr ?? 0, a.tf ?? 0));
+    || Math.max(b.dr ?? 0, b.tf ?? 0, b.as ?? 0) - Math.max(a.dr ?? 0, a.tf ?? 0, a.as ?? 0));
 }
 
 export async function POST(req: Request) {
@@ -110,7 +115,7 @@ export async function POST(req: Request) {
   if (!site) return NextResponse.json({ error: userId ? "Site not found" : "Unauthorized" }, { status: userId ? 404 : 401 });
   const target = normDomain(site.url.replace(/^sc-domain:/, ""));
 
-  const view = b.view === "ahrefs" || b.view === "majestic" ? b.view : "all";
+  const view = b.view === "ahrefs" || b.view === "majestic" || b.view === "semrush" ? b.view : "all";
   // Legacy body.provider still names a single-provider refresh for old clients.
   const fetchProvider: MetricsProvider = view === "all"
     ? parseMetricsProvider(b.provider ?? "ahrefs")
@@ -130,10 +135,12 @@ export async function POST(req: Request) {
   const history = {
     ahrefs: await readSnapshots(target, 90, "ahrefs"),
     majestic: await readSnapshots(target, 90, "majestic"),
+    semrush: await readSnapshots(target, 90, "semrush"),
   };
-  const usage: { ahrefs: UsageState | null; majestic: UsageState | null } = {
+  const usage: { ahrefs: UsageState | null; majestic: UsageState | null; semrush: UsageState | null } = {
     ahrefs: userId ? await readUsage(userId, "ahrefs") : null,
     majestic: userId ? await readUsage(userId, "majestic") : null,
+    semrush: userId ? await readUsage(userId, "semrush") : null,
   };
 
   const readRows = () => {
@@ -155,11 +162,10 @@ export async function POST(req: Request) {
     }, { status });
 
   if (!wantFetch) return respond();
-  if (view !== "all" && fetchProvider === "semrush") return respond({ error: "provider_unsupported" }, 400);
 
   // ── The refresh: one independent pull per provider the view needs. ──
   const pulls: MetricsProvider[] = view === "all"
-    ? (["ahrefs", "majestic"] as MetricsProvider[]).filter(p => credsFor(p).apiKey)
+    ? (["ahrefs", "majestic", "semrush"] as MetricsProvider[]).filter(p => credsFor(p).apiKey)
     : [fetchProvider];
   if (!pulls.length) return respond({ error: "no_key" });
 
@@ -178,7 +184,9 @@ export async function POST(req: Request) {
 
     const units = p === "majestic"
       ? estimateMajesticProfileUnits(stats.totals.refDomainsTotal ?? REFDOMAIN_PAGE_SIZE)
-      : estimateProfileUnits(stats.totals.refDomainsTotal ?? REFDOMAIN_PAGE_SIZE);
+      : p === "semrush"
+        ? estimateSemrushProfileUnits(stats.totals.refDomainsTotal ?? REFDOMAIN_PAGE_SIZE)
+        : estimateProfileUnits(stats.totals.refDomainsTotal ?? REFDOMAIN_PAGE_SIZE);
     if (!userId || !(await withinCap(userId, p, units, cap))) {
       errors[p] = "cap_exceeded";
       continue;
@@ -225,6 +233,7 @@ export async function POST(req: Request) {
   const freshUsage: typeof usage = {
     ahrefs: userId ? await readUsage(userId, "ahrefs") : null,
     majestic: userId ? await readUsage(userId, "majestic") : null,
+    semrush: userId ? await readUsage(userId, "semrush") : null,
   };
 
   if (!pulledAny) {
