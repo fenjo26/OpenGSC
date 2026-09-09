@@ -202,7 +202,10 @@ export async function runGscSync() {
         liveSiteIdsByUser.set(userId, live);
       } catch (err: any) {
         console.error(`[GSC Sync]   Failed to list sites: ${err.message}`);
-        const needsReauth = /invalid_grant|token.*expired|unauthorized|invalid.*token/i.test(err.message);
+        // Scope errors ("Request had insufficient authentication scopes.", "Insufficient
+        // Permission") never recover on retry — the token itself is valid but too narrow,
+        // so the only way out is the user reconnecting the account.
+        const needsReauth = /invalid_grant|token.*expired|unauthorized|invalid.*token|insufficient.*(permission|scope)/i.test(err.message);
         result.accountErrors.push({
           accountId: account.providerAccountId,
           error: err.message,
