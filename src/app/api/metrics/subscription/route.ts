@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
-import { fetchSubscriptionInfo, MetricsProvider } from "@/lib/seo/metrics";
+import { fetchSubscriptionInfo, parseMetricsProvider } from "@/lib/seo/metrics";
 import { readUsage } from "@/lib/seo/metricsStore";
 
 // POST /api/metrics/subscription { provider, apiKey, baseUrl }
@@ -22,7 +22,7 @@ export async function POST(req: Request) {
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const b = await req.json().catch(() => ({}));
-  const provider = (b.provider === "semrush" ? "semrush" : "ahrefs") as MetricsProvider;
+  const provider = parseMetricsProvider(b.provider);
   const apiKey = String(b.apiKey ?? "").trim();
   const baseUrl = String(b.baseUrl ?? "").trim() || undefined;
   if (!apiKey) return NextResponse.json({ error: "no_key", gatewayStatus: null, info: null });

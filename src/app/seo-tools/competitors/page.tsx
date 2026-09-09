@@ -18,7 +18,7 @@ import { Users, Loader2, Download, ExternalLink, Search, PenLine, FileDown } fro
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { COUNTRIES } from "@/lib/seo/regions";
 import {
-  getMetricsCreds, estimateCostUsd, formatUsd,
+  getMetricsCreds, getKeywordCapableCreds, estimateCostUsd, formatUsd,
 } from "@/lib/seo/metricsClient";
 // Prices only, from the module that has no network half — see `metricsPricing.ts`.
 import { estimateCompetitorUnits, estimateOrganicKeywordUnits } from "@/lib/seo/metricsPricing";
@@ -77,7 +77,7 @@ export default function CompetitorsPage() {
   const kdBlocked = unsupported.includes("difficulty");
 
   useEffect(() => {
-    setHasKey(getMetricsCreds().apiKey.length > 4);
+    setHasKey(getKeywordCapableCreds().apiKey.length > 4);
     setCountry(localStorage.getItem("seoMetricsCountry") || "us");
     fetch("/api/gsc/sites")
       .then(r => (r.ok ? r.json() : null))
@@ -91,7 +91,8 @@ export default function CompetitorsPage() {
 
   const call = useCallback(async (action: string, extra: Record<string, unknown> = {}) => {
     if (!siteId) return null;
-    const creds = getMetricsCreds();
+    // Keyword-side route: resolves off Majestic onto a keyword-capable key.
+    const creds = getKeywordCapableCreds();
     const body: Record<string, unknown> = { siteId, country, action, provider: creds.provider, ...extra };
     if (action !== "read") {
       Object.assign(body, { apiKey: creds.apiKey, baseUrl: creds.baseUrl, cap: creds.cap });
@@ -192,7 +193,7 @@ export default function CompetitorsPage() {
     URL.revokeObjectURL(a.href);
   }
 
-  const creds = getMetricsCreds();
+  const creds = getKeywordCapableCreds();
   const discoverCost = estimateCostUsd(estimateCompetitorUnits(20), creds.provider);
   const pullUnits = estimateOrganicKeywordUnits(limit, withKd && !kdBlocked);
   const pullCost = estimateCostUsd(pullUnits, creds.provider);

@@ -7,7 +7,7 @@ import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { ScatterChart, Scatter, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { withShare, isGuestView } from "@/lib/shareParam";
 import { usePersistedState } from "@/lib/usePersistedState";
-import { getMetricsCreds } from "@/lib/seo/metricsClient";
+import { getKeywordCapableCreds } from "@/lib/seo/metricsClient";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 type HeatMetric = "clicks" | "impressions";
@@ -107,7 +107,8 @@ function DecayingPagesTable({ rows }: { rows: DecayRow[] }) {
     if (demandBusy || !row.siteId) return;
     setDemandBusy(row.url);
     try {
-      const creds = getMetricsCreds();
+      // Volume history is keyword-side data — resolves off Majestic onto a keyword-capable key.
+      const creds = getKeywordCapableCreds();
       const res = await fetch("/api/metrics/demand", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

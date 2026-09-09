@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   estimateUnits, perRowCost, AHREFS_UNIT_FLOOR, gatewayStatusFromError,
   estimateProfileUnits, refdomainsPageParams,
+  parseMetricsProvider, UNIT_PRICE_USD, domainUnits, DOMAIN_UNITS, estimateMajesticProfileUnits,
 } from "./metrics";
 
 // The estimate is the number the cap is charged and the user is quoted, so these tests pin the
@@ -92,4 +93,41 @@ test("estimateProfileUnits prices the stats call, the full row set, and one floo
   assert.equal(estimateProfileUnits(1000), AHREFS_UNIT_FLOOR * 2 + 5000);
   // Zero domains still means three floored requests worst-case: stats, a one-row page, slack.
   assert.equal(estimateProfileUnits(0), AHREFS_UNIT_FLOOR * 3);
+});
+
+// ─── Majestic ──────────────────────────────────────────────────────────────────
+//
+// The third provider bills a different currency (collapsed FullCost against the same credit
+// ledger), so its estimates are pinned separately from the Ahrefs ones above. The parse and
+// the unit-price row are pinned too: a provider parsed as the wrong name sends one key to
+// another host (a 401 that looks like a broken key), and a silent price edit would make every
+// "≈ $0.01" chip on the screen a lie.
+
+test("parseMetricsProvider keeps known providers and falls back to ahrefs", () => {
+  assert.equal(parseMetricsProvider("semrush"), "semrush");
+  assert.equal(parseMetricsProvider("majestic"), "majestic");
+  assert.equal(parseMetricsProvider("ahrefs"), "ahrefs");
+  // Anything else — old clients, hand-typed curl — was ahrefs before there were alternatives.
+  assert.equal(parseMetricsProvider("gsc"), "ahrefs");
+  assert.equal(parseMetricsProvider(undefined), "ahrefs");
+});
+
+test("gateway unit prices are the reseller's published rate card", () => {
+  assert.equal(UNIT_PRICE_USD.ahrefs, 0.0001); // raised 2026-09, was 0.000025
+  assert.equal(UNIT_PRICE_USD.semrush, 0.00006);
+  assert.equal(UNIT_PRICE_USD.majestic, 0.000002);
+});
+
+test("domainUnits prices each provider's own domain report", () => {
+  assert.equal(domainUnits("ahrefs"), DOMAIN_UNITS);      // two floored calls
+  assert.equal(domainUnits("semrush"), 10);               // one domain_ranks line
+  assert.equal(domainUnits("majestic"), 1);               // one index item
+});
+
+test("estimateMajesticProfileUnits prices stats, per-page analysis, and every retrieval row", () => {
+  // 1100 rows span two pages (web adapters cap Count at 1000): 1 + (2 × 1000) + 1100 = 3101.
+  assert.equal(estimateMajesticProfileUnits(1100), 3101);
+  // Sub-page profiles still pay the full 1000-unit analysis of their single page.
+  assert.equal(estimateMajesticProfileUnits(100), 1 + 1000 + 100);
+  assert.equal(estimateMajesticProfileUnits(0), 1 + 1000 + 1);
 });

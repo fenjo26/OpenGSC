@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
-import { fetchVolumeHistory, AHREFS_UNIT_FLOOR, MetricsProvider } from "@/lib/seo/metrics";
+import { fetchVolumeHistory, AHREFS_UNIT_FLOOR, parseMetricsProvider } from "@/lib/seo/metrics";
 import { readUsage, recordUsage, releaseUnusedUnits, withinCap } from "@/lib/seo/metricsStore";
 import { runUpsert } from "@/lib/db/upsert";
 import { rawQuery } from "@/lib/db/raw";
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
   if (!site) return NextResponse.json({ error: "Site not found" }, { status: 404 });
 
   const country = String(b.country ?? "us").toLowerCase();
-  const provider = (b.provider === "semrush" ? "semrush" : "ahrefs") as MetricsProvider;
+  const provider = parseMetricsProvider(b.provider);
   const apiKey = String(b.apiKey ?? "").trim();
   const baseUrl = String(b.baseUrl ?? "").trim() || undefined;
   const cap = Number(b.cap ?? 0);

@@ -48,15 +48,17 @@ Two details worth knowing:
 
 ### Configuring an API key
 
-**Settings → SEO Metrics.** Everything for these two providers is on that one screen — key,
-host, cap and usage. Nothing about Ahrefs or Semrush is configured anywhere else.
+**Settings → SEO Metrics.** Everything for these providers is on that one screen — key,
+host, cap and usage. Nothing about Ahrefs, Semrush or Majestic is configured anywhere else.
 
-1. **Data provider** — Ahrefs or Semrush. Ahrefs is cheaper for every task in this module, and
-   backlink data is Ahrefs-only.
+1. **Data provider** — Ahrefs, Semrush or Majestic. Ahrefs and Semrush cover keywords and
+   links; **Majestic covers links only** — Trust Flow, Citation Flow, referring domains and
+   backlink counts, at a fraction of Ahrefs' link-pull price. With Majestic active the keyword
+   tools keep running on your Ahrefs or Semrush key automatically.
 2. **Where your key comes from** — this is the question that decides the host, so you answer it
    in those words rather than typing a URL:
-   - **Official API** — you have your own Ahrefs/Semrush subscription with API access. Requests
-     go to `api.ahrefs.com` / `api.semrush.com`.
+   - **Official API** — you have your own Ahrefs/Semrush/Majestic subscription with API access.
+     Requests go to `api.ahrefs.com` / `api.semrush.com` / `api.majestic.com`.
    - **Reseller** — credits bought from a group-buy provider. Same protocol, different host;
      it is filled in for you.
    - **Custom gateway** — anything else that speaks the official API. You enter the host.
@@ -146,20 +148,26 @@ Two consequences:
   them.
 
 Every button shows its price before you press it. Rough figures at group-buy rates
-($0.000025/unit for Ahrefs):
+($0.0001/unit for Ahrefs, $0.00006 for Semrush, $0.000002 for Majestic):
 
 | Action | Units | ≈ USD |
 |---|---|---|
-| 100 keywords, no KD | 1 300 | $0.03 |
-| 100 keywords, with KD | 2 300 | $0.06 |
-| Domain metrics, one domain | 100 | $0.0025 |
-| Backlink profile, 100 referring domains | 550 | $0.014 |
-| Competitor keywords, 200 rows | 2 600 | $0.07 |
+| 100 keywords, no KD | 1 300 | $0.13 |
+| 100 keywords, with KD | 2 300 | $0.23 |
+| Domain metrics, one domain (Ahrefs / Majestic) | 100 / 1 | $0.01 / $0.000002 |
+| Backlink profile, 100 referring domains (Ahrefs / Majestic) | 550 / 1 101 | $0.055 / $0.0022 |
+| Competitor keywords, 200 rows | 2 600 | $0.26 |
 
-**Ahrefs is cheaper than Semrush for everything this module does** — notably Keyword Difficulty
+(Ahrefs rates were $0.000025/unit until the reseller raised them in September 2026 — fourfold,
+which is why Majestic earns its place: the same referring-domain pull now costs roughly 25×
+less through Majestic's `GetRefDomains`.)
+
+**Ahrefs is cheaper than Semrush for keyword work in this module** — notably Keyword Difficulty
 (10 units vs 50) and the keyword gap, which Ahrefs covers via organic-competitors at a fraction
 of Semrush's `domain_domains` price. Semrush support exists for people who already have a key;
-it is not the recommended default, and backlink data is Ahrefs-only.
+it is not the recommended default. For link data Majestic is now the budget pick: the profile
+pull, domain link counts and the DR-band-style filtering by Trust Flow all read from it, while
+Ahrefs keeps the organic side.
 
 ### Rate limits
 

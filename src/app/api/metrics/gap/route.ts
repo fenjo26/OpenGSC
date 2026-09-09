@@ -6,7 +6,7 @@ import {
   fetchOrganicCompetitors, fetchOrganicKeywords,
   estimateCompetitorUnits, estimateOrganicKeywordUnits,
   SEMRUSH_COMPETITOR_UNITS_PER_ROW, SEMRUSH_ORGANIC_KEYWORD_UNITS_PER_ROW,
-  DEFAULT_BASE_URL, MetricsProvider,
+  DEFAULT_BASE_URL, parseMetricsProvider,
 } from "@/lib/seo/metrics";
 import { readUsage, recordUsage, releaseUnusedUnits, withinCap, learnFieldSupport, unsupportedFields } from "@/lib/seo/metricsStore";
 import { runUpsert } from "@/lib/db/upsert";
@@ -49,7 +49,7 @@ export async function POST(req: Request) {
 
   const action = String(b.action ?? "read");
   const country = String(b.country ?? "us").toLowerCase();
-  const provider = (b.provider === "semrush" ? "semrush" : "ahrefs") as MetricsProvider;
+  const provider = parseMetricsProvider(b.provider);
   const apiKey = String(b.apiKey ?? "").trim();
   const baseUrl = String(b.baseUrl ?? "").trim() || undefined;
   const cap = Number(b.cap ?? 0);

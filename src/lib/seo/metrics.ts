@@ -1,5 +1,7 @@
-// Third-party SEO metrics (Ahrefs / Semrush) behind one call surface, mirroring the shape of
-// `src/lib/llm.ts`: several providers, one signature, retries and normalization in one place.
+// Third-party SEO metrics (Ahrefs / Semrush / Majestic) behind one call surface, mirroring the
+// shape of `src/lib/llm.ts`: several providers, one signature, retries and normalization in one
+// place. Keyword data exists on Ahrefs and Semrush only; Majestic serves the backlink side and
+// answers keyword calls with `provider_unsupported` rather than a wrong request.
 //
 // Three things about this module are load-bearing and easy to get wrong:
 //
@@ -19,7 +21,8 @@
 import { loggedFetch } from "@/lib/providerLog/log";
 
 import {
-  AHREFS_UNIT_FLOOR, DEFAULT_BASE_URL, IDEA_FIELDS_BASE, KEYWORD_FIELDS_BASE, KEYWORD_FIELDS_KD,
+  AHREFS_UNIT_FLOOR, DEFAULT_BASE_URL, DOMAIN_UNITS, IDEA_FIELDS_BASE, KEYWORD_FIELDS_BASE, KEYWORD_FIELDS_KD,
+  MAJESTIC_REFDOMAIN_ANALYSIS_UNITS, MAJESTIC_REFDOMAIN_PAGE_SIZE, MAJESTIC_STATS_UNITS,
   SEMRUSH_COMPETITOR_UNITS_PER_ROW, SEMRUSH_IDEA_UNITS_PER_ROW, SEMRUSH_ORGANIC_KEYWORD_UNITS_PER_ROW,
   COMPETITOR_FIELDS, ORGANIC_KEYWORD_FIELDS, REFDOMAIN_FIELDS,
   estimateCompetitorUnits, estimateIdeaUnits, estimateOrganicKeywordUnits, estimateUnits,
@@ -126,7 +129,9 @@ const subscriptionCache = new Map<string, { at: number; info: SubscriptionInfo }
 
 export async function fetchSubscriptionInfo(creds: MetricsCreds): Promise<SubscriptionResult> {
   if (!creds.apiKey) return { info: null, status: 0, error: "no_key" };
-  // Semrush's protocol has no equivalent report — the caller falls back to our own estimate.
+  // Semrush's protocol has no equivalent report; Majestic's `GetSubscriptionInfo` reports the
+  // pooled upstream plan, deliberately not the caller's own credit ledger. Both fall back to
+  // our own estimate rather than quote somebody else's wallet.
   if (creds.provider !== "ahrefs") return { info: null, status: 0, error: "provider_unsupported" };
 
   const base = (creds.baseUrl || DEFAULT_BASE_URL.ahrefs).replace(/\/+$/, "");
@@ -294,14 +299,13 @@ async function ahrefsKeywords(
  *
  * Two calls, and both hit the 50-unit floor, so a domain costs 100 units whatever it returns.
  * That is the whole reason this is not fetched on render anywhere — a dashboard with 40 sites
- * would cost 4 000 units per page view.
+ * would cost 4 000 units per page view. (`DOMAIN_UNITS` — the Ahrefs price this makes constant —
+ * lives in `metricsPricing.ts` now, beside `domainUnits()`, which prices the other providers.)
  *
  * DR is deliberately absent. It already arrives free through `/api/dr` and the public
  * domain-rating endpoint, which needs no key and works for every user; buying it again here
  * would charge people for a number they already have.
  */
-export const DOMAIN_UNITS = AHREFS_UNIT_FLOOR * 2;
-
 async function ahrefsDomain(creds: MetricsCreds, domain: string): Promise<MetricsResult<DomainMetric>> {
   const base = (creds.baseUrl || DEFAULT_BASE_URL.ahrefs).replace(/\/+$/, "");
   const auth = { headers: { Authorization: `Bearer ${creds.apiKey}`, Accept: "application/json" } };
@@ -398,11 +402,24 @@ export interface BacklinkStatsTotals {
  * The floored `backlinks-stats` call on its own. Split out so the route can price the whole pull
  * from the real domain count before a single refdomains page is spent, and hand the same answer
  * to `fetchBacklinkProfile` — paying for stats twice to save a function argument is not a trade.
+ *
+ * Provider-aware: Majestic answers the same question from a one-item `GetIndexItemInfo` (1 unit
+ * against Ahrefs' 50), whose `raw` is the Results row itself.
  */
 export async function fetchBacklinkStats(
   creds: MetricsCreds,
   domain: string,
 ): Promise<{ ok: true; raw: any; totals: BacklinkStatsTotals } | { ok: false; error: string }> {
+  if (creds.provider === "majestic") {
+    const r = await majesticItemInfo(creds, [domain]);
+    if (!r.items.length) return { ok: false, error: r.error ?? "majestic empty" };
+    const row = r.items[0];
+    return {
+      ok: true,
+      raw: row.raw,
+      totals: { refDomainsTotal: row.refDomains, backlinksTotal: row.backlinks },
+    };
+  }
   const base = (creds.baseUrl || DEFAULT_BASE_URL.ahrefs).replace(/\/+$/, "");
   const auth = { headers: { Authorization: `Bearer ${creds.apiKey}`, Accept: "application/json" } };
   const date = new Date().toISOString().slice(0, 10);
@@ -571,10 +588,253 @@ export async function fetchBacklinkProfile(
   // choice that is never the right one, this path is Ahrefs-only and says so.
   if (creds.provider === "semrush") return { items: [], units: 0, error: "provider_unsupported" };
   try {
-    return await ahrefsProfile(creds, domain, opts);
+    return creds.provider === "majestic"
+      ? await majesticProfile(creds, domain, opts)
+      : await ahrefsProfile(creds, domain, opts);
   } catch (e: any) {
     return { items: [], units: 0, error: String(e?.message ?? e) };
   }
+}
+
+// ─── Majestic ──────────────────────────────────────────────────────────────────
+//
+// The third provider, and the first that does not speak either of the other two protocols. It
+// is command-oriented: one URL, `cmd` and `app_api_key` in the query string, and a
+// `{ Code, DataTables }` envelope where failure often arrives dressed as HTTP 200. Two rules
+// follow from that and both are load-bearing:
+//
+// 1. The envelope's `Code` — not the HTTP status — decides success. `mjError` restates envelope
+//    failures in HTTP vocabulary (`majestic 401: Invalid API key`) so everything downstream that
+//    diagnoses by `gatewayStatusFromError` keeps working without a Majestic branch.
+// 2. Row fields are read case-insensitively through `mjPick`, because Majestic has renamed
+//    columns across its own history and the web-adapted gateway is not obliged to match the
+//    official snapshots the docs were written from.
+
+/** Fresh Index, not the historic default. This is the Majestic counterpart of Ahrefs' "live"
+ *  figures the profile screens are built around; the historic index would count links the
+ *  target lost years ago and read as a permanently wrong refdomain total. */
+const MAJESTIC_DATASOURCE = "fresh";
+
+/** Read one row field across the names it has shipped under, case-insensitively. */
+function mjPick(row: Record<string, any>, ...names: string[]): any {
+  const lower = new Map(Object.keys(row).map(k => [k.toLowerCase(), k]));
+  for (const n of names) {
+    const k = lower.get(n.toLowerCase());
+    if (k != null && row[k] !== "" && row[k] != null) return row[k];
+  }
+  return null;
+}
+
+/** Rows of a named DataTable. The docs pin table names per cmd (`Results`, `BackLinks`, …);
+ *  matching without case costs nothing and survives a rename. */
+function mjTable(d: any, ...names: string[]): Record<string, any>[] {
+  const tables = d?.DataTables ?? {};
+  const wanted = names.map(n => n.toLowerCase());
+  for (const key of Object.keys(tables)) {
+    if (wanted.includes(key.toLowerCase()) && Array.isArray(tables[key]?.Data)) return tables[key].Data;
+  }
+  return [];
+}
+
+function mjError(d: any): string | null {
+  if (!d || d.Code === "OK") return null;
+  const msg = String(d.ErrorMessage ?? d.FullError ?? "error").slice(0, 300);
+  if (/invalid/i.test(msg) && /key/i.test(msg)) return `majestic 401: ${msg}`;
+  if (/notenoughunits|insufficient/i.test(msg)) return `majestic 402: ${msg}`;
+  return `majestic 400: ${msg}`;
+}
+
+/** One command call. Auth rides in the query — Majestic's convention, not a header. */
+async function majesticCall(
+  creds: MetricsCreds,
+  params: Record<string, string>,
+): Promise<{ ok: true; data: any } | { ok: false; error: string }> {
+  const base = (creds.baseUrl || DEFAULT_BASE_URL.majestic).replace(/\/+$/, "");
+  const search = new URLSearchParams({ app_api_key: creds.apiKey, ...params });
+  try {
+    const res = await requestWithRetry(
+      `${base}/api/json?${search}`,
+      { headers: { Accept: "application/json" } },
+      creds.apiKey, creds.provider,
+    );
+    if (!res.ok) return { ok: false, error: `majestic ${res.status}: ${(await res.text()).slice(0, 300)}` };
+    const d = await res.json().catch(() => null);
+    const err = mjError(d);
+    return err ? { ok: false, error: err } : { ok: true, data: d };
+  } catch (e: any) {
+    return { ok: false, error: String(e?.message ?? e) };
+  }
+}
+
+export interface MajesticItemStats {
+  item: string;
+  status: string | null;
+  trustFlow: number | null;
+  citationFlow: number | null;
+  refDomains: number | null;
+  backlinks: number | null;
+  raw: any;
+}
+
+/**
+ * Batched `GetIndexItemInfo` — TF/CF and link counts for up to 100 items in one call, at one
+ * index-item unit per item. Batching is not an optimization here but the documented contract:
+ * the docs are explicit that one-item loops are the thing never to do. `Status` rides along
+ * because `MayExist` means the counts are incomplete (the item sits below Majestic's backlink
+ * threshold) and a caller quoting them as authoritative would lie.
+ */
+async function majesticItemInfo(
+  creds: MetricsCreds,
+  items: string[],
+): Promise<{ items: MajesticItemStats[]; units: number; error?: string }> {
+  const usable = items.map(s => s.trim()).filter(Boolean).slice(0, 100);
+  if (!usable.length) return { items: [], units: 0 };
+  const params: Record<string, string> = {
+    cmd: "GetIndexItemInfo",
+    items: String(usable.length),
+    datasource: MAJESTIC_DATASOURCE,
+  };
+  usable.forEach((it, i) => { params[`item${i}`] = it; });
+
+  const res = await majesticCall(creds, params);
+  if (!res.ok) return { items: [], units: 0, error: res.error };
+  const rows = mjTable(res.data, "Results");
+  const byItem = new Map<string, MajesticItemStats>();
+  for (const r of rows) {
+    const item = String(mjPick(r, "Item", "Domain") ?? "").toLowerCase().replace(/^www\./, "");
+    if (!item) continue;
+    byItem.set(item, {
+      item,
+      status: mjPick(r, "Status") ? String(mjPick(r, "Status")) : null,
+      trustFlow: num(mjPick(r, "TrustFlow")),
+      citationFlow: num(mjPick(r, "CitationFlow")),
+      refDomains: num(mjPick(r, "RefDomains")),
+      backlinks: num(mjPick(r, "ExtBackLinks", "ExtBacklinks")),
+      raw: r,
+    });
+  }
+  // An item the index has never seen simply has no row — the same reconciliation every batched
+  // call here makes: billed for what came back, not for what was asked.
+  return { items: usable.map(it => byItem.get(it.toLowerCase().replace(/^www\./, ""))).filter(Boolean) as MajesticItemStats[], units: rows.length || MAJESTIC_STATS_UNITS };
+}
+
+/**
+ * Majestic domain metrics. One call, one unit. Majestic has no concept of organic traffic or
+ * ad spend, so those stay null rather than zero — same distinction `num()` exists for.
+ * TF/CF ride in the payload for callers that want them; `dr` stays null exactly as on the
+ * Ahrefs path, because DR comes from the free `/api/dr` endpoint for everyone.
+ */
+async function majesticDomain(creds: MetricsCreds, domain: string): Promise<MetricsResult<DomainMetric>> {
+  const r = await majesticItemInfo(creds, [domain]);
+  if (r.error && !r.items.length) return { items: [], units: 0, error: r.error };
+  const row = r.items[0];
+  if (!row) return { items: [], units: 0, error: "majestic empty" };
+  return {
+    units: MAJESTIC_STATS_UNITS,
+    items: [{
+      domain,
+      dr: null,
+      refDomains: row.refDomains,
+      backlinks: row.backlinks,
+      orgTraffic: null,
+      orgKeywords: null,
+      orgCost: null,
+      payload: row.raw,
+    }],
+  };
+}
+
+/**
+ * Majestic referring domains — the third provider's answer to the profile pull.
+ *
+ * `GetRefDomains` pages through `From`/`Count` (web adapters cap `Count` at 1000) and bills
+ * `1000 + rows` per call, so the pull walks whole pages until one comes back short. `TrustFlow`
+ * lands in the `dr` slot of {@link RefDomainItem} — the column every consumer of this shape
+ * renders — and is the one place a Majestic number wears an Ahrefs-flavored name; the UI
+ * relabels the column when the active provider is Majestic. `minDr` filters on it client-side:
+ * the command has no server-side TF filter, and the completeness contract already treats a
+ * filtered run as a deliberate subset (`sawEnd` is only trusted when `minDr === 0`).
+ */
+async function majesticProfile(
+  creds: MetricsCreds,
+  domain: string,
+  opts: { minDr?: number; stats?: any } = {},
+): Promise<MetricsResult<BacklinkProfile> & { sawEnd?: boolean; unitsSpent?: number }> {
+  let stats = opts.stats ?? null;
+  if (!stats) {
+    const s = await fetchBacklinkStats(creds, domain);
+    if (!s.ok) return { items: [], units: 0, error: s.error, unitsSpent: 0 };
+    stats = s.raw;
+  }
+  // The stats call this pull was priced from was already spent — by the caller if it was passed
+  // in, by the fetch above if not. Either way it belongs on this pull's meter once.
+  let unitsSpent = MAJESTIC_STATS_UNITS;
+
+  const refDomains: RefDomainItem[] = [];
+  const seen = new Set<string>();
+  const minDr = opts.minDr && opts.minDr > 0 ? opts.minDr : 0;
+
+  let sawEnd = false;
+  let partialError = "";
+  let from = 0;
+  for (;;) {
+    const res = await majesticCall(creds, {
+      cmd: "GetRefDomains",
+      item: domain,
+      datasource: MAJESTIC_DATASOURCE,
+      Count: String(MAJESTIC_REFDOMAIN_PAGE_SIZE),
+      From: String(from),
+    });
+    if (!res.ok) {
+      if (refDomains.length === 0) return { items: [], units: unitsSpent, error: res.error, unitsSpent };
+      partialError = res.error; // keep the pages already paid for, marked incomplete
+      break;
+    }
+    const rows = mjTable(res.data, "Results");
+    unitsSpent += MAJESTIC_REFDOMAIN_ANALYSIS_UNITS + rows.length;
+    if (!rows.length) { sawEnd = true; break; }
+
+    let added = 0;
+    for (const r of rows) {
+      const refDomain = String(mjPick(r, "RefDomain", "Domain", "Item") ?? "")
+        .toLowerCase().replace(/^www\./, "");
+      if (!refDomain.includes(".") || seen.has(refDomain)) continue;
+      const tf = num(mjPick(r, "TrustFlow"));
+      if (minDr && (tf == null || tf < minDr)) continue;
+      seen.add(refDomain);
+      refDomains.push({
+        refDomain,
+        dr: tf,
+        linksToTarget: num(mjPick(r, "BackLinks", "ExtBackLinks")),
+        dofollow: Number(mjPick(r, "NoFollow", "NoFollowLinks") ?? 0) === 0,
+        firstSeen: String(mjPick(r, "FirstIndexedDate", "FirstSeen") ?? ""),
+      });
+      added++;
+    }
+    if (rows.length < MAJESTIC_REFDOMAIN_PAGE_SIZE) { sawEnd = true; break; }
+    if (added === 0) break; // offset drifting in place — same guard as the Ahrefs loop
+    from += MAJESTIC_REFDOMAIN_PAGE_SIZE;
+  }
+
+  const total = num(mjPick(stats, "RefDomains"));
+  const live = num(mjPick(stats, "ExtBackLinks"));
+  const dofollowCount = refDomains.filter(r => r.dofollow).length;
+
+  const result: MetricsResult<BacklinkProfile> & { sawEnd?: boolean; unitsSpent?: number } = {
+    units: unitsSpent,
+    unitsSpent,
+    sawEnd,
+    items: [{
+      refDomainsTotal: total,
+      backlinksTotal: live,
+      // NoFollow is per-row on this command, so unlike the Ahrefs estimate this one is exact
+      // when the column is present — and null-safe when it is not.
+      dofollowPct: refDomains.length ? Math.round((dofollowCount / refDomains.length) * 100) : null,
+      refDomains,
+    }],
+  };
+  if (partialError) result.error = partialError;
+  return result;
 }
 
 // ─── Competitors and their keywords ────────────────────────────────────────────
@@ -600,6 +860,9 @@ export async function fetchOrganicCompetitors(
 ): Promise<MetricsResult<CompetitorItem>> {
   if (!creds.apiKey) return { items: [], units: 0, error: "no_key" };
   if (!normCountry(opts.country)) return { items: [], units: 0, error: "no_country" };
+  // Majestic has no organic-search data at all — the honest answer is the same one Semrush-only
+  // users got before their path existed, not a request its key cannot answer.
+  if (creds.provider === "majestic") return { items: [], units: 0, error: "provider_unsupported" };
   if (creds.provider === "semrush") return semrushCompetitors(creds, domain, opts);
   return ahrefsCompetitors(creds, domain, opts);
 }
@@ -691,6 +954,7 @@ export async function fetchOrganicKeywords(
 ): Promise<MetricsResult<OrganicKeywordItem>> {
   if (!creds.apiKey) return { items: [], units: 0, error: "no_key" };
   if (!normCountry(opts.country)) return { items: [], units: 0, error: "no_country" };
+  if (creds.provider === "majestic") return { items: [], units: 0, error: "provider_unsupported" };
   if (creds.provider === "semrush") return semrushOrganicKeywords(creds, domain, opts);
   return ahrefsOrganicKeywords(creds, domain, opts);
 }
@@ -932,6 +1196,7 @@ export async function fetchKeywordIdeas(
 ): Promise<MetricsResult<KeywordMetric>> {
   if (!creds.apiKey) return { items: [], units: 0, error: "no_key" };
   if (!normCountry(opts.country)) return { items: [], units: 0, error: "no_country" };
+  if (creds.provider === "majestic") return { items: [], units: 0, error: "provider_unsupported" };
   const s = seed.trim();
   if (!s) return { items: [], units: 0, error: "no_seed" };
   // Ahrefs takes the seed through a comma-separated parameter, so a comma cannot be expressed.
@@ -961,7 +1226,7 @@ export async function fetchVolumeHistory(
 ): Promise<MetricsResult<VolumePoint>> {
   if (!creds.apiKey) return { items: [], units: 0, error: "no_key" };
   if (!normCountry(opts.country)) return { items: [], units: 0, error: "no_country" };
-  if (creds.provider === "semrush") return { items: [], units: 0, error: "provider_unsupported" };
+  if (creds.provider !== "ahrefs") return { items: [], units: 0, error: "provider_unsupported" };
 
   const base = (creds.baseUrl || DEFAULT_BASE_URL.ahrefs).replace(/\/+$/, "");
   // No `select`: this endpoint always returns date + volume and rejects nothing else.
@@ -1087,6 +1352,7 @@ export async function fetchKeywordMetrics(
 ): Promise<MetricsResult<KeywordMetric>> {
   if (!creds.apiKey) return { items: [], units: 0, error: "no_key" };
   if (!normCountry(opts.country)) return { items: [], units: 0, error: "no_country" };
+  if (creds.provider === "majestic") return { items: [], units: 0, error: "provider_unsupported" };
   try {
     return creds.provider === "semrush"
       ? await semrushKeywords(creds, keywords, opts)
@@ -1104,7 +1370,9 @@ export async function fetchDomainMetrics(
   try {
     return creds.provider === "semrush"
       ? await semrushDomain(creds, domain)
-      : await ahrefsDomain(creds, domain);
+      : creds.provider === "majestic"
+        ? await majesticDomain(creds, domain)
+        : await ahrefsDomain(creds, domain);
   } catch (e: any) {
     return { items: [], units: 0, error: String(e?.message ?? e) };
   }

@@ -8,7 +8,7 @@
 // the provider log and through it the Prisma client. Prices are shared knowledge; sockets are not.
 import { MetricsProvider, UNIT_PRICE_USD, estimateCostUsd, estimateKeywordUnits, priceExpand, priceEnrich } from "./metricsPricing";
 
-export const METRICS_PROVIDERS: MetricsProvider[] = ["ahrefs", "semrush"];
+export const METRICS_PROVIDERS: MetricsProvider[] = ["ahrefs", "semrush", "majestic"];
 
 // Keyword-source pricing is defined in `metrics.ts` and re-exported here so the existing browser
 // imports (`priceExpand`/`priceEnrich` from `@/lib/seo/metricsClient`) keep working. The functions
@@ -35,6 +35,9 @@ export type MetricsMode = "official" | "reseller" | "custom";
 export const RESELLER_BASE_URL: Record<MetricsProvider, string> = {
   ahrefs: "https://ahrefs-api.groupbuyseo.org",
   semrush: "https://api-semrush.groupbuyseo.org",
+  // Majestic's gateway is wire-identical to api.majestic.com (same `cmd` + `app_api_key`), so
+  // the official/reseller distinction is — as elsewhere — a host and a key, nothing else.
+  majestic: "https://majestic-api.groupbuyseo.org",
 };
 
 export interface MetricsClientCreds {
@@ -47,7 +50,7 @@ export interface MetricsClientCreds {
 export function getMetricsProvider(): MetricsProvider {
   if (typeof window === "undefined") return "ahrefs";
   const p = localStorage.getItem("seoMetricsProvider");
-  return p === "semrush" ? "semrush" : "ahrefs";
+  return p === "semrush" || p === "majestic" ? p : "ahrefs";
 }
 
 export function getMetricsMode(provider?: MetricsProvider): MetricsMode {
@@ -107,6 +110,22 @@ export function getMetricsCreds(provider?: MetricsProvider): MetricsClientCreds 
     baseUrl: (localStorage.getItem(`seoMetricsBaseUrl_${p}`) || "").trim(),
     cap: Number(localStorage.getItem(`seoMetricsCap_${p}`) || 0) || 0,
   };
+}
+
+/**
+ * Credentials for a keyword-side call (volumes, difficulty, ideas, organic rows).
+ *
+ * Majestic holds no keyword data, so a caller about to price or fetch keywords must not ride the
+ * active provider when it is Majestic — the key would be sent to a provider that has nothing to
+ * answer with. Instead the call falls back to whichever keyword-capable key exists, Ahrefs
+ * first, exactly the order the auto keyword-source chain walks. With neither key present the
+ * Ahrefs-shaped empty creds come back and the route's `no_key` answers honestly.
+ */
+export function getKeywordCapableCreds(): MetricsClientCreds {
+  const active = getMetricsProvider();
+  if (active === "ahrefs" || active === "semrush") return getMetricsCreds(active);
+  const fallback: MetricsProvider = hasMetricsKey("ahrefs") ? "ahrefs" : "semrush";
+  return getMetricsCreds(fallback);
 }
 
 export function hasMetricsKey(provider?: MetricsProvider): boolean {

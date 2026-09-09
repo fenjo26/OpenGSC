@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Flame, Loader2, AlertTriangle } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
-import { getMetricsCreds, getMetricsWithKd, setMetricsWithKd, estimateCostUsd, formatUsd } from "@/lib/seo/metricsClient";
+import { getKeywordCapableCreds, getMetricsWithKd, setMetricsWithKd, estimateCostUsd, formatUsd } from "@/lib/seo/metricsClient";
 
 interface MarketRow { country: string; total: number; missing: number; units: number }
 interface Summary {
@@ -60,7 +60,8 @@ export default function MetricsWarmup() {
     } catch { /* first run */ }
   }, []);
 
-  const creds = mounted ? getMetricsCreds() : { provider: "ahrefs" as const, apiKey: "", baseUrl: "", cap: 0 };
+  // Warmup loads keyword weights, so its creds resolve off Majestic onto a keyword-capable key.
+  const creds = mounted ? getKeywordCapableCreds() : { provider: "ahrefs" as const, apiKey: "", baseUrl: "", cap: 0 };
   const hasKey = creds.apiKey.length > 4;
 
   const body = useCallback((doFetch: boolean) => ({

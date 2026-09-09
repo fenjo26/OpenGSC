@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { rawQuery, rawExec } from "@/lib/db/raw";
 import { fetchKeywordMetrics, estimateKeywordUnits, type MetricsProvider } from "@/lib/seo/metrics";
+import { parseMetricsProvider } from "@/lib/seo/metricsPricing";
 import {
   readKeywordCache, writeKeywordCache, staleKeywords, recordUsage, releaseUnusedUnits,
   withinCap, normalizeKeyword,
@@ -65,17 +66,35 @@ async function readSettings(userId: string): Promise<{
     if (!raw) return blank;
     const s = JSON.parse(raw) as Record<string, any>;
 
-    const provider: MetricsProvider = s.seoMetricsProvider === "semrush" ? "semrush" : "ahrefs";
-    const mode = String(s[`seoMetricsMode_${provider}`] ?? "");
-    const slot = mode === "reseller" || mode === "custom"
-      ? `seoKey_${provider}__${mode}`
-      : `seoKey_${provider}`;
+    // Warmup loads keyword weights, which Majestic cannot serve. An active Majestic provider
+    // therefore runs the schedule on whichever keyword-capable key exists, Ahrefs first — the
+    // same resolution the browser's keyword screens make client-side.
+    const active = String(s.seoMetricsProvider ?? "ahrefs");
+    const candidates: MetricsProvider[] = active === "majestic"
+      ? ["ahrefs", "semrush"]
+      : [parseMetricsProvider(active)];
+    let provider: MetricsProvider = candidates[0];
+    let apiKey = "";
+    let baseUrl: string | undefined;
+    for (const p of candidates) {
+      const mode = String(s[`seoMetricsMode_${p}`] ?? "");
+      const slot = mode === "reseller" || mode === "custom"
+        ? `seoKey_${p}__${mode}`
+        : `seoKey_${p}`;
+      const k = String(s[slot] ?? s[`seoKey_${p}`] ?? "").trim();
+      if (k) {
+        provider = p;
+        apiKey = k;
+        baseUrl = String(s[`seoMetricsBaseUrl_${p}`] ?? "").trim() || undefined;
+        break;
+      }
+    }
 
     return {
       schedule: { ...DEFAULT_WARMUP_SCHEDULE, ...(s.seoWarmupSchedule ?? {}) },
       provider,
-      apiKey: String(s[slot] ?? s[`seoKey_${provider}`] ?? "").trim(),
-      baseUrl: String(s[`seoMetricsBaseUrl_${provider}`] ?? "").trim() || undefined,
+      apiKey,
+      baseUrl,
     };
   } catch { return blank; }
 }

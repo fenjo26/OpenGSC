@@ -18,7 +18,8 @@ import { isGuestView, shareTokenFromPath } from "@/lib/shareParam";
 // The pure half of the metrics module — see its header. A client component importing
 // `@/lib/seo/metrics` drags the Prisma client into the browser bundle.
 import {
-  estimateProfileUnits, DEFAULT_BASE_URL, gatewayStatusFromError, type SubscriptionInfo,
+  estimateProfileUnits, estimateMajesticProfileUnits, DEFAULT_BASE_URL, gatewayStatusFromError,
+  type MetricsProvider, type SubscriptionInfo,
 } from "@/lib/seo/metricsPricing";
 import { METRICS_GATEWAY_URL } from "@/components/SeoToolsSettings";
 
@@ -56,11 +57,17 @@ const fmt = (n: number | null | undefined) =>
 
 /** Everything the source placard needs about where paid calls go, resolved once after mount. */
 interface SourceCfg {
-  provider: "ahrefs" | "semrush";
+  provider: MetricsProvider;
   mode: MetricsMode;
   host: string;
   cap: number;
 }
+
+const SOURCE_LABEL: Record<MetricsProvider, string> = {
+  ahrefs: "Ahrefs API v3",
+  semrush: "Semrush API",
+  majestic: "Majestic API",
+};
 
 export default function BacklinkProfile({ siteDbId }: { siteDbId: string }) {
   const { t } = useLanguage();
@@ -187,9 +194,15 @@ export default function BacklinkProfile({ siteDbId }: { siteDbId: string }) {
   const previous = history.length > 1 ? history[0] : null;
   // Priced from the last pull's real domain count — the same figure the server reserves when it
   // refreshes. Before the first pull there is no count to price from, and the chip hides rather
-  // than guessing: the discovery pull costs one floored stats call and nothing more.
+  // than guessing: the discovery pull costs one floored stats call and nothing more. Each
+  // provider prices the pull in its own currency (Majestic's per-page analysis figure is far
+  // cheaper in dollars than Ahrefs' floored calls).
   const estDomains = latest?.refDomains ?? null;
-  const units = estDomains != null ? estimateProfileUnits(estDomains) : null;
+  const units = estDomains != null
+    ? (getMetricsCreds().provider === "majestic"
+        ? estimateMajesticProfileUnits(estDomains)
+        : estimateProfileUnits(estDomains))
+    : null;
   const usd = units != null ? estimateCostUsd(units, getMetricsCreds().provider) : null;
 
   const chip = (label: string, value: string, hint?: string) => (
@@ -249,7 +262,7 @@ export default function BacklinkProfile({ siteDbId }: { siteDbId: string }) {
           {hasKey ? (
             <>
               <span>{t("blsrcTitle")}: <strong style={{ color: "var(--color-text-primary)" }}>
-                {src.provider === "ahrefs" ? "Ahrefs API v3" : "Semrush API"}
+                {SOURCE_LABEL[src.provider]}
               </strong></span>
               <code style={{ fontFamily: "monospace", fontSize: "11px" }}>{src.host.replace(/^https?:\/\//, "")}</code>
               <span className="metric-chip" style={{ fontWeight: 500 }}>{modeLabel}</span>
@@ -310,7 +323,11 @@ export default function BacklinkProfile({ siteDbId }: { siteDbId: string }) {
               <thead>
                 <tr style={{ background: "var(--color-bg)", borderBottom: "1px solid var(--color-border)" }}>
                   <th style={th}>{t("blpDomain")}</th>
-                  <th style={{ ...th, textAlign: "center", width: "70px" }}>DR</th>
+                  {/* Majestic scores referring domains in Trust Flow, not Domain Rating — the
+                      number occupies the same column, so only the header says which. */}
+                  <th style={{ ...th, textAlign: "center", width: "70px" }}>
+                    {src?.provider === "majestic" ? "TF" : "DR"}
+                  </th>
                   <th style={{ ...th, textAlign: "center", width: "80px" }}>{t("blpLinks")}</th>
                   <th style={{ ...th, width: "110px" }}>{showLost ? t("blpLostAt") : t("blpFirstSeen")}</th>
                 </tr>

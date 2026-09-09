@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { workspaceUserId } from "@/lib/team/workspace";
-import { fetchDomainMetrics, DOMAIN_UNITS, MetricsProvider } from "@/lib/seo/metrics";
+import {
+  fetchDomainMetrics, domainUnits, parseMetricsProvider,
+} from "@/lib/seo/metrics";
 import {
   readDomainCache, writeDomainCache, readUsage, recordUsage, releaseUnusedUnits, withinCap,
   DOMAIN_TTL_DAYS,
@@ -29,7 +31,7 @@ export async function POST(req: Request) {
     : [];
   if (!domains.length) return NextResponse.json({ metrics: {}, units: 0 });
 
-  const provider = (b.provider === "semrush" ? "semrush" : "ahrefs") as MetricsProvider;
+  const provider = parseMetricsProvider(b.provider);
   const wantFetch = !!b.fetch;
   const apiKey = String(b.apiKey ?? "").trim();
   const baseUrl = String(b.baseUrl ?? "").trim() || undefined;
@@ -54,7 +56,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ metrics: cache, units: 0, usage, fetched: 0, fromCache: true });
   }
 
-  const units = DOMAIN_UNITS * stale.length;
+  // Each provider's own price per domain: two floored Ahrefs calls, one Semrush report line,
+  // one Majestic index item. Reserved per domain and reconciled to the ones that answered —
+  // which also fixes Semrush having been metered at the Ahrefs rate.
+  const perDomain = domainUnits(provider);
+  const units = perDomain * stale.length;
   if (!(await withinCap(userId, provider, units, cap))) {
     return NextResponse.json({
       metrics: cache, units: 0, usage, fetched: 0, error: "cap_exceeded", wouldSpend: units,
@@ -74,10 +80,10 @@ export async function POST(req: Request) {
     fetched++;
   }
 
-  // Reserved two floored calls per stale domain; the gateway billed only the domains that
-  // answered. `fetchDomainMetrics` reports 0 units on failure, so the failed share — or the
+  // Reserved per stale domain; the gateway billed only the domains that answered.
+  // `fetchDomainMetrics` reports 0 units on failure, so the failed share — or the
   // whole reservation when nothing came back — returns to the month before the counter is read.
-  await releaseUnusedUnits(userId, provider, units, DOMAIN_UNITS * fetched);
+  await releaseUnusedUnits(userId, provider, units, perDomain * fetched);
 
   return NextResponse.json({
     metrics: await readDomainCache(domains, provider),

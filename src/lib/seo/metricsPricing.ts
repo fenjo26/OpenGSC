@@ -15,7 +15,14 @@
 // in `metrics.ts`, which re-exports this whole module so every existing server-side import keeps
 // working unchanged.
 
-export type MetricsProvider = "ahrefs" | "semrush";
+export type MetricsProvider = "ahrefs" | "semrush" | "majestic";
+
+/**
+ * Providers that can serve keyword-side calls (volumes, difficulty, ideas, organic rows).
+ * Majestic is a backlink-intelligence index — it has no keyword data at all — so every
+ * keyword-side surface resolves off it onto whichever of these actually has a key.
+ */
+export const KEYWORD_CAPABLE_PROVIDERS: MetricsProvider[] = ["ahrefs", "semrush"];
 
 export interface MetricsCreds {
   provider: MetricsProvider;
@@ -27,7 +34,22 @@ export interface MetricsCreds {
 export const DEFAULT_BASE_URL: Record<MetricsProvider, string> = {
   ahrefs: "https://api.ahrefs.com",
   semrush: "https://api.semrush.com",
+  // The official Majestic JSON API. Same wire protocol as the reseller gateway: host plus
+  // `/api/json`, `app_api_key` query param, `cmd`. Only the key decides which one answers.
+  majestic: "https://api.majestic.com",
 };
+
+/**
+ * The one provider parse for every route and tool that takes `provider` from a request body.
+ *
+ * The old per-route ternaries (`b.provider === "semrush" ? "semrush" : "ahrefs"`) predates the
+ * third provider and would have coerced a Majestic key into an Ahrefs request — a 401 that
+ * looks like a broken key while the screen says "Connected". Unknown values still fall back to
+ * ahrefs, which keeps old clients (and hand-rolled curl calls) working unchanged.
+ */
+export function parseMetricsProvider(v: unknown): MetricsProvider {
+  return v === "semrush" || v === "majestic" ? v : "ahrefs";
+}
 
 // ─── Cost model ────────────────────────────────────────────────────────────────
 
@@ -40,8 +62,11 @@ export const DEFAULT_BASE_URL: Record<MetricsProvider, string> = {
  * `metricsClient` re-exports both, so every existing import keeps working unchanged.
  */
 export const UNIT_PRICE_USD: Record<MetricsProvider, number> = {
-  ahrefs: 0.000025,
+  // Raised 2026-09 at the gateway (was 0.000025). Still the reseller's published rate, only
+  // now the expensive one — which is exactly why the majestic column below exists.
+  ahrefs: 0.0001,
   semrush: 0.00006,
+  majestic: 0.000002,
 };
 
 export function estimateCostUsd(units: number, provider: MetricsProvider): number {
@@ -268,7 +293,7 @@ export interface SubscriptionInfo {
  * them; this lets a caller distinguish "key rejected" from "gateway down" without re-fetching.
  */
 export function gatewayStatusFromError(error: string | null | undefined): number | null {
-  const m = /^(?:ahrefs|semrush) (\d{3})/.exec(String(error ?? "").trim());
+  const m = /^(?:ahrefs|semrush|majestic) (\d{3})/.exec(String(error ?? "").trim());
   return m ? Number(m[1]) : null;
 }
 
@@ -283,6 +308,50 @@ export function estimateProfileUnits(domains: number): number {
     + estimateUnits("site-explorer/refdomains", REFDOMAIN_FIELDS, Math.max(1, domains))
     + AHREFS_UNIT_FLOOR;
 }
+
+// ─── Majestic ───────────────────────────────────────────────────────────────────
+//
+// Majestic bills three upstream resource pools (index-item, analysis, retrieval) that the
+// gateway collapses into one `FullCost` figure, charged against the same credit ledger at
+// `UNIT_PRICE_USD.majestic`. The published formulas, kept as data so a gateway repricing is a
+// one-line edit the same way the Ahrefs field table is:
+//
+//   GetIndexItemInfo   1 × items            (batch up to 100)
+//   GetRefDomains      1000 + rows          (web adapters cap Count at 1000)
+//   GetBackLinkData    5000 + rows          (not used here — the refdomain view is the product)
+//
+// Non-OK bodies are not charged, so a failed page costs nothing and the reconciliation that
+// releases unused units on the Ahrefs path applies unchanged.
+
+/** The fixed analysis cost of one GetRefDomains call, before its retrieval rows. */
+export const MAJESTIC_REFDOMAIN_ANALYSIS_UNITS = 1000;
+
+/** Web adapters cap `Count` at 1000 — the Majestic counterpart of REFDOMAIN_PAGE_SIZE. */
+export const MAJESTIC_REFDOMAIN_PAGE_SIZE = 1000;
+
+/** GetIndexItemInfo costs one index-item unit per requested item; the profile stats call asks for one. */
+export const MAJESTIC_STATS_UNITS = 1;
+
+/** Total reserve for a pull of `domains` referring domains: stats + analysis per page + a row each. */
+export function estimateMajesticProfileUnits(domains: number): number {
+  const rows = Math.max(1, domains);
+  const pages = Math.ceil(rows / MAJESTIC_REFDOMAIN_PAGE_SIZE);
+  return MAJESTIC_STATS_UNITS + pages * MAJESTIC_REFDOMAIN_ANALYSIS_UNITS + rows;
+}
+
+/**
+ * What one domain-metrics fetch costs, by provider. Replaces the bare `DOMAIN_UNITS` constant in
+ * the reservation/reconciliation math, which had been charging Semrush's 10-unit report at the
+ * Ahrefs rate — a 10× overcount our meter held even though the gateway only took 10.
+ */
+export function domainUnits(provider: MetricsProvider): number {
+  if (provider === "majestic") return MAJESTIC_STATS_UNITS;
+  if (provider === "semrush") return 10; // `domain_ranks`: 10 units per line, one line per domain
+  return DOMAIN_UNITS;
+}
+
+/** Two floored Ahrefs calls (metrics + backlinks-stats); see ahrefsDomain in metrics.ts. */
+export const DOMAIN_UNITS = AHREFS_UNIT_FLOOR * 2;
 
 /**
  * Every field here costs 1 unit. The tempting ones — `traffic_domain` (10) and

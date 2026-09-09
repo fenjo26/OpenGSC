@@ -47,6 +47,7 @@ export const SEO_PROVIDERS: KeyCardProvider[] = [
 export const METRICS_PROVIDER_CARDS: KeyCardProvider[] = [
   { id: "ahrefs", storageKey: "seoKey_ahrefs", name: "Ahrefs", roleKey: "seoRoleAhrefs", placeholder: "Ahrefs API v3 key", hintKey: "seoSetHintAhrefs", instrKey: "seoSetInstrAhrefs", docsUrl: "https://docs.ahrefs.com/", color: "#f76d01", logo: "A" },
   { id: "semrush", storageKey: "seoKey_semrush", name: "Semrush", roleKey: "seoRoleSemrush", placeholder: "Semrush API key", hintKey: "seoSetHintSemrush", instrKey: "seoSetInstrSemrush", docsUrl: "https://developer.semrush.com/api/", color: "#ff642d", logo: "S" },
+  { id: "majestic", storageKey: "seoKey_majestic", name: "Majestic", roleKey: "seoRoleMajestic", placeholder: "Majestic API key", hintKey: "seoSetHintMajestic", instrKey: "seoSetInstrMajestic", docsUrl: "https://developer-support.majestic.com/api/", color: "#00A4E4", logo: "M" },
 ];
 
 // AEO citation-check engines that aren't already covered by the main AI provider keys

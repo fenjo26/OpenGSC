@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { workspaceUserId } from "@/lib/team/workspace";
 import {
-  fetchKeywordMetrics, estimateKeywordUnits, MetricsProvider,
+  fetchKeywordMetrics, estimateKeywordUnits, parseMetricsProvider,
 } from "@/lib/seo/metrics";
 import {
   readKeywordCache, writeKeywordCache, staleKeywords, readUsage, recordUsage, releaseUnusedUnits,
@@ -33,7 +33,7 @@ export async function POST(req: Request) {
   if (!keywords.length) return NextResponse.json({ metrics: {}, units: 0 });
 
   const country = String(b.country ?? "us").toLowerCase();
-  const provider = (b.provider === "semrush" ? "semrush" : "ahrefs") as MetricsProvider;
+  const provider = parseMetricsProvider(b.provider);
   const withDifficulty = !!b.withDifficulty;
   const wantFetch = !!b.fetch;
   const apiKey = String(b.apiKey ?? "").trim();

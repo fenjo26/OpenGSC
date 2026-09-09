@@ -21,7 +21,7 @@ import { drForDomains } from "@/lib/drops/drFree";
 import { getOwnerSettings } from "@/lib/engineKeysServer";
 import { analyseDomainHistory } from "@/lib/drops/history";
 import { fetchLLM } from "@/lib/llm";
-import { fetchDomainMetrics, DOMAIN_UNITS, type MetricsProvider } from "@/lib/seo/metrics";
+import { fetchDomainMetrics, domainUnits, parseMetricsProvider } from "@/lib/seo/metrics";
 import type { DropSource, DropStage } from "@/lib/drops/types";
 
 const STAGES: DropStage[] = [
@@ -285,13 +285,13 @@ export const DROPS_TOOLS: McpTool[] = [
       },
     },
     handler: async (userId, args) => {
-      assertConfirmed(args, "drops_enrich_refdomains bills Ahrefs units");
+      assertConfirmed(args, "drops_enrich_refdomains bills metrics units (Ahrefs or Majestic)");
       const domains = domainsArg(args).slice(0, 25);
       if (!domains.length) throw new Error("domains required");
       // Same key chain the warmup cron uses — the one server-side authority on where this
       // instance's metrics credentials live (mode slots, reseller/custom overrides, fallbacks).
       const settings = await getOwnerSettings(userId);
-      const provider = (settings.seoMetricsProvider === "semrush" ? "semrush" : "ahrefs") as MetricsProvider;
+      const provider = parseMetricsProvider(settings.seoMetricsProvider);
       const mode = String(settings[`seoMetricsMode_${provider}`] ?? "");
       const slot = mode === "reseller" || mode === "custom" ? `seoKey_${provider}__${mode}` : `seoKey_${provider}`;
       const apiKey = String(settings[slot] ?? settings[`seoKey_${provider}`] ?? "").trim();
@@ -302,7 +302,8 @@ export const DROPS_TOOLS: McpTool[] = [
       // whatever the failed share did not bill. Without it a 404 mid-batch would be a silent
       // donation to the provider.
       const { recordUsage, withinCap, releaseUnusedUnits } = await import("@/lib/seo/metricsStore");
-      const units = DOMAIN_UNITS * domains.length;
+      const perDomain = domainUnits(provider);
+      const units = perDomain * domains.length;
       // cap 0 means "no cap configured" — withinCap passes it through as unlimited.
       const cap = Math.max(0, Number(settings.seoMetricsCap ?? 0));
       if (!(await withinCap(userId, provider, units, cap))) throw new Error("cap_exceeded: monthly metrics cap would be exceeded — raise the cap or shrink the batch");
@@ -315,9 +316,9 @@ export const DROPS_TOOLS: McpTool[] = [
         const m = res.items[0];
         results.push({ domain, refdomains: m.refDomains ?? undefined, backlinks: m.backlinks ?? undefined });
       }
-      await releaseUnusedUnits(userId, provider, units, DOMAIN_UNITS * results.length);
+      await releaseUnusedUnits(userId, provider, units, perDomain * results.length);
       const updated = await writeMetricsUpdates(userId, results);
-      return { updated, results, unitsSpent: DOMAIN_UNITS * results.length };
+      return { updated, results, unitsSpent: perDomain * results.length };
     },
   },
 

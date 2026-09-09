@@ -3,8 +3,8 @@ import { authOptions } from "@/lib/auth";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import {
-  fetchBacklinkProfile, fetchBacklinkStats, estimateProfileUnits,
-  REFDOMAIN_PAGE_SIZE, MetricsProvider,
+  fetchBacklinkProfile, fetchBacklinkStats, estimateProfileUnits, estimateMajesticProfileUnits,
+  parseMetricsProvider, REFDOMAIN_PAGE_SIZE,
 } from "@/lib/seo/metrics";
 import { readUsage, recordUsage, releaseUnusedUnits, withinCap } from "@/lib/seo/metricsStore";
 import {
@@ -47,7 +47,7 @@ export async function POST(req: Request) {
   if (!site) return NextResponse.json({ error: userId ? "Site not found" : "Unauthorized" }, { status: userId ? 404 : 401 });
   const target = normDomain(site.url.replace(/^sc-domain:/, ""));
 
-  const provider = (b.provider === "semrush" ? "semrush" : "ahrefs") as MetricsProvider;
+  const provider = parseMetricsProvider(b.provider);
   const wantFetch = !!b.fetch && !isGuest;
   const apiKey = String(b.apiKey ?? "").trim();
   const baseUrl = String(b.baseUrl ?? "").trim() || undefined;
@@ -73,7 +73,11 @@ export async function POST(req: Request) {
   const stats = await fetchBacklinkStats({ provider, apiKey, baseUrl }, target);
   if (!stats.ok) return respond({ error: stats.error }, 502);
 
-  const units = estimateProfileUnits(stats.totals.refDomainsTotal ?? REFDOMAIN_PAGE_SIZE);
+  // Each provider prices the same pull in its own currency: Ahrefs' two floored calls plus
+  // per-row refdomains, Majestic's per-page analysis figure plus a retrieval unit a row.
+  const units = provider === "majestic"
+    ? estimateMajesticProfileUnits(stats.totals.refDomainsTotal ?? REFDOMAIN_PAGE_SIZE)
+    : estimateProfileUnits(stats.totals.refDomainsTotal ?? REFDOMAIN_PAGE_SIZE);
   if (!userId || !(await withinCap(userId, provider, units, cap))) {
     return respond({ error: "cap_exceeded", wouldSpend: units }, 429);
   }

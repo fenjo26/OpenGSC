@@ -12,7 +12,7 @@
 import { Download, Loader2 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { COUNTRIES } from "@/lib/seo/regions";
-import { getMetricsCreds, priceKeywordLoad, formatUsd } from "@/lib/seo/metricsClient";
+import { getKeywordCapableCreds, priceKeywordLoad, formatUsd } from "@/lib/seo/metricsClient";
 import type { UseKeywordWeights } from "@/lib/seo/useKeywordWeights";
 
 export default function KeywordWeightsBar({
@@ -25,7 +25,8 @@ export default function KeywordWeightsBar({
   compact?: boolean;
 }) {
   const { t } = useLanguage();
-  const provider = getMetricsCreds().provider;
+  // Pricing a keyword load — must be priced in the currency of the provider that will answer it.
+  const provider = getKeywordCapableCreds().provider;
   const { units, usd } = priceKeywordLoad(w.missing, w.withKd, provider);
   const blocked = w.busy || !w.hasKey || w.missing === 0;
 

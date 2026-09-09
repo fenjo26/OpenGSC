@@ -24,6 +24,7 @@ import {
 } from "@/lib/seo/metricsClient";
 import { getAhrefsDrKey, setAhrefsDrKey } from "@/lib/seo/keys";
 import type { MetricsProvider, SubscriptionInfo } from "@/lib/seo/metricsPricing";
+import { parseMetricsProvider } from "@/lib/seo/metricsPricing";
 
 // ─── Ahrefs free Domain Rating key ──────────────────────────────────────────────
 // Unrelated to the paid Site Explorer integration below: this key only unlocks the free
@@ -102,12 +103,20 @@ function AhrefsDrKeyCard() {
 const OFFICIAL_DOCS: Record<MetricsProvider, string> = {
   ahrefs: "https://docs.ahrefs.com/",
   semrush: "https://developer.semrush.com/api/",
+  majestic: "https://developer-support.majestic.com/api/",
 };
 
 /** Shown under the key field so the destination is never implicit. */
 const OFFICIAL_HOST: Record<MetricsProvider, string> = {
   ahrefs: "https://api.ahrefs.com",
   semrush: "https://api.semrush.com",
+  majestic: "https://api.majestic.com",
+};
+
+const PROVIDER_LABEL: Record<MetricsProvider, string> = {
+  ahrefs: "Ahrefs",
+  semrush: "Semrush",
+  majestic: "Majestic",
 };
 
 export default function MetricsSettingsSection() {
@@ -125,7 +134,7 @@ export default function MetricsSettingsSection() {
   // localStorage after mount only — reading it during render would make the first client pass
   // disagree with the server-rendered HTML.
   useEffect(() => {
-    setProvider(localStorage.getItem("seoMetricsProvider") === "semrush" ? "semrush" : "ahrefs");
+    setProvider(parseMetricsProvider(localStorage.getItem("seoMetricsProvider")));
   }, []);
 
   useEffect(() => {
@@ -238,17 +247,24 @@ export default function MetricsSettingsSection() {
 
         {/* 1. Which data provider */}
         <span className="tool-section-label">{t("metricsStep1")}</span>
-        <div style={{ display: "flex", gap: "8px", marginBottom: "18px" }}>
-          {(["ahrefs", "semrush"] as const).map(p => (
+        <div style={{ display: "flex", gap: "8px", marginBottom: "18px", flexWrap: "wrap" }}>
+          {(["ahrefs", "semrush", "majestic"] as const).map(p => (
             <button key={p} className={provider === p ? "pill active" : "pill"}
               onClick={() => chooseProvider(p)} style={{ cursor: "pointer" }}>
-              {p === "ahrefs" ? "Ahrefs" : "Semrush"}
+              {PROVIDER_LABEL[p]}
             </button>
           ))}
           <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)", alignSelf: "center", lineHeight: 1.5 }}>
             {t("metricsProviderHint")}
           </span>
         </div>
+        {/* Majestic indexes links, not keywords. Said here rather than discovered in the keyword
+            tools: with Majestic active those tools keep running on Ahrefs/Semrush keys. */}
+        {provider === "majestic" && (
+          <div style={{ margin: "-10px 0 18px", fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.55, maxWidth: "620px" }}>
+            {t("metricsMajesticHint")}
+          </div>
+        )}
 
         {/* 2. Where the key comes from — the question that replaced "custom base URL" */}
         <span className="tool-section-label">{t("metricsStep2")}</span>
@@ -335,7 +351,7 @@ export default function MetricsSettingsSection() {
             )}
             {subBalance?.reset && <span style={{ color: "var(--color-text-tertiary)" }}> · {t("blsrcResetAt")} {subBalance.reset}</span>}
             {subBalance?.expires && <span style={{ color: "var(--color-text-tertiary)" }}> · {t("blsrcKeyExpires")} {subBalance.expires}</span>}
-            {provider === "ahrefs" && sub && !sub.info && (
+            {(provider === "ahrefs" || provider === "majestic") && sub && !sub.info && (
               <div style={{ marginTop: "4px", color: "var(--color-text-tertiary)" }}>{t("blsrcBalanceUnknown")}</div>
             )}
             {subBalance?.expiringSoon && (

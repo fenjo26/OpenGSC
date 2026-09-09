@@ -12,6 +12,7 @@
 import { prisma } from "@/lib/prisma";
 import { McpTool, lim, resolveSite, siteArg, normDomain } from "./shared";
 import { readKeywordCache, readDomainCache } from "@/lib/seo/metricsStore";
+import { parseMetricsProvider } from "@/lib/seo/metricsPricing";
 import { readRefDomains, readSnapshots } from "@/lib/seo/backlinkStore";
 import { rawQuery } from "@/lib/db/raw";
 
@@ -71,20 +72,21 @@ export const METRICS_TOOLS: McpTool[] = [
     description:
       "Referring domains, backlink count, estimated organic traffic and traffic value for one or more domains, " +
       "from the local cache. Read-only and free. Domain Rating is NOT here — it comes from a separate free " +
-      "endpoint and is available for every site without any of this. Empty means not loaded, not zero.",
+      "endpoint and is available for every site without any of this. Empty means not loaded, not zero. " +
+      "Provider chooses whose rows to read: ahrefs (default), semrush, or majestic (Majestic rows carry no traffic figures).",
     cost: "local",
     inputSchema: {
       type: "object",
       properties: {
         domains: { type: "array", items: { type: "string" }, description: "Domains to look up (max 100)" },
-        provider: { type: "string", description: "ahrefs (default) or semrush" },
+        provider: { type: "string", description: "ahrefs (default), semrush, or majestic" },
       },
       required: ["domains"],
     },
     handler: async (_userId, args) => {
       const domains = asStrings(args.domains).map(normDomain).filter(d => d.includes(".")).slice(0, 100);
       if (!domains.length) throw new Error("Missing required argument: domains");
-      const provider = args.provider === "semrush" ? "semrush" : "ahrefs";
+      const provider = parseMetricsProvider(args.provider);
       const cache = await readDomainCache(domains, provider);
       return {
         provider,

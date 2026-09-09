@@ -3,7 +3,7 @@ import { authOptions } from "@/lib/auth";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import {
-  fetchKeywordMetrics, estimateKeywordUnits, MetricsProvider,
+  fetchKeywordMetrics, estimateKeywordUnits, parseMetricsProvider,
 } from "@/lib/seo/metrics";
 import {
   readKeywordCache, writeKeywordCache, staleKeywords, readUsage, recordUsage, releaseUnusedUnits,
@@ -53,7 +53,7 @@ export async function POST(req: Request) {
   const minImpressions = Math.max(1, Number(b.minImpressions ?? 10));
   const limit = Math.min(MAX_KEYWORDS, Math.max(10, Number(b.limit ?? 1000)));
   const withDifficulty = !!b.withDifficulty;
-  const provider = (b.provider === "semrush" ? "semrush" : "ahrefs") as MetricsProvider;
+  const provider = parseMetricsProvider(b.provider);
   const wantFetch = !!b.fetch;
   const apiKey = String(b.apiKey ?? "").trim();
   const baseUrl = String(b.baseUrl ?? "").trim() || undefined;

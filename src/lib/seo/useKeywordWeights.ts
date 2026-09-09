@@ -10,7 +10,7 @@
 // assumed a single country would silently serve German volumes for US keywords.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getMetricsCreds, getMetricsWithKd, setMetricsWithKd } from "./metricsClient";
+import { getMetricsCreds, getKeywordCapableCreds, getMetricsWithKd, setMetricsWithKd } from "./metricsClient";
 
 export interface KeywordWeight {
   volume: number | null;
@@ -58,7 +58,7 @@ export function useKeywordWeights(
 
   useEffect(() => {
     setWithKdS(getMetricsWithKd());
-    setHasKey(getMetricsCreds().apiKey.length > 4);
+    setHasKey(getKeywordCapableCreds().apiKey.length > 4);
   }, []);
 
   const setWithKd = (v: boolean) => { setWithKdS(v); setMetricsWithKd(v); };
@@ -85,7 +85,8 @@ export function useKeywordWeights(
   );
 
   const request = useCallback(async (doFetch: boolean) => {
-    const creds = getMetricsCreds();
+    // Keyword-side call: resolves off Majestic onto whichever keyword-capable key exists.
+    const creds = getKeywordCapableCreds();
     const merged: Record<string, KeywordWeight> = {};
 
     for (const [country, keywords] of byCountry.entries()) {
