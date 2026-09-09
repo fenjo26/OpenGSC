@@ -6,6 +6,7 @@ import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import type { DropSource, DropStage } from "@/lib/drops/types";
 import { usePersistedState } from "@/lib/usePersistedState";
 import { getMetricsCreds } from "@/lib/seo/metricsClient";
+import { DrSparkline, drSeriesText, type DrPoint } from "@/components/DrSparkline";
 
 type Run = {
   id: string; label: string | null; source: string; sourceRef: string | null;
@@ -189,6 +190,12 @@ export default function DropsPage() {
   const autoDrNoKey = useRef(false);
   const [drKeyMissing, setDrKeyMissing] = useState(false);
 
+  // The panel's own monthly DR series per domain (DrSnapshot), read for the visible page. It
+  // turns the bare DR number into the veto signal: 22→8 over months is a filter, not decay.
+  // Like auto-DR above, each domain is asked once per session and the answer only ever adds.
+  const [drHist, setDrHist] = useState<Record<string, DrPoint[]>>({});
+  const drHistTried = useRef<Set<string>>(new Set());
+
   const loadRuns = useCallback(async () => {
     try {
       const res = await fetch("/api/drops/runs", { cache: "no-store" });
@@ -267,6 +274,27 @@ export default function DropsPage() {
     })();
     return () => { cancelled = true; };
   }, [rows, enrichBusy, notMigrated]);
+
+  // DR history for the visible page — same one-ask-per-session batch shape as auto-DR. The
+  // route is a pure local read (DrSnapshot), so it neither spends anything nor needs a key;
+  // domains with no stored series are simply absent from the response.
+  useEffect(() => {
+    if (notMigrated) return;
+    const targets = [...new Set(rows.map(r => r.domain))].filter(d => !drHistTried.current.has(d));
+    if (!targets.length) return;
+    targets.forEach(d => drHistTried.current.add(d));
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/dr/history?domains=${encodeURIComponent(targets.join(","))}`);
+        if (!res.ok) return;
+        const body = await res.json();
+        const hist = (body?.history ?? {}) as Record<string, DrPoint[]>;
+        if (!cancelled && Object.keys(hist).length) setDrHist(prev => ({ ...prev, ...hist }));
+      } catch { /* decorative until it exists */ }
+    })();
+    return () => { cancelled = true; };
+  }, [rows, notMigrated]);
 
   // Any filter change invalidates the current page number — page 4 of the old result set is not
   // page 4 of the new one, and staying there shows an empty table for a filter that has matches.
@@ -822,6 +850,11 @@ export default function DropsPage() {
         {enrichProgress.done.toLocaleString()} / {enrichProgress.total.toLocaleString()} · <b>{enrichProgress.updated.toLocaleString()}</b> {tr("dropsEnrichUpdated")}
       </span>}
       {drKeyMissing && <span style={{ color: "var(--color-accent-orange, #ff9f0a)" }}>{tr("dropsEnrichAutoNoKey")}</span>}
+      {/* The "why" behind the DR sparkline in the table: the series is the veto signal, and it
+          is free — this panel accumulates it as a side effect of the checks it already makes. */}
+      <span title={tr("drHistCalloutDesc")} style={{ color: "var(--color-text-secondary)", cursor: "help" }}>
+        💡 {tr("drHistCallout")}
+      </span>
       <span style={{ flex: 1, minWidth: 160, color: "var(--color-text-tertiary)", fontSize: 12 }}>
         {tr("dropsEnrichAutoHint")} {tr("dropsAttribution")}
       </span>
@@ -929,7 +962,23 @@ export default function DropsPage() {
                   {r.lastError === "zone_uncheckable" &&
                     <span title={tr("dropsZoneUncheckable")} style={{ marginLeft: 6, color: "var(--color-text-tertiary)", cursor: "help" }}>⚖</span>}
                 </td>
-                <td style={tdNum}>{r.dr ?? "—"}</td>
+                <td style={tdNum}>
+                  {r.dr ?? "—"}
+                  {/* The stored monthly series, next to the number it qualifies — and the veto
+                      flag when the window shows a ≥5-point fall. Nothing stored, nothing drawn:
+                      the series appears as the panel accumulates it. */}
+                  {(() => {
+                    const hist = drHist[r.domain];
+                    if (!hist || hist.length < 2) return null;
+                    const drop = hist[hist.length - 1].dr - hist[0].dr;
+                    const title = `${tr("drHistHint")}\n\n${drSeriesText(hist)}`
+                      + (drop <= -5 ? `\n\n${tr("drHistFlag").replace("{n}", String(Math.abs(drop)))}` : "");
+                    return <span title={title} style={{ marginLeft: 6, display: "inline-flex", verticalAlign: "-4px", alignItems: "center", gap: 3 }}>
+                      <DrSparkline points={hist} />
+                      {drop <= -5 && <AlertTriangle size={12} color="#ff6b62" style={{ flexShrink: 0 }} />}
+                    </span>;
+                  })()}
+                </td>
                 <td style={tdNum}>{r.refdomainsDofollow ?? r.refdomains ?? "—"}</td>
                 <td style={tdNum} title={tr("dropsSnapshotsHint")}>
                   {/* The number is the summary; the link is the archive itself. The starred

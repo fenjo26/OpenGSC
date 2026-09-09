@@ -18,6 +18,7 @@ import { checkAvailabilityBatch } from "@/lib/drops/availability";
 import { profileForDomain, registryAnswerable } from "@/lib/drops/registries";
 import { fetchSnapshotTimestamps, fetchWaybackProfile } from "@/lib/drops/wayback";
 import { drForDomains } from "@/lib/drops/drFree";
+import { flagDrSeries, readDrHistory, recordDrSnapshots } from "@/lib/seo/drHistory";
 import { getOwnerSettings } from "@/lib/engineKeysServer";
 import { analyseDomainHistory } from "@/lib/drops/history";
 import { fetchLLM } from "@/lib/llm";
@@ -251,7 +252,9 @@ export const DROPS_TOOLS: McpTool[] = [
     cost: "net",
     idempotent: false,
     description:
-      "Fetch Ahrefs Domain Rating for up to 60 domains through the free public endpoint (needs the free Ahrefs DR key in Settings → SEO Metrics, or falls back to the paid Ahrefs key; 7-day server cache). Attribution required when displayed: 'Domain Rating by Ahrefs'.",
+      "Fetch Ahrefs Domain Rating for up to 60 domains through the free public endpoint (needs the free Ahrefs DR key in Settings → SEO Metrics, or falls back to the paid Ahrefs key; 7-day server cache). " +
+      "Every fresh rating also lands in the panel's own monthly DR history (DrSnapshot), and the response carries each domain's accumulated series with a penalty flag (a fall of ≥5 points across the window reads as a Google filter, not lost links). " +
+      "Attribution required when displayed: 'Domain Rating by Ahrefs'.",
     inputSchema: {
       type: "object",
       required: ["domains"],
@@ -267,7 +270,12 @@ export const DROPS_TOOLS: McpTool[] = [
       const { ratings, keyFound } = await drForDomains(userId, domains);
       if (!keyFound) throw new Error("no_ahrefs_key: set the free DR key in Settings → SEO Metrics (or any paid Ahrefs key)");
       const updated = await writeMetricsUpdates(userId, Object.entries(ratings).map(([domain, dr]) => ({ domain, dr })));
-      return { updated, ratings, attribution: "Domain Rating by Ahrefs — https://ahrefs.com/" };
+      // The accumulated series rides along: one call answers "what is the DR" and "what has it
+      // been doing" — the second half is the buy/no-buy signal.
+      const history = await readDrHistory(domains);
+      const flags: Record<string, ReturnType<typeof flagDrSeries>> = {};
+      for (const d of Object.keys(history)) flags[d] = flagDrSeries(history[d]);
+      return { updated, ratings, history, flags, attribution: "Domain Rating by Ahrefs — https://ahrefs.com/" };
     },
   },
 
@@ -328,37 +336,65 @@ export const DROPS_TOOLS: McpTool[] = [
     cost: "paid",
     idempotent: false,
     description:
-      "PAID: Domain Rating history for one domain via GoAnyAPI — the DR series, not the snapshot. " +
-      "Bills 2 credits per returned month (a free preview with includeDr=false lists the months and costs nothing). " +
+      "Domain Rating history for one domain — the DR series by month, not the snapshot. Free first: " +
+      "when the panel has accumulated a local series (DrSnapshot, 2+ months — filled automatically by every fresh DR check and by the watch loop once a month), it is returned at no cost with source:'local', no key and no confirm needed. " +
+      "Otherwise it fetches via GoAnyAPI at 2 credits per returned month (includeDr=false = free preview of which months exist) and stores the fetched months locally, so the series never costs twice. " +
       "A DR series is a veto signal a single number cannot be: 22→24→12→11→8 is not lost links, it is a hit — " +
-      "read a sustained drop as a spam/penalty flag before acquiring. Uses the GoAnyAPI key (Settings → SEO Tools). " +
-      "Needs confirm: true for the paid variant.",
+      "read a drop of ≥5 points as a spam/penalty flag before acquiring. Pass vendor:true to force the GoAnyAPI window even when a local series exists. Needs confirm: true for the paid variant.",
     inputSchema: {
       type: "object",
       required: ["domain"],
       properties: {
         domain: { type: "string", description: "One domain to inspect" },
-        confirm: { type: "boolean", description: "must be true to fetch DR values (2 credits/month); omit or false = free preview of which months exist" },
+        vendor: { type: "boolean", description: "Skip the free local series and fetch the full GoAnyAPI window (2 credits/month)" },
+        confirm: { type: "boolean", description: "must be true for the paid GoAnyAPI fetch; the local series needs neither key nor confirm" },
         includeDr: { type: "boolean", description: "Fetch DR values (default: follows confirm)" },
       },
     },
     handler: async (userId, args) => {
-      const includeDr = args.includeDr === true || (args.includeDr !== false && args.confirm === true);
-      if (includeDr) assertConfirmed(args, "drops_dr_history bills 2 GoAnyAPI credits per returned month (use includeDr=false for the free preview)");
       const domain = String(args.domain ?? "").trim().toLowerCase()
         .replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
       if (!domain.includes(".")) throw new Error("domain required");
 
+      // Local first. The panel's own series costs nothing, needs no key, and answers the same
+      // question the vendor does — the vendor is now the fallback for domains the panel has
+      // never seen twice, plus a one-time backfill that becomes local history after the call.
+      if (args.vendor !== true) {
+        const local = await readDrHistory([domain]);
+        const points = local[domain];
+        if (points && points.length >= 2) {
+          const flag = flagDrSeries(points)!;
+          return {
+            domain,
+            source: "local",
+            history: points,
+            drFirst: flag.first, drLast: flag.last, change: flag.drop,
+            note: flag.flagged
+              ? "DR fell materially across the stored window — treat as a spam/penalty flag, not lost links."
+              : undefined,
+          };
+        }
+      }
+
+      const includeDr = args.includeDr === true || (args.includeDr !== false && args.confirm === true);
+      if (includeDr) assertConfirmed(args, "drops_dr_history bills 2 GoAnyAPI credits per returned month (use includeDr=false for the free preview)");
       const settings = await getOwnerSettings(userId);
       const apiKey = String(settings.seoKey_goanyapi ?? "").trim();
-      if (!apiKey) throw new Error("no_goanyapi_key: configure the GoAnyAPI key in Settings → SEO Tools");
+      if (!apiKey) throw new Error("no_goanyapi_key: no local series accumulated yet and no GoAnyAPI key configured (Settings → SEO Tools)");
 
       const r = await goanyDrHistory(apiKey, domain, includeDr);
       if (!r.data) throw new Error(r.error ?? "no_data");
+      // The paid months become permanent local history (source: goanyapi) — this call is the
+      // last time they cost anything. Backfilled months are in the past, so they never block
+      // the panel's own current-month measurement.
+      await recordDrSnapshots(r.data.history
+        .filter(m => m.dr != null)
+        .map(m => ({ domain, dr: m.dr as number, source: "goanyapi", month: m.month })));
       const drs = r.data.history.map(m => m.dr).filter((v): v is number => v != null);
       const first = r.data.history[0], last = r.data.history[r.data.history.length - 1];
       return {
         domain: r.data.domain,
+        source: "goanyapi",
         includeDr,
         history: r.data.history,
         credits: r.credits,

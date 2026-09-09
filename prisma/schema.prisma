@@ -1066,6 +1066,22 @@ model DrCache {
   checkedAt DateTime @default(now())
 }
 
+// Monthly DR history, one row per (domain, month) — the self-accumulated answer to "what did
+// this domain's DR do over time", which a single overwritten DrCache row cannot give. A sharp
+// fall across months is the expired-domain veto signal: DR 22→8 reads as a Google filter, not
+// lost links. Written as a side effect of every fresh DR measurement (never on cache hits);
+// the monthly key dedupes repeats within the month. Same pattern as BacklinkSnapshot.
+model DrSnapshot {
+  domain    String
+  month     String // YYYY-MM
+  dr        Float
+  source    String   @default("ahrefs-free") // ahrefs-free | goanyapi
+  checkedAt DateTime @default(now())
+
+  @@id([domain, month])
+  @@index([domain, checkedAt])
+}
+
 // Domain traffic estimates (GoAnyAPI). Cached like DrCache and for the same reason — every call
 // costs credits — but with a much longer life: the upstream figures are monthly, so refetching
 // within the same month buys the identical numbers twice.

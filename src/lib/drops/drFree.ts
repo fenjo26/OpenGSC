@@ -13,6 +13,7 @@
 
 import { rawQuery } from "@/lib/db/raw";
 import { runUpsert } from "@/lib/db/upsert";
+import { recordDrSnapshots } from "@/lib/seo/drHistory";
 import { getOwnerSettings } from "@/lib/engineKeysServer";
 import { DEFAULT_USER_AGENT } from "@/lib/security/safeFetch";
 
@@ -92,6 +93,9 @@ export async function drForDomains(userId: string, domains: string[]): Promise<D
           values: { domain, dr, checkedAt: new Date().toISOString() },
           update: { dr: "set", checkedAt: "set" },
         });
+        // Fresh measurement → this month's DrSnapshot row. This is the hook that makes the
+        // drops catalogue accumulate its own DR history instead of renting GoAnyAPI's.
+        await recordDrSnapshots([{ domain, dr, source: "ahrefs-free" }]);
       } catch { /* cache best-effort, same as /api/dr */ }
     }
   }));

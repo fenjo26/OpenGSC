@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { runUpsert } from "@/lib/db/upsert";
 import { rawQuery } from "@/lib/db/raw";
 import { goanyDr } from "@/lib/seo/goanyapi";
+import { recordDrSnapshots } from "@/lib/seo/drHistory";
 import { DEFAULT_USER_AGENT } from "@/lib/security/safeFetch";
 
 // GET /api/dr?domains=a.com,b.com — Ahrefs Domain Rating via the free public endpoint.
@@ -89,6 +90,9 @@ export async function GET(req: Request) {
           values: { domain: d, dr, checkedAt: new Date().toISOString() },
           update: { dr: "set", checkedAt: "set" },
         });
+        // A fresh measurement also appends this month's DrSnapshot — the free self-accumulated
+        // DR history. The monthly key makes repeats idempotent, so no TTL reasoning here.
+        await recordDrSnapshots([{ domain: d, dr, source: useGoAny ? "goanyapi" : "ahrefs-free" }]);
       } catch { /* cache best-effort */ }
     }
   }));

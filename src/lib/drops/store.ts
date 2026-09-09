@@ -2,6 +2,8 @@
 // can be tested without one; the interesting decisions here are about volume, not about logic.
 
 import { prisma } from "@/lib/prisma";
+import { rawQuery } from "@/lib/db/raw";
+import { monthKey } from "@/lib/seo/drHistory";
 import { parseDomainList, summariseSkips } from "./ingest";
 import { tldOf } from "./registries";
 import type { DropSource, DropStage } from "./types";
@@ -762,6 +764,52 @@ export interface WatchRow {
   userId: string;
   domain: string;
   checkIntervalMin: number;
+}
+
+/**
+ * Watched rows whose stored DR series lags the current month — the watch loop's monthly DR
+ * refresh queue. "Lags" is judged by the (domain, month) key in DrSnapshot: no row for the
+ * current month means the domain is due exactly one fresh measurement, and repeats within the
+ * month are swallowed by that same key. This is what turns a watched domain's DR from a single
+ * number into the month-by-month series the buy decision needs. Watched volume is user-scale
+ * (a radar toggle per row), so a bounded candidate scan cannot starve in practice.
+ */
+export async function staleDrWatchedRows(limit = 60): Promise<Array<{ userId: string; domain: string }>> {
+  const month = monthKey();
+  const watched: Array<{ userId: string; domain: string }> = await db.dropCandidate.findMany({
+    where: { watched: true },
+    select: { userId: true, domain: true },
+    take: 1000,
+  });
+  const domains = [...new Set(watched.map(r => r.domain))];
+  if (!domains.length) return [];
+
+  // domain → latest stored month. MAX on a YYYY-MM text column is the chronological max, and
+  // the IN list is chunked below SQLite's bound-parameter ceiling the same way every other
+  // bulk read here is. A missing table reads as "everything stale": the refresh then runs and
+  // its snapshot writes no-op — and it can only be reached when DropCandidate exists, so this
+  // is a mid-upgrade window at worst, not a steady state.
+  const latest: Record<string, string> = {};
+  try {
+    for (let i = 0; i < domains.length; i += CHUNK) {
+      const part = domains.slice(i, i + CHUNK);
+      const rows = await rawQuery(
+        `SELECT domain, MAX(month) AS latest FROM "DrSnapshot" WHERE domain IN (${part.map(() => "?").join(",")}) GROUP BY domain`,
+        ...part,
+      ) as Array<{ domain: string; latest: string }>;
+      for (const r of rows) latest[r.domain] = String(r.latest);
+    }
+  } catch { /* DrSnapshot missing until prisma db push */ }
+
+  const stale: Array<{ userId: string; domain: string }> = [];
+  const seen = new Set<string>();
+  for (const r of watched) {
+    if (seen.has(r.domain)) continue;
+    seen.add(r.domain);
+    if ((latest[r.domain] ?? "") < month) stale.push({ userId: r.userId, domain: r.domain });
+    if (stale.length >= limit) break;
+  }
+  return stale;
 }
 
 export interface WatchAlert {
