@@ -359,6 +359,10 @@ export interface RefDomainItem {
   linksToTarget: number | null;
   dofollow: boolean;
   firstSeen: string;
+  /** Majestic-only extras: Citation Flow, the donor's top Topical Trust Flow topic, its IP. */
+  cf?: number | null;
+  topic?: string;
+  ip?: string;
 }
 
 export interface BacklinkProfile {
@@ -625,6 +629,21 @@ function mjPick(row: Record<string, any>, ...names: string[]): any {
   return null;
 }
 
+/**
+ * Read a per-target dynamic field. `GetRefDomains` names several of its columns after the
+ * requested item — the link count for the queried target arrives as `BackLinks_<target>`, the
+ * first-seen date as `FirstLinkDate_<target>` — so exact names cannot be known in advance.
+ * Matched case-insensitively by prefix; the profile pull requests one item per call, so the
+ * first hit is the one.
+ */
+function mjPickPrefix(row: Record<string, any>, prefix: string): any {
+  const p = prefix.toLowerCase();
+  for (const k of Object.keys(row)) {
+    if (k.toLowerCase().startsWith(p) && row[k] !== "" && row[k] != null) return row[k];
+  }
+  return null;
+}
+
 /** Rows of a named DataTable. The docs pin table names per cmd (`Results`, `BackLinks`, …);
  *  matching without case costs nothing and survives a rename. */
 function mjTable(d: any, ...names: string[]): Record<string, any>[] {
@@ -748,12 +767,18 @@ async function majesticDomain(creds: MetricsCreds, domain: string): Promise<Metr
  * Majestic referring domains — the third provider's answer to the profile pull.
  *
  * `GetRefDomains` pages through `From`/`Count` (web adapters cap `Count` at 1000) and bills
- * `1000 + rows` per call, so the pull walks whole pages until one comes back short. `TrustFlow`
- * lands in the `dr` slot of {@link RefDomainItem} — the column every consumer of this shape
- * renders — and is the one place a Majestic number wears an Ahrefs-flavored name; the UI
- * relabels the column when the active provider is Majestic. `minDr` filters on it client-side:
- * the command has no server-side TF filter, and the completeness contract already treats a
- * filtered run as a deliberate subset (`sawEnd` is only trusted when `minDr === 0`).
+ * `1000 + rows` per call, so the pull walks whole pages until one comes back short. Row fields
+ * are the official command's: the domain sits in `Domain`, the links **to the queried target**
+ * in the dynamic `BackLinks_<target>` column (plain `ExtBackLinks` on this command is the
+ * DONOR's own backlink count — quoting it was the bug that read 400 000 links from one blog),
+ * first seen in `FirstLinkDate_<target>` with `FirstCrawled` as the fallback. The command has
+ * no nofollow data at all, so `dofollowPct` stays null rather than reading 100% fabricated.
+ *
+ * `TrustFlow` lands in the `dr` slot of {@link RefDomainItem} — the column every consumer of
+ * this shape renders — and the UI relabels the column when the active provider is Majestic.
+ * `minDr` filters on it client-side: the command has no server-side TF filter, and the
+ * completeness contract already treats a filtered run as a deliberate subset (`sawEnd` is only
+ * trusted when `minDr === 0`).
  */
 async function majesticProfile(
   creds: MetricsCreds,
@@ -777,6 +802,7 @@ async function majesticProfile(
   let sawEnd = false;
   let partialError = "";
   let from = 0;
+  let nofollowKnown = 0;
   for (;;) {
     const res = await majesticCall(creds, {
       cmd: "GetRefDomains",
@@ -796,18 +822,26 @@ async function majesticProfile(
 
     let added = 0;
     for (const r of rows) {
-      const refDomain = String(mjPick(r, "RefDomain", "Domain", "Item") ?? "")
+      const refDomain = String(mjPick(r, "Domain", "RefDomain", "Item") ?? "")
         .toLowerCase().replace(/^www\./, "");
       if (!refDomain.includes(".") || seen.has(refDomain)) continue;
       const tf = num(mjPick(r, "TrustFlow"));
       if (minDr && (tf == null || tf < minDr)) continue;
       seen.add(refDomain);
+      // Nofollow is not part of this command's schema; when a field does appear in some future
+      // index it is counted, and until then the percentage stays honestly unknown.
+      const nofollow = mjPick(r, "NoFollow", "NoFollowLinks");
+      const dofollow = nofollow == null ? true : Number(nofollow) === 0;
+      if (nofollow != null) nofollowKnown++;
       refDomains.push({
         refDomain,
         dr: tf,
-        linksToTarget: num(mjPick(r, "BackLinks", "ExtBackLinks")),
-        dofollow: Number(mjPick(r, "NoFollow", "NoFollowLinks") ?? 0) === 0,
-        firstSeen: String(mjPick(r, "FirstIndexedDate", "FirstSeen") ?? ""),
+        linksToTarget: num(mjPickPrefix(r, "BackLinks_") ?? mjPick(r, "MatchedLinks", "BackLinks")),
+        dofollow,
+        firstSeen: String(mjPickPrefix(r, "FirstLinkDate_") ?? mjPick(r, "FirstCrawled", "FirstIndexedDate", "FirstSeen") ?? ""),
+        cf: num(mjPick(r, "CitationFlow")),
+        topic: String(mjPick(r, "TopicalTrustFlow_Topic_0") ?? ""),
+        ip: String(mjPick(r, "IP") ?? ""),
       });
       added++;
     }
@@ -827,9 +861,11 @@ async function majesticProfile(
     items: [{
       refDomainsTotal: total,
       backlinksTotal: live,
-      // NoFollow is per-row on this command, so unlike the Ahrefs estimate this one is exact
-      // when the column is present — and null-safe when it is not.
-      dofollowPct: refDomains.length ? Math.round((dofollowCount / refDomains.length) * 100) : null,
+      // Majestic's command carries no nofollow column, so this is null unless the rows
+      // themselves brought a countable field — never a fabricated 100%.
+      dofollowPct: nofollowKnown > 0 && refDomains.length
+        ? Math.round((dofollowCount / refDomains.length) * 100)
+        : null,
       refDomains,
     }],
   };

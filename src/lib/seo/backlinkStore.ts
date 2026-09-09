@@ -15,10 +15,15 @@ import { rawQuery, rawExec } from "@/lib/db/raw";
 
 export interface RefDomainRecord {
   refDomain: string;
+  provider: string;
   dr: number | null;
   linksToTarget: number | null;
   dofollow: boolean;
   firstSeen: string;
+  /** Majestic-only extras, empty on Ahrefs rows. */
+  cf: number | null;
+  topic: string;
+  ip: string;
   lost: boolean;
   lostAt: string;
   source: "api" | "csv";
@@ -35,6 +40,12 @@ const today = () => new Date().toISOString().slice(0, 10);
 export const normDomain = (d: string) =>
   d.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
 
+/**
+ * Read one target's stored referring domains. `provider` scopes to one provider's view —
+ * except the literal `"all"`, which crosses providers for the merged tab: dedup happens
+ * downstream, because the store deliberately keeps both providers' row for a domain both
+ * have seen (their metrics are different numbers, not conflicting ones).
+ */
 export async function readRefDomains(
   target: string,
   opts: { provider?: string; includeLost?: boolean; limit?: number } = {},
@@ -45,19 +56,24 @@ export async function readRefDomains(
   const limit = Math.max(1, Math.min(100000, opts.limit ?? 500));
   try {
     const rows: any[] = await rawQuery(
-      `SELECT refDomain, dr, linksToTarget, dofollow, firstSeen, lost, lostAt, source, fetchedAt
+      `SELECT provider, refDomain, dr, linksToTarget, dofollow, firstSeen, cf, topic, ip,
+              lost, lostAt, source, fetchedAt
          FROM "RefDomainRow"
-        WHERE target = ? AND provider = ?${opts.includeLost ? "" : " AND lost = 0"}
+        WHERE target = ?${provider === "all" ? "" : " AND provider = ?"}${opts.includeLost ? "" : " AND lost = 0"}
         ORDER BY lost ASC, dr DESC
         LIMIT ${limit}`,
-      normDomain(target), provider,
+      ...(provider === "all" ? [normDomain(target)] : [normDomain(target), provider]),
     );
     return rows.map(r => ({
       refDomain: r.refDomain,
+      provider: r.provider,
       dr: r.dr == null ? null : Number(r.dr),
       linksToTarget: r.linksToTarget == null ? null : Number(r.linksToTarget),
       dofollow: !!r.dofollow,
       firstSeen: r.firstSeen ?? "",
+      cf: r.cf == null ? null : Number(r.cf),
+      topic: r.topic ?? "",
+      ip: r.ip ?? "",
       lost: !!r.lost,
       lostAt: r.lostAt ?? "",
       source: r.source === "csv" ? "csv" : "api",
@@ -74,6 +90,9 @@ export interface RefDomainInput {
   linksToTarget?: number | null;
   dofollow?: boolean;
   firstSeen?: string;
+  cf?: number | null;
+  topic?: string;
+  ip?: string;
 }
 
 /**
@@ -117,6 +136,9 @@ export async function syncRefDomains(
           linksToTarget: r.linksToTarget ?? null,
           dofollow: r.dofollow === false ? 0 : 1,
           firstSeen: r.firstSeen ?? "",
+          cf: r.cf ?? null,
+          topic: r.topic ?? "",
+          ip: r.ip ?? "",
           // A domain present in this pull is live by definition, so both insert and update
           // reset the lost flag — that is how a link that came back stops reading as lost.
           lost: 0, lostAt: "",
@@ -126,6 +148,7 @@ export async function syncRefDomains(
           dr: "keep", linksToTarget: "keep",
           dofollow: "set",
           firstSeen: "keepEmpty",
+          cf: "keep", topic: "keep", ip: "keep",
           lost: "set", lostAt: "set",
           source: "set", fetchedAt: "set",
         },

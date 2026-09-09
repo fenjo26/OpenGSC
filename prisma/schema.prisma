@@ -1325,6 +1325,12 @@ model RefDomainRow {
   dofollow      Boolean  @default(true)
   firstSeen     String   @default("")
 
+  // Majestic extras (null/empty on Ahrefs rows): Citation Flow, top Topical
+  // Trust Flow topic, donor IP — the columns a PBN-check actually uses.
+  cf            Float?
+  topic         String   @default("")
+  ip            String   @default("")
+
   lost          Boolean  @default(false)
   lostAt        String   @default("")
   source        String   @default("api") // "api" | "csv"
