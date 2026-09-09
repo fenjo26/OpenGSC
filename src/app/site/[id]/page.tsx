@@ -5490,6 +5490,7 @@ export default function SitePage({
                 {!dataLoading && chg !== 0 && <Change pct={chg} invert={invert} />}
               </div>
             ))}
+            <TrafficChip domain={domain} shareToken={shareToken} style={blurStyle} />
           </div> : engineSummary ? (
             <div style={{ display: "flex", alignItems: "center", gap: "28px", flexWrap: "wrap" }}>
               {[
@@ -5505,15 +5506,10 @@ export default function SitePage({
                 </div>
               ))}
               <span style={{ fontSize: "12px", fontWeight: 600, color: engine === "bing" ? "#00809D" : "#FC3F1D" }}>{engine === "bing" ? "Bing" : t("seEngineYandex")} <span style={{ fontWeight: 400, color: "var(--color-text-secondary)" }}>· {t("seLiveData")}</span></span>
+              <TrafficChip domain={domain} shareToken={shareToken} style={blurStyle} />
             </div>
           ) : <div style={{ fontSize: "14px", fontWeight: 700, color: engine === "bing" ? "#00809D" : "#FC3F1D" }}>{engine === "bing" ? "Bing Webmaster" : t("seEngineYandexFull")} <span style={{ fontWeight: 400, fontSize: "12px", color: "var(--color-text-secondary)" }}>· {t("seLiveData")}</span></div>}
           
-                    {/* Traffic lives under the GSC strip now: the header got cramped once the chip and
-                        its no-key hint moved in, and this row is where the other domain-wide numbers sit. */}
-                    <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-                      <TrafficChip domain={domain} shareToken={shareToken} style={blurStyle} />
-                    </div>
-
           <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
             {/* Engine switcher — shown only when Bing/Yandex keys are configured */}
             {altEngines.length > 0 && (
