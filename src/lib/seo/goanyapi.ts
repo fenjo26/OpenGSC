@@ -21,7 +21,9 @@
 
 import { loggedFetch, type CallHandle } from "@/lib/providerLog/log";
 
-const BASE = "https://goanyapi.com/api/v1";
+// The documented host moved to api.goanyapi.com; the bare domain answered before, but the
+// docs' examples and the error taxonomy both now name the api. subdomain.
+const BASE = "https://api.goanyapi.com/api/v1";
 
 /**
  * Every call reports what it spent and what is left.
@@ -334,7 +336,9 @@ export async function goanyTraffic(apiKey: string, domain: string): Promise<GoAn
       countryCode: d?.CountryRank?.CountryCode ? String(d.CountryRank.CountryCode) : null,
       countryRank: num(d?.CountryRank?.Rank),
       monthly,
-      sources: sources(d.TrafficSources),
+      // GenAI rides in TrafficSources; newer responses also carry a dedicated aiTraffic block
+      // with the share spelled out — accepted as the fallback, never as a second source of truth.
+      sources: { ...sources(d.TrafficSources), genAI: num(sources(d.TrafficSources).genAI) ?? num(d?.aiTraffic?.share) },
       topCountries: (Array.isArray(d.TopCountryShares) ? d.TopCountryShares : [])
         .map((c: any) => ({ code: String(c?.CountryCode ?? ""), share: num(c?.Value) ?? 0 }))
         .filter((c: TrafficCountry) => c.code),
@@ -344,6 +348,58 @@ export async function goanyTraffic(apiKey: string, domain: string): Promise<GoAn
           cpc: num(k?.Cpc), estimatedValue: num(k?.EstimatedValue),
         }))
         .filter((k: TrafficKeyword) => k.keyword),
+    },
+  };
+}
+
+// ─── Credit balance ────────────────────────────────────────────────────────────
+
+export interface GoAnyBalance { remaining: number | null }
+
+/** Free, one call: the wallet the traffic/KD/SERP calls spend from. */
+export async function goanyBalance(apiKey: string): Promise<GoAnyResult<GoAnyBalance>> {
+  const r = await get<any>(apiKey, "credits/balance", {});
+  if (!r.data) return { ...r, data: null };
+  return { ...r, data: { remaining: num(r.data.remainingCredits) } };
+}
+
+// ─── Domain Rating history ─────────────────────────────────────────────────────
+
+export interface GoAnyDrMonth { month: string; dr: number | null }
+export interface GoAnyDrHistory {
+  domain: string;
+  /** Chronological YYYY-MM rows; `dr` is null in the free preview, which only reveals
+   *  which months exist and what the full answer will cost. */
+  history: GoAnyDrMonth[];
+}
+
+/**
+ * DR per month, for as far back as Ahrefs' index reaches into the domain.
+ *
+ * The two-stage pricing is part of the design: `includeDr=false` is a free preview listing
+ * the months on file, so a caller can price the paid answer before committing — the charge
+ * is 2 credits per returned month, and the preview exists precisely so "how far back" is
+ * never a surprise. A DR series is the veto signal a single DR number can never be: a domain
+ * sitting at DR 22→24→12→11→8 did not lose links, it was hit, and the drops funnel should
+ * read that as a spam-period flag rather than a bargain.
+ */
+export async function goanyDrHistory(
+  apiKey: string, domain: string, includeDr: boolean,
+): Promise<GoAnyResult<GoAnyDrHistory>> {
+  const r = await get<any>(apiKey, "dr-history", { domain, ...(includeDr ? { includeDr: "true" } : {}) });
+  if (!r.data) return { ...r, data: null };
+  const rows = Array.isArray(r.data.history) ? r.data.history : [];
+  return {
+    ...r,
+    data: {
+      domain: String(r.data?.query?.domain ?? domain),
+      history: rows.map((m: any) => {
+        const raw = String(m?.month ?? "");
+        // Months arrive numeric YYYYMM; normalized to YYYY-MM like every other series here.
+        const month = /^\d{6}$/.test(raw) ? `${raw.slice(0, 4)}-${raw.slice(4, 6)}` : raw;
+        return { month, dr: m?.dr == null ? null : num(m.dr) };
+      }).filter((m: GoAnyDrMonth) => /^\d{4}-\d{2}$/.test(m.month))
+        .sort((a: GoAnyDrMonth, b: GoAnyDrMonth) => a.month.localeCompare(b.month)),
     },
   };
 }

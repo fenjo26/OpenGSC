@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
-import { goanyKeywordDifficulty, goanyBacklinks } from "@/lib/seo/goanyapi";
+import { goanyKeywordDifficulty, goanyBacklinks, goanyBalance, goanyDrHistory } from "@/lib/seo/goanyapi";
 
 // POST /api/goanyapi — the two GoAnyAPI datasets that have no home of their own yet.
 //
@@ -76,5 +76,29 @@ export async function POST(req: Request) {
     });
   }
 
-  return NextResponse.json({ error: `unknown op "${op}" — expected "kd" or "backlinks"` }, { status: 400 });
+  if (op === "balance") {
+    const r = await goanyBalance(apiKey);
+    if (!r.data) return NextResponse.json({ error: r.error ?? "no_data" }, { status: 502 });
+    return NextResponse.json({ remainingCredits: r.data.remaining });
+  }
+
+  if (op === "dr-history") {
+    const domain = String(b?.domain ?? "").trim().toLowerCase()
+      .replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
+    if (!domain.includes(".")) return NextResponse.json({ error: "bad_domain" }, { status: 400 });
+    // includeDr=false is the provider's free preview: which months exist, no values. It lets a
+    // caller price the paid answer (2 credits per month) before committing.
+    const includeDr = b?.includeDr === true;
+    const r = await goanyDrHistory(apiKey, domain, includeDr);
+    if (!r.data) return NextResponse.json({ error: r.error ?? "no_data" }, { status: 502 });
+    return NextResponse.json({
+      domain: r.data.domain,
+      includeDr,
+      history: r.data.history,
+      credits: r.credits,
+      remainingCredits: r.remaining,
+    });
+  }
+
+  return NextResponse.json({ error: `unknown op "${op}" — expected "kd", "backlinks", "balance" or "dr-history"` }, { status: 400 });
 }

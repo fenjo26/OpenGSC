@@ -124,7 +124,10 @@ export async function GET(req: Request) {
 
   const r = await fetchIt();
   if (!r.data) {
-    return NextResponse.json({ traffic: null, cached: false, error: r.error ?? "no_data" }, { status: 502 });
+    // The provider travels with the failure: "no data" from Semrush TA and from GoAnyAPI are
+    // two different walls to hit, and a chip that labels the wall saves a retry against the
+    // wrong one.
+    return NextResponse.json({ traffic: null, cached: false, provider: wanted, error: r.error ?? "no_data" }, { status: 502 });
   }
 
   try {

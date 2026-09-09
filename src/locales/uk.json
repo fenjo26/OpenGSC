@@ -3434,6 +3434,7 @@
   "trafficVisitsLabel": "візитів/міс",
   "trafficNoKeyHint": "Введіть ключ GoAnyAPI або Semrush у налаштуваннях, щоб бачити Traffic Analytics",
   "trafficSourceMenu": "Джерело трафіку",
+  "trafficNoData": "Для цього домену немає даних про трафік",
   "trafficAsOf": "перевірено",
   "trafficPeriod": "місяць",
   "trafficGenAiTitle": "Частка візитів з AI-асистентів — друга половина вкладки AI Visibility",

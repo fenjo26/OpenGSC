@@ -110,8 +110,9 @@ export default function TrafficChip({
         setProvider(d.traffic.provider === "semrush" ? "semrush" : "goanyapi");
       }
       // The provider's own reason, not a generic failure: `insufficient_credits` and `bad_key`
-      // send the user to two different screens.
-      else setErr(String(d?.error ?? "no_data"));
+      // send the user to two different screens — and the failing source is named, because
+      // "no data" from Semrush TA and from GoAnyAPI are two different walls.
+      else setErr(`${d?.provider ? PROVIDER_LABEL[d.provider as TrafficProvider] + ": " : ""}${String(d?.error ?? "no_data")}`);
     } catch { setErr("network"); }
     setBusy(null);
   }, [busy, goanyKey, semrushKey, clean, shareToken]);
@@ -169,6 +170,15 @@ export default function TrafficChip({
           {busy ? <Loader2 size={11} className="spin" /> : <TrendingUp size={11} />}
           {t("trafficCheckBtn")}
         </button>
+        {/* Failures were once tooltip-only, which read as "nothing happened". The reason —
+            no data at this provider, a bad key, an empty wallet — is one glance away now. */}
+        {err && (
+          <span style={{ fontSize: "11px", color: "var(--color-warning)", maxWidth: "280px",
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+            title={err}>
+            {err === "no_data" || err.endsWith(": no_data") ? t("trafficNoData") : err}
+          </span>
+        )}
         {bothKeys && (
           <>
             <button onClick={() => setMenuOpen(o => !o)}

@@ -21,6 +21,7 @@ import { drForDomains } from "@/lib/drops/drFree";
 import { getOwnerSettings } from "@/lib/engineKeysServer";
 import { analyseDomainHistory } from "@/lib/drops/history";
 import { fetchLLM } from "@/lib/llm";
+import { goanyDrHistory } from "@/lib/seo/goanyapi";
 import { fetchDomainMetrics, domainUnits, parseMetricsProvider } from "@/lib/seo/metrics";
 import type { DropSource, DropStage } from "@/lib/drops/types";
 
@@ -319,6 +320,57 @@ export const DROPS_TOOLS: McpTool[] = [
       await releaseUnusedUnits(userId, provider, units, perDomain * results.length);
       const updated = await writeMetricsUpdates(userId, results);
       return { updated, results, unitsSpent: perDomain * results.length };
+    },
+  },
+
+  {
+    name: "drops_dr_history",
+    cost: "paid",
+    idempotent: false,
+    description:
+      "PAID: Domain Rating history for one domain via GoAnyAPI — the DR series, not the snapshot. " +
+      "Bills 2 credits per returned month (a free preview with includeDr=false lists the months and costs nothing). " +
+      "A DR series is a veto signal a single number cannot be: 22→24→12→11→8 is not lost links, it is a hit — " +
+      "read a sustained drop as a spam/penalty flag before acquiring. Uses the GoAnyAPI key (Settings → SEO Tools). " +
+      "Needs confirm: true for the paid variant.",
+    inputSchema: {
+      type: "object",
+      required: ["domain"],
+      properties: {
+        domain: { type: "string", description: "One domain to inspect" },
+        confirm: { type: "boolean", description: "must be true to fetch DR values (2 credits/month); omit or false = free preview of which months exist" },
+        includeDr: { type: "boolean", description: "Fetch DR values (default: follows confirm)" },
+      },
+    },
+    handler: async (userId, args) => {
+      const includeDr = args.includeDr === true || (args.includeDr !== false && args.confirm === true);
+      if (includeDr) assertConfirmed(args, "drops_dr_history bills 2 GoAnyAPI credits per returned month (use includeDr=false for the free preview)");
+      const domain = String(args.domain ?? "").trim().toLowerCase()
+        .replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
+      if (!domain.includes(".")) throw new Error("domain required");
+
+      const settings = await getOwnerSettings(userId);
+      const apiKey = String(settings.seoKey_goanyapi ?? "").trim();
+      if (!apiKey) throw new Error("no_goanyapi_key: configure the GoAnyAPI key in Settings → SEO Tools");
+
+      const r = await goanyDrHistory(apiKey, domain, includeDr);
+      if (!r.data) throw new Error(r.error ?? "no_data");
+      const drs = r.data.history.map(m => m.dr).filter((v): v is number => v != null);
+      const first = r.data.history[0], last = r.data.history[r.data.history.length - 1];
+      return {
+        domain: r.data.domain,
+        includeDr,
+        history: r.data.history,
+        credits: r.credits,
+        remainingCredits: r.remaining,
+        ...(includeDr && drs.length >= 2 && first && last ? {
+          drFirst: first.dr, drLast: last.dr,
+          change: (last.dr ?? 0) - (first.dr ?? 0),
+          note: first.dr != null && last.dr != null && last.dr - first.dr <= -5
+            ? "DR fell materially across the window — treat as a spam/penalty flag, not lost links."
+            : undefined,
+        } : {}),
+      };
     },
   },
 

@@ -3434,6 +3434,7 @@
   "trafficVisitsLabel": "Besuche/Mon.",
   "trafficNoKeyHint": "Hinterlege einen GoAnyAPI- oder Semrush-API-Schlüssel in den Einstellungen, um Traffic Analytics zu sehen",
   "trafficSourceMenu": "Traffic-Quelle",
+  "trafficNoData": "Keine Traffic-Daten für diese Domain",
   "trafficAsOf": "geprüft",
   "trafficPeriod": "Monat",
   "trafficGenAiTitle": "Anteil der Besuche aus KI-Assistenten — die andere Hälfte des AI-Visibility-Tabs",

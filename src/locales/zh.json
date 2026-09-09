@@ -3434,6 +3434,7 @@
   "trafficVisitsLabel": "次访问/月",
   "trafficNoKeyHint": "在设置中输入 GoAnyAPI 或 Semrush API 密钥以查看流量分析",
   "trafficSourceMenu": "流量数据源",
+  "trafficNoData": "该域名没有流量数据",
   "trafficAsOf": "检查于",
   "trafficPeriod": "月份",
   "trafficGenAiTitle": "来自 AI 助手的访问占比——AI Visibility 标签页的另一半答案",
