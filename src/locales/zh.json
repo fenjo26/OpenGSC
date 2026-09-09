@@ -424,6 +424,10 @@
   "remove": "移除",
   "clickToEditName": "点击编辑名称",
   "drByAhrefs": "Domain Rating（来自 Ahrefs）",
+  "drHistHint": "按月记录的 DR 历史，由面板自行积累——自域名首次进入面板起，每次新鲜测量都会保存。窗口内下跌 5 点以上通常是 Google 过滤（惩罚），而不只是丢外链。",
+  "drHistFlag": "在已存储的窗口内 DR 下跌了 {n} 点——应视为垃圾/过滤信号，而非外链流失。",
+  "drHistCallout": "DR 历史自动积累：骤降（5+ 点）是过滤惩罚，而非外链流失",
+  "drHistCalloutDesc": "每次新鲜 DR 测量都会保存当月数值——域名免费积累逐月序列。5 点以上的下跌应读作 Google 过滤而非外链流失：这正是购买过期域名时的否决信号。",
   "byAhrefs": "来自 Ahrefs",
   "noteTitlePlaceholder": "这一天发生了什么？",
   "noNewRankings": "本周期没有新排名",
@@ -738,7 +742,7 @@
   "backlinksTab": "外链",
   "tabAds": "广告",
   "adsTitle": "广告情报",
-  "adsSub": "Google Ads Transparency 对该域名付费活动的记录：哪些广告主在投、广告文案与创意、投放国家以及每周投放量变化。数据来自 GoAnyAPI。",
+  "adsSub": "两个研究方向：按域名——哪些广告主在为它投放 Google 广告，文案、创意和每周节奏如何（自己的域名常常为空，竞对才是有意思的）；按关键词——谁在围绕它买广告、还有哪些域名出现。数据来自 GoAnyAPI。",
   "adsLoad": "加载",
   "adsCredits": "积分",
   "adsNoKey": "在设置中输入 GoAnyAPI 密钥以加载广告情报。",
@@ -3818,5 +3822,10 @@
   "dropsHistoryVerdictTopicShift": "历史：主题曾变更",
   "dropsHistoryVerdictSpam": "历史：曾有垃圾邮件期",
   "dropsHistoryVerdictUnknown": "历史：数据不足",
-  "dropsHistoryErrThrottled": "Wayback 正在限制服务器 IP — 请稍后再试"
+  "dropsHistoryErrThrottled": "Wayback 正在限制服务器 IP — 请稍后再试",
+  "adsDomainLabel": "域名",
+  "adsCheckDomain": "查询",
+  "adsKeywordSearch": "关键词广告",
+  "adsDomains": "购买广告的域名",
+  "adsOwnSiteHint": "域名没有自己的 Google 广告时结果为空——自己的网站很正常。在上方查一个竞对域名，或搜索关键词看看还有谁在买广告。"
 }

@@ -424,6 +424,10 @@
   "remove": "Remove",
   "clickToEditName": "Click to edit name",
   "drByAhrefs": "Domain Rating by Ahrefs",
+  "drHistHint": "Monthly DR history your panel collects itself — every fresh check since the domain was first seen. A fall of 5+ points across the window usually means a Google filter, not merely lost links.",
+  "drHistFlag": "DR fell {n} points across the stored window — treat as a spam/penalty flag, not lost links.",
+  "drHistCallout": "DR history is collected automatically: a sharp fall (5+) is a filter, not link loss",
+  "drHistCalloutDesc": "Every fresh DR check also stores that month's value, so each domain builds a free month-by-month series. Read a fall of 5+ points as a Google filter, not lost links — that series is exactly the expired-domain veto signal.",
   "byAhrefs": "by Ahrefs",
   "noteTitlePlaceholder": "What happened on this day?",
   "noNewRankings": "No new rankings this period",
@@ -738,7 +742,7 @@
   "backlinksTab": "Backlinks",
   "tabAds": "Ads",
   "adsTitle": "Ads Intelligence",
-  "adsSub": "What Google Ads Transparency knows about this domain's paid activity: which advertisers run ads for it, the ad copy and creatives, where they run, and how the weekly volume moves. Data via GoAnyAPI.",
+  "adsSub": "Two research directions: by domain — which advertisers run Google ads for it, with what copy, creatives and weekly rhythm (your own site often answers empty; competitors are the interesting lookups); by keyword — who buys ads around it and which other domains show up. Data via GoAnyAPI.",
   "adsLoad": "Load",
   "adsCredits": "credits",
   "adsNoKey": "Enter a GoAnyAPI API key in Settings to load ad intelligence.",
@@ -3818,5 +3822,10 @@
   "dropsHistoryVerdictTopicShift": "History: topic changed",
   "dropsHistoryVerdictSpam": "History: spam period",
   "dropsHistoryVerdictUnknown": "History: not enough data",
-  "dropsHistoryErrThrottled": "Wayback is rate-limiting the server IP — try again later"
+  "dropsHistoryErrThrottled": "Wayback is rate-limiting the server IP — try again later",
+  "adsDomainLabel": "Domain",
+  "adsCheckDomain": "Check",
+  "adsKeywordSearch": "Keyword ads",
+  "adsDomains": "Domains buying ads",
+  "adsOwnSiteHint": "A domain with no Google Ads answers empty — normal for your own site. Look up a competitor above, or search a keyword to see who else is buying."
 }

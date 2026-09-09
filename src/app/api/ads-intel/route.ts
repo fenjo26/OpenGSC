@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { runUpsert } from "@/lib/db/upsert";
 import { rawQuery } from "@/lib/db/raw";
 import {
-  goanyTransparencyDomain, goanyDomainSearch, goanyDomainTitles,
+  goanyTransparencyDomain, goanyTransparencyKeyword, goanyDomainSearch, goanyDomainTitles,
   goanyDomainStatistics, goanyDomainImageAds, goanyTitleCountries,
 } from "@/lib/seo/goanyapi";
 
@@ -22,7 +22,7 @@ import {
 
 const TTL_MS = 7 * 24 * 3600 * 1000;
 
-const SECTIONS = ["overview", "titles", "statistics", "images", "countries"] as const;
+const SECTIONS = ["overview", "titles", "statistics", "images", "countries", "keyword"] as const;
 type Section = typeof SECTIONS[number];
 
 const normDomain = (d: string) =>
@@ -50,11 +50,12 @@ export async function POST(req: Request) {
   const section = SECTIONS.includes(b.section) ? b.section as Section : null;
   if (!section) return NextResponse.json({ error: "bad_section" }, { status: 400 });
 
-  // The target domain comes from the site row when a siteId names one — an endpoint that
-  // spends credits must not profile arbitrary domains just because a request said so. A bare
-  // domain is also accepted for lookups outside the site contour (competitor research).
+  // The target domain: an explicit one wins — the Ads tab is a research tool and the domain
+  // the user typed (a competitor) is the point. The site row is the fallback for a plain tab
+  // open, never an override: this endpoint's spends are deliberate per call, keyed to the
+  // domain in the request body.
   let domain = normDomain(String(b.domain ?? ""));
-  if (b.siteId && userId) {
+  if ((!domain || !domain.includes(".")) && b.siteId && userId) {
     const site = await prisma.site.findFirst({ where: { id: String(b.siteId), userId }, select: { url: true } });
     if (site) domain = normDomain(site.url.replace(/^sc-domain:/, ""));
   }
@@ -95,8 +96,13 @@ export async function POST(req: Request) {
     } catch { /* cache best-effort — the answer is paid for and returned either way */ }
   };
 
-  const cacheKey = section === "countries" ? String(b.title ?? "").trim() : "";
+  const cacheKey = section === "countries"
+    ? String(b.title ?? "").trim()
+    : section === "keyword"
+      ? String(b.keyword ?? "").trim().toLowerCase()
+      : "";
   if (section === "countries" && !cacheKey) return NextResponse.json({ error: "bad_title" }, { status: 400 });
+  if (section === "keyword" && !cacheKey) return NextResponse.json({ error: "bad_keyword" }, { status: 400 });
 
   const cached = await readCache(section, cacheKey);
   if (!wantFetch) {
@@ -112,7 +118,7 @@ export async function POST(req: Request) {
   // `titles` et al. hang off the hostId that only the overview pull produces. Auto-fetching it
   // here would spend 9 surprise credits; naming the prerequisite keeps the spend deliberate.
   let hostId: number | null = null;
-  if (section !== "overview") {
+  if (section !== "overview" && section !== "keyword") {
     const overview = await readCache("overview");
     const payload = overview?.payload as { hostId?: number } | null | undefined;
     hostId = payload?.hostId != null ? Number(payload.hostId) : null;
@@ -160,6 +166,12 @@ export async function POST(req: Request) {
     remaining = r.remaining;
   } else if (section === "images") {
     const r = await goanyDomainImageAds(apiKey, hostId!, dates.startDay, dates.endDay);
+    if (!r.data) return NextResponse.json({ error: r.error ?? "no_data", provider: "goanyapi" }, { status: 502 });
+    payload = r.data;
+    credits = r.credits;
+    remaining = r.remaining;
+  } else if (section === "keyword") {
+    const r = await goanyTransparencyKeyword(apiKey, cacheKey);
     if (!r.data) return NextResponse.json({ error: r.error ?? "no_data", provider: "goanyapi" }, { status: 502 });
     payload = r.data;
     credits = r.credits;

@@ -26,6 +26,7 @@ import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { usePersistedState, isGscPeriod } from "@/lib/usePersistedState";
 import { getTaskCreds, getAhrefsDrKey } from "@/lib/seo/keys";
 import TrafficChip from "@/components/TrafficChip";
+import { DrSparkline, drSeriesText, type DrPoint } from "@/components/DrSparkline";
 import AdsIntelTab from "@/components/AdsIntelTab";
 import BacklinkProfile from "@/components/BacklinkProfile";
 import BacklinkImportDialog from "@/components/BacklinkImportDialog";
@@ -35,7 +36,7 @@ import {
   SlidersHorizontal, ChevronDown, Smartphone, Monitor, Tablet,
   Users, Activity, Zap, DollarSign, Link2, Check, Star,
   FileText, Globe, Search, ArrowLeftRight, BookmarkCheck, Calendar, X, Download,
-  ChevronLeft, ChevronRight, ExternalLink, Pencil, Trash2,
+  ChevronLeft, ChevronRight, ExternalLink, Pencil, Trash2, AlertTriangle,
 } from "lucide-react";
 import {
   ComposedChart, LineChart, AreaChart, Area, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -4957,6 +4958,22 @@ export default function SitePage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [domain, shareToken]);
 
+  // The panel's own monthly DR series for this domain (DrSnapshot) — what turns the single
+  // "DR 12" chip into "12, and it fell from 24 three months ago", which is the penalty signal.
+  // A pure local read: free, keyless, and empty until the panel has seen the domain twice.
+  const [drHist, setDrHist] = useState<DrPoint[]>([]);
+  useEffect(() => {
+    fetch(getUrl(`/api/dr/history?domains=${encodeURIComponent(domain)}`))
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        const key = domain.toLowerCase().replace(/^www\./, "");
+        const pts = d?.history?.[key];
+        if (Array.isArray(pts) && pts.length >= 2) setDrHist(pts);
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [domain, shareToken]);
+
   // Use index so tab state doesn't break on language change
   const TAB_KEYS = ["dashboard", "positions", "aeo", "ga4", "indexing", "backlinks", "ads", "annotations", "optimize", "health", "audit", "ux", "settings"] as const;
   type TabKey = typeof TAB_KEYS[number];
@@ -5357,13 +5374,21 @@ export default function SitePage({
             {drValue != null && (
               <span style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0 }}>
                 <span style={{ fontSize: "11px", fontWeight: 700, padding: "2px 7px", borderRadius: "6px", background: "rgba(58,87,252,0.12)", color: "#3A57FC", ...blurStyle }}>DR {Math.round(drValue)}</span>
+                {/* The accumulated monthly series next to the number it qualifies: a chip that
+                    reads "DR 12" reads very differently with 24→12 under it. The tooltip carries
+                    the months and the ≥5-point penalty rule; the triangle repeats the verdict. */}
+                {drHist.length >= 2 && (() => {
+                  const drop = drHist[drHist.length - 1].dr - drHist[0].dr;
+                  const title = `${t("drHistHint")}\n\n${drSeriesText(drHist)}`
+                    + (drop <= -5 ? `\n\n${t("drHistFlag").replace("{n}", String(Math.abs(drop)))}` : "");
+                  return <span title={title} style={{ display: "flex", alignItems: "center", gap: 3, cursor: "help" }}>
+                    <DrSparkline points={drHist} width={44} height={16} />
+                    {drop <= -5 && <AlertTriangle size={12} color="#ff6b62" />}
+                  </span>;
+                })()}
                 <a href="https://ahrefs.com/" target="_blank" rel="noreferrer" style={{ fontSize: "10px", color: "var(--color-text-tertiary)", textDecoration: "none" }} title={t("drByAhrefs")}>{t("byAhrefs")}</a>
               </span>
             )}
-            {/* Traffic sits next to DR because they answer the same question from two sides:
-                how strong is this domain, and how many people actually arrive. Renders nothing
-                at all without a cached figure or a configured key. */}
-            <TrafficChip domain={domain} shareToken={shareToken} style={blurStyle} />
           </div>
           <span style={{ margin: "0 24px", color: "var(--color-border)" }}>|</span>
           {/* Tab nav */}
@@ -5489,6 +5514,12 @@ export default function SitePage({
               <span style={{ fontSize: "12px", fontWeight: 600, color: engine === "bing" ? "#00809D" : "#FC3F1D" }}>{engine === "bing" ? "Bing" : t("seEngineYandex")} <span style={{ fontWeight: 400, color: "var(--color-text-secondary)" }}>· {t("seLiveData")}</span></span>
             </div>
           ) : <div style={{ fontSize: "14px", fontWeight: 700, color: engine === "bing" ? "#00809D" : "#FC3F1D" }}>{engine === "bing" ? "Bing Webmaster" : t("seEngineYandexFull")} <span style={{ fontWeight: 400, fontSize: "12px", color: "var(--color-text-secondary)" }}>· {t("seLiveData")}</span></div>}
+          
+                    {/* Traffic lives under the GSC strip now: the header got cramped once the chip and
+                        its no-key hint moved in, and this row is where the other domain-wide numbers sit. */}
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                      <TrafficChip domain={domain} shareToken={shareToken} style={blurStyle} />
+                    </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
             {/* Engine switcher — shown only when Bing/Yandex keys are configured */}

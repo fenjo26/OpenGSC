@@ -1,19 +1,25 @@
 "use client";
 
-// Ads Intelligence: what Google Ads Transparency knows about a domain's paid activity.
+// Ads Intelligence: what Google Ads Transparency knows about paid activity — for this site's
+// domain or any competitor's, and around any keyword.
 //
-// The app measures plenty of organic reality; this tab measures the paid side — which
-// advertisers put Google ads on a domain's behalf, with what copy and creatives, in which
-// countries, and how the weekly volume moves. For competitor research that is the half the
-// Search Console contour can never see.
+// Two research directions, and the distinction is the whole tab:
+//
+// 1. **By domain** — who advertises FOR a domain: the advertisers behind its Google ads, the
+//    ad copy, creatives, countries and weekly volume. A domain with no Google Ads answers
+//    empty, which is the normal answer for one's own site — the interesting lookups are the
+//    competitors, hence the editable domain field.
+// 2. **By keyword** — who buys ads AROUND a keyword: the advertisers and the OTHER domains
+//    that show up on it. This is the competitive map: type the market's keyword, see who is
+//    buying.
 //
 // Same contract as the rest of the metrics layer: cached sections render for free, and only
-// the Load buttons spend GoAnyAPI credits — 9 for the overview (advertiser mapping + hostId),
-// 5 per detail section, 5 per title's country split. Sections cache independently for 7 days
-// under their own credit prices, so detailing the tab never re-buys the overview.
+// the Load buttons spend GoAnyAPI credits — 9 for the domain overview (advertiser mapping +
+// hostId), 5 per detail section, 5 per title's country split, 4 per keyword lookup. Sections
+// cache independently for 7 days, so detailing the tab never re-buys the overview.
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Megaphone, RefreshCw } from "lucide-react";
+import { Loader2, Megaphone, RefreshCw, Search } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { getGoAnyKey } from "@/lib/seo/keys";
 
@@ -24,6 +30,7 @@ interface WeekAdvertiser { advertiser: string; country: string; adCount: number 
 interface WeekRow { month: string; week: number; advertisers: WeekAdvertiser[] }
 interface Statistics { weeks: WeekRow[]; totals: WeekAdvertiser[] }
 interface TitleCountry { country: string; countryName: string; adCount: number | null }
+interface KeywordAds { keyword: string; advertisers: { name: string; country: string; id: string; adsCount: number | null }[]; domains: string[] }
 
 interface Overview { advertisers: Advertiser[]; hostId: number | null; host: string | null; note?: string }
 
@@ -31,20 +38,30 @@ interface Cached<T> { payload: T | null; cached?: boolean; checkedAt?: string }
 
 const COST_OVERVIEW = 9;
 const COST_SECTION = 5;
+const COST_KEYWORD = 4;
 
 const fmtDay = (d: string) =>
   /^\d{8}$/.test(d) ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}` : d;
+
+const normDomain = (d: string) =>
+  d.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
 
 export default function AdsIntelTab({
   siteDbId, domain, shareToken,
 }: { siteDbId: string; domain: string; shareToken?: string }) {
   const { t } = useLanguage();
-  const clean = domain.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
+  const siteDomain = normDomain(domain);
+
+  // The research target: prefilled with the site, editable to any competitor.
+  const [target, setTarget] = useState(siteDomain);
+  const [domainInput, setDomainInput] = useState(siteDomain);
 
   const [overview, setOverview] = useState<Cached<Overview>>({ payload: null });
   const [titles, setTitles] = useState<Cached<AdTitle[]>>({ payload: null });
   const [stats, setStats] = useState<Cached<Statistics>>({ payload: null });
   const [images, setImages] = useState<Cached<Record<string, string>>>({ payload: null });
+  const [kw, setKw] = useState<(Cached<KeywordAds> & { keyword?: string }) | null>(null);
+  const [keywordInput, setKeywordInput] = useState("");
   const [countries, setCountries] = useState<Record<string, { rows: TitleCountry[]; checkedAt?: string }>>({});
   const [openTitle, setOpenTitle] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -67,38 +84,42 @@ export default function AdsIntelTab({
     }).catch(() => {});
   }, [shareToken]);
 
-  const read = useCallback(async (section: string, extra: Record<string, unknown> = {}) => {
+  const call = useCallback(async (body: Record<string, unknown>) => {
     const res = await fetch("/api/ads-intel", {
       method: "POST", headers: { "Content-Type": "application/json", "x-goanyapi-key": getGoAnyKey() },
-      body: JSON.stringify({ siteId: siteDbId, domain: clean, section, fetch: false, shareToken, ...extra }),
+      body: JSON.stringify({ siteId: siteDbId, domain: target, shareToken, ...body }),
     });
-    const d = await res.json().catch(() => ({}));
-    return d?.payload ? d as { payload: unknown; checkedAt?: string } : null;
-  }, [siteDbId, clean, shareToken]);
+    return res.json().catch(() => ({}));
+  }, [siteDbId, target, shareToken]);
 
-  // Cached sections render for free; every mount reads them all.
-  useEffect(() => {
-    if (!clean.includes(".")) return;
-    (async () => {
-      const [o, ti, st, im] = await Promise.all([
-        read("overview"), read("titles"), read("statistics"), read("images"),
-      ]);
-      if (o) setOverview({ payload: o.payload as Overview, cached: true, checkedAt: o.checkedAt });
-      if (ti) setTitles({ payload: ti.payload as AdTitle[], cached: true, checkedAt: ti.checkedAt });
-      if (st) setStats({ payload: st.payload as Statistics, cached: true, checkedAt: st.checkedAt });
-      if (im) setImages({ payload: im.payload as Record<string, string>, cached: true, checkedAt: im.checkedAt });
-    })().catch(() => {});
-  }, [clean, read]);
+  // Cached sections render for free; every domain switch re-reads them.
+  const readAll = useCallback(async (forDomain: string) => {
+    const read = async (section: string) => {
+      const res = await fetch("/api/ads-intel", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ siteId: siteDbId, domain: forDomain, section, fetch: false, shareToken }),
+      });
+      const d = await res.json().catch(() => ({}));
+      return d?.payload ? d as { payload: unknown; checkedAt?: string } : null;
+    };
+    const [o, ti, st, im] = await Promise.all([
+      read("overview"), read("titles"), read("statistics"), read("images"),
+    ]);
+    setOverview(o ? { payload: o.payload as Overview, cached: true, checkedAt: o.checkedAt } : { payload: null });
+    setTitles(ti ? { payload: ti.payload as AdTitle[], cached: true, checkedAt: ti.checkedAt } : { payload: null });
+    setStats(st ? { payload: st.payload as Statistics, cached: true, checkedAt: st.checkedAt } : { payload: null });
+    setImages(im ? { payload: im.payload as Record<string, string>, cached: true, checkedAt: im.checkedAt } : { payload: null });
+    setCountries({});
+    setOpenTitle(null);
+  }, [siteDbId, shareToken]);
 
-  const load = useCallback(async (section: "overview" | "titles" | "statistics" | "images", extra: Record<string, unknown> = {}) => {
+  useEffect(() => { readAll(target).catch(() => {}); }, [target, readAll]);
+
+  const load = useCallback(async (section: "overview" | "titles" | "statistics" | "images") => {
     if (busy) return;
     setBusy(section); setErr(null);
     try {
-      const res = await fetch("/api/ads-intel", {
-        method: "POST", headers: { "Content-Type": "application/json", "x-goanyapi-key": getGoAnyKey() },
-        body: JSON.stringify({ siteId: siteDbId, domain: clean, section, fetch: true, shareToken, ...extra }),
-      });
-      const d = await res.json().catch(() => ({}));
+      const d = await call({ section, fetch: true });
       if (d?.payload != null) {
         const at = d.checkedAt;
         if (section === "overview") setOverview({ payload: d.payload, cached: false, checkedAt: at });
@@ -111,17 +132,29 @@ export default function AdsIntelTab({
       }
     } catch { setErr("network"); }
     setBusy(null);
-  }, [busy, siteDbId, clean, shareToken]);
+  }, [busy, call]);
+
+  const loadKeyword = useCallback(async () => {
+    const kwTrim = keywordInput.trim().toLowerCase();
+    if (!kwTrim || busy) return;
+    setBusy("keyword"); setErr(null);
+    try {
+      const d = await call({ section: "keyword", fetch: true, keyword: kwTrim });
+      if (d?.payload != null) {
+        setKw({ payload: d.payload as KeywordAds, cached: false, checkedAt: d.checkedAt, keyword: kwTrim });
+        if (typeof d.remainingCredits === "number") setBalance(d.remainingCredits);
+      } else {
+        setErr(String(d?.error ?? "no_data"));
+      }
+    } catch { setErr("network"); }
+    setBusy(null);
+  }, [keywordInput, busy, call]);
 
   const loadCountries = useCallback(async (title: string) => {
     if (countries[title] || busy) return;
-    setBusy(`countries`); setErr(null);
+    setBusy("countries"); setErr(null);
     try {
-      const res = await fetch("/api/ads-intel", {
-        method: "POST", headers: { "Content-Type": "application/json", "x-goanyapi-key": getGoAnyKey() },
-        body: JSON.stringify({ siteId: siteDbId, domain: clean, section: "countries", fetch: true, title, shareToken }),
-      });
-      const d = await res.json().catch(() => ({}));
+      const d = await call({ section: "countries", fetch: true, title });
       if (Array.isArray(d?.payload)) {
         setCountries(prev => ({ ...prev, [title]: { rows: d.payload, checkedAt: d.checkedAt } }));
         if (typeof d.remainingCredits === "number") setBalance(d.remainingCredits);
@@ -130,9 +163,9 @@ export default function AdsIntelTab({
       }
     } catch { setErr("network"); }
     setBusy(null);
-  }, [countries, busy, siteDbId, clean, shareToken]);
+  }, [countries, busy, call]);
 
-  if (!clean.includes(".")) return null;
+  if (!siteDomain.includes(".")) return null;
 
   const advertisers = overview.payload?.advertisers ?? [];
   const hostId = overview.payload?.hostId ?? null;
@@ -142,7 +175,7 @@ export default function AdsIntelTab({
   const sectionHeader = (label: string, section: "titles" | "statistics" | "images", state: Cached<any>, emptyText: string) => (
     <div style={{ display: "flex", alignItems: "center", gap: "10px", margin: "22px 0 10px", flexWrap: "wrap" }}>
       <h4 style={{ margin: 0, fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)" }}>{label}</h4>
-      {!guest && !state.payload && (
+      {!guest && (
         <button className="metric-action" disabled={busy != null || !hostId || !hasKey}
           onClick={() => load(section)}
           title={!hostId ? t("adsNeedOverview") : !hasKey ? t("adsNoKey") : undefined}>
@@ -173,17 +206,42 @@ export default function AdsIntelTab({
         {!guest && balance != null && (
           <span className="metric-chip" style={{ fontWeight: 500 }}>GoAnyAPI · {balance.toLocaleString()} {t("adsCredits")}</span>
         )}
-        {!guest && !overview.payload && hasKey && (
-          <button className="metric-action" style={{ marginLeft: "auto" }} disabled={busy != null}
-            onClick={() => load("overview")}>
-            {busy === "overview" ? <Loader2 size={13} className="spin" /> : <RefreshCw size={13} />}
-            {t("adsLoad")} · {COST_OVERVIEW} {t("adsCredits")}
-          </button>
-        )}
       </div>
-      <p style={{ fontSize: "12px", color: "var(--color-text-secondary)", margin: "6px 0 18px", lineHeight: 1.6 }}>
+      <p style={{ fontSize: "12px", color: "var(--color-text-secondary)", margin: "6px 0 16px", lineHeight: 1.6 }}>
         {t("adsSub")}
       </p>
+
+      {/* Research target — the site is only the default; competitors are the point. */}
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px", flexWrap: "wrap" }}>
+        <span className="tool-field-label" style={{ marginBottom: 0 }}>{t("adsDomainLabel")}:</span>
+        <input className="tool-input" value={domainInput} style={{ maxWidth: "280px", fontFamily: "monospace" }}
+          onChange={e => setDomainInput(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") { const d = normDomain(domainInput); if (d.includes(".")) setTarget(d); } }}
+          placeholder="competitor.com" />
+        <button className="pill" onClick={() => {
+          const d = normDomain(domainInput);
+          if (d.includes(".") && d !== target) setTarget(d);
+        }} style={{ cursor: "pointer" }}>{t("adsCheckDomain")}</button>
+        {target !== siteDomain && (
+          <button className="pill" onClick={() => { setDomainInput(siteDomain); setTarget(siteDomain); }}
+            style={{ cursor: "pointer" }} title={siteDomain}>← {siteDomain}</button>
+        )}
+      </div>
+
+      {/* Keyword mode — who buys ads around a keyword, and which other domains show up */}
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "20px", flexWrap: "wrap" }}>
+        <span className="tool-field-label" style={{ marginBottom: 0 }}>{t("adsKeywordSearch")}:</span>
+        <input className="tool-input" value={keywordInput} style={{ maxWidth: "280px" }}
+          onChange={e => setKeywordInput(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") loadKeyword(); }}
+          placeholder="online casino…" />
+        <button className="metric-action" disabled={busy != null || !keywordInput.trim() || !hasKey || guest}
+          onClick={loadKeyword}
+          title={!hasKey ? t("adsNoKey") : undefined}>
+          {busy === "keyword" ? <Loader2 size={13} className="spin" /> : <Search size={13} />}
+          {t("adsKeywordSearch")} · {COST_KEYWORD} {t("adsCredits")}
+        </button>
+      </div>
 
       {noKey && (
         <div style={{ marginBottom: "16px", padding: "10px 14px", borderRadius: "var(--radius-md)", fontSize: "12px",
@@ -197,20 +255,50 @@ export default function AdsIntelTab({
         </div>
       )}
 
-      {!overview.payload && !overview.checkedAt && !err && (
-        <div style={{ padding: "28px", textAlign: "center", border: "1px dashed var(--color-border)", borderRadius: "var(--radius-md)", fontSize: "13px", color: "var(--color-text-secondary)" }}>
-          {t("adsNoData")}
+      {/* Keyword results — the "which other domains are buying" answer */}
+      {kw?.payload && (
+        <div style={{ marginBottom: "20px", padding: "14px 16px", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", background: "var(--color-bg)" }}>
+          <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--color-text-primary)", marginBottom: "10px" }}>
+            «{kw.payload.keyword}»
+          </div>
+          {kw.payload.domains.length > 0 && (
+            <>
+              <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "6px" }}>{t("adsDomains")}</div>
+              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "12px" }}>
+                {kw.payload.domains.map(d => (
+                  <a key={d} href={`https://${d}`} target="_blank" rel="noreferrer noopener nofollow"
+                    className="metric-chip" style={{ fontWeight: 600, textDecoration: "none", color: "var(--color-text-primary)" }}>
+                    {d} ↗
+                  </a>
+                ))}
+              </div>
+            </>
+          )}
+          {kw.payload.advertisers.length > 0 && (
+            <>
+              <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "6px" }}>{t("adsAdvertisers")}</div>
+              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                {kw.payload.advertisers.map(a => (
+                  <span key={a.id} className="metric-chip" title={`${t("adsCountry")}: ${a.country}`}>
+                    {a.name} · {a.adsCount ?? "—"}
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
+          {kw.payload.domains.length === 0 && kw.payload.advertisers.length === 0 && (
+            <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>{t("adsNoData")}</div>
+          )}
         </div>
       )}
 
-      {/* Advertisers — the overview's answer */}
-      {advertisers.length > 0 && (
+      {/* Domain overview — the site's own domain often answers empty, and that is the honest answer */}
+      {advertisers.length > 0 ? (
         <>
           <div style={{ display: "flex", alignItems: "center", gap: "10px", margin: "18px 0 10px", flexWrap: "wrap" }}>
-            <h4 style={{ margin: 0, fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)" }}>{t("adsAdvertisers")}</h4>
+            <h4 style={{ margin: 0, fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)" }}>{t("adsAdvertisers")} · {target}</h4>
             {!guest && (
-              <button className="metric-action" disabled={busy != null} onClick={() => load("overview")}
-                title={t("blpRefresh")}>
+              <button className="metric-action" disabled={busy != null} onClick={() => load("overview")} title={t("blpRefresh")}>
                 {busy === "overview" ? <Loader2 size={13} className="spin" /> : <RefreshCw size={13} />}
               </button>
             )}
@@ -242,6 +330,14 @@ export default function AdsIntelTab({
             </table>
           </div>
         </>
+      ) : overview.checkedAt ? (
+        <div style={{ marginBottom: "8px", fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+          {t("adsNoData")} · {t("adsOwnSiteHint")}
+        </div>
+      ) : !noKey && !err && (
+        <div style={{ padding: "28px", textAlign: "center", border: "1px dashed var(--color-border)", borderRadius: "var(--radius-md)", fontSize: "13px", color: "var(--color-text-secondary)" }}>
+          {guest ? t("adsNoData") : `${t("adsLoad")} · ${COST_OVERVIEW} ${t("adsCredits")} — ${target}`}
+        </div>
       )}
 
       {/* Weekly activity */}

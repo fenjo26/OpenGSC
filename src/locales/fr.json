@@ -424,6 +424,10 @@
   "remove": "Retirer",
   "clickToEditName": "Cliquez pour modifier le nom",
   "drByAhrefs": "Domain Rating par Ahrefs",
+  "drHistHint": "Historique mensuel du DR collecté par votre panneau lui-même — chaque mesure fraîche depuis la première apparition du domaine. Une chute de 5+ points sur la fenêtre signifie généralement un filtre Google, pas une simple perte de liens.",
+  "drHistFlag": "Le DR a chuté de {n} points sur la fenêtre enregistrée — à traiter comme un signal de spam/filtre, pas une perte de liens.",
+  "drHistCallout": "L'historique du DR se collecte automatiquement : une chute brutale (5+) est un filtre, pas une perte de liens",
+  "drHistCalloutDesc": "Chaque mesure fraîche du DR enregistre aussi la valeur du mois — le domaine se construit gratuitement une série mois par mois. Lisez une chute de 5+ points comme un filtre Google, pas une perte de liens : c'est exactement le signal de veto pour un domaine expiré.",
   "byAhrefs": "par Ahrefs",
   "noteTitlePlaceholder": "Que s’est-il passé ce jour-là ?",
   "noNewRankings": "Aucun nouveau positionnement sur cette période",
@@ -738,7 +742,7 @@
   "backlinksTab": "Backlinks",
   "tabAds": "Pub",
   "adsTitle": "Intelligence publicitaire",
-  "adsSub": "Ce que Google Ads Transparency sait de l'activité payante de ce domaine : quels annonceurs diffusent, les textes et créations, où, et comment le volume hebdomadaire évolue. Données via GoAnyAPI.",
+  "adsSub": "Deux directions : par domaine — quels annonceurs diffusent des Google Ads pour lui, avec quels textes, créations et rythme hebdomadaire (son propre domaine répond souvent vide ; les concurrents sont les vraies cibles) ; par mot-clé — qui achète de la pub autour et quels autres domaines apparaissent. Données via GoAnyAPI.",
   "adsLoad": "Charger",
   "adsCredits": "crédits",
   "adsNoKey": "Entrez une clé GoAnyAPI dans les réglages pour charger l'intelligence publicitaire.",
@@ -3818,5 +3822,10 @@
   "dropsHistoryVerdictTopicShift": "Historique : thème changé",
   "dropsHistoryVerdictSpam": "Historique : période de spam",
   "dropsHistoryVerdictUnknown": "Historique : données insuffisantes",
-  "dropsHistoryErrThrottled": "Wayback limite l'IP du serveur — réessayez plus tard"
+  "dropsHistoryErrThrottled": "Wayback limite l'IP du serveur — réessayez plus tard",
+  "adsDomainLabel": "Domaine",
+  "adsCheckDomain": "Vérifier",
+  "adsKeywordSearch": "Annonces par mot-clé",
+  "adsDomains": "Domaines qui achètent des annonces",
+  "adsOwnSiteHint": "Un domaine sans Google Ads répond vide — c'est normal pour le vôtre. Cherchez un domaine concurrent ci-dessus, ou interrogez un mot-clé pour voir qui achète."
 }

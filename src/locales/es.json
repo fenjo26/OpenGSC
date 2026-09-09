@@ -424,6 +424,10 @@
   "remove": "Eliminar",
   "clickToEditName": "Haz clic para editar el nombre",
   "drByAhrefs": "Domain Rating de Ahrefs",
+  "drHistHint": "Historial mensual de DR que tu panel recopila solo — cada medición nueva desde que el dominio apareció por primera vez. Una caída de 5+ puntos en la ventana suele indicar un filtro de Google, no una simple pérdida de enlaces.",
+  "drHistFlag": "El DR cayó {n} puntos en la ventana almacenada: trátalo como una señal de spam/filtro, no de pérdida de enlaces.",
+  "drHistCallout": "El historial de DR se recopila automáticamente: una caída brusca (5+) es un filtro, no una pérdida de enlaces",
+  "drHistCalloutDesc": "Cada medición nueva de DR también guarda el valor de ese mes: el dominio construye gratis una serie mes a mes. Lee una caída de 5+ puntos como un filtro de Google, no como pérdida de enlaces: esa serie es justo la señal de veto para un dominio expirado.",
   "byAhrefs": "por Ahrefs",
   "noteTitlePlaceholder": "¿Qué pasó este día?",
   "noNewRankings": "Sin nuevos rankings en este período",
@@ -738,7 +742,7 @@
   "backlinksTab": "Backlinks",
   "tabAds": "Anuncios",
   "adsTitle": "Inteligencia de anuncios",
-  "adsSub": "Lo que Google Ads Transparency sabe de la actividad de pago de este dominio: qué anunciantes publican, los textos y creatividades, dónde y cómo evoluciona el volumen semanal. Datos vía GoAnyAPI.",
+  "adsSub": "Dos direcciones: por dominio — qué anunciantes le sirven Google Ads, con qué textos, creatividades y ritmo semanal (tu propio dominio suele responder vacío; lo interesante son los competidores); por palabra clave — quién compra anuncios alrededor y qué otros dominios aparecen. Datos vía GoAnyAPI.",
   "adsLoad": "Cargar",
   "adsCredits": "créditos",
   "adsNoKey": "Introduce una clave de GoAnyAPI en Ajustes para cargar la inteligencia de anuncios.",
@@ -3818,5 +3822,10 @@
   "dropsHistoryVerdictTopicShift": "Historial: cambió de tema",
   "dropsHistoryVerdictSpam": "Historial: período de spam",
   "dropsHistoryVerdictUnknown": "Historial: datos insuficientes",
-  "dropsHistoryErrThrottled": "Wayback está limitando la IP del servidor — inténtalo más tarde"
+  "dropsHistoryErrThrottled": "Wayback está limitando la IP del servidor — inténtalo más tarde",
+  "adsDomainLabel": "Dominio",
+  "adsCheckDomain": "Comprobar",
+  "adsKeywordSearch": "Anuncios por palabra clave",
+  "adsDomains": "Dominios que compran anuncios",
+  "adsOwnSiteHint": "Un dominio sin Google Ads responde vacío — es normal para el propio sitio. Busca arriba un dominio competidor, o consulta una palabra clave para ver quién más compra."
 }

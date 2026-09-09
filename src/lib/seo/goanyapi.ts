@@ -512,6 +512,37 @@ export async function goanyTransparencyDomain(apiKey: string, domain: string): P
   };
 }
 
+export interface GoAnyKeywordAds {
+  keyword: string;
+  advertisers: { name: string; country: string; id: string; adsCount: number | null }[];
+  /** Domains buying ads on this keyword — the "who else is here" answer. */
+  domains: string[];
+}
+
+/**
+ * Keyword mode of the same transparency endpoint: who buys Google ads around a keyword.
+ * This is the reverse of the domain view — instead of "who advertises for this domain" it
+ * answers "which advertisers and which OTHER domains show up here", which is the competitive
+ * read and the reason the tab has a keyword search.
+ */
+export async function goanyTransparencyKeyword(apiKey: string, keyword: string): Promise<GoAnyResult<GoAnyKeywordAds>> {
+  const r = await get<any>(apiKey, "transparency", { keyword });
+  if (!r.data) return { ...r, data: null };
+  return {
+    ...r,
+    data: {
+      keyword: String(r.data.keyword ?? keyword),
+      advertisers: (Array.isArray(r.data.advertisers) ? r.data.advertisers : []).map((a: any) => ({
+        name: String(a?.name ?? ""),
+        country: String(a?.country ?? ""),
+        id: String(a?.id ?? ""),
+        adsCount: num(a?.adsCount),
+      })).filter((a: { name: string }) => a.name),
+      domains: (Array.isArray(r.data.domains) ? r.data.domains : []).map(String).filter(Boolean),
+    },
+  };
+}
+
 export interface GoAnyHost { domain: string; host: string; id: number }
 
 /** The hostId every ads-statistics detail action requires. */

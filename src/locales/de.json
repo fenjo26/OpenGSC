@@ -424,6 +424,10 @@
   "remove": "Entfernen",
   "clickToEditName": "Zum Bearbeiten des Namens klicken",
   "drByAhrefs": "Domain Rating von Ahrefs",
+  "drHistHint": "Monatliche DR-Historie, die dein Panel selbst sammelt — bei jeder frischen Messung, seit die Domäne erstmals gesehen wurde. Ein Fall von 5+ Punkten im Zeitraum bedeutet meist einen Google-Filter, nicht nur verlorene Links.",
+  "drHistFlag": "DR fiel im gespeicherten Zeitraum um {n} Punkte — als Spam/Filter-Signal werten, nicht als Linkverlust.",
+  "drHistCallout": "DR-Historie sammelt sich automatisch: ein harter Fall (5+) ist ein Filter, kein Linkverlust",
+  "drHistCalloutDesc": "Jede frische DR-Messung speichert auch den Monatswert — die Domäne baut gratis eine Monat-für-Monat-Serie auf. Einen Fall von 5+ Punkten als Google-Filter lesen, nicht als Linkverlust: genau dafür ist die Serie beim Kauf abgelaufener Domänen da.",
   "byAhrefs": "von Ahrefs",
   "noteTitlePlaceholder": "Was passierte an diesem Tag?",
   "noNewRankings": "Keine neuen Rankings in diesem Zeitraum",
@@ -738,7 +742,7 @@
   "backlinksTab": "Backlinks",
   "tabAds": "Ads",
   "adsTitle": "Ads-Intelligenz",
-  "adsSub": "Was Google Ads Transparency über die bezahlte Aktivität dieser Domain weiß: welche Werbetreibenden schalten, mit welchen Texten und Kreativen, in welchen Ländern und wie das Wochenvelopolumen läuft. Daten über GoAnyAPI.",
+  "adsSub": "Zwei Richtungen: nach Domain — welche Werbetreibenden Google Ads für sie schalten, mit welchen Texten, Kreativen und welchem Wochenrhythmus (die eigene Domain antwortet oft leer; spannend sind die Wettbewerber); nach Keyword — wer rund um es kauft und welche anderen Domains auftauchen. Daten über GoAnyAPI.",
   "adsLoad": "Laden",
   "adsCredits": "Credits",
   "adsNoKey": "Hinterlege einen GoAnyAPI-Schlüssel in den Einstellungen, um Ads-Intelligenz zu laden.",
@@ -3818,5 +3822,10 @@
   "dropsHistoryVerdictTopicShift": "Verlauf: Thema hat gewechselt",
   "dropsHistoryVerdictSpam": "Verlauf: Spam-Periode vorhanden",
   "dropsHistoryVerdictUnknown": "Verlauf: zu wenig Daten",
-  "dropsHistoryErrThrottled": "Wayback drosselt die Server-IP — später erneut versuchen"
+  "dropsHistoryErrThrottled": "Wayback drosselt die Server-IP — später erneut versuchen",
+  "adsDomainLabel": "Domain",
+  "adsCheckDomain": "Prüfen",
+  "adsKeywordSearch": "Anzeigen nach Keyword",
+  "adsDomains": "Domains, die Anzeigen kaufen",
+  "adsOwnSiteHint": "Eine Domain ohne eigene Google Ads antwortet leer — bei der eigenen Seite normal. Prüfe oben eine Wettbewerbs-Domain oder suche ein Keyword, um zu sehen, wer sonst kauft."
 }
