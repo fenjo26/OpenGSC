@@ -95,6 +95,27 @@ function SelectItem({ icon, label, value }: { icon: string; label: string; value
 // ─── Feedback / Help modal ────────────────────────────────────────────────────
 const USDT_ADDRESS = "TN7v2NArTXd5J2eMuGFpXmgzAFsoZpWcZu";
 
+// Partner wall in the "Support Developer" modal. To add a partner: drop the
+// logo into public/partners/ and add a `partners<Id>` description key to every
+// src/locales/*.json. Logos sit on a fixed dark tile — some (Pay2.House) use
+// light fills and vanish on light theme otherwise.
+const SUPPORT_PARTNERS = [
+  {
+    id: "Pay2house",
+    name: "Pay2.House",
+    href: "https://pay2.house",
+    logo: "/partners/pay2house-logo.svg",
+    imgStyle: { maxWidth: "78px", maxHeight: "18px" } as React.CSSProperties,
+  },
+  {
+    id: "Groupbuyseo",
+    name: "GroupBuySEO",
+    href: "https://my.groupbuyseo.org/register?affiliate_key=8ino4XJTwJ7EJooF67JUOt2tmbcFk1",
+    logo: "/partners/groupbuyseo-logo.svg",
+    imgStyle: { maxHeight: "30px" } as React.CSSProperties,
+  },
+] as const;
+
 function FeedbackModal({ mode, onClose }: { mode: "feedback" | "thanks"; onClose: () => void }) {
   const { t } = useLanguage();
   const [text, setText] = useState("");
@@ -308,6 +329,50 @@ function FeedbackModal({ mode, onClose }: { mode: "feedback" | "thanks"; onClose
                 <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginTop: "6px" }}>
                   {t("usdtNote")}
                 </div>
+              </div>
+
+              {/* Partners */}
+              <div style={{ marginTop: "20px" }}>
+                <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "8px" }}>
+                  {t("partnersTitle")}
+                </div>
+                {SUPPORT_PARTNERS.map(p => (
+                  <a
+                    key={p.id}
+                    href={p.href}
+                    target="_blank"
+                    rel="noopener noreferrer sponsored"
+                    style={{
+                      display: "flex", alignItems: "center", gap: "12px",
+                      padding: "10px 12px", borderRadius: "10px",
+                      background: "rgba(255,255,255,0.04)",
+                      border: "1px solid var(--color-border)",
+                      textDecoration: "none", marginBottom: "8px",
+                      transition: "background 0.15s",
+                    }}
+                    onMouseOver={e => (e.currentTarget.style.background = "rgba(255,255,255,0.07)")}
+                    onMouseOut={e => (e.currentTarget.style.background = "rgba(255,255,255,0.04)")}
+                  >
+                    <span style={{
+                      width: "92px", height: "44px", borderRadius: "8px",
+                      background: "#0b0e16",
+                      border: "1px solid var(--color-border)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      flexShrink: 0,
+                    }}>
+                      <img src={p.logo} alt={p.name} style={{ display: "block", ...p.imgStyle }} />
+                    </span>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: "12.5px", fontWeight: 600, color: "var(--color-text-primary)" }}>
+                        {p.name}
+                      </div>
+                      <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.45, marginTop: "2px" }}>
+                        {t(`partners${p.id}`)}
+                      </div>
+                    </div>
+                    <span style={{ marginLeft: "auto", fontSize: "12px", color: "var(--color-text-secondary)", flexShrink: 0 }}>↗</span>
+                  </a>
+                ))}
               </div>
 
               <div style={{ height: "1px", background: "var(--color-border)", margin: "16px 0" }} />
