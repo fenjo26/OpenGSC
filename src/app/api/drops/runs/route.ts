@@ -25,6 +25,18 @@ export async function GET() {
   }
 }
 
+/** A hand-picked column index, when the user overrode the detected header. */
+function parseColumnOverride(raw: unknown): { domain?: number; dr?: number; refdomains?: number } {
+  if (!raw || typeof raw !== "object") return {};
+  const src = raw as Record<string, unknown>;
+  const out: { domain?: number; dr?: number; refdomains?: number } = {};
+  for (const key of ["domain", "dr", "refdomains"] as const) {
+    const n = Number(src[key]);
+    if (Number.isInteger(n) && n >= 0 && n < 512) out[key] = n;
+  }
+  return out;
+}
+
 export async function POST(req: Request) {
   try {
     const userId = await workspaceUserId("write");
@@ -47,6 +59,7 @@ export async function POST(req: Request) {
       label: typeof body.label === "string" ? body.label : null,
       source,
       sourceRef: typeof body.sourceRef === "string" ? body.sourceRef : null,
+      columns: parseColumnOverride(body.columns),
       raw,
     });
 

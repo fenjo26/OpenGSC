@@ -4,7 +4,7 @@
 import { prisma } from "@/lib/prisma";
 import { rawQuery } from "@/lib/db/raw";
 import { monthKey } from "@/lib/seo/drHistory";
-import { parseDomainList, summariseSkips } from "./ingest";
+import { parseDomainRows, summariseSkips, type ColumnMap } from "./ingest";
 import { tldOf } from "./registries";
 import type { DropSource, DropStage } from "./types";
 import { WATCH_STAGES, nextWatchCheckMin, watchAcceleration } from "./watch";
@@ -57,6 +57,8 @@ export interface CreateRunInput {
   sourceRef?: string | null;
   /** Raw pasted text or CSV. Normalisation and rejection happen here, not in the route. */
   raw: string;
+  /** Column indexes the user picked by hand when the header was not recognised. */
+  columns?: { domain?: number; dr?: number; refdomains?: number };
 }
 
 export interface CreateRunResult {
@@ -66,6 +68,10 @@ export interface CreateRunResult {
   reattached: number;
   skipped: number;
   skipReport: Record<string, number>;
+  /** Which columns were used, so the UI can show them and offer to pick different ones. */
+  columns: ColumnMap;
+  /** Rows that arrived with DR or refdomains already filled — enrichment they will not need. */
+  metricsFromFile: number;
 }
 
 /**
@@ -77,8 +83,13 @@ export interface CreateRunResult {
  * silent and expensive kind of wrong.
  */
 export async function createRun(userId: string, input: CreateRunInput): Promise<CreateRunResult> {
-  const parsed = parseDomainList(input.raw);
+  // Table-aware by default: an Ahrefs export carries the target domain in a named column, not in
+  // the first domain-shaped field, and it carries DR the enrichment step would otherwise buy
+  // again. `parseDomainList` stays the path for a pasted bare list, which `parseDomainRows`
+  // handles too (no header → same "first field that looks like a domain" fallback).
+  const parsed = parseDomainRows(input.raw, input.columns ?? {});
   const skipReport = summariseSkips(parsed.skipped);
+  const metricsFromFile = parsed.rows.filter(r => r.dr != null || r.refdomains != null).length;
 
   const run = await db.dropRun.create({
     data: {
@@ -86,7 +97,7 @@ export async function createRun(userId: string, input: CreateRunInput): Promise<
       label: input.label?.trim() || null,
       source: input.source,
       sourceRef: input.sourceRef?.trim() || null,
-      total: parsed.domains.length,
+      total: parsed.rows.length,
       skipped: parsed.skipped.length,
       skipReport: JSON.stringify(skipReport),
     },
@@ -96,20 +107,28 @@ export async function createRun(userId: string, input: CreateRunInput): Promise<
   let inserted = 0;
   let reattached = 0;
 
-  for (let i = 0; i < parsed.domains.length; i += CHUNK) {
-    const chunk = parsed.domains.slice(i, i + CHUNK);
+  const now = new Date();
+
+  for (let i = 0; i < parsed.rows.length; i += CHUNK) {
+    const chunk = parsed.rows.slice(i, i + CHUNK);
+    const names = chunk.map(r => r.domain);
 
     // `createMany({ skipDuplicates })` is not available on SQLite, and this app ships SQLite by
     // default — so the duplicates are found first and handled explicitly instead.
     const existing = (await db.dropCandidate.findMany({
-      where: { userId, domain: { in: chunk } },
-      select: { id: true, domain: true },
-    })) as { id: string; domain: string }[];
-    const existingByDomain = new Map(existing.map(e => [e.domain, e.id]));
+      where: { userId, domain: { in: names } },
+      select: { id: true, domain: true, dr: true, refdomains: true },
+    })) as { id: string; domain: string; dr: number | null; refdomains: number | null }[];
+    const existingByDomain = new Map(existing.map(e => [e.domain, e]));
 
     const fresh = chunk
-      .filter(d => !existingByDomain.has(d))
-      .map(domain => ({ userId, runId: run.id, domain, tld: tldOf(domain) as string }));
+      .filter(r => !existingByDomain.has(r.domain))
+      .map(r => ({
+        userId, runId: run.id, domain: r.domain, tld: tldOf(r.domain) as string,
+        ...(r.dr != null ? { dr: r.dr } : {}),
+        ...(r.refdomains != null ? { refdomains: r.refdomains } : {}),
+        ...(r.dr != null || r.refdomains != null ? { metricsAt: now } : {}),
+      }));
 
     if (fresh.length) {
       await db.dropCandidate.createMany({ data: fresh });
@@ -121,6 +140,19 @@ export async function createRun(userId: string, input: CreateRunInput): Promise<
         data: { runId: run.id },
       });
       reattached += existing.length;
+      // A number from a file never overwrites one already on the row: a later enrichment pass is
+      // fresher than whatever export this is, and re-importing an old CSV must not walk it back.
+      // Filling a hole is free, so holes get filled.
+      for (const r of chunk) {
+        const seen = existingByDomain.get(r.domain);
+        if (!seen) continue;
+        const data: Record<string, unknown> = {};
+        if (r.dr != null && seen.dr == null) data.dr = r.dr;
+        if (r.refdomains != null && seen.refdomains == null) data.refdomains = r.refdomains;
+        if (!Object.keys(data).length) continue;
+        data.metricsAt = now;
+        await db.dropCandidate.update({ where: { id: seen.id }, data });
+      }
     }
   }
 
@@ -131,11 +163,13 @@ export async function createRun(userId: string, input: CreateRunInput): Promise<
 
   return {
     runId: run.id,
-    accepted: parsed.domains.length,
+    accepted: parsed.rows.length,
     inserted,
     reattached,
     skipped: parsed.skipped.length,
     skipReport,
+    columns: parsed.columns,
+    metricsFromFile,
   };
 }
 

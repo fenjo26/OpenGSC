@@ -4,6 +4,9 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { AlertTriangle, BadgeCheck, Boxes, ChevronDown, ChevronRight, CircleHelp, Database, Globe2, History, Link2, Loader2, Pencil, Plus, Radar, RefreshCw, Search, ShieldAlert, Sparkles, Square, Star, Upload, X } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import type { DropSource, DropStage } from "@/lib/drops/types";
+// Pure parsing, no server imports — the same function the route uses, so the columns the preview
+// promises are the columns the import reads. Two implementations would drift within a week.
+import { parseDomainRows } from "@/lib/drops/ingest";
 import { usePersistedState } from "@/lib/usePersistedState";
 import { getMetricsCreds } from "@/lib/seo/metricsClient";
 import { DrSparkline, drSeriesText, type DrPoint } from "@/components/DrSparkline";
@@ -27,6 +30,8 @@ type ImportSummary = {
   runId: string;
   accepted: number; inserted: number; reattached: number;
   skipped: number; skipReport: Record<string, number>;
+  /** Rows whose DR / refdomains rode in from the file instead of being bought again. */
+  metricsFromFile?: number;
 };
 
 type SortField = "score" | "domain" | "createdAt" | "dr" | "refdomains" | "snapshots" | "checkedAt" | "tf";
@@ -184,6 +189,11 @@ export default function DropsPage() {
 
   const [showImport, setShowImport] = useState(false);
   const [raw, setRaw] = useState("");
+  /** Name of the dropped file, purely so the user can see WHICH export is in the box. */
+  const [fileName, setFileName] = useState("");
+  const [dragOver, setDragOver] = useState(false);
+  /** Hand-picked column indexes, when the detected header was wrong or absent. */
+  const [colOverride, setColOverride] = useState<{ domain?: number; dr?: number; refdomains?: number }>({});
   const [label, setLabel] = useState("");
   const [source, setSource] = useState<DropSource>("csv");
   const [importing, setImporting] = useState(false);
@@ -539,6 +549,53 @@ export default function DropsPage() {
     setExcludedIds(new Set());
   }
 
+  /**
+   * Read a dropped export as text, guessing the encoding rather than assuming UTF-8.
+   *
+   * Ahrefs writes UTF-16LE with a BOM by default. `readAsText` at UTF-8 turns that into a wall
+   * of NUL-separated characters, every row is rejected as bad_characters, and the file looks
+   * broken. The BOM is three bytes of certainty — read it before deciding.
+   */
+  async function readExport(file: File): Promise<string> {
+    const buf = new Uint8Array(await file.arrayBuffer());
+    const encoding =
+      buf[0] === 0xff && buf[1] === 0xfe ? "utf-16le"
+        : buf[0] === 0xfe && buf[1] === 0xff ? "utf-16be"
+          : "utf-8";
+    return new TextDecoder(encoding).decode(buf).replace(/^\uFEFF/, "");
+  }
+
+  async function acceptFile(file: File | null | undefined) {
+    if (!file) return;
+    setError("");
+    try {
+      const text = await readExport(file);
+      setRaw(text);
+      setFileName(file.name);
+      setColOverride({});
+      setSummary(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  /**
+   * What the import is about to do, computed in the browser from the same parser the server runs.
+   * Shown BEFORE the button, because the failure this guards against is silent: pick the wrong
+   * column on an Outgoing-links export and the whole file collapses into the donor domain.
+   */
+  const preview = useMemo(() => {
+    if (!raw.trim()) return null;
+    const parsed = parseDomainRows(raw, colOverride);
+    return {
+      columns: parsed.columns,
+      rows: parsed.rows.length,
+      skipped: parsed.skipped.length,
+      withDr: parsed.rows.filter(r => r.dr != null).length,
+      sample: parsed.rows.slice(0, 5).map(r => r.domain),
+    };
+  }, [raw, colOverride]);
+
   async function runImport() {
     if (!raw.trim() || importing) return;
     setImporting(true); setError(""); setSummary(null);
@@ -546,12 +603,17 @@ export default function DropsPage() {
       const res = await fetch("/api/drops/runs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ raw, label: label.trim() || null, source }),
+        body: JSON.stringify({
+          raw, label: label.trim() || null, source,
+          ...(Object.keys(colOverride).length ? { columns: colOverride } : {}),
+        }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body?.error || "import_failed");
       setSummary(body);
       setRaw("");
+      setFileName("");
+      setColOverride({});
       await loadRuns();
       await loadRows();
       // The import's own DR pass, in the background: reattached rows keep their old rating, so
@@ -1065,8 +1127,64 @@ export default function DropsPage() {
           {SOURCES.map(s => <option key={s.value} value={s.value}>{tr(s.key)}</option>)}
         </select>
       </div>
-      <textarea className="tool-input" rows={8} value={raw} onChange={e => setRaw(e.target.value)}
+      {/* A drop target, not just a textarea: the file this page is built around is a 30 000-row
+          Ahrefs export, and nobody pastes one of those. The textarea stays for a quick list. */}
+      <label
+        onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={e => { e.preventDefault(); setDragOver(false); void acceptFile(e.dataTransfer.files?.[0]); }}
+        style={{
+          display: "block", padding: "22px 16px", textAlign: "center", cursor: "pointer",
+          border: `1px dashed ${dragOver ? "var(--color-accent-blue)" : "var(--color-border)"}`,
+          borderRadius: 10, fontSize: 13,
+          color: dragOver ? "var(--color-accent-blue)" : "var(--color-text-secondary)",
+          background: dragOver ? "rgba(10,132,255,0.06)" : "transparent",
+        }}>
+        <input type="file" accept=".csv,.tsv,.txt,text/csv,text/plain" style={{ display: "none" }}
+          onChange={e => { void acceptFile(e.target.files?.[0]); e.target.value = ""; }} />
+        {fileName
+          ? <><b style={{ color: "var(--color-text-primary)" }}>{fileName}</b>
+              {" · "}{tr("dropsFileLoaded").replace("{n}", raw.split(/\r?\n/).filter(Boolean).length.toLocaleString())}</>
+          : tr("dropsDropzone")}
+      </label>
+      <textarea className="tool-input" rows={6} value={raw}
+        onChange={e => { setRaw(e.target.value); setFileName(""); setColOverride({}); }}
         placeholder={tr("dropsImportPlaceholder")} style={{ fontFamily: "ui-monospace, monospace", fontSize: 12 }} />
+
+      {/* Which column the import is about to read. On an Outgoing-links export the source column
+          comes BEFORE the target one, so getting this wrong imports the donor and nothing else —
+          it has to be visible before the button is pressed, and overridable when it is wrong. */}
+      {preview && preview.columns.header.length > 0 && <div style={{ fontSize: 12, color: "var(--color-text-secondary)", display: "flex", flexDirection: "column", gap: 6 }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          {([
+            ["domain", tr("dropsColDomain")],
+            ["dr", tr("dropsColDr")],
+            ["refdomains", tr("dropsColRef")],
+          ] as const).map(([key, label_]) => <label key={key} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+            {label_}
+            <select className="tool-input" style={{ width: 190, fontSize: 12, padding: "3px 6px" }}
+              value={String(preview.columns[key] ?? -1)}
+              onChange={e => {
+                const v = Number(e.target.value);
+                setColOverride(prev => {
+                  const n = { ...prev };
+                  if (v < 0) delete n[key]; else n[key] = v;
+                  return n;
+                });
+              }}>
+              <option value="-1">{tr("dropsColNone")}</option>
+              {preview.columns.header.map((h, i) => <option key={i} value={i}>{h || `#${i + 1}`}</option>)}
+            </select>
+          </label>)}
+        </div>
+        <div style={{ color: preview.columns.detected ? "var(--color-text-tertiary)" : "var(--color-accent-orange, #ff9f0a)" }}>
+          {preview.columns.detected
+            ? tr("dropsColDetected")
+                .replace("{n}", preview.rows.toLocaleString())
+                .replace("{dr}", preview.withDr.toLocaleString())
+            : tr("dropsColUndetected")}
+        </div>
+      </div>}
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <button onClick={runImport} disabled={importing || !raw.trim()} style={primaryBtn}>
           {importing ? <Loader2 className="spin" size={14} /> : <Upload size={14} />}
@@ -1081,6 +1199,9 @@ export default function DropsPage() {
         {" · "}<b style={{ color: "var(--color-accent-green, #34c759)" }}>{summary.inserted}</b> {tr("dropsInserted")}
         {summary.reattached > 0 && <> · {summary.reattached} {tr("dropsReattached")}</>}
         {summary.skipped > 0 && <> · {summary.skipped} {tr("dropsSkipped")}</>}
+        {Number(summary.metricsFromFile ?? 0) > 0 && <div style={{ color: "var(--color-accent-green, #34c759)" }}>
+          {tr("dropsMetricsFromFile").replace("{n}", Number(summary.metricsFromFile).toLocaleString())}
+        </div>}
         {summary.skipped > 0 && <div style={{ color: "var(--color-text-tertiary)" }}>
           {Object.entries(summary.skipReport)
             .sort((a, b) => b[1] - a[1])
