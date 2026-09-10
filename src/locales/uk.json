@@ -3718,6 +3718,7 @@
   "dropsSkipped": "відкинуто",
   "dropsStageIngested": "Імпортований",
   "dropsStageDnsChecked": "Без DNS",
+  "dropsStageNoRegistry": "зона без реєстру",
   "dropsStageResolvedTaken": "Делегований",
   "dropsStageChecking": "Перевіряється",
   "dropsStageAvailable": "Вільний",

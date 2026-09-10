@@ -3718,6 +3718,7 @@
   "dropsSkipped": "rejetés",
   "dropsStageIngested": "Importé",
   "dropsStageDnsChecked": "Sans DNS",
+  "dropsStageNoRegistry": "zone sans registre",
   "dropsStageResolvedTaken": "Délégué",
   "dropsStageChecking": "Vérification",
   "dropsStageAvailable": "Libre",

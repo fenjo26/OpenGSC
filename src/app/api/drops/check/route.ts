@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { checkAvailabilityBatch } from "@/lib/drops/availability";
 import { profileForDomain, registryAnswerable } from "@/lib/drops/registries";
-import { countPendingAvailability, EXCLUDE_MAX, markUncheckableZones, parseCandidateFilter, pendingAvailabilityCandidates, recordAvailabilityResults, schemaMissing } from "@/lib/drops/store";
+import { countPendingAvailability, EXCLUDE_MAX, markUncheckableZones, retireUncheckableRows, parseCandidateFilter, pendingAvailabilityCandidates, recordAvailabilityResults, schemaMissing } from "@/lib/drops/store";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +45,10 @@ export async function POST(req: Request) {
     if (exclude && exclude.length > EXCLUDE_MAX) {
       return NextResponse.json({ error: "too_many_exclusions", max: EXCLUDE_MAX }, { status: 400 });
     }
+
+    // Catalogues flagged before `no_registry` existed still carry those rows in the pending
+    // stages; retiring them here keeps the funnel counts honest without a migration.
+    await retireUncheckableRows(userId);
 
     const pending = await pendingAvailabilityCandidates(userId, { runId, limit: batch, domains, filter, exclude });
     if (!pending.length) {

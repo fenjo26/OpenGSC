@@ -21,6 +21,13 @@ export type DropSource =
 export type DropStage =
   | "ingested"
   | "dns_checked"
+  /**
+   * The zone has no registry this app can ask (`.gr`: no RDAP, no working public WHOIS). A
+   * terminal stage for the built-in checker, not a verdict about the domain — the row is
+   * waiting for a registrar API, and it sits here rather than in `dns_checked` so it stops
+   * counting as "ждут реестра" and stops being re-marked every week forever.
+   */
+  | "no_registry"
   | "resolved_taken"
   | "checking"
   | "available"

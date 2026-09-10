@@ -67,6 +67,7 @@ const SOURCES: { value: DropSource; key: string }[] = [
 const STAGES: { value: DropStage; key: string; color: string }[] = [
   { value: "ingested", key: "dropsStageIngested", color: "var(--color-text-secondary)" },
   { value: "dns_checked", key: "dropsStageDnsChecked", color: "var(--color-accent-blue)" },
+  { value: "no_registry", key: "dropsStageNoRegistry", color: "var(--color-accent-orange, #ff9f0a)" },
   { value: "resolved_taken", key: "dropsStageResolvedTaken", color: "var(--color-text-tertiary)" },
   { value: "checking", key: "dropsStageChecking", color: "var(--color-accent-blue)" },
   { value: "available", key: "dropsStageAvailable", color: "var(--color-accent-green, #34c759)" },

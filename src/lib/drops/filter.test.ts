@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { applyExclusions, EXCLUDE_MAX, parseCandidateFilter } from "./store";
+import { applyExclusions, EXCLUDE_MAX, parseCandidateFilter, STAGE_VALUES } from "./store";
 
 // parseCandidateFilter is the one parser every filter surface shares — the table's GET query,
 // the bulk "выбрать все по фильтру" body, the registry check's filter, and the MCP tools. A
@@ -79,4 +79,16 @@ test("the exclusion list is capped at EXCLUDE_MAX", () => {
   const many = Array.from({ length: EXCLUDE_MAX + 25 }, (_, i) => `id${i}`);
   const narrowed = applyExclusions({ userId: "u1" }, many) as { id: { notIn: string[] } };
   assert.equal(narrowed.id.notIn.length, EXCLUDE_MAX);
+});
+
+// STAGE_VALUES is the whitelist parseCandidateFilter validates against: a stage present in the
+// DropStage union but missing here is dropped silently, and the funnel chip for it shows the
+// unfiltered table instead of an empty one. `no_registry` was added in exactly that shape.
+
+test("every stage the filter accepts survives parseCandidateFilter", () => {
+  for (const stage of STAGE_VALUES) {
+    assert.equal(parseCandidateFilter({ stage }).stage, stage, `stage ${stage} was dropped`);
+  }
+  assert.equal(parseCandidateFilter({ stage: "no_registry" }).stage, "no_registry");
+  assert.equal(parseCandidateFilter({ stage: "not_a_stage" }).stage, undefined);
 });

@@ -28,7 +28,7 @@ import { MAJESTIC_STATS_UNITS } from "@/lib/seo/metricsPricing";
 import type { DropSource, DropStage } from "@/lib/drops/types";
 
 const STAGES: DropStage[] = [
-  "ingested", "dns_checked", "resolved_taken", "checking",
+  "ingested", "dns_checked", "no_registry", "resolved_taken", "checking",
   "available", "taken", "confirmed", "rejected", "acquired",
 ];
 const SOURCES: DropSource[] = ["csv", "ahrefs_refdomains", "ahrefs_broken", "crawler", "zone_diff"];

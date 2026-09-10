@@ -3718,6 +3718,7 @@
   "dropsSkipped": "отброшено",
   "dropsStageIngested": "Импортирован",
   "dropsStageDnsChecked": "Без DNS",
+  "dropsStageNoRegistry": "зона без реестра",
   "dropsStageResolvedTaken": "Делегирован",
   "dropsStageChecking": "Проверяется",
   "dropsStageAvailable": "Свободен",

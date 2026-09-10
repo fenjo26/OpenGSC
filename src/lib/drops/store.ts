@@ -46,7 +46,7 @@ export function schemaMissing(error: unknown): boolean {
 
 /** Funnel stages and import sources, in canonical order — the routes whitelist with these. */
 export const STAGE_VALUES: DropStage[] = [
-  "ingested", "dns_checked", "resolved_taken", "checking",
+  "ingested", "dns_checked", "no_registry", "resolved_taken", "checking",
   "available", "taken", "confirmed", "rejected", "acquired",
 ];
 export const SOURCE_VALUES: DropSource[] = ["csv", "ahrefs_refdomains", "ahrefs_broken", "crawler", "zone_diff"];
@@ -618,10 +618,14 @@ export async function markUncheckableZones(userId: string, domains: string[]): P
     const res = await db.dropCandidate.updateMany({
       where: { userId, domain, stage: { in: ["dns_checked", "checking"] as DropStage[] } },
       data: {
+        // A terminal stage, not a backoff: no amount of waiting gives this zone an RDAP
+        // endpoint. Parking with `nextCheckAt` left the row in `dns_checked`, so the funnel
+        // kept advertising it as pending and re-marked it every week for nothing.
+        stage: "no_registry" as DropStage,
         lastStatus: "error",
         lastError: "zone_uncheckable",
         lastCheckedAt: new Date(),
-        nextCheckAt: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+        nextCheckAt: null,
       },
     });
     touched += res.count;
@@ -629,6 +633,24 @@ export async function markUncheckableZones(userId: string, domains: string[]): P
       "zone has no working RDAP or WHOIS — registry check needs a registrar API");
   }
   return touched;
+}
+
+/**
+ * Rows flagged `zone_uncheckable` before `no_registry` existed are still sitting in the pending
+ * stages behind a week-long backoff, so the funnel keeps counting them and the user keeps being
+ * invited to press a button that cannot help them. One sweep at the top of the check route
+ * retires them; it costs a single updateMany and is a no-op once the catalogue is clean.
+ */
+export async function retireUncheckableRows(userId: string): Promise<number> {
+  const res = await db.dropCandidate.updateMany({
+    where: {
+      userId,
+      lastError: "zone_uncheckable",
+      stage: { in: ["dns_checked", "checking"] as DropStage[] },
+    },
+    data: { stage: "no_registry" as DropStage, nextCheckAt: null },
+  });
+  return res.count;
 }
 
 /**

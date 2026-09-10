@@ -3718,6 +3718,7 @@
   "dropsSkipped": "已丢弃",
   "dropsStageIngested": "已导入",
   "dropsStageDnsChecked": "无 DNS",
+  "dropsStageNoRegistry": "该后缀无注册局接口",
   "dropsStageResolvedTaken": "已委派",
   "dropsStageChecking": "检查中",
   "dropsStageAvailable": "可注册",
