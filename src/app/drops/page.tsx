@@ -220,6 +220,10 @@ export default function DropsPage() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const toggleCollapsed = (id: string) => setCollapsed(prev => ({ ...prev, [id]: !prev[id] }));
 
+  /** The group whose id list is in flight. One click at a time: a second click landing before
+   * the fetch resolves would apply a stale `full` and undo the first. */
+  const [groupBusy, setGroupBusy] = useState<string | null>(null);
+
   // The group checkbox owns EXACTLY its group's domains: clicking it merges every id of the
   // group into the selection (fetched server-side, so rows on other pages are covered) or
   // removes exactly those ids again — whatever else was selected, inside or outside other
@@ -227,9 +231,14 @@ export default function DropsPage() {
   // converts that scope to an explicit selection of the visible rows outside the group, since
   // "everything minus one group" cannot ride the matchAll payload.
   const toggleGroupSelection = async (gid: string, full: boolean, totalIn: number) => {
+    if (groupBusy) return;
+    setGroupBusy(gid);
     try {
+      // Every id first, THEN one batched state transition. The old order dropped the
+      // "whole group" marker before awaiting the fetch, so the box rendered a partial state
+      // mid-click and the clear looked like it needed an extra click to take.
+      const ids = await fetchGroupIds(gid);
       if (!full) {
-        const ids = await fetchGroupIds(gid);
         setSelectedIds(prev => {
           const n = new Set(prev);
           for (const i of ids) n.add(i);
@@ -239,11 +248,14 @@ export default function DropsPage() {
         return;
       }
       if (selectAllFilter) {
+        // "Everything minus one group" cannot ride the matchAll payload, so the scope
+        // collapses to the visible rows outside the group.
+        const drop = new Set(ids);
         setSelectAllFilter(false);
         setFullGroups({});
-        setSelectedIds(prev => {
-          const n = new Set(prev);
-          for (const r of rows) if (r.groupId !== gid) n.add(r.id);
+        setSelectedIds(() => {
+          const n = new Set<string>();
+          for (const r of rows) if (r.groupId !== gid && !drop.has(r.id)) n.add(r.id);
           return n;
         });
         return;
@@ -254,7 +266,6 @@ export default function DropsPage() {
         delete n[gid];
         return n;
       });
-      const ids = await fetchGroupIds(gid);
       setSelectedIds(prev => {
         const n = new Set(prev);
         for (const i of ids) n.delete(i);
@@ -262,6 +273,8 @@ export default function DropsPage() {
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setGroupBusy(null);
     }
   };
 
@@ -891,27 +904,22 @@ export default function DropsPage() {
     }
   }
 
-  // The header checkbox is three-state, Gmail-style: click once selects the page, a second
-  // click widens to the whole filter, a third clears everything. `indeterminate` marks the
-  // filter state — everything on screen is checked, but the count says more is coming.
-  const pageAllSelected = rows.length > 0 && rows.every(r => selectAllFilter || selectedIds.has(r.id));
+  // The header checkbox has exactly two states, Sheets-style: checked means "everything is
+  // selected", unchecked means it is not. One click selects every row the current filter
+  // matches (all pages, all groups); one click on a checked box clears the lot. No
+  // `indeterminate` third state — a dash that had to be clicked through to get back to empty
+  // is precisely what this replaces.
+  const allSelected = selectAllFilter || (rows.length > 0 && rows.every(r => selectedIds.has(r.id)));
   const togglePage = () => {
-    if (selectAllFilter) { clearSelection(); return; }
-    if (pageAllSelected) { setSelectAllFilter(true); return; }
-    setSelectedIds(prev => {
-      const n = new Set(prev);
-      for (const r of rows) n.add(r.id);
-      return n;
-    });
+    if (allSelected) { clearSelection(); return; }
+    // The filter-wide scope subsumes any explicit ids and group markers, so they go.
+    setSelectAllFilter(true);
+    setSelectedIds(new Set());
+    setFullGroups({});
   };
-  const headerSelectRef = useCallback((el: HTMLInputElement | null) => {
-    if (el) el.indeterminate = selectAllFilter;
-  }, [selectAllFilter]);
-  const headerSelectLabel = selectAllFilter
+  const headerSelectLabel = allSelected
     ? tr("dropsClearSelection")
-    : pageAllSelected
-      ? tr("dropsSelectAllFilter").replace("{n}", total.toLocaleString())
-      : tr("dropsSelectPage");
+    : tr("dropsSelectAllFilter").replace("{n}", total.toLocaleString());
 
   const zones = useMemo(() => [...new Set(rows.map(r => r.tld))].sort(), [rows]);
   const totalAll = useMemo(() => Object.values(counts).reduce((a, b) => a + b, 0), [counts]);
@@ -1222,7 +1230,7 @@ export default function DropsPage() {
           <thead>
             <tr style={{ color: "var(--color-text-tertiary)", textAlign: "left" }}>
               <th style={{ ...th, width: 34 }}>
-                <input type="checkbox" ref={headerSelectRef} checked={selectAllFilter || pageAllSelected}
+                <input type="checkbox" checked={allSelected}
                   onChange={togglePage} aria-label={headerSelectLabel} title={headerSelectLabel}
                   style={{ cursor: "pointer" }} />
               </th>
@@ -1252,7 +1260,6 @@ export default function DropsPage() {
                 <td colSpan={COLUMNS.length + 1} style={{ padding: "6px 14px", borderBottom: "1px solid var(--color-border)" }}>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                     <input type="checkbox" checked={full}
-                      ref={el => { if (el) el.indeterminate = partial; }}
                       onChange={() => void toggleGroupSelection(seg.id, full, totalIn)}
                       aria-label={hint} title={partial ? `${hint} (${tr("dropsGroupPartial").replace("{n}", String(seg.pageSelected))})` : hint}
                       style={{ cursor: "pointer" }} />
