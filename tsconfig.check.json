@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": true,
+    "tsBuildInfoFile": "./tsconfig.check.tsbuildinfo"
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/lib/**/*.ts",
+    "src/lib/**/*.tsx",
+    "src/app/api/**/*.ts",
+    "src/app/aparser/**/*.tsx",
+    "src/app/seo-tools/**/*.tsx",
+    "src/components/**/*.tsx"
+  ],
+  "exclude": ["node_modules", "src/generated"]
+}
