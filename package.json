@@ -1,6 +1,6 @@
 {
   "name": "app-temp",
-  "version": "1.7.0",
+  "version": "1.6.2",
   "engines": {
     "node": ">=22.12.0"
   },

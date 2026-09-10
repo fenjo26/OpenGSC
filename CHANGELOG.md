@@ -3,7 +3,7 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
-## [1.7.0] — 2026-09-10
+## [1.6.2] — 2026-09-10
 
 ### Added
 

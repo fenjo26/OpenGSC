@@ -8,7 +8,7 @@
 
 Self-hosted on your own VPS. No subscriptions, no seat limits, no third party touching your data.
 
-[![Version 1.7.0](https://img.shields.io/badge/version-1.7.0-brightgreen)](https://github.com/fenjo26/opengsc/releases)
+[![Version 1.6.2](https://img.shields.io/badge/version-1.6.2-brightgreen)](https://github.com/fenjo26/opengsc/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Next.js 16](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue?logo=typescript)](https://www.typescriptlang.org/)
@@ -102,6 +102,7 @@ experimental porting guide with no promise of feature parity — see [`docs/TEST
   - [Demand — Keyword Research & Domain Overview](#demand--keyword-research--domain-overview)
   - [Site Health Checks](#site-health-checks)
   - [Indexing Status Tools](#indexing-status-tools)
+  - [Drops Catalogue — Expired Domain Funnel](#drops-catalogue--expired-domain-funnel-drops)
 - [🧠 AI SEO Content Suite (`/seo-tools`)](#-ai-seo-content-suite-seo-tools)
   - Keyword Clustering · Outline Generator · Text Generator · Content Rewriter · **AI-Fingerprint Lab** · Googlebot View · Content Gap · Landing Builder · GEO Audit · Citations · Link Monitor · Editorial Policy · History
 - [🕸️ Private Indexer Network](#-private-indexer-network)
@@ -257,7 +258,20 @@ It also includes built-in free integrations:
 - **Yandex.Webmaster** — the same switcher shows the full live Yandex view: SQI (ИКС), pages in search/excluded, clicks/impressions chart, top queries with positions, and Yandex's own site diagnostics (FATAL/CRITICAL problems) — plus sitemap submission and quota-aware URL recrawl via your own OAuth token. The Sync button refreshes every connected engine at once. Setup: [`docs/SEARCH-ENGINES-SETUP.md`](docs/SEARCH-ENGINES-SETUP.md).
 - **Smart Sitemap URL inspection fallback** — if a newly added site has no Search Console traffic or ranking query history, the inspection tool automatically crawls and retrieves up to 20 URLs from the site's `sitemap.xml` (or custom sitemap location) to inspect them.
 
+### Drops Catalogue — Expired Domain Funnel (`/drops`)
+
+A working bench for expired domains: import, vet, watch — and buy only what is worth buying.
+
+- **Import from anywhere.** Paste a raw list or a CSV; rows reduce to their registrable apex and rejected junk is reported per reason. **Ahrefs exports are read by column** (headers, RFC 4180 quoting), and the file's own DR / referring-domain numbers land on the candidates at import, so those rows never need paid enrichment.
+- **The pipeline is visible.** Import → DNS pre-filter (delegated domains retire for free) → registry check (RDAP + WHOIS; a "free" verdict needs two agreeing sources) → free domains, shown as a stage strip with live counts. A zone with no registry (`.gr`) is a stage, not a weekly retry.
+- **Proxy pool for the registry stage** (optional): SOCKS5 carries WHOIS (port 43 is raw TCP), HTTP proxies carry RDAP, and politeness is held per (zone, proxy) pair — several proxies may query one zone at once, a single proxy still may not.
+- **Registrar APIs for dead zones.** `.gr` answers through easy.gr (`EASY_GR_USERNAME` / `EASY_GR_PASSWORD` — IP-allowlisted, never proxied), and the registry's own table turns a taken domain's expiry date into a future drop date that feeds the watch loop. Manual verdicts close the rest: export a zone, check it in any registrar panel, paste the answers back.
+- **Cheap enrichment before anyone spends.** Free DR with the panel's own monthly series (a fall of 5+ points is a penalty flag, not lost links), Wayback snapshots, Majestic TF/CF in one batched call (~$0.000002 per domain), and paid refdomains behind a confirm. An AI history pass reads the archived life of a domain and returns clean / topic-shift / spam-period verdicts.
+- **Work the list like a spreadsheet.** Free-range filters (DR, referring domains, Trust Flow), collapsible groups ("buy in October", "defer"), bulk actions over the whole filter rather than the visible page, a watch loop that re-checks taken domains and alerts once when one frees, and export to CSV under the current filter or as a plain domain list.
+- **Agent surface:** the same flows are exposed as MCP tools (`drops_list`, `drops_ingest`, `drops_check`, `drops_enrich_*`, `drops_groups`, `drops_watch`, …).
+
 <br/>
+
 
 ## 🧠 AI SEO Content Suite (`/seo-tools`)
 
@@ -543,6 +557,8 @@ pm2 startup
 | `NEXTAUTH_SECRET` | Random secret used to encrypt sessions | `openssl rand -base64 32` |
 | `CONTENT_OPS_SECRET` | Optional stable key for Content Operations GitHub-token encryption; falls back to `NEXTAUTH_SECRET` | `openssl rand -base64 32` |
 | `OPENGSC_ALLOW_PRIVATE_TARGETS` | Optional. Allows owner-driven audits of localhost/LAN targets, which are blocked by default as SSRF protection. The public Free SEO Checker ignores it | `1` |
+| `EASY_GR_USERNAME` | Optional. easy.gr registrar account — enables availability checks for `.gr` (a zone with no RDAP/WHOIS). Calls go direct, never through the proxy pool, because the service is IP-allowlisted | `user@example.gr` |
+| `EASY_GR_PASSWORD` | Password for the same easy.gr account | `…` |
 | `NEXTAUTH_URL` | The app's full URL, including domain | `https://your-domain.com` |
 | `GOOGLE_CLIENT_ID` | From Google Cloud Console | `123...apps.googleusercontent.com` |
 | `GOOGLE_CLIENT_SECRET` | From Google Cloud Console | `GOCSPX-...` |
