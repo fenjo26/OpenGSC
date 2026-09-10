@@ -107,15 +107,6 @@ const DEFAULT_DIR: Record<SortField, "asc" | "desc"> = {
 
 const isPageSize = (v: unknown): boolean => typeof v === "number" && PAGE_SIZES.includes(v);
 
-/** Read the remembered collapsed-group map. Corrupted storage is no preference. */
-function readCollapsedGroups(): Record<string, boolean> {
-  if (typeof window === "undefined") return {};
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem("dropsCollapsedGroups") ?? "null");
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
-  } catch { return {}; }
-}
-
 /** One rendered table fragment: either a group's header row or a candidate row. */
 type Segment = { kind: "group"; id: string; name: string; pageRows: number } | { kind: "row"; r: Candidate; stripe: number };
 
@@ -153,12 +144,15 @@ export default function DropsPage() {
   const [pageSize, setPageSize] = usePersistedState<number>("dropsPageSize", 50, isPageSize);
   const [offset, setOffset] = useState(0);
 
-  // Selection. Two modes, like the reference catalogue this screen was modelled on: explicit
-  // `ids` (the checked rows) and "all by filter" — when the user selects a filtered set of
-  // 5 000 rows, they mean 5 000 rows, not the fifty on the page. The counter always shows the
-  // truth about what a bulk action will touch.
+  // Selection. Three mutually exclusive scopes, all bigger than the page where it makes sense:
+  // explicit `ids` (the checked rows), "all by filter" (5 000 filtered rows mean 5 000 rows,
+  // not the fifty on the page), and whole groups. A group scope rides the server machinery —
+  // one bulk call per group over {matchAll, filter:{groupId}} — so it covers every page at any
+  // size WITHOUT touching the table filter: selecting must never move the view, the earlier
+  // version that filtered to the group read as "all my other domains disappeared".
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectAllFilter, setSelectAllFilter] = useState(false);
+  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
 
   // Which row's donor profile is expanded under the table.
   const [openLinks, setOpenLinks] = useState<string | null>(null);
@@ -208,25 +202,23 @@ export default function DropsPage() {
   const [drHist, setDrHist] = useState<Record<string, DrPoint[]>>({});
   const drHistTried = useRef<Set<string>>(new Set());
 
-  /** Collapsed group headers, remembered across visits like every other table preference.
-   * (`usePersistedState` only carries scalars, so this one manages its own localStorage.) */
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(readCollapsedGroups);
-  const toggleCollapsed = (id: string) => {
-    const next = { ...collapsed, [id]: !collapsed[id] };
-    setCollapsed(next);
-    try { window.localStorage.setItem("dropsCollapsedGroups", JSON.stringify(next)); } catch { /* private mode */ }
-  };
+  /** Collapsed group headers. Session-only on purpose: a stray click on "+/−" must heal on
+   * refresh, not survive it — a persisted collapse once read as "the table lost its rows". */
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const toggleCollapsed = (id: string) => setCollapsed(prev => ({ ...prev, [id]: !prev[id] }));
 
-  // A group's checkbox is the whole group, on every page — there is no page-scope half-measure
-  // here, because a group IS a named selection and half of it is a lie. Whole-group scope rides
-  // the server machinery instead of id lists: filter to the group + "all by filter", so bulk
-  // actions run over every row of the group at any size, and the table shows exactly what is
-  // selected. Clicking the checked box clears the selection (the group filter stays).
-  const groupScoped = (gid: string) => groupId === gid && selectAllFilter;
+  // A group's checkbox selects the WHOLE group, on every page — there is no page-scope
+  // half-measure here, because a group IS a named selection and half of it is a lie. It never
+  // touches the table filter: checking a group swaps out any explicit selection (the scopes
+  // are mutually exclusive, so the counter stays honest), unchecking leaves other groups be.
   const toggleGroupSelection = (gid: string) => {
-    if (groupScoped(gid)) { clearSelection(); return; }
-    setGroupId(gid);
-    setSelectAllFilter(true);
+    setSelectAllFilter(false);
+    setSelectedIds(new Set());
+    setSelectedGroupIds(prev => {
+      const next = new Set(prev);
+      if (next.has(gid)) next.delete(gid); else next.add(gid);
+      return next;
+    });
   };
 
   const loadRuns = useCallback(async () => {
@@ -390,17 +382,37 @@ export default function DropsPage() {
     ...numericFilterParams,
   });
 
-  // The selection a bulk action will touch: explicit ids, or the whole filter with its count.
-  // Enrichment alone never runs in filter mode — a "free DR" sweep over 50 000 rows takes
-  // forever and a paid one bills for it, so it walks the selection or the visible page.
-  const selectedCount = selectAllFilter ? total : selectedIds.size;
+  // The selection a bulk action will touch, with an honest count in every scope: explicit ids,
+  // the whole filter, or the summed counts of whole selected groups. Enrichment alone never
+  // runs in a filter/group-wide pass — a "free DR" sweep over 50 000 rows takes forever and a
+  // paid one bills for it, so it walks the selection or the visible page.
+  const selectedGroupCount = useMemo(
+    () => groups.filter(g => selectedGroupIds.has(g.id)).reduce((a, g) => a + g.count, 0),
+    [groups, selectedGroupIds],
+  );
+  const selectedCount = selectAllFilter
+    ? total
+    : selectedGroupIds.size
+      ? selectedGroupCount
+      : selectedIds.size;
   const enrichTargets = () => {
-    const base = selectedIds.size ? rows.filter(r => selectedIds.has(r.id)).map(r => r.domain) : rows.map(r => r.domain);
+    const base = selectedIds.size
+      ? rows.filter(r => selectedIds.has(r.id)).map(r => r.domain)
+      : selectedGroupIds.size
+        ? rows.filter(r => r.groupId != null && selectedGroupIds.has(r.groupId)).map(r => r.domain)
+        : rows.map(r => r.domain);
     return [...new Set(base)];
   };
 
   function toggleRow(id: string) {
-    if (selectAllFilter) { setSelectAllFilter(false); setSelectedIds(new Set(rows.map(r => r.id))); return; }
+    if (selectAllFilter) { setSelectAllFilter(false); setSelectedIds(new Set(rows.map(r => r.id))); }
+    else if (selectedGroupIds.size) {
+      // One group-scoped row unchecked becomes an explicit selection of everything currently
+      // checked on the page — the same conversion the filter scope does.
+      setSelectAllFilter(false);
+      setSelectedGroupIds(new Set());
+      setSelectedIds(new Set(rows.filter(r => selectedIds.has(r.id) || (r.groupId != null && selectedGroupIds.has(r.groupId))).map(r => r.id)));
+    }
     setSelectedIds(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
@@ -411,6 +423,7 @@ export default function DropsPage() {
   function clearSelection() {
     setSelectAllFilter(false);
     setSelectedIds(new Set());
+    setSelectedGroupIds(new Set());
   }
 
   async function runImport() {
@@ -728,27 +741,35 @@ export default function DropsPage() {
     });
   };
 
-  /** Bulk delete / star / watch / group. `matchAll` hands the server the live filter. */
+  /** Bulk delete / star / watch / group. Scopes: checked ids, the whole filter, or one
+   * server-side {matchAll, filter:{groupId}} call per selected group — any group size. */
   async function bulk(action: "delete" | "star" | "unstar" | "watch" | "unwatch" | "group" | "ungroup", targetGroupId?: string) {
     if (action === "delete" && !window.confirm(tr("dropsConfirmDelete").replace("{n}", String(selectedCount)))) return;
+    const groupExtras = action === "group" ? { groupId: targetGroupId } : {};
+    const payloads: Record<string, unknown>[] = selectAllFilter
+      ? [{ matchAll: true, action, filter: filterPayload(), ...groupExtras }]
+      : selectedGroupIds.size
+        ? [...selectedGroupIds].map(gid => ({ matchAll: true, action, filter: { groupId: gid }, ...groupExtras }))
+        : [{ ids: [...selectedIds], action, ...groupExtras }];
     try {
-      const payload = selectAllFilter
-        ? { matchAll: true, action, filter: filterPayload(), ...(action === "group" ? { groupId: targetGroupId } : {}) }
-        : { ids: [...selectedIds], action, ...(action === "group" ? { groupId: targetGroupId } : {}) };
-      const res = await fetch("/api/drops/candidates", {
-        method: action === "delete" ? "DELETE" : "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body?.error || "bulk_failed");
+      let touched = 0;
+      for (const payload of payloads) {
+        const res = await fetch("/api/drops/candidates", {
+          method: action === "delete" ? "DELETE" : "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body?.error || "bulk_failed");
+        touched += action === "delete" ? (body.deleted ?? 0) : (body.updated ?? 0);
+      }
       setNotice(action === "delete"
-        ? tr("dropsDeleted").replace("{n}", String(body.deleted ?? 0))
+        ? tr("dropsDeleted").replace("{n}", String(touched))
         : action === "watch" || action === "unwatch"
-          ? tr("dropsWatchUpdated").replace("{n}", String(body.updated ?? 0))
+          ? tr("dropsWatchUpdated").replace("{n}", String(touched))
           : action === "group" || action === "ungroup"
-            ? tr("dropsGroupUpdated").replace("{n}", String(body.updated ?? 0))
-            : tr("dropsStarred").replace("{n}", String(body.updated ?? 0)));
+            ? tr("dropsGroupUpdated").replace("{n}", String(touched))
+            : tr("dropsStarred").replace("{n}", String(touched)));
       clearSelection();
       if (action === "group" || action === "ungroup") await loadGroups();
       await Promise.all([loadRows(), loadRuns()]);
@@ -802,6 +823,7 @@ export default function DropsPage() {
       const body = await res.json();
       if (!res.ok) throw new Error(body?.error || "group_failed");
       if (groupId === id) setGroupId("");
+      setSelectedGroupIds(prev => { const next = new Set(prev); next.delete(id); return next; });
       await loadGroups();
       await loadRows();
     } catch (e) {
@@ -828,10 +850,12 @@ export default function DropsPage() {
   // The header checkbox is three-state, Gmail-style: click once selects the page, a second
   // click widens to the whole filter, a third clears everything. `indeterminate` marks the
   // filter state — everything on screen is checked, but the count says more is coming.
-  const pageAllSelected = rows.length > 0 && rows.every(r => selectAllFilter || selectedIds.has(r.id));
+  const pageAllSelected = rows.length > 0 && rows.every(r =>
+    selectAllFilter || selectedIds.has(r.id) || (r.groupId != null && selectedGroupIds.has(r.groupId)));
   const togglePage = () => {
     if (selectAllFilter) { clearSelection(); return; }
-    if (pageAllSelected) { setSelectAllFilter(true); return; }
+    if (pageAllSelected) { setSelectAllFilter(true); setSelectedGroupIds(new Set()); return; }
+    setSelectedGroupIds(new Set());
     setSelectedIds(prev => new Set([...prev, ...rows.map(r => r.id)]));
   };
   const headerSelectRef = useCallback((el: HTMLInputElement | null) => {
@@ -1110,7 +1134,8 @@ export default function DropsPage() {
         </span>}
         {loading && <Loader2 className="spin" size={14} color="var(--color-text-tertiary)" />}
         <span style={{ flex: 1 }} />
-        <button onClick={() => setSelectAllFilter(true)} disabled={total === 0} style={pagerBtn(total === 0)}>
+        <button onClick={() => { setSelectedGroupIds(new Set()); setSelectedIds(new Set()); setSelectAllFilter(true); }}
+          disabled={total === 0} style={pagerBtn(total === 0)}>
           {tr("dropsSelectAllFilter").replace("{n}", total.toLocaleString())}
         </button>
         {selectedCount > 0 && <>
@@ -1128,8 +1153,14 @@ export default function DropsPage() {
             <option value="__new">{tr("dropsGroupNew")}</option>
           </select>
           <button onClick={() => void bulk("ungroup")} style={pagerBtn(false)}>{tr("dropsUngroup")}</button>
-          <button onClick={() => void runRegistryCheck(selectAllFilter ? undefined : [...selectedIds], selectAllFilter ? filterPayload() : undefined)}
-            style={pagerBtn(false)}>{tr("dropsBulkCheck")}</button>
+          <button onClick={() => {
+            if (selectAllFilter) { void runRegistryCheck(undefined, filterPayload()); return; }
+            if (selectedGroupIds.size) {
+              void (async () => { for (const gid of selectedGroupIds) await runRegistryCheck(undefined, { groupId: gid }); })();
+              return;
+            }
+            void runRegistryCheck([...selectedIds]);
+          }} style={pagerBtn(false)}>{tr("dropsBulkCheck")}</button>
           <button onClick={clearSelection} style={pagerBtn(false)}>{tr("dropsClearSelection")}</button>
         </>}
       </div>
@@ -1163,9 +1194,9 @@ export default function DropsPage() {
               return <tr key={`group-${seg.id}`} style={{ background: "var(--color-bg)" }}>
                 <td colSpan={COLUMNS.length + 1} style={{ padding: "6px 14px", borderBottom: "1px solid var(--color-border)" }}>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <input type="checkbox" checked={groupScoped(seg.id)} onChange={() => toggleGroupSelection(seg.id)}
-                      aria-label={groupScoped(seg.id) ? tr("dropsGroupUnselectHint") : tr("dropsGroupSelectHint").replace("{n}", String(totalIn))}
-                      title={groupScoped(seg.id) ? tr("dropsGroupUnselectHint") : tr("dropsGroupSelectHint").replace("{n}", String(totalIn))}
+                    <input type="checkbox" checked={selectedGroupIds.has(seg.id)} onChange={() => toggleGroupSelection(seg.id)}
+                      aria-label={selectedGroupIds.has(seg.id) ? tr("dropsGroupUnselectHint") : tr("dropsGroupSelectHint").replace("{n}", String(totalIn))}
+                      title={selectedGroupIds.has(seg.id) ? tr("dropsGroupUnselectHint") : tr("dropsGroupSelectHint").replace("{n}", String(totalIn))}
                       style={{ cursor: "pointer" }} />
                     <button onClick={() => toggleCollapsed(seg.id)}
                       aria-label={isCollapsed ? tr("dropsGroupExpand") : tr("dropsGroupCollapse")}
@@ -1188,7 +1219,8 @@ export default function DropsPage() {
             })() : (() => {
               const r = seg.r;
               const s = STAGES.find(x => x.value === r.stage);
-              const checked = selectAllFilter || selectedIds.has(r.id);
+              const checked = selectAllFilter || selectedIds.has(r.id)
+                || (r.groupId != null && selectedGroupIds.has(r.groupId));
               // Zebra. A translucent grey survives both themes; the tier-1 way to read a wide
               // table is "which cells belong to this row".
               const stripe = seg.stripe % 2 === 1 ? { background: "var(--color-row-alt, rgba(127,127,127,0.055))" } : undefined;
