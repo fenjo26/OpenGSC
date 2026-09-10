@@ -40,6 +40,22 @@ export interface RegistryProfile {
   notes?: string;
 }
 
+/**
+ * A domain, reduced to what may safely be pasted into a URL: letters, digits, hyphen and dot.
+ *
+ * The domain is concatenated into an RDAP endpoint or a registrar query string, so a row
+ * containing `../` or a second host would make this server fetch an address the list author
+ * chose. `ingest.ts` already rejects such rows, but this is also reachable from the scheduler
+ * and from any future caller, and a guard that only exists upstream is a guard that will one
+ * day be bypassed.
+ *
+ * Lives here rather than in `availability.ts` so a registrar source can use it without
+ * importing the module that imports the registrar sources.
+ */
+export function sanitiseForUrl(domain: string): string {
+  return domain.trim().toLowerCase().replace(/[^a-z0-9.-]/g, "");
+}
+
 /** Bootstrap redirector. Answers for most gTLDs, and answers 404 for anything it cannot route. */
 export const RDAP_BOOTSTRAP = "https://rdap.org/domain/";
 

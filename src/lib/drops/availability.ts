@@ -17,7 +17,7 @@ import { easyGrAvailability, easyGrCreds } from "./easyGr";
 import { DIRECT_POOL, type ProxyEndpoint, type ProxyPool } from "./proxies";
 import { proxyConnector, whoisConnector } from "./proxyTransport";
 import { parseWhoisAvailability, parseWhoisCreated, parseWhoisExpiry, parseWhoisNameServers, parseWhoisStatuses } from "./patterns";
-import { profileForDomain, type RegistryProfile } from "./registries";
+import { profileForDomain, sanitiseForUrl, type RegistryProfile } from "./registries";
 import { WhoisError, discoverWhoisHost, whoisQuery } from "./whois";
 import type { AvailabilityResult } from "./types";
 
@@ -26,16 +26,13 @@ const RDAP_MAX_BYTES = 512 * 1024;
 const USER_AGENT = "OpenGSC-Drops/1.0 (+https://github.com/fenjo26/OpenGSC)";
 
 /**
- * Only letters, digits, hyphen and dot ever reach a URL.
+ * Re-exported from `registries.ts`, where it now lives.
  *
- * The domain is concatenated into an RDAP endpoint, so a row containing `../` or a second host
- * would make this server fetch an address the list author chose. `ingest.ts` already rejects such
- * rows, but this function is also reachable from the scheduler and from any future caller, and a
- * guard that only exists upstream is a guard that will one day be bypassed.
+ * It moved because `easyGr.ts` needs it and this file imports `easyGr.ts`: keeping it here made
+ * the two modules import each other, and a cycle that happens to work under one bundler's
+ * evaluation order is a runtime failure waiting for a different one.
  */
-export function sanitiseForUrl(domain: string): string {
-  return domain.trim().toLowerCase().replace(/[^a-z0-9.-]/g, "");
-}
+export { sanitiseForUrl };
 
 /** Jitter before a registry call: identical-interval traffic is the easiest pattern to throttle. */
 function jitter(): Promise<void> {

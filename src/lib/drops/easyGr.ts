@@ -15,8 +15,7 @@
 // просто не пройдёт проверку.
 
 import { safeFetch } from "@/lib/security/safeFetch";
-import { sanitiseForUrl } from "./availability";
-import type { RegistryProfile } from "./registries";
+import { sanitiseForUrl, type RegistryProfile } from "./registries";
 
 const BASE = "https://api.easy.gr/";
 const TIMEOUT_MS = 12_000;
