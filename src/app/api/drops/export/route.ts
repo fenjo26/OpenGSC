@@ -48,7 +48,10 @@ export async function GET(req: Request) {
     const orderBy = p.get("orderBy");
     const filter = parseCandidateFilter(Object.fromEntries(p.entries()));
 
-    const lines = [COLUMNS.map(c => c[0]).join(",")];
+    // `format=list` is the shape an external checker eats: one domain per line, nothing else.
+    // The same filter as the CSV, so "export what the table is showing" means one thing.
+    const asList = p.get("format") === "list";
+    const lines = asList ? [] : [COLUMNS.map(c => c[0]).join(",")];
     let offset = 0;
     let truncated = false;
     for (;;) {
@@ -60,7 +63,7 @@ export async function GET(req: Request) {
         orderDir: p.get("order") === "asc" ? "asc" : "desc",
       });
       const rows = (page.rows ?? []) as Record<string, unknown>[];
-      for (const r of rows) lines.push(COLUMNS.map(c => cell(c[1](r))).join(","));
+      for (const r of rows) lines.push(asList ? String(r.domain) : COLUMNS.map(c => cell(c[1](r))).join(","));
       offset += rows.length;
       if (rows.length < PAGE || offset >= Math.min(page.total ?? 0, MAX_ROWS)) {
         truncated = (page.total ?? 0) > MAX_ROWS;
@@ -72,10 +75,13 @@ export async function GET(req: Request) {
     if (truncated) lines.push(`# truncated at ${MAX_ROWS} rows — narrow the filter for the rest`);
 
     const stamp = new Date().toISOString().slice(0, 10);
-    return new Response(`﻿${lines.join("\r\n")}\r\n`, {
+    // No BOM on the plain list: it is machine input, and a stray U+FEFF becomes part of the
+    // first domain in every parser that does not strip it.
+    const body = asList ? `${lines.join("\r\n")}\r\n` : `﻿${lines.join("\r\n")}\r\n`;
+    return new Response(body, {
       headers: {
-        "content-type": "text/csv; charset=utf-8",
-        "content-disposition": `attachment; filename="drops-${stamp}.csv"`,
+        "content-type": asList ? "text/plain; charset=utf-8" : "text/csv; charset=utf-8",
+        "content-disposition": `attachment; filename="drops-${stamp}.${asList ? "txt" : "csv"}"`,
         "cache-control": "no-store",
       },
     });

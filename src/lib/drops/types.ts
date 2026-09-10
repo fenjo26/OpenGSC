@@ -36,8 +36,14 @@ export type DropStage =
   | "rejected"
   | "acquired";
 
-/** How the answer was obtained. Kept on the result because it changes how much we trust it. */
-export type AvailabilitySource = "rdap" | "whois" | "dns" | "aparser";
+/**
+ * How the answer was obtained. Kept on the result because it changes how much we trust it.
+ *
+ * `manual` is a verdict brought back from outside — a registrar panel, or the registry's own web
+ * form driven by the user's own tool. It exists for zones the built-in checker cannot ask at all
+ * (`.gr`), and it is never corroborated: one source is one source, whoever typed it.
+ */
+export type AvailabilitySource = "rdap" | "whois" | "dns" | "aparser" | "manual";
 
 export type AvailabilityResult =
   | {

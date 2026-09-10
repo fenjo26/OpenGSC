@@ -202,6 +202,9 @@ export default function DropsPage() {
   const [colOverride, setColOverride] = useState<{ domain?: number; dr?: number; refdomains?: number }>({});
   const [showHow, setShowHow] = useState(false);
   const [showProxies, setShowProxies] = useState(false);
+  const [showManual, setShowManual] = useState(false);
+  const [manualRaw, setManualRaw] = useState("");
+  const [manualBusy, setManualBusy] = useState(false);
   const [proxies, setProxies] = useState<StoredProxy[]>([]);
   const [proxyRaw, setProxyRaw] = useState("");
   const [proxyBusy, setProxyBusy] = useState<"add" | "check" | null>(null);
@@ -369,6 +372,33 @@ export default function DropsPage() {
     setProxyNote(tr("dropsProxyChecked")
       .replace("{alive}", String(body.alive ?? 0))
       .replace("{n}", String(body.checked ?? 0)));
+  }
+
+  /** Verdicts checked outside and pasted back — the only way a zone with no registry ever moves. */
+  async function submitManual() {
+    if (!manualRaw.trim() || manualBusy) return;
+    setManualBusy(true); setError(""); setNotice("");
+    try {
+      const res = await fetch("/api/drops/manual", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ raw: manualRaw }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        throw new Error(body?.error === "no_verdicts" ? tr("dropsManualNothing") : (body?.error || "manual_failed"));
+      }
+      const skipped = Array.isArray(body.skipped) ? body.skipped.length : 0;
+      setNotice(tr("dropsManualDone")
+        .replace("{a}", String(body.available ?? 0))
+        .replace("{t}", String(body.taken ?? 0))
+        .replace("{s}", String(skipped)));
+      setManualRaw("");
+      await Promise.all([loadRows(), loadRuns()]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setManualBusy(false);
+    }
   }
 
   const loadRuns = useCallback(async () => {
@@ -1189,6 +1219,9 @@ export default function DropsPage() {
         <button onClick={() => setShowProxies(v => !v)} style={pagerBtn(false)}>
           {tr("dropsProxies")}{proxies.length > 0 ? ` · ${proxies.filter(p => p.enabled).length}` : ""}
         </button>
+        <button onClick={() => setShowManual(v => !v)} style={pagerBtn(false)}>
+          {tr("dropsManual")}{(counts.no_registry ?? 0) > 0 ? ` · ${(counts.no_registry ?? 0).toLocaleString()}` : ""}
+        </button>
         <button onClick={() => setShowImport(v => !v)} style={primaryBtn}>
           <Plus size={14} /> {tr("dropsImport")}
         </button>
@@ -1397,6 +1430,32 @@ export default function DropsPage() {
           </div>;
         })}
       </div>}
+    </div>}
+
+    {/* The way out of `no_registry`. A zone the checker cannot ask (.gr) would otherwise sit
+        there forever; this is the loop through whatever tool the user already drives. */}
+    {showManual && <div className="panel" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ fontSize: 12.5, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+        {tr("dropsManualWhy")}
+      </div>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <button onClick={() => {
+          const qs = new URLSearchParams({ format: "list", stage: "no_registry", orderBy, order: orderDir });
+          window.location.href = `/api/drops/export?${qs.toString()}`;
+        }} disabled={(counts.no_registry ?? 0) === 0} style={pagerBtn((counts.no_registry ?? 0) === 0)}>
+          {tr("dropsManualExport").replace("{n}", (counts.no_registry ?? 0).toLocaleString())}
+        </button>
+        <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>{tr("dropsManualExportHint")}</span>
+      </div>
+      <textarea className="tool-input" rows={5} value={manualRaw} onChange={e => setManualRaw(e.target.value)}
+        placeholder={tr("dropsManualPlaceholder")}
+        style={{ fontFamily: "ui-monospace, monospace", fontSize: 12 }} />
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <button onClick={() => void submitManual()} disabled={manualBusy || !manualRaw.trim()} style={primaryBtn}>
+          {manualBusy ? <Loader2 className="spin" size={14} /> : <Upload size={14} />} {tr("dropsManualApply")}
+        </button>
+        <span style={{ fontSize: 12, color: "var(--color-accent-orange, #ff9f0a)" }}>{tr("dropsManualNotCorroborated")}</span>
+      </div>
     </div>}
 
     {/* The stage that makes the rest affordable, and the only one the user has to start by hand.
