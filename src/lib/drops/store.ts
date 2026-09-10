@@ -288,6 +288,36 @@ function buildCandidateWhere(userId: string, f: CandidateFilter = {}): Record<st
 }
 
 /**
+ * The scope a bulk action runs over: either the explicitly checked rows (`ids`), or the whole
+ * filter (`filter`) minus the rows the user unchecked afterwards (`exclude`). The UI keeps
+ * "выделить всё" switched on when a row is unchecked, so what it sends are the holes in the
+ * selection, not the selection — collapsing to `ids` there would silently drop every selected
+ * row on the pages the user never visited.
+ */
+export interface CandidateScope {
+  ids?: string[];
+  filter?: CandidateFilter;
+  exclude?: string[];
+}
+
+/**
+ * Exclusions become SQL parameters, and SQLite counts them (999 by default, and the filter
+ * itself already spends some). The routes reject a longer list rather than truncate it: acting
+ * on rows the user explicitly unchecked is the one failure mode worth an error message.
+ */
+export const EXCLUDE_MAX = 500;
+
+/**
+ * `everything under the filter` narrowed by the holes the user punched in it. Exported for the
+ * test that pins the cap and the no-op case — a silently truncated list would act on rows the
+ * user had unchecked, which is the one outcome this whole mechanism exists to prevent.
+ */
+export function applyExclusions(where: Record<string, unknown>, exclude?: string[]): Record<string, unknown> {
+  if (!exclude?.length) return where;
+  return { ...where, id: { notIn: exclude.slice(0, EXCLUDE_MAX) } };
+}
+
+/**
  * A page of the catalogue plus the total behind the current filter.
  *
  * The count is what the UI shows as "По фильтру: 1 910 доменов", and it is a separate query on
@@ -369,10 +399,10 @@ export async function countPendingDns(userId: string, runId?: string): Promise<n
  */
 export async function pendingAvailabilityCandidates(
   userId: string,
-  opts: { runId?: string; limit?: number; domains?: string[]; filter?: CandidateFilter } = {},
+  opts: { runId?: string; limit?: number; domains?: string[]; filter?: CandidateFilter; exclude?: string[] } = {},
 ): Promise<string[]> {
   const base = opts.filter
-    ? buildCandidateWhere(userId, opts.filter)
+    ? applyExclusions(buildCandidateWhere(userId, opts.filter), opts.exclude)
     : { userId } as Record<string, unknown>;
   // Rows the registry refused earlier wait for their backoff to expire; without this a
   // throttled zone would be retried on every pass and never recover.
@@ -399,9 +429,10 @@ export async function countPendingAvailability(
   userId: string,
   runId?: string,
   filter?: CandidateFilter,
+  exclude?: string[],
 ): Promise<number> {
   const base = filter
-    ? buildCandidateWhere(userId, filter)
+    ? applyExclusions(buildCandidateWhere(userId, filter), exclude)
     : ({ userId, ...(runId ? { runId } : {}) } as Record<string, unknown>);
   const where = filter
     ? { ...base, AND: [{ stage: { in: ["dns_checked", "checking"] as DropStage[] } }, { OR: [{ nextCheckAt: null }, { nextCheckAt: { lte: new Date() } }] }] }
@@ -607,7 +638,7 @@ export async function markUncheckableZones(userId: string, domains: string[]): P
  */
 export async function deleteCandidates(
   userId: string,
-  scope: { ids?: string[]; filter?: CandidateFilter },
+  scope: CandidateScope,
 ): Promise<number> {
   if (scope.ids?.length) {
     let deleted = 0;
@@ -620,7 +651,9 @@ export async function deleteCandidates(
     return deleted;
   }
   if (scope.filter) {
-    const res = await db.dropCandidate.deleteMany({ where: buildCandidateWhere(userId, scope.filter) });
+    const res = await db.dropCandidate.deleteMany({
+      where: applyExclusions(buildCandidateWhere(userId, scope.filter), scope.exclude),
+    });
     return res.count;
   }
   return 0;
@@ -629,7 +662,7 @@ export async function deleteCandidates(
 /** Bulk star / unstar over a row selection or a whole filter. */
 export async function setStarred(
   userId: string,
-  scope: { ids?: string[]; filter?: CandidateFilter },
+  scope: CandidateScope,
   starred: boolean,
 ): Promise<number> {
   const data = { starred };
@@ -644,7 +677,9 @@ export async function setStarred(
     return touched;
   }
   if (scope.filter) {
-    const res = await db.dropCandidate.updateMany({ where: buildCandidateWhere(userId, scope.filter), data });
+    const res = await db.dropCandidate.updateMany({
+      where: applyExclusions(buildCandidateWhere(userId, scope.filter), scope.exclude), data,
+    });
     return res.count;
   }
   return 0;
@@ -792,7 +827,7 @@ export async function setHistoryVerdict(
  */
 export async function setWatched(
   userId: string,
-  scope: { ids?: string[]; filter?: CandidateFilter },
+  scope: CandidateScope,
   watched: boolean,
 ): Promise<number> {
   const data: Record<string, unknown> = watched ? { watched, nextCheckAt: new Date() } : { watched };
@@ -807,7 +842,9 @@ export async function setWatched(
     return touched;
   }
   if (scope.filter) {
-    const res = await db.dropCandidate.updateMany({ where: buildCandidateWhere(userId, scope.filter), data });
+    const res = await db.dropCandidate.updateMany({
+      where: applyExclusions(buildCandidateWhere(userId, scope.filter), scope.exclude), data,
+    });
     return res.count;
   }
   return 0;
@@ -882,7 +919,7 @@ export async function dropGroupExists(userId: string, groupId: string): Promise<
  */
 export async function setCandidateGroup(
   userId: string,
-  scope: { ids?: string[]; filter?: CandidateFilter },
+  scope: CandidateScope,
   groupId: string | null,
 ): Promise<number> {
   const data: Record<string, unknown> = { groupId };
@@ -897,7 +934,9 @@ export async function setCandidateGroup(
     return touched;
   }
   if (scope.filter) {
-    const res = await db.dropCandidate.updateMany({ where: buildCandidateWhere(userId, scope.filter), data });
+    const res = await db.dropCandidate.updateMany({
+      where: applyExclusions(buildCandidateWhere(userId, scope.filter), scope.exclude), data,
+    });
     return res.count;
   }
   return 0;

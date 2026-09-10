@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import {
   deleteCandidates, listCandidates, setStarred, setWatched, stageCounts, schemaMissing,
-  setCandidateGroup, dropGroupExists, parseCandidateFilter, type CandidateSortField,
+  setCandidateGroup, dropGroupExists, parseCandidateFilter, EXCLUDE_MAX, type CandidateSortField,
 } from "@/lib/drops/store";
 
 const SORT_FIELDS: CandidateSortField[] = ["score", "createdAt", "domain", "dr", "refdomains", "snapshots", "checkedAt", "tf"];
@@ -48,6 +48,11 @@ export async function GET(req: Request) {
  * Bulk actions over the selection. The body carries either explicit `ids` (the checked rows) or
  * `matchAll: true` + the current filter fields ("выбрать все по фильтру") — the same filter the
  * table reads with, so the count the UI promised is the count the query deletes or stars.
+ *
+ * `matchAll` may carry `exclude`: the rows the user unchecked after selecting everything. They
+ * arrive as holes rather than as a rewritten selection because the UI cannot enumerate 50 000
+ * ids, and a list longer than the cap is refused outright — quietly dropping exclusions would
+ * delete rows the user had explicitly unchecked.
  */
 async function bulk(req: Request): Promise<NextResponse> {
   try {
@@ -58,10 +63,16 @@ async function bulk(req: Request): Promise<NextResponse> {
     const ids = Array.isArray(body?.ids)
       ? body.ids.filter((v: unknown): v is string => typeof v === "string").slice(0, 500)
       : undefined;
+    const exclude = Array.isArray(body?.exclude)
+      ? body.exclude.filter((v: unknown): v is string => typeof v === "string")
+      : undefined;
+    if (exclude && exclude.length > EXCLUDE_MAX) {
+      return NextResponse.json({ error: "too_many_exclusions", max: EXCLUDE_MAX }, { status: 400 });
+    }
     const scope = ids?.length
       ? { ids }
       : body?.matchAll === true
-        ? { filter: parseCandidateFilter((body?.filter ?? {}) as Record<string, unknown>) }
+        ? { filter: parseCandidateFilter((body?.filter ?? {}) as Record<string, unknown>), exclude }
         : undefined;
     if (!scope) return NextResponse.json({ error: "no_selection" }, { status: 400 });
 

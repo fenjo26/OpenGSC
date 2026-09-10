@@ -3761,6 +3761,7 @@
   "dropsColDr": "DR",
   "dropsSelectAllFilter": "全选筛选结果 ({n})",
   "dropsClearSelection": "取消选择",
+  "dropsTooManyExclusions": "选择上限：启用\"全选\"时最多可取消勾选 {n} 行。",
   "dropsSelected": "已选：{n}",
   "dropsBulkDelete": "删除",
   "dropsBulkStar": "收藏",

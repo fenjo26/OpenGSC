@@ -3761,6 +3761,7 @@
   "dropsColDr": "DR",
   "dropsSelectAllFilter": "Tout sélectionner par filtre ({n})",
   "dropsClearSelection": "Effacer la sélection",
+  "dropsTooManyExclusions": "Limite de sélection : avec « tout sélectionner » activé, {n} lignes au plus peuvent être décochées.",
   "dropsSelected": "Sélectionné : {n}",
   "dropsBulkDelete": "Supprimer",
   "dropsBulkStar": "Favori",

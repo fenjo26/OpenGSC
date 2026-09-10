@@ -110,6 +110,9 @@ const isPageSize = (v: unknown): boolean => typeof v === "number" && PAGE_SIZES.
 /** One rendered table fragment: either a group's header row or a candidate row. */
 type Segment = { kind: "group"; id: string; name: string; pageRows: number; pageSelected: number } | { kind: "row"; r: Candidate; stripe: number };
 
+/** Mirrors EXCLUDE_MAX in lib/drops/store: the server refuses a longer exclusion list. */
+const EXCLUDE_MAX = 500;
+
 export default function DropsPage() {
   const { t } = useLanguage();
   const tr = (k: string) => t(k as never) as string;
@@ -157,6 +160,14 @@ export default function DropsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectAllFilter, setSelectAllFilter] = useState(false);
   const [fullGroups, setFullGroups] = useState<Record<string, number>>({});
+  /**
+   * The holes in "выделить всё": with `selectAllFilter` on, these ids are the rows the user
+   * unchecked afterwards. Unchecking used to collapse the scope to whatever rows happened to be
+   * on screen, silently dropping the selection on every other page; the scope now survives and
+   * the exclusions travel to the server with the filter. Capped to match the API's own cap —
+   * beyond it the request would be refused, so the click is refused first, with a reason.
+   */
+  const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set());
 
   /** Every id of a group, from the server — a group checkbox owns the whole group, all pages. */
   const fetchGroupIds = async (gid: string): Promise<string[]> => {
@@ -239,6 +250,16 @@ export default function DropsPage() {
       // mid-click and the clear looked like it needed an extra click to take.
       const ids = await fetchGroupIds(gid);
       if (!full) {
+        // Under "выделить всё" a group reads as unchecked only because its rows are holes;
+        // ticking it fills them back in rather than starting a second, competing selection.
+        if (selectAllFilter) {
+          setExcludedIds(prev => {
+            const n = new Set(prev);
+            for (const i of ids) n.delete(i);
+            return n;
+          });
+          return;
+        }
         setSelectedIds(prev => {
           const n = new Set(prev);
           for (const i of ids) n.add(i);
@@ -248,14 +269,15 @@ export default function DropsPage() {
         return;
       }
       if (selectAllFilter) {
-        // "Everything minus one group" cannot ride the matchAll payload, so the scope
-        // collapses to the visible rows outside the group.
-        const drop = new Set(ids);
-        setSelectAllFilter(false);
-        setFullGroups({});
-        setSelectedIds(() => {
-          const n = new Set<string>();
-          for (const r of rows) if (r.groupId !== gid && !drop.has(r.id)) n.add(r.id);
+        // Punch the group out of the filter-wide scope and stay in it. Collapsing to the
+        // visible page here is what used to lose every selected row on the other pages.
+        if (excludedIds.size + ids.length > EXCLUDE_MAX) {
+          setError(tr("dropsTooManyExclusions").replace("{n}", String(EXCLUDE_MAX)));
+          return;
+        }
+        setExcludedIds(prev => {
+          const n = new Set(prev);
+          for (const i of ids) n.add(i);
           return n;
         });
         return;
@@ -416,6 +438,21 @@ export default function DropsPage() {
     if (offset !== 0) setOffset(0);
   }
 
+  // "Выделить всё" is a filter, not a list of rows: leaving it on across a filter change would
+  // silently re-point the selection at a different set, and the next Delete would take rows the
+  // user never saw. Explicit ids name concrete rows and survive; the filter-wide scope does not.
+  // Sorting and page size are deliberately outside this key — they reorder, they do not reselect.
+  const scopeKey = `${runId}|${stage}|${tld.trim()}|${q.trim()}|${watched}|${JSON.stringify(numericFilterParams)}`;
+  const [lastScopeKey, setLastScopeKey] = useState(scopeKey);
+  if (scopeKey !== lastScopeKey) {
+    setLastScopeKey(scopeKey);
+    if (selectAllFilter) {
+      setSelectAllFilter(false);
+      setExcludedIds(new Set());
+      setFullGroups({});
+    }
+  }
+
   const sortClick = (field: SortField) => {
     if (orderBy === field) {
       setOrderDir(d => (d === "asc" ? "desc" : "asc"));
@@ -443,23 +480,30 @@ export default function DropsPage() {
   // filter count. Enrichment never runs in the filter-wide pass — a "free DR" sweep over
   // 50 000 rows takes forever and a paid one bills for it, so it walks the selection or the
   // visible page.
-  const selectedCount = selectAllFilter ? total : selectedIds.size;
+  const selectedCount = selectAllFilter ? Math.max(0, total - excludedIds.size) : selectedIds.size;
+  /** The one truth about a row's checkbox, used by the table, the group headers and the counter. */
+  const isRowSelected = useCallback(
+    (id: string) => (selectAllFilter ? !excludedIds.has(id) : selectedIds.has(id)),
+    [selectAllFilter, excludedIds, selectedIds],
+  );
   const enrichTargets = () => {
-    const base = selectedIds.size ? rows.filter(r => selectedIds.has(r.id)).map(r => r.domain) : rows.map(r => r.domain);
+    const base = selectAllFilter || selectedIds.size
+      ? rows.filter(r => isRowSelected(r.id)).map(r => r.domain)
+      : rows.map(r => r.domain);
     return [...new Set(base)];
   };
 
   function toggleRow(id: string) {
     if (selectAllFilter) {
-      // Leaving "everything" mode for the sake of one unchecked row: the explicit set becomes
-      // the visible page (plus whatever was already in it) minus that row. Selection beyond
-      // the page is honestly lost — the counter shows it.
-      setSelectAllFilter(false);
-      setFullGroups({});
-      setSelectedIds(prev => {
+      // "Everything" survives an unchecked row — it just grows a hole. The scope stays
+      // filter-wide, so the rows selected on pages the user never opened stay selected.
+      if (!excludedIds.has(id) && excludedIds.size >= EXCLUDE_MAX) {
+        setError(tr("dropsTooManyExclusions").replace("{n}", String(EXCLUDE_MAX)));
+        return;
+      }
+      setExcludedIds(prev => {
         const n = new Set(prev);
-        for (const r of rows) n.add(r.id);
-        n.delete(id);
+        if (n.has(id)) n.delete(id); else n.add(id);
         return n;
       });
       return;
@@ -482,6 +526,16 @@ export default function DropsPage() {
     setSelectAllFilter(false);
     setSelectedIds(new Set());
     setFullGroups({});
+    setExcludedIds(new Set());
+  }
+
+  /** Everything the current filter matches, across every page. Explicit ids, group markers and
+   *  holes all go — the filter-wide scope subsumes them. */
+  function selectAll() {
+    setSelectAllFilter(true);
+    setSelectedIds(new Set());
+    setFullGroups({});
+    setExcludedIds(new Set());
   }
 
   async function runImport() {
@@ -547,7 +601,7 @@ export default function DropsPage() {
     }
   }
 
-  async function runRegistryCheck(domains?: string[], filter?: Record<string, string>) {
+  async function runRegistryCheck(domains?: string[], filter?: Record<string, string>, exclude?: string[]) {
     if (checkBusy) return;
     checkStop.current = false;
     setCheckBusy(true); setError(""); setNotice("");
@@ -557,10 +611,15 @@ export default function DropsPage() {
         const res = await fetch("/api/drops/check", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ runId: runId || undefined, domains, filter }),
+          body: JSON.stringify({ runId: runId || undefined, domains, filter, exclude }),
         });
         const body = await res.json();
-        if (!res.ok) throw new Error(body?.error || "check_failed");
+        if (!res.ok) {
+          if (body?.error === "too_many_exclusions") {
+            throw new Error(tr("dropsTooManyExclusions").replace("{n}", String(body?.max ?? EXCLUDE_MAX)));
+          }
+          throw new Error(body?.error || "check_failed");
+        }
         totals.checked += body.checked ?? 0;
         totals.available += body.available ?? 0;
         totals.taken += body.taken ?? 0;
@@ -704,7 +763,9 @@ export default function DropsPage() {
   // rows only — it spends LLM credits, so five at a time behind a confirm, never on a list.
   async function enrichHistory() {
     if (enrichBusy) return;
-    const targets = selectAllFilter ? [] : rows.filter(r => selectedIds.has(r.id));
+    // Selected rows on this page, whichever way the selection is expressed. The ≤5 guard below
+    // is what keeps a filter-wide selection from turning into a credit-burning sweep.
+    const targets = rows.filter(r => isRowSelected(r.id));
     if (!targets.length || targets.length > 5) { setNotice(tr("dropsEnrichHistoryPick")); return; }
     if (!window.confirm(tr("dropsEnrichHistoryConfirm").replace("{n}", String(targets.length)))) { setNotice(tr("dropsEnrichCancelled")); return; }
     setEnrichBusy("history"); setError(""); setNotice("");
@@ -803,7 +864,7 @@ export default function DropsPage() {
   async function bulk(action: "delete" | "star" | "unstar" | "watch" | "unwatch" | "group" | "ungroup", targetGroupId?: string) {
     if (action === "delete" && !window.confirm(tr("dropsConfirmDelete").replace("{n}", String(selectedCount)))) return;
     const payload: Record<string, unknown> = selectAllFilter
-      ? { matchAll: true, action, filter: filterPayload() }
+      ? { matchAll: true, action, filter: filterPayload(), ...(excludedIds.size ? { exclude: [...excludedIds] } : {}) }
       : { ids: [...selectedIds], action };
     if (action === "group") payload.groupId = targetGroupId;
     try {
@@ -813,7 +874,14 @@ export default function DropsPage() {
         body: JSON.stringify(payload),
       });
       const body = await res.json();
-      if (!res.ok) throw new Error(body?.error || "bulk_failed");
+      if (!res.ok) {
+        // The cap is enforced on both sides; the server's word is final, and its code has to
+        // arrive as a sentence rather than as "too_many_exclusions".
+        if (body?.error === "too_many_exclusions") {
+          throw new Error(tr("dropsTooManyExclusions").replace("{n}", String(body?.max ?? EXCLUDE_MAX)));
+        }
+        throw new Error(body?.error || "bulk_failed");
+      }
       const touched = action === "delete" ? (body.deleted ?? 0) : (body.updated ?? 0);
       setNotice(action === "delete"
         ? tr("dropsDeleted").replace("{n}", String(touched))
@@ -909,13 +977,11 @@ export default function DropsPage() {
   // matches (all pages, all groups); one click on a checked box clears the lot. No
   // `indeterminate` third state — a dash that had to be clicked through to get back to empty
   // is precisely what this replaces.
-  const allSelected = selectAllFilter || (rows.length > 0 && rows.every(r => selectedIds.has(r.id)));
+  const allSelected = selectAllFilter
+    ? excludedIds.size === 0
+    : rows.length > 0 && rows.every(r => selectedIds.has(r.id));
   const togglePage = () => {
-    if (allSelected) { clearSelection(); return; }
-    // The filter-wide scope subsumes any explicit ids and group markers, so they go.
-    setSelectAllFilter(true);
-    setSelectedIds(new Set());
-    setFullGroups({});
+    if (allSelected) clearSelection(); else selectAll();
   };
   const headerSelectLabel = allSelected
     ? tr("dropsClearSelection")
@@ -952,7 +1018,6 @@ export default function DropsPage() {
       const i = groups.findIndex(g => g.id === gid);
       return i < 0 ? Number.MAX_SAFE_INTEGER : i;
     };
-    const isRowSelected = (r: Candidate) => selectAllFilter || selectedIds.has(r.id);
     const segs: Segment[] = [];
     let stripe = 0;
     for (const [gid, rs] of [...byGroup.entries()].sort((a, b) => orderOf(a[0]) - orderOf(b[0]))) {
@@ -960,13 +1025,13 @@ export default function DropsPage() {
         kind: "group", id: gid,
         name: rs[0]?.groupName || groups.find(g => g.id === gid)?.name || gid,
         pageRows: rs.length,
-        pageSelected: rs.filter(isRowSelected).length,
+        pageSelected: rs.filter(r => isRowSelected(r.id)).length,
       });
       if (!collapsed[gid]) for (const r of rs) segs.push({ kind: "row", r, stripe: stripe++ });
     }
     for (const r of loose) segs.push({ kind: "row", r, stripe: stripe++ });
     return segs;
-  }, [rows, groups, collapsed, selectAllFilter, selectedIds]);
+  }, [rows, groups, collapsed, isRowSelected]);
 
   return <div className="main-content" style={{ display: "flex", flexDirection: "column", gap: 16, paddingTop: 20, paddingBottom: 40 }}>
     <div style={{ display: "flex", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
@@ -1194,7 +1259,7 @@ export default function DropsPage() {
         </span>}
         {loading && <Loader2 className="spin" size={14} color="var(--color-text-tertiary)" />}
         <span style={{ flex: 1 }} />
-        <button onClick={() => { setSelectAllFilter(true); }}
+        <button onClick={selectAll}
           disabled={total === 0} style={pagerBtn(total === 0)}>
           {tr("dropsSelectAllFilter").replace("{n}", total.toLocaleString())}
         </button>
@@ -1214,7 +1279,7 @@ export default function DropsPage() {
           </select>
           <button onClick={() => void bulk("ungroup")} style={pagerBtn(false)}>{tr("dropsUngroup")}</button>
           <button onClick={() => {
-            if (selectAllFilter) void runRegistryCheck(undefined, filterPayload());
+            if (selectAllFilter) void runRegistryCheck(undefined, filterPayload(), excludedIds.size ? [...excludedIds] : undefined);
             else void runRegistryCheck([...selectedIds]);
           }} style={pagerBtn(false)}>{tr("dropsBulkCheck")}</button>
           <button onClick={clearSelection} style={pagerBtn(false)}>{tr("dropsClearSelection")}</button>
@@ -1247,12 +1312,16 @@ export default function DropsPage() {
             {segments.map(seg => seg.kind === "group" ? (() => {
               const totalIn = groups.find(g => g.id === seg.id)?.count ?? seg.pageRows;
               const isCollapsed = !!collapsed[seg.id];
-              // Truth first: full when the whole-filter scope covers everything, when the
-              // group's entire membership was pulled in via this very checkbox (marker matches
-              // the current size), or when every row of the group is on this page and checked.
+              // Truth first. Under "выделить всё" the group is full unless one of its rows is
+              // a hole — and only this page's rows can be inspected, so a hole punched on
+              // another page reads as full here; the row's own checkbox stays truthful either
+              // way. Otherwise: full when the group's entire membership was pulled in via this
+              // very checkbox (marker matches the current size), or when every row of the group
+              // is on this page and checked.
               const full = selectAllFilter
-                || fullGroups[seg.id] === totalIn && totalIn > 0
-                || (seg.pageRows > 0 && seg.pageRows >= totalIn && seg.pageSelected === seg.pageRows);
+                ? seg.pageRows > 0 && seg.pageSelected === seg.pageRows
+                : fullGroups[seg.id] === totalIn && totalIn > 0
+                  || (seg.pageRows > 0 && seg.pageRows >= totalIn && seg.pageSelected === seg.pageRows);
               const partial = !full && seg.pageSelected > 0;
               const hint = full ? tr("dropsGroupUnselectHint")
                 : tr("dropsGroupSelectHint").replace("{n}", String(totalIn));
@@ -1287,7 +1356,7 @@ export default function DropsPage() {
             })() : (() => {
               const r = seg.r;
               const s = STAGES.find(x => x.value === r.stage);
-              const checked = selectAllFilter || selectedIds.has(r.id);
+              const checked = isRowSelected(r.id);
               // Zebra. A translucent grey survives both themes; the tier-1 way to read a wide
               // table is "which cells belong to this row".
               const stripe = seg.stripe % 2 === 1 ? { background: "var(--color-row-alt, rgba(127,127,127,0.055))" } : undefined;

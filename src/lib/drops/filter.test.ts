@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseCandidateFilter } from "./store";
+import { applyExclusions, EXCLUDE_MAX, parseCandidateFilter } from "./store";
 
 // parseCandidateFilter is the one parser every filter surface shares — the table's GET query,
 // the bulk "выбрать все по фильтру" body, the registry check's filter, and the MCP tools. A
@@ -55,4 +55,28 @@ test("tld folds case and loses its dot; empty strings vanish", () => {
   assert.equal(empty.tld, undefined);
   assert.equal(empty.runId, undefined);
   assert.equal(empty.groupId, undefined);
+});
+
+// The "выделить всё, кроме…" scope. The UI keeps the filter-wide selection switched on when a
+// row is unchecked and sends the unchecked ids as holes, so this is the only thing standing
+// between "снял галочку" and a bulk delete that takes the row anyway.
+
+test("no exclusions leaves the where untouched", () => {
+  const where = { userId: "u1", stage: "available" };
+  assert.equal(applyExclusions(where, undefined), where);
+  assert.equal(applyExclusions(where, []), where);
+});
+
+test("exclusions become a notIn without mutating the original where", () => {
+  const where = { userId: "u1", stage: "available" };
+  const narrowed = applyExclusions(where, ["a", "b"]) as { id?: { notIn: string[] } };
+  assert.deepEqual(narrowed.id, { notIn: ["a", "b"] });
+  assert.deepEqual(where, { userId: "u1", stage: "available" });
+  assert.equal((narrowed as Record<string, unknown>).userId, "u1");
+});
+
+test("the exclusion list is capped at EXCLUDE_MAX", () => {
+  const many = Array.from({ length: EXCLUDE_MAX + 25 }, (_, i) => `id${i}`);
+  const narrowed = applyExclusions({ userId: "u1" }, many) as { id: { notIn: string[] } };
+  assert.equal(narrowed.id.notIn.length, EXCLUDE_MAX);
 });

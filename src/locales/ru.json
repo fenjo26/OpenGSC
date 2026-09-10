@@ -3761,6 +3761,7 @@
   "dropsColDr": "DR",
   "dropsSelectAllFilter": "Выбрать все по фильтру ({n})",
   "dropsClearSelection": "Снять выбор",
+  "dropsTooManyExclusions": "Предел выделения: при включённом «выделить всё» можно снять не больше {n} строк.",
   "dropsSelected": "Выбрано: {n}",
   "dropsBulkDelete": "Удалить",
   "dropsBulkStar": "В избранное",

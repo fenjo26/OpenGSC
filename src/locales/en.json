@@ -3761,6 +3761,7 @@
   "dropsColDr": "DR",
   "dropsSelectAllFilter": "Select all by filter ({n})",
   "dropsClearSelection": "Clear selection",
+  "dropsTooManyExclusions": "Selection limit: at most {n} rows can be unchecked while \"select all\" is on.",
   "dropsSelected": "Selected: {n}",
   "dropsBulkDelete": "Delete",
   "dropsBulkStar": "Star",

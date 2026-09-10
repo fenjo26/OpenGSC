@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { checkAvailabilityBatch } from "@/lib/drops/availability";
 import { profileForDomain, registryAnswerable } from "@/lib/drops/registries";
-import { countPendingAvailability, markUncheckableZones, parseCandidateFilter, pendingAvailabilityCandidates, recordAvailabilityResults, schemaMissing } from "@/lib/drops/store";
+import { countPendingAvailability, EXCLUDE_MAX, markUncheckableZones, parseCandidateFilter, pendingAvailabilityCandidates, recordAvailabilityResults, schemaMissing } from "@/lib/drops/store";
 
 export const dynamic = "force-dynamic";
 
@@ -37,10 +37,18 @@ export async function POST(req: Request) {
     const filter = !domains?.length && body?.filter && typeof body.filter === "object"
       ? parseCandidateFilter(body.filter as Record<string, unknown>)
       : undefined;
+    // The holes the user punched in "выделить всё" travel with the filter, or the queue would
+    // re-check exactly the rows he unchecked.
+    const exclude = filter && Array.isArray(body?.exclude)
+      ? body.exclude.filter((v: unknown): v is string => typeof v === "string")
+      : undefined;
+    if (exclude && exclude.length > EXCLUDE_MAX) {
+      return NextResponse.json({ error: "too_many_exclusions", max: EXCLUDE_MAX }, { status: 400 });
+    }
 
-    const pending = await pendingAvailabilityCandidates(userId, { runId, limit: batch, domains, filter });
+    const pending = await pendingAvailabilityCandidates(userId, { runId, limit: batch, domains, filter, exclude });
     if (!pending.length) {
-      const remaining = await countPendingAvailability(userId, runId, filter);
+      const remaining = await countPendingAvailability(userId, runId, filter, exclude);
       return NextResponse.json({ checked: 0, available: 0, taken: 0, deferred: 0, uncheckable: 0, remaining, done: true });
     }
 
@@ -59,7 +67,7 @@ export async function POST(req: Request) {
       markUncheckableZones(userId, uncheckable),
     ]);
     const written = await recordAvailabilityResults(userId, results);
-    const remaining = await countPendingAvailability(userId, runId, filter);
+    const remaining = await countPendingAvailability(userId, runId, filter, exclude);
 
     return NextResponse.json({
       checked: results.size,
