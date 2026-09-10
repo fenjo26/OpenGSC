@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  PROXY_FAIL_LIMIT, PROXY_REST_MS, hasSocks, markProxyResult, newHealth,
+  PROXY_FAIL_LIMIT, PROXY_REST_MS, createProxyPool, hasSocks, markProxyResult, newHealth,
   parseProxyList, parseProxyLine, pickProxy, proxyKey, redactProxy,
 } from "./proxies";
 
@@ -100,4 +100,73 @@ test("failures rest a proxy, a success clears the count, and the rest expires", 
 test("hasSocks answers the question the WHOIS path depends on", () => {
   assert.equal(hasSocks(parseProxyList("1.2.3.4:8080").proxies), false);
   assert.equal(hasSocks(parseProxyList("1.2.3.4:8080\nsocks5://5.6.7.8:1080").proxies), true);
+});
+
+// The pool's whole job is politeness accounting: the registry counts requests per ADDRESS, so
+// two proxies may hit one zone at once and one proxy may not.
+
+test("an empty pool leases a direct connection instead of blocking", async () => {
+  const pool = createProxyPool([]);
+  assert.equal(pool.size, 0);
+  const lease = await pool.lease("com", 1000);
+  assert.equal(lease.endpoint, null);
+});
+
+test("two proxies serve one zone concurrently — that is the entire speedup", async () => {
+  const pool = createProxyPool(parseProxyList("1.1.1.1:8080\n2.2.2.2:8080").proxies);
+  const started = Date.now();
+  const a = await pool.lease("com", 10_000);
+  const b = await pool.lease("com", 10_000);
+  assert.notEqual(a.endpoint!.host, b.endpoint!.host);
+  assert.ok(Date.now() - started < 500, "neither lease waited for the other");
+  a.release(true); b.release(true);
+});
+
+test("the same proxy waits out the zone interval before asking again", async () => {
+  const pool = createProxyPool(parseProxyList("1.1.1.1:8080").proxies);
+  const first = await pool.lease("com", 300);
+  first.release(true);
+  const started = Date.now();
+  const second = await pool.lease("com", 300);
+  assert.ok(Date.now() - started >= 250, `waited ${Date.now() - started}ms`);
+  second.release(true);
+});
+
+test("a different zone does not inherit another zone's wait", async () => {
+  const pool = createProxyPool(parseProxyList("1.1.1.1:8080").proxies);
+  (await pool.lease("com", 10_000)).release(true);
+  const started = Date.now();
+  const other = await pool.lease("de", 10_000);
+  assert.ok(Date.now() - started < 500, "the .de queue is not behind the .com one");
+  other.release(true);
+});
+
+test("a proxy in use is not handed out twice", async () => {
+  const pool = createProxyPool(parseProxyList("1.1.1.1:8080").proxies);
+  const held = await pool.lease("com", 0);
+  let secondDone = false;
+  const second = pool.lease("com", 0).then(l => { secondDone = true; return l; });
+  await new Promise(r => setTimeout(r, 120));
+  assert.equal(secondDone, false, "the second lease waited for the first to be released");
+  held.release(true);
+  (await second).release(true);
+});
+
+test("when every proxy is resting the check goes direct rather than stopping", async () => {
+  const pool = createProxyPool(parseProxyList("1.1.1.1:8080").proxies);
+  for (let i = 0; i < PROXY_FAIL_LIMIT; i++) {
+    const l = await pool.lease("com", 0);
+    l.release(false);
+  }
+  assert.equal(pool.snapshot()[0].resting, true);
+  const lease = await pool.lease("com", 0);
+  assert.equal(lease.endpoint, null, "a dead pool must not stall the whole run");
+});
+
+test("release is idempotent — a double release cannot free someone else's turn", async () => {
+  const pool = createProxyPool(parseProxyList("1.1.1.1:8080").proxies);
+  const l = await pool.lease("com", 0);
+  l.release(true);
+  l.release(false);
+  assert.equal(pool.snapshot()[0].resting, false);
 });

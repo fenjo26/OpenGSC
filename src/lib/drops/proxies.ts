@@ -187,3 +187,95 @@ export function markProxyResult(h: ProxyHealth, ok: boolean, now = Date.now()): 
 export function hasSocks(proxies: ProxyEndpoint[]): boolean {
   return proxies.some(p => p.kind === "socks5");
 }
+
+// ─── Пул: кто следующий и когда ему можно ────────────────────────────────────
+
+export interface ProxyLease {
+  /** `null` — пула нет или все отдыхают: идём напрямую, как раньше. */
+  endpoint: ProxyEndpoint | null;
+  release(ok: boolean): void;
+}
+
+export interface ProxyPool {
+  /** Сколько адресов в пуле. 0 — работаем напрямую. */
+  readonly size: number;
+  /** Есть ли SOCKS5: от этого зависит, доступен ли WHOIS через пул. */
+  readonly hasSocks: boolean;
+  /**
+   * Взять прокси под запрос к зоне `zone`, дождавшись, пока для ПАРЫ (зона, прокси) истечёт
+   * `minIntervalMs`. Вежливость к реестру считается по адресу, а не по нашему процессу: два
+   * разных прокси могут спрашивать одну зону одновременно, один и тот же — нет.
+   */
+  lease(zone: string, minIntervalMs: number): Promise<ProxyLease>;
+  /** Снимок здоровья — для отчёта в UI. */
+  snapshot(): { key: string; resting: boolean }[];
+}
+
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+/** Пустой пул: единый интерфейс для «прокси не настроены», без ветвлений у вызывающего. */
+export const DIRECT_POOL: ProxyPool = {
+  size: 0,
+  hasSocks: false,
+  async lease() { return { endpoint: null, release() {} }; },
+  snapshot() { return []; },
+};
+
+export function createProxyPool(endpoints: ProxyEndpoint[]): ProxyPool {
+  if (!endpoints.length) return DIRECT_POOL;
+
+  const byKey = new Map(endpoints.map(p => [proxyKey(p), p]));
+  const health = new Map([...byKey.keys()].map(k => [k, newHealth(k)]));
+  /** Когда пара (зона, прокси) последний раз ходила в реестр. */
+  const zoneUse = new Map<string, number>();
+  /** Прокси, занятые прямо сейчас: одно соединение на адрес за раз. */
+  const busy = new Set<string>();
+
+  const pool: ProxyPool = {
+    size: endpoints.length,
+    hasSocks: hasSocks(endpoints),
+    snapshot: () => [...health.values()].map(h => ({ key: h.key, resting: h.restingUntil > Date.now() })),
+    async lease(zone, minIntervalMs) {
+      for (;;) {
+        const now = Date.now();
+        const free = [...health.values()].filter(h => !busy.has(h.key) && h.restingUntil <= now);
+        if (!free.length) {
+          // Либо все заняты (ждём освобождения), либо все отдыхают (ждём конца отдыха). Если
+          // отдыхают ВСЕ и надолго — идём напрямую: остановить проверку целиком хуже, чем
+          // сходить со своего адреса.
+          const resting = [...health.values()].every(h => h.restingUntil > now);
+          if (resting && !busy.size) return { endpoint: null, release() {} };
+          await sleep(50);
+          continue;
+        }
+        // Дольше всех не ходивший в ЭТУ зону — так интервал зоны выжидается реже всего.
+        free.sort((a, b) => (zoneUse.get(`${zone}|${a.key}`) ?? 0) - (zoneUse.get(`${zone}|${b.key}`) ?? 0));
+        const chosen = free[0];
+        const zoneKey = `${zone}|${chosen.key}`;
+        const wait = (zoneUse.get(zoneKey) ?? 0) + minIntervalMs - now;
+        if (wait > 0) {
+          // Ждём, ПОМЕТИВ прокси занятым: иначе соседний воркер выберет тот же адрес и обгонит
+          // нас, и интервал зоны для него не выждет никто.
+          busy.add(chosen.key);
+          await sleep(Math.min(wait, minIntervalMs));
+          busy.delete(chosen.key);
+          continue;
+        }
+        busy.add(chosen.key);
+        zoneUse.set(zoneKey, Date.now());
+        chosen.lastUsedAt = Date.now();
+        let released = false;
+        return {
+          endpoint: byKey.get(chosen.key) ?? null,
+          release(ok: boolean) {
+            if (released) return;
+            released = true;
+            busy.delete(chosen.key);
+            markProxyResult(chosen, ok);
+          },
+        };
+      }
+    },
+  };
+  return pool;
+}

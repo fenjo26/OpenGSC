@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { rawQuery } from "@/lib/db/raw";
 import { monthKey } from "@/lib/seo/drHistory";
 import { parseDomainRows, summariseSkips, type ColumnMap } from "./ingest";
+import { createProxyPool, proxyKey, redactProxy, type ProxyEndpoint, type ProxyPool } from "./proxies";
 import { tldOf } from "./registries";
 import type { DropSource, DropStage } from "./types";
 import { WATCH_STAGES, nextWatchCheckMin, watchAcceleration } from "./watch";
@@ -685,6 +686,132 @@ export async function retireUncheckableRows(userId: string): Promise<number> {
     data: { stage: "no_registry" as DropStage, nextCheckAt: null },
   });
   return res.count;
+}
+
+// ─── Proxy pool ──────────────────────────────────────────────────────────────
+
+/** A stored proxy as the UI is allowed to see it: never the password. */
+export interface StoredProxy {
+  id: string;
+  kind: "http" | "socks5";
+  host: string;
+  port: number;
+  username: string | null;
+  enabled: boolean;
+  label: string;
+  lastOkAt: Date | null;
+  lastCheckedAt: Date | null;
+  lastError: string | null;
+  failures: number;
+}
+
+interface ProxyRow {
+  id: string; kind: string; host: string; port: number;
+  username: string | null; password: string | null; enabled: boolean;
+  lastOkAt: Date | null; lastCheckedAt: Date | null; lastError: string | null; failures: number;
+}
+
+const toEndpoint = (r: ProxyRow): ProxyEndpoint => ({
+  kind: r.kind === "socks5" ? "socks5" : "http",
+  host: r.host,
+  port: r.port,
+  ...(r.username ? { username: r.username } : {}),
+  ...(r.password ? { password: r.password } : {}),
+});
+
+/** The list for the screen. The password is dropped here, not in the route: one place to get right. */
+export async function listProxies(userId: string): Promise<StoredProxy[]> {
+  const rows = (await db.dropProxy.findMany({
+    where: { userId },
+    orderBy: [{ kind: "asc" }, { host: "asc" }, { port: "asc" }],
+  })) as ProxyRow[];
+  return rows.map(r => ({
+    id: r.id,
+    kind: r.kind === "socks5" ? "socks5" : "http",
+    host: r.host, port: r.port, username: r.username, enabled: r.enabled,
+    label: redactProxy(toEndpoint(r)),
+    lastOkAt: r.lastOkAt, lastCheckedAt: r.lastCheckedAt, lastError: r.lastError, failures: r.failures,
+  }));
+}
+
+/**
+ * Add a parsed list, keeping what is already there.
+ *
+ * Upsert rather than replace: the pool carries health, and re-pasting the same list from the
+ * provider's panel must not wipe what the last run learned about it. The unique key is
+ * (owner, kind, host, port), so the same address as HTTP and as SOCKS5 are two entries — which
+ * is right, since only one of them can carry WHOIS.
+ */
+export async function addProxies(userId: string, endpoints: ProxyEndpoint[]): Promise<{ added: number; updated: number }> {
+  let added = 0, updated = 0;
+  for (const p of endpoints) {
+    const where = { userId_kind_host_port: { userId, kind: p.kind, host: p.host, port: p.port } };
+    const existing = await db.dropProxy.findUnique({ where }).catch(() => null);
+    await db.dropProxy.upsert({
+      where,
+      create: {
+        userId, kind: p.kind, host: p.host, port: p.port,
+        username: p.username ?? null, password: p.password ?? null,
+      },
+      // Credentials are refreshed (the panel rotates them), health is not touched.
+      update: { username: p.username ?? null, password: p.password ?? null, enabled: true },
+    });
+    if (existing) updated++; else added++;
+  }
+  return { added, updated };
+}
+
+export async function deleteProxy(userId: string, id: string): Promise<number> {
+  const res = await db.dropProxy.deleteMany({ where: { userId, id } });
+  return res.count;
+}
+
+export async function setProxyEnabled(userId: string, id: string, enabled: boolean): Promise<number> {
+  const res = await db.dropProxy.updateMany({ where: { userId, id }, data: { enabled } });
+  return res.count;
+}
+
+/** Result of a live check, written back so the screen can show which addresses actually work. */
+export async function recordProxyCheck(
+  userId: string,
+  results: { host: string; port: number; kind: string; ok: boolean; error?: string }[],
+): Promise<void> {
+  const now = new Date();
+  for (const r of results) {
+    await db.dropProxy.updateMany({
+      where: { userId, kind: r.kind, host: r.host, port: r.port },
+      data: r.ok
+        ? { lastOkAt: now, lastCheckedAt: now, lastError: null, failures: 0 }
+        : { lastCheckedAt: now, lastError: (r.error ?? "failed").slice(0, 300) },
+    });
+  }
+}
+
+/** Endpoints with credentials — server-side only, never serialised to a response. */
+export async function proxyEndpoints(userId: string): Promise<ProxyEndpoint[]> {
+  const rows = (await db.dropProxy.findMany({ where: { userId, enabled: true } })) as ProxyRow[];
+  const seen = new Set<string>();
+  const out: ProxyEndpoint[] = [];
+  for (const r of rows) {
+    const e = toEndpoint(r);
+    const key = proxyKey(e);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(e);
+  }
+  return out;
+}
+
+/** The pool for one run. An owner with no proxies gets the direct pool — previous behaviour. */
+export async function loadProxyPool(userId: string): Promise<ProxyPool> {
+  try {
+    return createProxyPool(await proxyEndpoints(userId));
+  } catch (e) {
+    // A pool is an optimisation. If its table is missing (migration not pushed yet), the check
+    // must still run directly rather than 503 the whole stage.
+    if (schemaMissing(e)) return createProxyPool([]);
+    throw e;
+  }
 }
 
 /**

@@ -1567,6 +1567,33 @@ model DropRun {
 }
 
 /// A user-curated bucket of candidates — "выкупить в октябре", "отложить", "спросить партнёра".
+/// Outbound proxies for the drops registry check.
+///
+/// Stored per owner and used ONLY by the availability stage: the pool changes which address a
+/// registry sees, never how often one address asks. Credentials live here in plain text, the
+/// same way the rest of this app keeps third-party keys — they are the user's own paid proxies,
+/// and they never leave the server except as `redactProxy` output.
+model DropProxy {
+  id        String   @id @default(cuid())
+  userId    String
+  /// http | socks5. WHOIS needs socks5: port 43 is raw TCP and HTTP proxies refuse CONNECT.
+  kind      String   @default("http")
+  host      String   @db.VarChar(191)
+  port      Int
+  username  String?
+  password  String?
+  enabled   Boolean  @default(true)
+  /// Health, as the last run left it. Advisory only — a fresh run starts from a clean pool.
+  lastOkAt      DateTime?
+  lastCheckedAt DateTime?
+  lastError     String?
+  failures      Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, kind, host, port])
+  @@index([userId, enabled])
+}
+
 /// Orthogonal to both the funnel stage and the import run: a group can span runs and stages,
 /// because the decision it records ("what do I want to do with these") is the user's, not the
 /// pipeline's. Per-user and name-unique; deleting one leaves its rows in the catalogue.

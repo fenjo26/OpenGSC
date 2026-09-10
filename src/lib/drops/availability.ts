@@ -13,6 +13,8 @@
 // Derived in part from BigDesigner/project-backorder (MIT).
 
 import { safeFetch } from "@/lib/security/safeFetch";
+import { DIRECT_POOL, type ProxyEndpoint, type ProxyPool } from "./proxies";
+import { proxyConnector, whoisConnector } from "./proxyTransport";
 import { parseWhoisAvailability, parseWhoisCreated, parseWhoisExpiry, parseWhoisNameServers, parseWhoisStatuses } from "./patterns";
 import { profileForDomain, type RegistryProfile } from "./registries";
 import { WhoisError, discoverWhoisHost, whoisQuery } from "./whois";
@@ -56,7 +58,7 @@ interface RdapOutcome {
  * A 500 from a registry endpoint and a 404 from a bootstrap redirector carry no information about
  * the domain, and collapsing either into a verdict is how a checker reports live domains as free.
  */
-async function askRdap(domain: string, profile: RegistryProfile): Promise<RdapOutcome> {
+async function askRdap(domain: string, profile: RegistryProfile, via: ProxyEndpoint | null): Promise<RdapOutcome> {
   if (!profile.rdap) return { kind: "unusable", http: 0 };
   const base = profile.rdap.endsWith("/") ? profile.rdap : `${profile.rdap}/`;
 
@@ -66,8 +68,10 @@ async function askRdap(domain: string, profile: RegistryProfile): Promise<RdapOu
       timeoutMs: RDAP_TIMEOUT_MS,
       maxBytes: RDAP_MAX_BYTES,
       // A public registry is a public host. Nothing here should reach a private address, and
-      // saying so explicitly keeps this call unaffected by the instance-wide opt-out.
+      // saying so explicitly keeps this call unaffected by the instance-wide opt-out. The guard
+      // is unchanged by the proxy: the target is still resolved and still refused if private.
       allowPrivate: false,
+      ...(via ? { proxy: proxyConnector(via) } : {}),
     });
 
     if (res.status === 404) return { kind: "absent", http: 404 };
@@ -109,13 +113,16 @@ interface WhoisOutcome {
   nameServers?: string[];
 }
 
-async function askWhois(domain: string, profile: RegistryProfile): Promise<WhoisOutcome> {
+async function askWhois(domain: string, profile: RegistryProfile, via: ProxyEndpoint | null): Promise<WhoisOutcome> {
   const host = profile.whoisHost ?? (await discoverWhoisHost(profile.tld));
   if (!host) return { kind: "unusable" };
 
   let raw: string;
   try {
-    raw = await whoisQuery(host, domain);
+    // `whoisConnector` is null for an HTTP proxy — port 43 is raw TCP and HTTP proxies refuse
+    // CONNECT to it. Falling back to a direct dial beats ten seconds of certain refusal per
+    // domain; the UI says plainly that WHOIS needs SOCKS5.
+    raw = await whoisQuery(host, domain, (via && whoisConnector(via, host)) || undefined);
   } catch (e) {
     // A timeout is a refusal in disguise often enough that treating it as "no information" is the
     // only safe reading — see the four-way verdict in patterns.ts.
@@ -154,12 +161,15 @@ async function askWhois(domain: string, profile: RegistryProfile): Promise<Whois
  * - Both rate-limited     → `rate_limited`, so the caller backs off instead of recording a
  *                           verdict it did not get.
  */
-export async function checkAvailability(domain: string): Promise<AvailabilityResult> {
+export async function checkAvailability(
+  domain: string,
+  via: ProxyEndpoint | null = null,
+): Promise<AvailabilityResult> {
   const profile = profileForDomain(domain);
   if (!profile) return { ok: false, status: "error", http: 0, error: "not_a_domain" };
 
   await jitter();
-  const rdap = await askRdap(domain, profile);
+  const rdap = await askRdap(domain, profile, via);
 
   if (rdap.kind === "registered") {
     return {
@@ -169,7 +179,7 @@ export async function checkAvailability(domain: string): Promise<AvailabilityRes
     };
   }
   if (rdap.kind === "rate_limited") {
-    const whois = await askWhois(domain, profile);
+    const whois = await askWhois(domain, profile, via);
     if (whois.kind === "registered") {
       return {
         ok: true, status: "registered", http: 429, via: "whois",
@@ -183,7 +193,7 @@ export async function checkAvailability(domain: string): Promise<AvailabilityRes
     return { ok: false, status: "rate_limited", http: 429, retryAfterSec: rdap.retryAfterSec };
   }
 
-  const whois = await askWhois(domain, profile);
+  const whois = await askWhois(domain, profile, via);
 
   if (whois.kind === "registered") {
     return {
@@ -226,10 +236,25 @@ export async function checkAvailability(domain: string): Promise<AvailabilityRes
  * deadline simply get no result — the caller recomputes its pending count and the client asks
  * for the next slice, so nothing is lost, only deferred.
  */
+/**
+ * Сколько запросов одна зона ведёт одновременно, когда есть пул.
+ *
+ * Потолок, а не «сколько прокси, столько и полос»: вежливость считается по адресу, но толпа в
+ * сорок параллельных запросов к одному реестру заметна и с сорока разных адресов. Восемь —
+ * заметное ускорение, которое ещё не выглядит как атака.
+ */
+const MAX_LANES_PER_ZONE = 8;
+
 export async function checkAvailabilityBatch(
   domains: string[],
-  opts: { onResult?: (domain: string, res: AvailabilityResult) => void; deadlineMs?: number } = {},
+  opts: {
+    onResult?: (domain: string, res: AvailabilityResult) => void;
+    deadlineMs?: number;
+    /** Пул прокси. По умолчанию — прямое соединение, ровно прежнее поведение. */
+    pool?: ProxyPool;
+  } = {},
 ): Promise<Map<string, AvailabilityResult>> {
+  const pool = opts.pool ?? DIRECT_POOL;
   const out = new Map<string, AvailabilityResult>();
   const byZone = new Map<string, string[]>();
   const deadline = opts.deadlineMs != null ? Date.now() + opts.deadlineMs : Number.POSITIVE_INFINITY;
@@ -243,20 +268,41 @@ export async function checkAvailabilityBatch(
 
   await Promise.all([...byZone.entries()].map(async ([tld, list]) => {
     const interval = tld ? (profileForDomain(list[0])?.minIntervalMs ?? 3000) : 0;
-    for (let i = 0; i < list.length; i++) {
-      // Checked twice on purpose: before the sleep so a slow zone does not spend its whole
-      // budget waiting, and after it because the interval itself can outlast the budget — the
-      // sleep is capped at the remaining time so the overshoot is at most one jittered check.
-      if (Date.now() >= deadline) break;
-      if (i > 0) await new Promise(r => setTimeout(r, Math.max(0, Math.min(interval, deadline - Date.now()))));
-      if (Date.now() >= deadline) break;
-      const res = await checkAvailability(list[i]);
-      out.set(list[i], res);
-      opts.onResult?.(list[i], res);
-      // A registry that starts refusing will refuse the rest of its own queue too. Stopping this
-      // zone leaves the others running instead of burning the whole batch against one bad host.
-      if (!res.ok && res.status === "rate_limited") break;
-    }
+    // Without a pool this is one lane and the old serial walk, byte for byte.
+    const lanes = Math.max(1, Math.min(pool.size || 1, MAX_LANES_PER_ZONE, list.length));
+    let next = 0;
+    let refused = false;
+
+    await Promise.all(Array.from({ length: lanes }, async () => {
+      for (;;) {
+        // A registry that starts refusing will refuse the rest of its own queue too. Stopping
+        // this zone leaves the others running instead of burning the whole batch on one host.
+        if (refused || Date.now() >= deadline) return;
+        const i = next++;
+        if (i >= list.length) return;
+
+        // The wait now lives in the lease: it holds the interval per (zone, proxy) pair, so two
+        // proxies can ask this zone at once while one proxy still cannot. Capped at the budget,
+        // so a slow zone cannot spend the whole slice waiting.
+        const lease = await pool.lease(tld, Math.max(0, Math.min(interval, deadline - Date.now())));
+        if (Date.now() >= deadline) { lease.release(true); return; }
+
+        let res: AvailabilityResult;
+        try {
+          res = await checkAvailability(list[i], lease.endpoint);
+        } catch (e) {
+          lease.release(false);
+          throw e;
+        }
+        // Health is about the PROXY, not about the domain: "registered", "available" and even a
+        // rate limit all prove the proxy carried the request. Only `no_usable_source` — every
+        // source unreachable — is the shape a dead proxy takes, so only that counts against it.
+        lease.release(!(res.ok === false && res.status === "error" && res.error === "no_usable_source"));
+        out.set(list[i], res);
+        opts.onResult?.(list[i], res);
+        if (!res.ok && res.status === "rate_limited") { refused = true; return; }
+      }
+    }));
   }));
 
   return out;

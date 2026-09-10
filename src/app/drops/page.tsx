@@ -34,6 +34,12 @@ type ImportSummary = {
   metricsFromFile?: number;
 };
 
+type StoredProxy = {
+  id: string; kind: "http" | "socks5"; host: string; port: number;
+  username: string | null; enabled: boolean; label: string;
+  lastOkAt: string | null; lastCheckedAt: string | null; lastError: string | null; failures: number;
+};
+
 type SortField = "score" | "domain" | "createdAt" | "dr" | "refdomains" | "snapshots" | "checkedAt" | "tf";
 const PAGE_SIZES = [25, 50, 100, 200];
 
@@ -194,6 +200,11 @@ export default function DropsPage() {
   const [dragOver, setDragOver] = useState(false);
   /** Hand-picked column indexes, when the detected header was wrong or absent. */
   const [colOverride, setColOverride] = useState<{ domain?: number; dr?: number; refdomains?: number }>({});
+  const [showProxies, setShowProxies] = useState(false);
+  const [proxies, setProxies] = useState<StoredProxy[]>([]);
+  const [proxyRaw, setProxyRaw] = useState("");
+  const [proxyBusy, setProxyBusy] = useState<"add" | "check" | null>(null);
+  const [proxyNote, setProxyNote] = useState("");
   const [label, setLabel] = useState("");
   const [source, setSource] = useState<DropSource>("csv");
   const [importing, setImporting] = useState(false);
@@ -311,6 +322,54 @@ export default function DropsPage() {
     }
   };
 
+  const loadProxies = useCallback(async () => {
+    try {
+      const res = await fetch("/api/drops/proxies", { cache: "no-store" });
+      const body = await res.json();
+      if (Array.isArray(body?.proxies)) setProxies(body.proxies);
+    } catch { /* the pool is an optimisation; its absence must not break the page */ }
+  }, []);
+
+  /** One shape for every pool action: they all answer with the refreshed list. */
+  async function proxyAction(init: RequestInit, busy: "add" | "check" | null = null) {
+    if (proxyBusy) return null;
+    setProxyBusy(busy); setError(""); setProxyNote("");
+    try {
+      const res = await fetch("/api/drops/proxies", {
+        headers: { "Content-Type": "application/json" }, ...init,
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error === "no_proxies" ? tr("dropsProxyNoneParsed") : (body?.error || "proxy_failed"));
+      if (Array.isArray(body?.proxies)) setProxies(body.proxies);
+      return body;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      return null;
+    } finally {
+      setProxyBusy(null);
+    }
+  }
+
+  async function addProxies() {
+    if (!proxyRaw.trim()) return;
+    const body = await proxyAction({ method: "POST", body: JSON.stringify({ action: "add", raw: proxyRaw }) }, "add");
+    if (!body) return;
+    setProxyRaw("");
+    const skipped = Array.isArray(body.skipped) ? body.skipped.length : 0;
+    setProxyNote(tr("dropsProxyAdded")
+      .replace("{n}", String(body.added ?? 0))
+      .replace("{u}", String(body.updated ?? 0))
+      .replace("{s}", String(skipped)));
+  }
+
+  async function checkProxies() {
+    const body = await proxyAction({ method: "POST", body: JSON.stringify({ action: "check" }) }, "check");
+    if (!body) return;
+    setProxyNote(tr("dropsProxyChecked")
+      .replace("{alive}", String(body.alive ?? 0))
+      .replace("{n}", String(body.checked ?? 0)));
+  }
+
   const loadRuns = useCallback(async () => {
     try {
       const res = await fetch("/api/drops/runs", { cache: "no-store" });
@@ -372,7 +431,7 @@ export default function DropsPage() {
   // cannot: every state write inside `loadRuns` happens after an awaited fetch, several ticks
   // later. The linter cannot see across the await, so the suppression is narrow and local.
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { void loadRuns(); void loadGroups(); }, [loadRuns, loadGroups]);
+  useEffect(() => { void loadRuns(); void loadGroups(); void loadProxies(); }, [loadRuns, loadGroups, loadProxies]);
   // Debounced so typing in the search box does not fire a query per keystroke against a table
   // that can hold 50 000 rows.
   useEffect(() => {
@@ -1050,6 +1109,10 @@ export default function DropsPage() {
     ? tr("dropsClearSelection")
     : tr("dropsSelectAllFilter").replace("{n}", total.toLocaleString());
 
+  // WHOIS rides only on SOCKS5; an HTTP-only pool silently means "RDAP through proxies, WHOIS
+  // from this server", which changes both the speed and the corroboration rate.
+  const hasSocksProxy = proxies.some(p => p.enabled && p.kind === "socks5");
+
   const zones = useMemo(() => [...new Set(rows.map(r => r.tld))].sort(), [rows]);
   const totalAll = useMemo(() => Object.values(counts).reduce((a, b) => a + b, 0), [counts]);
   const pageFrom = total === 0 ? 0 : offset + 1;
@@ -1104,9 +1167,14 @@ export default function DropsPage() {
         </h1>
         <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginTop: 6, maxWidth: 820 }}>{tr("dropsSubtitle")}</p>
       </div>
-      <button onClick={() => setShowImport(v => !v)} style={primaryBtn}>
-        <Plus size={14} /> {tr("dropsImport")}
-      </button>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button onClick={() => setShowProxies(v => !v)} style={pagerBtn(false)}>
+          {tr("dropsProxies")}{proxies.length > 0 ? ` · ${proxies.filter(p => p.enabled).length}` : ""}
+        </button>
+        <button onClick={() => setShowImport(v => !v)} style={primaryBtn}>
+          <Plus size={14} /> {tr("dropsImport")}
+        </button>
+      </div>
     </div>
 
     {notMigrated && <div className="panel" style={{ color: "var(--color-accent-orange, #ff9f0a)", fontSize: 13 }}>
@@ -1208,6 +1276,50 @@ export default function DropsPage() {
             .map(([reason, n]) => `${n} — ${SKIP_KEYS[reason] ? tr(SKIP_KEYS[reason]) : reason}`)
             .join(" · ")}
         </div>}
+      </div>}
+    </div>}
+
+    {/* The pool. Optional on purpose — DropHunter refuses to start without proxies, but the
+        check here works from one IP too, just slowly, and pretending otherwise would be a lie. */}
+    {showProxies && <div className="panel" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ fontSize: 12.5, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+        {tr("dropsProxyWhy")}
+        <div style={{ color: hasSocksProxy ? "var(--color-text-tertiary)" : "var(--color-accent-orange, #ff9f0a)", marginTop: 4 }}>
+          {hasSocksProxy ? tr("dropsProxySocksOk") : tr("dropsProxySocksMissing")}
+        </div>
+      </div>
+      <textarea className="tool-input" rows={4} value={proxyRaw} onChange={e => setProxyRaw(e.target.value)}
+        placeholder={tr("dropsProxyPlaceholder")}
+        style={{ fontFamily: "ui-monospace, monospace", fontSize: 12 }} />
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <button onClick={() => void addProxies()} disabled={!!proxyBusy || !proxyRaw.trim()} style={primaryBtn}>
+          {proxyBusy === "add" ? <Loader2 className="spin" size={14} /> : <Plus size={14} />} {tr("dropsProxyAdd")}
+        </button>
+        <button onClick={() => void checkProxies()} disabled={!!proxyBusy || !proxies.length} style={pagerBtn(!proxies.length)}>
+          {proxyBusy === "check" ? <Loader2 className="spin" size={13} /> : null} {tr("dropsProxyCheck")}
+        </button>
+        {proxyNote && <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{proxyNote}</span>}
+      </div>
+
+      {proxies.length > 0 && <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12 }}>
+        {proxies.map(p => {
+          // Green means "the last live check tunnelled through it", not "it is configured".
+          const alive = !!p.lastOkAt && (!p.lastError || (p.lastCheckedAt ?? "") <= (p.lastOkAt ?? ""));
+          return <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <input type="checkbox" checked={p.enabled} title={tr("dropsProxyEnabled")}
+              onChange={() => void proxyAction({ method: "POST", body: JSON.stringify({ action: "toggle", id: p.id, enabled: !p.enabled }) })}
+              style={{ cursor: "pointer" }} />
+            <span style={{
+              fontFamily: "ui-monospace, monospace",
+              color: p.enabled ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
+            }}>{p.label}</span>
+            {p.lastCheckedAt && <span style={{ color: alive ? "var(--color-accent-green, #34c759)" : "#ff6b62" }}>
+              {alive ? tr("dropsProxyAlive") : (p.lastError || tr("dropsProxyDead"))}
+            </span>}
+            <button onClick={() => void proxyAction({ method: "DELETE", body: JSON.stringify({ id: p.id }) })}
+              aria-label={tr("dropsBulkDelete")} style={groupBtn}><X size={12} /></button>
+          </div>;
+        })}
       </div>}
     </div>}
 

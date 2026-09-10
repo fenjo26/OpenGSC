@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { checkAvailabilityBatch } from "@/lib/drops/availability";
 import { profileForDomain, registryAnswerable } from "@/lib/drops/registries";
-import { countPendingAvailability, EXCLUDE_MAX, markUncheckableZones, retireUncheckableRows, parseCandidateFilter, pendingAvailabilityCandidates, recordAvailabilityResults, schemaMissing } from "@/lib/drops/store";
+import { countPendingAvailability, EXCLUDE_MAX, loadProxyPool, markUncheckableZones, retireUncheckableRows, parseCandidateFilter, pendingAvailabilityCandidates, recordAvailabilityResults, schemaMissing } from "@/lib/drops/store";
 
 export const dynamic = "force-dynamic";
 
@@ -66,8 +66,12 @@ export async function POST(req: Request) {
       (profile && registryAnswerable(profile) ? answerable : uncheckable).push(domain);
     }
 
+    // The pool changes which address a registry sees, never how often one address asks: the
+    // zone intervals below are unchanged, they are just held per (zone, proxy) now. An owner
+    // with no proxies gets the direct pool and the previous behaviour exactly.
+    const pool = await loadProxyPool(userId);
     const [results, skippedCount] = await Promise.all([
-      checkAvailabilityBatch(answerable, { deadlineMs: DEADLINE_MS }),
+      checkAvailabilityBatch(answerable, { deadlineMs: DEADLINE_MS, pool }),
       markUncheckableZones(userId, uncheckable),
     ]);
     const written = await recordAvailabilityResults(userId, results);
@@ -75,6 +79,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       checked: results.size,
+      /** So the UI can say "through N proxies" instead of leaving the speed unexplained. */
+      viaProxies: pool.size,
       ...written,
       uncheckable: skippedCount,
       remaining,
