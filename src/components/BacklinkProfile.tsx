@@ -88,7 +88,12 @@ interface SourceCfg {
   hasKey: boolean;
 }
 
-export default function BacklinkProfile({ siteDbId }: { siteDbId: string }) {
+/**
+ * `siteDbId` renders the dashboard flow: target = the signed-in user's site row.
+ * `dropDomain` renders the /drops flow: target = a domain from the caller's own drops
+ * catalogue (the route re-verifies ownership — the prop only names the request shape).
+ */
+export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: string; dropDomain?: string }) {
   const { t } = useLanguage();
   // A client opening a share link sees the profile and cannot refresh it. The server enforces
   // that too — this only keeps a button on screen that would always fail.
@@ -170,7 +175,8 @@ export default function BacklinkProfile({ siteDbId }: { siteDbId: string }) {
     const credsA = getMetricsCreds("ahrefs");
     const credsM = getMetricsCreds("majestic");
     const credsS = getMetricsCreds("semrush");
-    const body: Record<string, unknown> = { siteId: siteDbId, view, fetch: doFetch };
+    const body: Record<string, unknown> = dropDomain ? { dropDomain } : { siteId: siteDbId, view, fetch: doFetch };
+    if (dropDomain) { body.view = view; body.fetch = doFetch; }
     const token = shareTokenFromPath();
     if (token) body.shareToken = token;
     if (doFetch) {
@@ -253,7 +259,7 @@ export default function BacklinkProfile({ siteDbId }: { siteDbId: string }) {
         : "");
       loadBalance().catch(() => {});
     }
-  }, [siteDbId, view, t, loadBalance, gatewayNotice]);
+  }, [dropDomain, siteDbId, view, t, loadBalance, gatewayNotice]);
 
   // Free read of what is stored — never reaches a provider. Re-reads when the tab changes:
   // each view is a different slice of the same stored table.

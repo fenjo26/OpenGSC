@@ -1,37 +1,17 @@
 import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
-import { deleteCandidates, listCandidates, setStarred, setWatched, stageCounts, schemaMissing, type CandidateSortField } from "@/lib/drops/store";
-import type { DropSource, DropStage } from "@/lib/drops/types";
+import {
+  deleteCandidates, listCandidates, setStarred, setWatched, stageCounts, schemaMissing,
+  setCandidateGroup, dropGroupExists, parseCandidateFilter, type CandidateSortField,
+} from "@/lib/drops/store";
 
-const STAGES: DropStage[] = [
-  "ingested", "dns_checked", "resolved_taken", "checking",
-  "available", "taken", "confirmed", "rejected", "acquired",
-];
-const SOURCES: DropSource[] = ["csv", "ahrefs_refdomains", "ahrefs_broken", "crawler", "zone_diff"];
-const SORT_FIELDS: CandidateSortField[] = ["score", "createdAt", "domain", "dr", "refdomains", "snapshots", "checkedAt"];
+const SORT_FIELDS: CandidateSortField[] = ["score", "createdAt", "domain", "dr", "refdomains", "snapshots", "checkedAt", "tf"];
 
 /** Filter fields shared by GET (read), DELETE and PATCH (bulk over "весь фильтр"). */
 function filterFromParams(p: URLSearchParams) {
-  const stage = p.get("stage");
-  const source = p.get("source");
-  const minScore = Number(p.get("minScore"));
-  const drMin = Number(p.get("drMin"));
-  const drMax = Number(p.get("drMax"));
-  return {
-    runId: p.get("runId") ?? undefined,
-    // An unrecognised value is dropped rather than passed through: a typo in the query string
-    // should show the unfiltered list, not an empty one the user reads as "nothing found".
-    stage: STAGES.includes(stage as DropStage) ? (stage as DropStage) : undefined,
-    source: SOURCES.includes(source as DropSource) ? (source as DropSource) : undefined,
-    tld: p.get("tld")?.toLowerCase().replace(/^\./, "") || undefined,
-    q: p.get("q") ?? undefined,
-    minScore: Number.isFinite(minScore) && p.get("minScore") ? minScore : undefined,
-    drMin: Number.isFinite(drMin) && p.get("drMin") ? drMin : undefined,
-    drMax: Number.isFinite(drMax) && p.get("drMax") ? drMax : undefined,
-    drNull: p.get("drNull") === "1" ? true : undefined,
-    starred: p.get("starred") === "1" ? true : undefined,
-    watched: p.get("watched") === "1" ? true : undefined,
-  };
+  // An unrecognised value is dropped rather than passed through: a typo in the query string
+  // should show the unfiltered list, not an empty one the user reads as "nothing found".
+  return parseCandidateFilter(Object.fromEntries(p.entries()));
 }
 
 export async function GET(req: Request) {
@@ -64,26 +44,6 @@ export async function GET(req: Request) {
   }
 }
 
-/** Filter fields sent by the client, dropped to `undefined` unless a non-empty string. */
-function filterFromBody(raw: unknown) {
-  const o = (raw ?? {}) as Record<string, unknown>;
-  const s = (k: string) => (typeof o[k] === "string" && o[k] !== "" ? (o[k] as string) : undefined);
-  const minScore = Number(o.minScore);
-  return filterFromParams(new URLSearchParams({
-    ...(s("runId") ? { runId: s("runId")! } : {}),
-    ...(s("stage") ? { stage: s("stage")! } : {}),
-    ...(s("source") ? { source: s("source")! } : {}),
-    ...(s("tld") ? { tld: s("tld")! } : {}),
-    ...(s("q") ? { q: s("q")! } : {}),
-    ...(Number.isFinite(minScore) && o.minScore != null && o.minScore !== "" ? { minScore: String(minScore) } : {}),
-    ...(s("drMin") ? { drMin: s("drMin")! } : {}),
-    ...(s("drMax") ? { drMax: s("drMax")! } : {}),
-    ...(o.drNull === "1" || o.drNull === 1 ? { drNull: "1" } : {}),
-    ...(o.starred === "1" || o.starred === 1 ? { starred: "1" } : {}),
-    ...(o.watched === "1" || o.watched === 1 ? { watched: "1" } : {}),
-  }));
-}
-
 /**
  * Bulk actions over the selection. The body carries either explicit `ids` (the checked rows) or
  * `matchAll: true` + the current filter fields ("выбрать все по фильтру") — the same filter the
@@ -101,7 +61,7 @@ async function bulk(req: Request): Promise<NextResponse> {
     const scope = ids?.length
       ? { ids }
       : body?.matchAll === true
-        ? { filter: filterFromBody(body?.filter) }
+        ? { filter: parseCandidateFilter((body?.filter ?? {}) as Record<string, unknown>) }
         : undefined;
     if (!scope) return NextResponse.json({ error: "no_selection" }, { status: 400 });
 
@@ -118,6 +78,19 @@ async function bulk(req: Request): Promise<NextResponse> {
     // until the registry frees it. Enabling makes the rows due immediately.
     if (action === "watch" || action === "unwatch") {
       const updated = await setWatched(userId, scope, action === "watch");
+      return NextResponse.json({ updated });
+    }
+    // Group assign / unassign. The groupId is validated against the caller's own groups first:
+    // a foreign or stale id must fail loudly, not silently regroup someone's shortlist.
+    if (action === "group" || action === "ungroup") {
+      let groupId: string | null = null;
+      if (action === "group") {
+        groupId = typeof body?.groupId === "string" ? body.groupId : "";
+        if (!groupId || !(await dropGroupExists(userId, groupId))) {
+          return NextResponse.json({ error: "group_not_found" }, { status: 404 });
+        }
+      }
+      const updated = await setCandidateGroup(userId, scope, groupId);
       return NextResponse.json({ updated });
     }
     return NextResponse.json({ error: "unknown_action" }, { status: 400 });

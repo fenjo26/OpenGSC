@@ -34,9 +34,13 @@ export async function POST(req: Request) {
       const dr = num((e as { dr?: unknown }).dr);
       const refdomains = num((e as { refdomains?: unknown }).refdomains);
       const backlinks = num((e as { backlinks?: unknown }).backlinks);
+      const tf = num((e as { tf?: unknown }).tf);
+      const cf = num((e as { cf?: unknown }).cf);
       if (dr !== undefined) entry.dr = dr;
       if (refdomains !== undefined) entry.refdomains = refdomains;
       if (backlinks !== undefined) entry.backlinks = backlinks;
+      if (tf !== undefined) entry.tf = tf;
+      if (cf !== undefined) entry.cf = cf;
       entries.push(entry);
     }
     if (!entries.length) return NextResponse.json({ updated: 0 });

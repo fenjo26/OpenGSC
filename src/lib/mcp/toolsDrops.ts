@@ -12,7 +12,7 @@ import {
   type Json, type McpTool, lim,
 } from "./shared";
 import { resolveAiCreds, assertConfirmed } from "./shared";
-import { createRun, listCandidates, stageCounts, pendingDnsCandidates, countPendingDns, recordDnsResults, pendingAvailabilityCandidates, countPendingAvailability, markUncheckableZones, recordAvailabilityResults, writeWaybackResults, writeMetricsUpdates, setHistoryVerdict, setWatchedByDomains, countWatched, storedWaybackTimestamps, type CandidateSortField } from "@/lib/drops/store";
+import { createRun, listCandidates, stageCounts, pendingDnsCandidates, countPendingDns, recordDnsResults, pendingAvailabilityCandidates, countPendingAvailability, markUncheckableZones, recordAvailabilityResults, writeWaybackResults, writeMetricsUpdates, setHistoryVerdict, setWatchedByDomains, countWatched, storedWaybackTimestamps, parseCandidateFilter, listDropGroups, createDropGroup, renameDropGroup, deleteDropGroup, dropGroupExists, setCandidateGroup, type CandidateSortField } from "@/lib/drops/store";
 import { checkDnsBatch } from "@/lib/drops/dns";
 import { checkAvailabilityBatch } from "@/lib/drops/availability";
 import { profileForDomain, registryAnswerable } from "@/lib/drops/registries";
@@ -23,7 +23,8 @@ import { getOwnerSettings } from "@/lib/engineKeysServer";
 import { analyseDomainHistory } from "@/lib/drops/history";
 import { fetchLLM } from "@/lib/llm";
 import { goanyDrHistory } from "@/lib/seo/goanyapi";
-import { fetchDomainMetrics, domainUnits, parseMetricsProvider } from "@/lib/seo/metrics";
+import { fetchDomainMetrics, fetchMajesticItemStats, domainUnits, parseMetricsProvider } from "@/lib/seo/metrics";
+import { MAJESTIC_STATS_UNITS } from "@/lib/seo/metricsPricing";
 import type { DropSource, DropStage } from "@/lib/drops/types";
 
 const STAGES: DropStage[] = [
@@ -31,7 +32,7 @@ const STAGES: DropStage[] = [
   "available", "taken", "confirmed", "rejected", "acquired",
 ];
 const SOURCES: DropSource[] = ["csv", "ahrefs_refdomains", "ahrefs_broken", "crawler", "zone_diff"];
-const SORT_FIELDS: CandidateSortField[] = ["score", "createdAt", "domain", "dr", "refdomains", "snapshots", "checkedAt"];
+const SORT_FIELDS: CandidateSortField[] = ["score", "createdAt", "domain", "dr", "refdomains", "snapshots", "checkedAt", "tf"];
 
 const CHECK_DEADLINE_MS = 35_000;
 
@@ -43,6 +44,32 @@ function domainsArg(args: Json): string[] {
     .filter(Boolean);
 }
 
+/** The scope a bulk group action acts over: explicit row ids or a drops_list-shaped filter. */
+function bulkScope(args: Json): { ids?: string[]; filter?: ReturnType<typeof parseCandidateFilter> } {
+  const ids = (Array.isArray(args.ids) ? args.ids : [])
+    .filter((v): v is string => typeof v === "string")
+    .slice(0, 500);
+  if (ids.length) return { ids };
+  if (args.filter && typeof args.filter === "object") {
+    return { filter: parseCandidateFilter(args.filter as Record<string, unknown>) };
+  }
+  throw new Error("ids or filter required");
+}
+
+/** Trust/Citation Flow read back out of a Majestic GetIndexItemInfo raw row. */
+function mjFlow(payload: unknown): { tf?: number; cf?: number } {
+  let row: Record<string, unknown> | undefined;
+  try { row = typeof payload === "string" ? JSON.parse(payload) : (payload as Record<string, unknown>); } catch { return {}; }
+  if (!row || typeof row !== "object") return {};
+  const lower = new Map(Object.keys(row).map(k => [k.toLowerCase(), k]));
+  const n = (name: string) => {
+    const v = lower.has(name) ? row![lower.get(name)!] : null;
+    const num = Number(v);
+    return v != null && v !== "" && Number.isFinite(num) ? num : undefined;
+  };
+  return { tf: n("trustflow"), cf: n("citationflow") };
+}
+
 function stageCountsSummary(userId: string, runId?: string) {
   return stageCounts(userId, runId);
 }
@@ -50,6 +77,8 @@ function stageCountsSummary(userId: string, runId?: string) {
 const row = (r: Record<string, unknown>) => ({
   domain: r.domain, tld: r.tld, stage: r.stage,
   dr: r.dr ?? null, refdomains: r.refdomainsDofollow ?? r.refdomains ?? null,
+  tf: r.majesticTf ?? null, cf: r.majesticCf ?? null,
+  groupId: r.groupId ?? null, group: (r.group as { name?: string } | null)?.name ?? null,
   waybackSnapshots: r.waybackSnapshots ?? null, waybackGapDays: r.waybackGapDays ?? null,
   score: r.score ?? null, historyVerdict: r.historyVerdict ?? null, historyNote: r.historyNote ?? null,
   corroborated: r.corroborated === true, watched: r.watched === true, lastError: r.lastError ?? null,
@@ -61,7 +90,7 @@ export const DROPS_TOOLS: McpTool[] = [
     name: "drops_list",
     cost: "local",
     description:
-      "List the expired-domain catalogue (/drops): candidates with stage, DR, refdomains, Wayback snapshots, score and AI history verdict. Filters: runId, stage, tld, q (domain substring), starred, watched, minScore, and a DR band (drMin/drMax inclusive range; drNull=true for rows never rated — a different thing from DR 0); sorted page. Returns the funnel stage counts alongside, so one call answers 'what does the catalogue look like'.",
+      "List the expired-domain catalogue (/drops): candidates with stage, DR, refdomains, Majestic TF/CF, group, Wayback snapshots, score and AI history verdict. Filters: runId, stage, tld, q (domain substring), starred, watched, groupId / ungrouped, minScore, and inclusive numeric ranges — drMin/drMax (drNull=true for rows never rated — a different thing from DR 0), refMin/refMax on the displayed refdomain count, tfMin/tfMax on Majestic Trust Flow; sorted page. Returns the funnel stage counts alongside, so one call answers 'what does the catalogue look like'.",
     inputSchema: {
       type: "object",
       properties: {
@@ -75,6 +104,12 @@ export const DROPS_TOOLS: McpTool[] = [
         drMin: { type: "number", description: "minimum DR, inclusive — e.g. 10 for 'DR ≥ 10'" },
         drMax: { type: "number", description: "maximum DR, inclusive — e.g. 5 for the garbage band 0–5" },
         drNull: { type: "boolean", description: "true = only rows with no DR yet (never enriched, or Ahrefs has no rating); independent of drMin/drMax" },
+        refMin: { type: "number", description: "minimum referring domains, inclusive (dofollow when known, total otherwise)" },
+        refMax: { type: "number", description: "maximum referring domains, inclusive" },
+        tfMin: { type: "number", description: "minimum Majestic Trust Flow, inclusive" },
+        tfMax: { type: "number", description: "maximum Majestic Trust Flow, inclusive" },
+        groupId: { type: "string", description: "only rows in this curated group (see drops_groups)" },
+        ungrouped: { type: "boolean", description: "true = only rows in no group" },
         limit: { type: "number", description: "rows per page, default 50, max 200" },
         offset: { type: "number" },
         orderBy: { type: "string", description: `one of: ${SORT_FIELDS.join(", ")} (default score)` },
@@ -98,6 +133,12 @@ export const DROPS_TOOLS: McpTool[] = [
         drMin: typeof args.drMin === "number" ? args.drMin : undefined,
         drMax: typeof args.drMax === "number" ? args.drMax : undefined,
         drNull: args.drNull === true ? true : undefined,
+        refMin: typeof args.refMin === "number" ? args.refMin : undefined,
+        refMax: typeof args.refMax === "number" ? args.refMax : undefined,
+        tfMin: typeof args.tfMin === "number" ? args.tfMin : undefined,
+        tfMax: typeof args.tfMax === "number" ? args.tfMax : undefined,
+        groupId: typeof args.groupId === "string" && args.groupId ? args.groupId : undefined,
+        ungrouped: args.ungrouped === true ? true : undefined,
         limit: lim(args.limit, 50, 200),
         offset: lim(args.offset, 0, 1_000_000) - 1,
         orderBy: sortField,
@@ -318,16 +359,121 @@ export const DROPS_TOOLS: McpTool[] = [
       if (!(await withinCap(userId, provider, units, cap))) throw new Error("cap_exceeded: monthly metrics cap would be exceeded — raise the cap or shrink the batch");
       await recordUsage(userId, provider, units);
 
-      const results: { domain: string; refdomains?: number; backlinks?: number }[] = [];
+      const results: { domain: string; refdomains?: number; backlinks?: number; tf?: number; cf?: number }[] = [];
       for (const domain of domains) {
         const res = await fetchDomainMetrics({ provider, apiKey, baseUrl }, domain);
         if (res.error || !res.items.length) continue;
         const m = res.items[0];
-        results.push({ domain, refdomains: m.refDomains ?? undefined, backlinks: m.backlinks ?? undefined });
+        // Majestic's raw row carries Trust/Citation Flow the metrics shape drops — rescue them
+        // so a TF-filtered workflow does not need a second tool call.
+        results.push({ domain, refdomains: m.refDomains ?? undefined, backlinks: m.backlinks ?? undefined, ...(provider === "majestic" ? mjFlow(m.payload) : {}) });
       }
       await releaseUnusedUnits(userId, provider, units, perDomain * results.length);
       const updated = await writeMetricsUpdates(userId, results);
       return { updated, results, unitsSpent: perDomain * results.length };
+    },
+  },
+
+  {
+    name: "drops_enrich_tf",
+    cost: "paid",
+    idempotent: false,
+    description:
+      "PAID: fetch Majestic Trust Flow / Citation Flow for up to 100 domains in one batched GetIndexItemInfo call — the cheapest meaningful enrichment (1 Majestic unit per domain, i.e. well under a cent each) and the read a DR number cannot replace: TF catches a PBN-heavy profile DR is happy with. Writes majesticTf/majesticCf onto the rows; drops_list can then filter and sort by TF. Needs confirm: true.",
+    inputSchema: {
+      type: "object",
+      required: ["domains", "confirm"],
+      properties: {
+        domains: { type: "array", items: { type: "string" }, description: "up to 100 domains — the call is batched, so this is cheap even at the ceiling" },
+        confirm: { type: "boolean", description: "must be true — this spends Majestic units" },
+      },
+    },
+    handler: async (userId, args) => {
+      assertConfirmed(args, "drops_enrich_tf bills Majestic units");
+      const domains = domainsArg(args).slice(0, 100);
+      if (!domains.length) throw new Error("domains required");
+      // Majestic-specific slot resolution — the active provider may be Ahrefs, but TF lives
+      // in Majestic. Same mode/key convention the settings screen and SeoKeysSync use.
+      const settings = await getOwnerSettings(userId);
+      const mode = String(settings.seoMetricsMode_majestic ?? "");
+      const slot = mode === "reseller" || mode === "custom" ? `seoKey_majestic__${mode}` : "seoKey_majestic";
+      const apiKey = String(settings[slot] ?? settings.seoKey_majestic ?? "").trim();
+      if (!apiKey) throw new Error("no_majestic_key: add a Majestic key in Settings → SEO Metrics");
+      const baseUrl = String(settings.seoMetricsBaseUrl_majestic ?? "").trim();
+
+      const { recordUsage, withinCap, releaseUnusedUnits } = await import("@/lib/seo/metricsStore");
+      const units = MAJESTIC_STATS_UNITS * domains.length;
+      const cap = Math.max(0, Number(settings.seoMetricsCap_majestic ?? 0));
+      if (!(await withinCap(userId, "majestic", units, cap))) throw new Error("cap_exceeded: monthly Majestic cap would be exceeded — raise the cap or shrink the batch");
+      await recordUsage(userId, "majestic", units);
+
+      const res = await fetchMajesticItemStats({ provider: "majestic", apiKey, baseUrl }, domains);
+      const spent = res.items.length ? res.units : 0;
+      await releaseUnusedUnits(userId, "majestic", units, spent);
+      if (res.error && !res.items.length) throw new Error(res.error);
+      // An item the index has never seen simply has no row — billed for what came back.
+      const updated = await writeMetricsUpdates(userId, res.items.map(r => ({
+        domain: r.item, tf: r.trustFlow ?? undefined, cf: r.citationFlow ?? undefined,
+      })));
+      return {
+        updated,
+        results: res.items.map(r => ({ domain: r.item, tf: r.trustFlow, cf: r.citationFlow, refdomains: r.refDomains, backlinks: r.backlinks })),
+        unitsSpent: spent,
+        missing: domains.filter(d => !res.items.some(r => r.item === d)),
+      };
+    },
+  },
+
+  {
+    name: "drops_groups",
+    cost: "local",
+    idempotent: false,
+    description:
+      "Curated groups over the drops catalogue — name a batch of domains once ('buy in October', 'defer'), then work with it as a unit; the /drops table renders them as collapsible sections. Actions: list (default — groups with row counts), create {name}, rename {groupId, name}, delete {groupId} (rows stay in the catalogue, ungrouped), assign {groupId, ids | filter}, unassign {ids | filter}. ids are row ids from drops_list; filter is the same filter dict drops_list takes (stage, runId, tld, q, drMin/drMax/drNull, refMin/refMax, tfMin/tfMax, groupId, ungrouped, watched, starred) — so 'put everything with DR < 10 into a group' is one call.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", description: "list (default) | create | rename | delete | assign | unassign" },
+        name: { type: "string", description: "group name (create/rename)" },
+        groupId: { type: "string", description: "target group (rename/delete/assign)" },
+        ids: { type: "array", items: { type: "string" }, description: "row ids (assign/unassign), max 500" },
+        filter: { type: "object", description: "drops_list-shaped filter (assign/unassign) — bulk over the whole filtered set" },
+      },
+    },
+    handler: async (userId, args) => {
+      const action = String(args.action ?? "list");
+      if (action === "list" || action === "") {
+        const groups = await listDropGroups(userId);
+        return { groups, total: groups.reduce((a, g) => a + g.count, 0) };
+      }
+      if (action === "create") {
+        const name = String(args.name ?? "");
+        if (!name.trim()) throw new Error("name required");
+        return createDropGroup(userId, name);
+      }
+      if (action === "rename") {
+        const groupId = String(args.groupId ?? "");
+        const name = String(args.name ?? "");
+        if (!groupId || !name.trim()) throw new Error("groupId and name required");
+        if (!(await renameDropGroup(userId, groupId, name))) throw new Error("group_not_found");
+        const groups = await listDropGroups(userId);
+        return { ok: true, groups };
+      }
+      if (action === "delete") {
+        const groupId = String(args.groupId ?? "");
+        if (!groupId) throw new Error("groupId required");
+        if (!(await deleteDropGroup(userId, groupId))) throw new Error("group_not_found");
+        return { ok: true, groups: await listDropGroups(userId) };
+      }
+      if (action === "assign" || action === "unassign") {
+        const groupId = action === "assign" ? String(args.groupId ?? "") : null;
+        if (action === "assign") {
+          if (!groupId || !(await dropGroupExists(userId, groupId))) throw new Error("group_not_found");
+        }
+        const updated = await setCandidateGroup(userId, bulkScope(args), groupId);
+        return { updated, groups: await listDropGroups(userId) };
+      }
+      throw new Error(`unknown action: ${action}`);
     },
   },
 

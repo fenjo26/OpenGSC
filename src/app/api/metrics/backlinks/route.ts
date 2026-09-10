@@ -12,7 +12,7 @@ import {
   RefDomainRecord,
 } from "@/lib/seo/backlinkStore";
 
-// POST /api/metrics/backlinks { siteId, shareToken?, view?, fetch?, creds?, minDr? }
+// POST /api/metrics/backlinks { siteId, dropDomain?, shareToken?, view?, fetch?, creds?, minDr? }
 //
 // Same two-shape contract as the other metrics routes: a free read of what is stored, and an
 // opt-in paid refresh. The stored side is what an imported CSV fills, so the whole tab works
@@ -27,6 +27,11 @@ import {
 // There is no `limit` any more. A refresh pulls every referring domain the provider will
 // return, paging until the profile ends — a row ceiling here decides for an SEO how much of
 // their own link profile they are allowed to see, which is not the product's call to make.
+//
+// `dropDomain` is the drops-page alternative to `siteId`: the target comes from the request,
+// but only when the caller's own catalogue already contains it. That keeps the rule this
+// route was written under — never profile a domain the user has no relationship with — while
+// letting the /drops table open the same profile for a domain it is deciding whether to buy.
 
 export interface MergedRefDomain {
   refDomain: string;
@@ -96,24 +101,38 @@ export async function POST(req: Request) {
 
   const b = await req.json().catch(() => ({}));
   const siteId = String(b.siteId ?? "");
+  const dropDomain = String(b.dropDomain ?? "").trim().toLowerCase()
+    .replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
   const shareToken = String(b.shareToken ?? "");
 
-  // The target is derived from a site row, never taken from the request. Otherwise this
-  // endpoint would happily spend the owner's credits profiling any domain on the internet.
+  // The target is derived from a row the caller owns, never from a free-form request field.
+  // For a site that is the Site row; for a drop it is the user's own catalogue entry — the
+  // route would otherwise happily spend the owner's credits profiling any domain on the
+  // internet.
   //
   // A share-link guest resolves through the token instead of a session — the same escape hatch
   // /api/dr already uses — but only ever reads. Guests must not be able to spend the owner's
   // credits, so `fetch` is forced off for them below rather than merely discouraged.
-  let site: { url: string } | null = null;
+  let resolved: string | null = null;
   let isGuest = false;
-  if (userId) {
-    site = await prisma.site.findFirst({ where: { id: siteId, userId }, select: { url: true } });
+  if (userId && dropDomain.includes(".")) {
+    const owned = await prisma.dropCandidate.findFirst({
+      where: { userId, domain: dropDomain },
+      select: { domain: true },
+    });
+    if (owned) resolved = normDomain(dropDomain);
+  } else if (userId && siteId) {
+    const site = await prisma.site.findFirst({ where: { id: siteId, userId }, select: { url: true } });
+    if (site) resolved = normDomain(site.url.replace(/^sc-domain:/, ""));
   } else if (shareToken && siteId) {
-    site = await prisma.site.findFirst({ where: { id: siteId, shareToken, shareEnabled: true }, select: { url: true } });
-    isGuest = !!site;
+    const site = await prisma.site.findFirst({ where: { id: siteId, shareToken, shareEnabled: true }, select: { url: true } });
+    if (site) {
+      resolved = normDomain(site.url.replace(/^sc-domain:/, ""));
+      isGuest = true;
+    }
   }
-  if (!site) return NextResponse.json({ error: userId ? "Site not found" : "Unauthorized" }, { status: userId ? 404 : 401 });
-  const target = normDomain(site.url.replace(/^sc-domain:/, ""));
+  if (!resolved) return NextResponse.json({ error: userId ? "Site not found" : "Unauthorized" }, { status: userId ? 404 : 401 });
+  const target = resolved;
 
   const view = b.view === "ahrefs" || b.view === "majestic" || b.view === "semrush" ? b.view : "all";
   // Legacy body.provider still names a single-provider refresh for old clients.

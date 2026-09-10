@@ -222,8 +222,26 @@ export interface CachedDomain {
   orgTraffic: number | null;
   orgKeywords: number | null;
   orgCost: number | null;
+  /** Majestic Trust/Citation Flow, derived from the stored raw row. Null for other providers. */
+  tf: number | null;
+  cf: number | null;
   source: MetricSource;
   checkedAt: string;
+}
+
+/** Read Trust/Citation Flow back out of a Majestic GetIndexItemInfo payload. */
+function majesticFlowFromPayload(payload: unknown): { tf: number | null; cf: number | null } {
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  let row: Record<string, unknown> | undefined;
+  try {
+    row = typeof payload === "string" ? JSON.parse(payload) : (payload as Record<string, unknown>);
+  } catch { return { tf: null, cf: null }; }
+  if (!row || typeof row !== "object") return { tf: null, cf: null };
+  // Majestic has renamed columns across its own history; match case-insensitively the same
+  // way the fetch side does (mjPick).
+  const lower = new Map(Object.keys(row).map(k => [k.toLowerCase(), k]));
+  const pick = (name: string) => (lower.has(name) ? num(row[lower.get(name)!]) : null);
+  return { tf: pick("trustflow"), cf: pick("citationflow") };
 }
 
 export async function readDomainCache(domains: string[], provider: string): Promise<Record<string, CachedDomain>> {
@@ -232,12 +250,15 @@ export async function readDomainCache(domains: string[], provider: string): Prom
   const out: Record<string, CachedDomain> = {};
   try {
     const rows: any[] = await rawQuery(
-      `SELECT domain, provider, dr, refDomains, backlinks, orgTraffic, orgKeywords, orgCost, source, checkedAt
+      `SELECT domain, provider, dr, refDomains, backlinks, orgTraffic, orgKeywords, orgCost, payload, source, checkedAt
          FROM "DomainMetricCache"
         WHERE provider = ? AND domain IN (${list.map(() => "?").join(",")})`,
       provider, ...list,
     );
-    for (const r of rows) out[r.domain] = { ...r, checkedAt: new Date(r.checkedAt).toISOString() };
+    for (const r of rows) {
+      const flows = r.provider === "majestic" ? majesticFlowFromPayload(r.payload) : { tf: null, cf: null };
+      out[r.domain] = { ...r, ...flows, checkedAt: new Date(r.checkedAt).toISOString() };
+    }
   } catch { /* table missing until prisma db push */ }
   return out;
 }

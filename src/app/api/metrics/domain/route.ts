@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { workspaceUserId } from "@/lib/team/workspace";
 import {
-  fetchDomainMetrics, domainUnits, parseMetricsProvider,
+  fetchDomainMetrics, fetchMajesticItemStats, domainUnits, parseMetricsProvider,
 } from "@/lib/seo/metrics";
 import {
   readDomainCache, writeDomainCache, readUsage, recordUsage, releaseUnusedUnits, withinCap,
@@ -71,13 +71,30 @@ export async function POST(req: Request) {
   // Sequential rather than Promise.all: each domain already issues two requests, and the
   // provider allows three in flight per key. The module-level pool would queue a fan-out
   // anyway, so doing it here keeps the failure ordering readable.
+  //
+  // Majestic is the exception to the per-domain loop, deliberately: its GetIndexItemInfo is a
+  // batched command (100 items per call), and the docs are explicit that one-item loops are
+  // the thing never to do. Same metering either way — one index-item unit per domain that
+  // answered — but one round trip instead of a hundred.
   let fetched = 0;
   let lastError = "";
-  for (const domain of stale) {
-    const res = await fetchDomainMetrics({ provider, apiKey, baseUrl }, domain);
-    if (res.error) { lastError = res.error; continue; }
-    await writeDomainCache(res.items, provider, "api");
-    fetched++;
+  if (provider === "majestic") {
+    const res = await fetchMajesticItemStats({ provider, apiKey, baseUrl }, stale);
+    if (res.error && !res.items.length) {
+      lastError = res.error;
+    } else {
+      await writeDomainCache(res.items.map(r => ({
+        domain: r.item, refDomains: r.refDomains, backlinks: r.backlinks, payload: r.raw,
+      })), provider, "api");
+      fetched = res.items.length;
+    }
+  } else {
+    for (const domain of stale) {
+      const res = await fetchDomainMetrics({ provider, apiKey, baseUrl }, domain);
+      if (res.error) { lastError = res.error; continue; }
+      await writeDomainCache(res.items, provider, "api");
+      fetched++;
+    }
   }
 
   // Reserved per stale domain; the gateway billed only the domains that answered.

@@ -1,23 +1,27 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, BadgeCheck, Boxes, CircleHelp, Database, Globe2, History, Loader2, Plus, Radar, RefreshCw, Search, ShieldAlert, Sparkles, Square, Star, Upload } from "lucide-react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, BadgeCheck, Boxes, CircleHelp, Database, Globe2, History, Link2, Loader2, Minus, Pencil, Plus, Radar, RefreshCw, Search, ShieldAlert, Sparkles, Square, Star, Upload, X } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import type { DropSource, DropStage } from "@/lib/drops/types";
 import { usePersistedState } from "@/lib/usePersistedState";
 import { getMetricsCreds } from "@/lib/seo/metricsClient";
 import { DrSparkline, drSeriesText, type DrPoint } from "@/components/DrSparkline";
+import BacklinkProfile from "@/components/BacklinkProfile";
 
 type Run = {
   id: string; label: string | null; source: string; sourceRef: string | null;
   total: number; skipped: number; createdAt: string;
 };
+type Group = { id: string; name: string; count: number; createdAt: string };
 type Candidate = {
   id: string; domain: string; tld: string; stage: DropStage;
   dr: number | null; refdomains: number | null; refdomainsDofollow: number | null;
+  majesticTf: number | null; majesticCf: number | null;
   waybackSnapshots: number | null; score: number | null; lastCheckedAt: string | null;
   corroborated: boolean; watched: boolean; lastError?: string | null;
   historyVerdict?: string | null; historyNote?: string | null;
+  groupId?: string | null; groupName?: string | null;
 };
 type ImportSummary = {
   runId: string;
@@ -25,29 +29,8 @@ type ImportSummary = {
   skipped: number; skipReport: Record<string, number>;
 };
 
-type SortField = "score" | "domain" | "createdAt" | "dr" | "refdomains" | "snapshots" | "checkedAt";
+type SortField = "score" | "domain" | "createdAt" | "dr" | "refdomains" | "snapshots" | "checkedAt" | "tf";
 const PAGE_SIZES = [25, 50, 100, 200];
-
-/**
- * DR bands for the filter select — the garbage-cleanup flow is "≤ 5 → выбрать все по фильтру →
- * удалить", so the bands lean low. `none` is deliberately its own entry rather than the bottom
- * of the range: "—" means never enriched or rated, and a deletion sweep must not eat rows that
- * were simply never asked. Params mirror the candidates API's drMin/drMax/drNull verbatim.
- */
-const DR_BANDS: { value: string; label: string; i18n?: boolean; params: Record<string, string> }[] = [
-  { value: "", label: "dropsDrAll", i18n: true, params: {} },
-  { value: "none", label: "dropsDrNone", i18n: true, params: { drNull: "1" } },
-  { value: "le5", label: "≤ 5", params: { drMax: "5" } },
-  { value: "le10", label: "≤ 10", params: { drMax: "10" } },
-  { value: "ge10", label: "≥ 10", params: { drMin: "10" } },
-  { value: "ge20", label: "≥ 20", params: { drMin: "20" } },
-  { value: "ge30", label: "≥ 30", params: { drMin: "30" } },
-];
-
-/** The query params behind a band value — shared by the list query and the bulk-action filter. */
-function drBandParams(value: string): Record<string, string> {
-  return DR_BANDS.find(b => b.value === value)?.params ?? {};
-}
 
 /**
  * The AI history verdict, as the row badge shows it. The note travels in the tooltip: a verdict
@@ -111,6 +94,7 @@ const COLUMNS: { field: SortField | null; key: string; num?: boolean }[] = [
   { field: null, key: "dropsStage" },
   { field: "dr", key: "dropsColDr", num: true },
   { field: "refdomains", key: "dropsColRefdomains", num: true },
+  { field: "tf", key: "dropsColTf", num: true },
   { field: "snapshots", key: "dropsColSnapshots", num: true },
   { field: "score", key: "dropsColScore", num: true },
   { field: "checkedAt", key: "dropsColChecked" },
@@ -118,16 +102,29 @@ const COLUMNS: { field: SortField | null; key: string; num?: boolean }[] = [
 
 const DEFAULT_DIR: Record<SortField, "asc" | "desc"> = {
   score: "desc", domain: "asc", createdAt: "desc", dr: "desc",
-  refdomains: "desc", snapshots: "desc", checkedAt: "desc",
+  refdomains: "desc", snapshots: "desc", checkedAt: "desc", tf: "desc",
 };
 
 const isPageSize = (v: unknown): boolean => typeof v === "number" && PAGE_SIZES.includes(v);
+
+/** Read the remembered collapsed-group map. Corrupted storage is no preference. */
+function readCollapsedGroups(): Record<string, boolean> {
+  if (typeof window === "undefined") return {};
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem("dropsCollapsedGroups") ?? "null");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch { return {}; }
+}
+
+/** One rendered table fragment: either a group's header row or a candidate row. */
+type Segment = { kind: "group"; id: string; name: string; pageRows: number } | { kind: "row"; r: Candidate; stripe: number };
 
 export default function DropsPage() {
   const { t } = useLanguage();
   const tr = (k: string) => t(k as never) as string;
 
   const [runs, setRuns] = useState<Run[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
   const [rows, setRows] = useState<Candidate[]>([]);
   const [total, setTotal] = useState(0);
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -139,7 +136,18 @@ export default function DropsPage() {
   const [tld, setTld] = useState("");
   const [q, setQ] = useState("");
   const [watched, setWatchedFilter] = useState<"" | "1">("");
-  const [drBand, setDrBand] = useState("");
+  // Numeric ranges. Empty input = no bound on that side; "нет DR" is deliberately its own
+  // checkbox rather than the bottom of the DR range, because "—" means never enriched and a
+  // deletion sweep must not eat rows that were simply never asked. These travel verbatim to
+  // the list query and to every "выбрать все по фильтру" bulk action.
+  const [drMin, setDrMin] = useState("");
+  const [drMax, setDrMax] = useState("");
+  const [drNullOnly, setDrNullOnly] = useState(false);
+  const [refMin, setRefMin] = useState("");
+  const [refMax, setRefMax] = useState("");
+  const [tfMin, setTfMin] = useState("");
+  const [tfMax, setTfMax] = useState("");
+  const [groupId, setGroupId] = useState("");
   const [orderBy, setOrderBy] = useState<SortField>("score");
   const [orderDir, setOrderDir] = useState<"asc" | "desc">("desc");
   const [pageSize, setPageSize] = usePersistedState<number>("dropsPageSize", 50, isPageSize);
@@ -151,6 +159,9 @@ export default function DropsPage() {
   // truth about what a bulk action will touch.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectAllFilter, setSelectAllFilter] = useState(false);
+
+  // Which row's donor profile is expanded under the table.
+  const [openLinks, setOpenLinks] = useState<string | null>(null);
 
   const [showImport, setShowImport] = useState(false);
   const [raw, setRaw] = useState("");
@@ -173,11 +184,12 @@ export default function DropsPage() {
   const [checkProgress, setCheckProgress] = useState<{ checked: number; available: number; taken: number; deferred: number; uncheckable: number; remaining: number } | null>(null);
   const checkStop = useRef(false);
 
-  // Enrichment (DR / Wayback / refdomains). One busy-flag family and one progress line — they
-  // are free, free and paid respectively, but they share the shape "walk the target list in
-  // bounded batches until it is done". `enrichStop` is a ref, not state: the walkers read it
-  // between batches, and a state read there would be the value captured when the loop started.
-  const [enrichBusy, setEnrichBusy] = useState<"" | "dr" | "wayback" | "refs" | "history">("");
+  // Enrichment (DR / Wayback / TF/CF / refdomains). One busy-flag family and one progress
+  // line — they are free, free, cheap and paid respectively, but they share the shape "walk
+  // the target list in bounded batches until it is done". `enrichStop` is a ref, not state:
+  // the walkers read it between batches, and a state read there would be the value captured
+  // when the loop started.
+  const [enrichBusy, setEnrichBusy] = useState<"" | "dr" | "wayback" | "refs" | "history" | "tf">("");
   const [enrichProgress, setEnrichProgress] = useState<{ done: number; total: number; updated: number } | null>(null);
   const enrichStop = useRef(false);
 
@@ -196,6 +208,15 @@ export default function DropsPage() {
   const [drHist, setDrHist] = useState<Record<string, DrPoint[]>>({});
   const drHistTried = useRef<Set<string>>(new Set());
 
+  /** Collapsed group headers, remembered across visits like every other table preference.
+   * (`usePersistedState` only carries scalars, so this one manages its own localStorage.) */
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(readCollapsedGroups);
+  const toggleCollapsed = (id: string) => {
+    const next = { ...collapsed, [id]: !collapsed[id] };
+    setCollapsed(next);
+    try { window.localStorage.setItem("dropsCollapsedGroups", JSON.stringify(next)); } catch { /* private mode */ }
+  };
+
   const loadRuns = useCallback(async () => {
     try {
       const res = await fetch("/api/drops/runs", { cache: "no-store" });
@@ -204,6 +225,31 @@ export default function DropsPage() {
       setRuns(Array.isArray(body) ? body : []);
     } catch { /* the run filter is a convenience; its failure must not blank the table */ }
   }, []);
+
+  const loadGroups = useCallback(async () => {
+    try {
+      const res = await fetch("/api/drops/groups", { cache: "no-store" });
+      const body = await res.json();
+      if (Array.isArray(body)) setGroups(body);
+    } catch { /* the group filter is a convenience; its failure must not blank the table */ }
+  }, []);
+
+  /**
+   * The numeric/group filter fields, as the API speaks them. One object feeds the list query,
+   * every "выбрать все по фильтру" bulk action and the bulk registry check — the set the table
+   * shows and the set a bulk action touches can then never disagree.
+   */
+  const numericFilterParams = useMemo(() => ({
+    ...(drMin.trim() !== "" ? { drMin: drMin.trim() } : {}),
+    ...(drMax.trim() !== "" ? { drMax: drMax.trim() } : {}),
+    ...(drNullOnly ? { drNull: "1" } : {}),
+    ...(refMin.trim() !== "" ? { refMin: refMin.trim() } : {}),
+    ...(refMax.trim() !== "" ? { refMax: refMax.trim() } : {}),
+    ...(tfMin.trim() !== "" ? { tfMin: tfMin.trim() } : {}),
+    ...(tfMax.trim() !== "" ? { tfMax: tfMax.trim() } : {}),
+    ...(groupId && groupId !== "none" ? { groupId } : {}),
+    ...(groupId === "none" ? { ungrouped: "1" } : {}),
+  }), [drMin, drMax, drNullOnly, refMin, refMax, tfMin, tfMax, groupId]);
 
   const loadRows = useCallback(async () => {
     setLoading(true);
@@ -214,7 +260,7 @@ export default function DropsPage() {
       if (tld.trim()) p.set("tld", tld.trim());
       if (q.trim()) p.set("q", q.trim());
       if (watched) p.set("watched", watched);
-      for (const [k, v] of Object.entries(drBandParams(drBand))) p.set(k, v);
+      for (const [k, v] of Object.entries(numericFilterParams)) p.set(k, v);
       const res = await fetch(`/api/drops/candidates?${p}`, { cache: "no-store" });
       const body = await res.json();
       if (body?.notMigrated) { setNotMigrated(true); setRows([]); setTotal(0); return; }
@@ -226,13 +272,13 @@ export default function DropsPage() {
     } finally {
       setLoading(false);
     }
-  }, [runId, stage, tld, q, watched, drBand, orderBy, orderDir, pageSize, offset]);
+  }, [runId, stage, tld, q, watched, numericFilterParams, orderBy, orderDir, pageSize, offset]);
 
   // The rule guards against a setState that cascades a second render before paint. This one
   // cannot: every state write inside `loadRuns` happens after an awaited fetch, several ticks
   // later. The linter cannot see across the await, so the suppression is narrow and local.
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { void loadRuns(); }, [loadRuns]);
+  useEffect(() => { void loadRuns(); void loadGroups(); }, [loadRuns, loadGroups]);
   // Debounced so typing in the search box does not fire a query per keystroke against a table
   // that can hold 50 000 rows.
   useEffect(() => {
@@ -302,7 +348,7 @@ export default function DropsPage() {
   // Reset during render rather than in an effect: an effect would let one render commit with the
   // new filter and the old offset, which is a real request for a page that may not exist, and it
   // trips react-hooks/set-state-in-effect besides.
-  const filterKey = `${runId}|${stage}|${tld.trim()}|${q.trim()}|${watched}|${drBand}|${orderBy}|${orderDir}|${pageSize}`;
+  const filterKey = `${runId}|${stage}|${tld.trim()}|${q.trim()}|${watched}|${JSON.stringify(numericFilterParams)}|${orderBy}|${orderDir}|${pageSize}`;
   const [lastFilterKey, setLastFilterKey] = useState(filterKey);
   if (filterKey !== lastFilterKey) {
     setLastFilterKey(filterKey);
@@ -317,6 +363,20 @@ export default function DropsPage() {
       setOrderDir(DEFAULT_DIR[field]);
     }
   };
+
+  /**
+   * The current table filter, as a bulk-action body speaks it. `matchAll` actions and the bulk
+   * registry check both send this, so "выбрать все по фильтру" always means the same rows the
+   * table is showing — whichever filters are set.
+   */
+  const filterPayload = () => ({
+    ...(runId ? { runId } : {}),
+    ...(stage ? { stage } : {}),
+    ...(tld.trim() ? { tld: tld.trim() } : {}),
+    ...(q.trim() ? { q: q.trim() } : {}),
+    ...(watched ? { watched } : {}),
+    ...numericFilterParams,
+  });
 
   // The selection a bulk action will touch: explicit ids, or the whole filter with its count.
   // Enrichment alone never runs in filter mode — a "free DR" sweep over 50 000 rows takes
@@ -404,7 +464,7 @@ export default function DropsPage() {
     }
   }
 
-  async function runRegistryCheck(domains?: string[]) {
+  async function runRegistryCheck(domains?: string[], filter?: Record<string, string>) {
     if (checkBusy) return;
     checkStop.current = false;
     setCheckBusy(true); setError(""); setNotice("");
@@ -414,7 +474,7 @@ export default function DropsPage() {
         const res = await fetch("/api/drops/check", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ runId: runId || undefined, domains }),
+          body: JSON.stringify({ runId: runId || undefined, domains, filter }),
         });
         const body = await res.json();
         if (!res.ok) throw new Error(body?.error || "check_failed");
@@ -439,9 +499,9 @@ export default function DropsPage() {
     }
   }
 
-  /** Shared walker for the three enrichment buttons: bounded slices until the list is done. */
+  /** Shared walker for the enrichment buttons: bounded slices until the list is done. */
   async function walkEnrichment(
-    kind: "dr" | "wayback" | "refs",
+    kind: "dr" | "wayback" | "refs" | "tf",
     targets: string[],
     sliceSize: number,
     step: (slice: string[]) => Promise<number>,
@@ -469,7 +529,7 @@ export default function DropsPage() {
     }
   }
 
-  async function persistMetrics(entries: { domain: string; dr?: number; refdomains?: number; backlinks?: number }[]) {
+  async function persistMetrics(entries: { domain: string; dr?: number; refdomains?: number; backlinks?: number; tf?: number; cf?: number }[]) {
     if (!entries.length) return 0;
     const res = await fetch("/api/drops/metrics", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -621,13 +681,39 @@ export default function DropsPage() {
     });
   };
 
-  /** Bulk delete / star / watch. `matchAll` hands the server the live filter for "выбрать все". */
-  async function bulk(action: "delete" | "star" | "unstar" | "watch" | "unwatch") {
+  // TF/CF via Majestic: the cheapest meaningful enrichment on the page (one index-item unit
+  // per domain), and the read the DR number cannot replace — TF catches a PBN-heavy profile
+  // DR is happy with. Always speaks Majestic explicitly, whatever the active provider is;
+  // the route batches 100 domains into one GetIndexItemInfo call.
+  const enrichTf = () => {
+    const creds = getMetricsCreds("majestic");
+    if (!creds.apiKey) { setError(tr("dropsEnrichNoTfKey")); return; }
+    const n = enrichTargets().length;
+    if (!window.confirm(tr("dropsEnrichTfConfirm").replace("{n}", String(n)))) return;
+    return walkEnrichment("tf", enrichTargets(), 100, async slice => {
+      const res = await fetch("/api/metrics/domain", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          domains: slice, fetch: true, provider: "majestic",
+          apiKey: creds.apiKey, baseUrl: creds.baseUrl, cap: creds.cap,
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error || "tf_failed");
+      const metrics = (body?.metrics ?? {}) as Record<string, { tf?: number | null; cf?: number | null }>;
+      return persistMetrics(Object.entries(metrics).map(([domain, m]) => ({
+        domain, tf: m?.tf ?? undefined, cf: m?.cf ?? undefined,
+      })));
+    });
+  };
+
+  /** Bulk delete / star / watch / group. `matchAll` hands the server the live filter. */
+  async function bulk(action: "delete" | "star" | "unstar" | "watch" | "unwatch" | "group" | "ungroup", targetGroupId?: string) {
     if (action === "delete" && !window.confirm(tr("dropsConfirmDelete").replace("{n}", String(selectedCount)))) return;
     try {
       const payload = selectAllFilter
-        ? { matchAll: true, action, filter: { runId: runId || "", stage: stage || "", tld: tld.trim(), q: q.trim(), watched, ...drBandParams(drBand) } }
-        : { ids: [...selectedIds], action };
+        ? { matchAll: true, action, filter: filterPayload(), ...(action === "group" ? { groupId: targetGroupId } : {}) }
+        : { ids: [...selectedIds], action, ...(action === "group" ? { groupId: targetGroupId } : {}) };
       const res = await fetch("/api/drops/candidates", {
         method: action === "delete" ? "DELETE" : "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -639,9 +725,64 @@ export default function DropsPage() {
         ? tr("dropsDeleted").replace("{n}", String(body.deleted ?? 0))
         : action === "watch" || action === "unwatch"
           ? tr("dropsWatchUpdated").replace("{n}", String(body.updated ?? 0))
-          : tr("dropsStarred").replace("{n}", String(body.updated ?? 0)));
+          : action === "group" || action === "ungroup"
+            ? tr("dropsGroupUpdated").replace("{n}", String(body.updated ?? 0))
+            : tr("dropsStarred").replace("{n}", String(body.updated ?? 0)));
       clearSelection();
+      if (action === "group" || action === "ungroup") await loadGroups();
       await Promise.all([loadRows(), loadRuns()]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  /** Assign the selection to a group, creating one first when the user picked "новая". */
+  async function assignGroup(pick: string) {
+    let gid = pick;
+    try {
+      if (pick === "__new") {
+        const name = window.prompt(tr("dropsGroupNamePrompt"))?.trim();
+        if (!name) return;
+        const res = await fetch("/api/drops/groups", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body?.error || "group_failed");
+        gid = body.id;
+      }
+      await bulk("group", gid);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function renameGroup(id: string, current: string) {
+    const name = window.prompt(tr("dropsGroupNamePrompt"), current)?.trim();
+    if (!name || name === current) return;
+    try {
+      const res = await fetch("/api/drops/groups", {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, name }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error || "group_failed");
+      await loadGroups();
+      await loadRows();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function deleteGroup(id: string, name: string) {
+    if (!window.confirm(tr("dropsGroupDeleteConfirm").replace("{name}", name))) return;
+    try {
+      const res = await fetch(`/api/drops/groups?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error || "group_failed");
+      if (groupId === id) setGroupId("");
+      await loadGroups();
+      await loadRows();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -663,19 +804,23 @@ export default function DropsPage() {
     }
   }
 
+  // The header checkbox is three-state, Gmail-style: click once selects the page, a second
+  // click widens to the whole filter, a third clears everything. `indeterminate` marks the
+  // filter state — everything on screen is checked, but the count says more is coming.
   const pageAllSelected = rows.length > 0 && rows.every(r => selectAllFilter || selectedIds.has(r.id));
   const togglePage = () => {
     if (selectAllFilter) { clearSelection(); return; }
-    if (pageAllSelected) {
-      setSelectedIds(prev => {
-        const next = new Set(prev);
-        rows.forEach(r => next.delete(r.id));
-        return next;
-      });
-    } else {
-      setSelectedIds(prev => new Set([...prev, ...rows.map(r => r.id)]));
-    }
+    if (pageAllSelected) { setSelectAllFilter(true); return; }
+    setSelectedIds(prev => new Set([...prev, ...rows.map(r => r.id)]));
   };
+  const headerSelectRef = useCallback((el: HTMLInputElement | null) => {
+    if (el) el.indeterminate = selectAllFilter;
+  }, [selectAllFilter]);
+  const headerSelectLabel = selectAllFilter
+    ? tr("dropsClearSelection")
+    : pageAllSelected
+      ? tr("dropsSelectAllFilter").replace("{n}", total.toLocaleString())
+      : tr("dropsSelectPage");
 
   const zones = useMemo(() => [...new Set(rows.map(r => r.tld))].sort(), [rows]);
   const totalAll = useMemo(() => Object.values(counts).reduce((a, b) => a + b, 0), [counts]);
@@ -685,6 +830,38 @@ export default function DropsPage() {
 
   const arrowFor = (field: SortField) =>
     orderBy === field ? (orderDir === "asc" ? "▲" : "▼") : "";
+
+  /**
+   * The page, grouped Sheets-style: every group represented on this page gets a header row and
+   * its rows collected under it (in the sort's own order), and the ungrouped rows follow without
+   * a header. Purely presentational — pagination and sorting stay server-side, so a group can
+   * span pages and each page shows its slice under the same header. A collapsed group keeps its
+   * header and hides its rows.
+   */
+  const segments = useMemo<Segment[]>(() => {
+    const byGroup = new Map<string, Candidate[]>();
+    const loose: Candidate[] = [];
+    for (const r of rows) {
+      if (r.groupId) {
+        const list = byGroup.get(r.groupId);
+        if (list) list.push(r); else byGroup.set(r.groupId, [r]);
+      } else {
+        loose.push(r);
+      }
+    }
+    const orderOf = (gid: string) => {
+      const i = groups.findIndex(g => g.id === gid);
+      return i < 0 ? Number.MAX_SAFE_INTEGER : i;
+    };
+    const segs: Segment[] = [];
+    let stripe = 0;
+    for (const [gid, rs] of [...byGroup.entries()].sort((a, b) => orderOf(a[0]) - orderOf(b[0]))) {
+      segs.push({ kind: "group", id: gid, name: rs[0]?.groupName || groups.find(g => g.id === gid)?.name || gid, pageRows: rs.length });
+      if (!collapsed[gid]) for (const r of rs) segs.push({ kind: "row", r, stripe: stripe++ });
+    }
+    for (const r of loose) segs.push({ kind: "row", r, stripe: stripe++ });
+    return segs;
+  }, [rows, groups, collapsed]);
 
   return <div className="main-content" style={{ display: "flex", flexDirection: "column", gap: 16, paddingTop: 20, paddingBottom: 40 }}>
     <div style={{ display: "flex", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
@@ -809,11 +986,10 @@ export default function DropsPage() {
         <option value="">{tr("dropsAllZones")}</option>
         {zones.map(z => <option key={z} value={z}>.{z}</option>)}
       </select>
-      <select className="tool-input" style={{ width: 130 }} value={drBand} title={tr("dropsDrNoneHint")}
-        onChange={e => setDrBand(e.target.value)}>
-        {DR_BANDS.map(b => <option key={b.value} value={b.value}>
-          {b.i18n ? tr(b.label) : b.label}
-        </option>)}
+      <select className="tool-input" style={{ width: 160 }} value={groupId} onChange={e => setGroupId(e.target.value)}>
+        <option value="">{tr("dropsGroupAll")}</option>
+        <option value="none">{tr("dropsGroupNone")}</option>
+        {groups.map(g => <option key={g.id} value={g.id}>{g.name} ({g.count})</option>)}
       </select>
       <select className="tool-input" style={{ width: 170 }} value={watched}
         onChange={e => setWatchedFilter(e.target.value as "" | "1")}>
@@ -822,8 +998,49 @@ export default function DropsPage() {
       </select>
     </div>
 
-    {/* Enrichment. Every source states its cost up front: DR and Wayback are free, refdomains
-        bill Ahrefs units and asks first. Acts on the selection, or on the visible page. */}
+    {/* Numeric ranges — the "выделить всё с DR < 10 и удалить" flow. Empty field = no bound on
+        that side; every range also answers to "выбрать все по фильтру" bulk actions. */}
+    <div className="panel" style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", fontSize: 12.5 }}
+      title={tr("dropsRangeHint")}>
+      <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+        <b style={{ color: "var(--color-text-secondary)" }}>DR</b>
+        <input className="tool-input" style={{ width: 64 }} type="number" inputMode="numeric" placeholder={tr("dropsRangeFrom")}
+          value={drMin} onChange={e => setDrMin(e.target.value)} />
+        <span style={{ color: "var(--color-text-tertiary)" }}>–</span>
+        <input className="tool-input" style={{ width: 64 }} type="number" inputMode="numeric" placeholder={tr("dropsRangeTo")}
+          value={drMax} onChange={e => setDrMax(e.target.value)} />
+        <label style={{ display: "flex", alignItems: "center", gap: 5, marginLeft: 6, color: "var(--color-text-secondary)", cursor: "pointer" }}
+          title={tr("dropsDrNoneHint")}>
+          <input type="checkbox" checked={drNullOnly} onChange={e => setDrNullOnly(e.target.checked)} />
+          {tr("dropsDrNone")}
+        </label>
+      </span>
+      <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+        <b style={{ color: "var(--color-text-secondary)" }}>{tr("dropsColRefdomains")}</b>
+        <input className="tool-input" style={{ width: 76 }} type="number" inputMode="numeric" placeholder={tr("dropsRangeFrom")}
+          value={refMin} onChange={e => setRefMin(e.target.value)} />
+        <span style={{ color: "var(--color-text-tertiary)" }}>–</span>
+        <input className="tool-input" style={{ width: 76 }} type="number" inputMode="numeric" placeholder={tr("dropsRangeTo")}
+          value={refMax} onChange={e => setRefMax(e.target.value)} />
+      </span>
+      <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+        <b style={{ color: "var(--color-text-secondary)" }} title={tr("dropsTfHint")}>TF</b>
+        <input className="tool-input" style={{ width: 64 }} type="number" inputMode="numeric" placeholder={tr("dropsRangeFrom")}
+          value={tfMin} onChange={e => setTfMin(e.target.value)} />
+        <span style={{ color: "var(--color-text-tertiary)" }}>–</span>
+        <input className="tool-input" style={{ width: 64 }} type="number" inputMode="numeric" placeholder={tr("dropsRangeTo")}
+          value={tfMax} onChange={e => setTfMax(e.target.value)} />
+      </span>
+      {(drMin || drMax || drNullOnly || refMin || refMax || tfMin || tfMax) && <button
+        onClick={() => { setDrMin(""); setDrMax(""); setDrNullOnly(false); setRefMin(""); setRefMax(""); setTfMin(""); setTfMax(""); }}
+        style={pagerBtn(false)}>
+        {tr("dropsRangeClear")}
+      </button>}
+    </div>
+
+    {/* Enrichment. Every source states its cost up front: DR and Wayback are free, TF/CF bills
+        Majestic units (about as cheap as enrichment gets), refdomains bill Ahrefs units and ask
+        first. Acts on the selection, or on the visible page. */}
     {(rows.length > 0 || enrichBusy) && <div className="panel" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12.5 }}>
       <span style={{ color: "var(--color-text-tertiary)" }}>{tr("dropsEnrichLabel")}</span>
       {/* While a DR pass is running this is its Stop button — same pattern as the DNS and
@@ -836,6 +1053,10 @@ export default function DropsPage() {
       <button onClick={enrichWayback} disabled={enrichBusy !== ""} style={ghostBtn}>
         {enrichBusy === "wayback" ? <Loader2 className="spin" size={13} /> : <History size={13} />}
         {enrichBusy === "wayback" ? tr("dropsEnrichWaybackBusy") : tr("dropsEnrichWayback")}
+      </button>
+      <button onClick={enrichTf} disabled={enrichBusy !== ""} style={ghostBtn}>
+        {enrichBusy === "tf" ? <Loader2 className="spin" size={13} /> : <Sparkles size={13} />}
+        {enrichBusy === "tf" ? tr("dropsEnrichTfBusy") : tr("dropsEnrichTf")}
       </button>
       <button onClick={enrichRefs} disabled={enrichBusy !== ""} style={ghostBtn}>
         {enrichBusy === "refs" ? <Loader2 className="spin" size={13} /> : <Database size={13} />}
@@ -879,10 +1100,15 @@ export default function DropsPage() {
           <button onClick={() => void bulk("star")} style={pagerBtn(false)}>{tr("dropsBulkStar")}</button>
           <button onClick={() => void bulk("watch")} style={pagerBtn(false)}>{tr("dropsBulkWatch")}</button>
           <button onClick={() => void bulk("unwatch")} style={pagerBtn(false)}>{tr("dropsBulkUnwatch")}</button>
-          <button onClick={() => {
-            const targets = selectAllFilter ? undefined : [...selectedIds];
-            void runRegistryCheck(targets);
-          }} style={pagerBtn(false)}>{tr("dropsBulkCheck")}</button>
+          <select value="" onChange={e => { const v = e.target.value; if (v) void assignGroup(v); }}
+            aria-label={tr("dropsAssignGroup")} style={{ ...pagerSelect }}>
+            <option value="">{tr("dropsAssignGroup")}</option>
+            {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+            <option value="__new">{tr("dropsGroupNew")}</option>
+          </select>
+          <button onClick={() => void bulk("ungroup")} style={pagerBtn(false)}>{tr("dropsUngroup")}</button>
+          <button onClick={() => void runRegistryCheck(selectAllFilter ? undefined : [...selectedIds], selectAllFilter ? filterPayload() : undefined)}
+            style={pagerBtn(false)}>{tr("dropsBulkCheck")}</button>
           <button onClick={clearSelection} style={pagerBtn(false)}>{tr("dropsClearSelection")}</button>
         </>}
       </div>
@@ -896,8 +1122,9 @@ export default function DropsPage() {
           <thead>
             <tr style={{ color: "var(--color-text-tertiary)", textAlign: "left" }}>
               <th style={{ ...th, width: 34 }}>
-                <input type="checkbox" checked={pageAllSelected} onChange={togglePage}
-                  aria-label={tr("dropsSelectPage")} style={{ cursor: "pointer" }} />
+                <input type="checkbox" ref={headerSelectRef} checked={selectAllFilter || pageAllSelected}
+                  onChange={togglePage} aria-label={headerSelectLabel} title={headerSelectLabel}
+                  style={{ cursor: "pointer" }} />
               </th>
               {COLUMNS.map(c => c.field
                 ? <th key={c.field} onClick={() => sortClick(c.field!)}
@@ -909,95 +1136,148 @@ export default function DropsPage() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => {
+            {segments.map(seg => seg.kind === "group" ? (() => {
+              const totalIn = groups.find(g => g.id === seg.id)?.count ?? seg.pageRows;
+              const isCollapsed = !!collapsed[seg.id];
+              return <tr key={`group-${seg.id}`} style={{ background: "var(--color-bg)" }}>
+                <td colSpan={COLUMNS.length + 1} style={{ padding: "6px 14px", borderBottom: "1px solid var(--color-border)" }}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <button onClick={() => toggleCollapsed(seg.id)}
+                      aria-label={isCollapsed ? tr("dropsGroupExpand") : tr("dropsGroupCollapse")}
+                      style={groupBtn}>
+                      {isCollapsed ? <Plus size={13} /> : <Minus size={13} />}
+                    </button>
+                    <b style={{ color: "var(--color-text-primary)" }}>{seg.name}</b>
+                    <span style={{ color: "var(--color-text-tertiary)", fontSize: 12 }} title={tr("dropsGroupCountHint")}>
+                      {totalIn.toLocaleString()}
+                    </span>
+                    <button onClick={() => void renameGroup(seg.id, seg.name)} aria-label={tr("dropsGroupRename")} style={groupBtn}>
+                      <Pencil size={12} />
+                    </button>
+                    <button onClick={() => void deleteGroup(seg.id, seg.name)} aria-label={tr("dropsBulkDelete")} style={groupBtn}>
+                      <X size={13} />
+                    </button>
+                  </span>
+                </td>
+              </tr>;
+            })() : (() => {
+              const r = seg.r;
               const s = STAGES.find(x => x.value === r.stage);
               const checked = selectAllFilter || selectedIds.has(r.id);
               // Zebra. A translucent grey survives both themes; the tier-1 way to read a wide
               // table is "which cells belong to this row".
-              const stripe = i % 2 === 1 ? { background: "var(--color-row-alt, rgba(127,127,127,0.055))" } : undefined;
-              return <tr key={r.id} style={{ borderTop: "1px solid var(--color-border)", ...stripe }}>
-                <td style={td}>
-                  <input type="checkbox" checked={checked} onChange={() => toggleRow(r.id)}
-                    aria-label={r.domain} style={{ cursor: "pointer" }} />
-                </td>
-                <td style={{ ...td, fontWeight: 600, color: "var(--color-text-primary)" }}>
-                  {r.domain}
-                  {/* The domain's Wayback timeline, one click away — always, not only after the
-                      Wayback pass has filled the snapshots column. */}
-                  <a href={`https://web.archive.org/web/*/${r.domain}*`} target="_blank" rel="noreferrer"
-                    title={tr("dropsWaybackLink")}
-                    style={{ marginLeft: 6, color: "var(--color-accent-blue)", display: "inline-flex", verticalAlign: "-2px" }}>
-                    <History size={12} />
-                  </a>
-                  {/* The AI history verdict next to the name it is about — the pass is no use
-                      if its answer only exists in the database. The note rides in the tooltip. */}
-                  {(() => {
-                    const v = r.historyVerdict ? HISTORY_VERDICTS[r.historyVerdict] : undefined;
-                    if (!v) return null;
-                    return <span title={`${tr(v.key)}${r.historyNote ? ` — ${r.historyNote}` : ""}`}
-                      style={{ marginLeft: 5, color: v.color, display: "inline-flex", verticalAlign: "-2px" }}>
-                      <v.Icon size={12} />
-                    </span>;
-                  })()}
-                  {/* The watch toggle. Lit means the scheduler is polling this domain and will
-                      notify once it frees; the funnel stages stay the source of truth about the
-                      row, the watch only decides whether the row keeps being re-asked. */}
-                  <button onClick={() => void toggleWatch(r)}
-                    title={r.watched ? tr("dropsWatchHintOff") : tr("dropsWatchHint")}
-                    aria-label={r.watched ? tr("dropsWatchHintOff") : tr("dropsWatch")}
-                    style={{
-                      marginLeft: 4, display: "inline-flex", verticalAlign: "-2px", cursor: "pointer",
-                      background: "none", border: "none", padding: 0,
-                      color: r.watched ? "var(--color-accent-green, #34c759)" : "var(--color-text-tertiary)",
-                    }}>
-                    <Radar size={12} />
-                  </button>
-                </td>
-                <td style={td}>
-                  <span style={{ color: s?.color ?? "var(--color-text-secondary)" }}>{s ? tr(s.key) : r.stage}</span>
-                  {/* An `available` seen by one source only is not shown as free — it is shown as
-                      needing another look. Everything downstream depends on that distinction. */}
-                  {r.stage === "available" && !r.corroborated &&
-                    <span title={tr("dropsUncorroborated")} style={{ marginLeft: 6, color: "var(--color-accent-orange, #ff9f0a)" }}>?</span>}
-                  {r.lastError === "zone_uncheckable" &&
-                    <span title={tr("dropsZoneUncheckable")} style={{ marginLeft: 6, color: "var(--color-text-tertiary)", cursor: "help" }}>⚖</span>}
-                </td>
-                <td style={tdNum}>
-                  {r.dr ?? "—"}
-                  {/* The stored monthly series, next to the number it qualifies — and the veto
-                      flag when the window shows a ≥5-point fall. Nothing stored, nothing drawn:
-                      the series appears as the panel accumulates it. */}
-                  {(() => {
-                    const hist = drHist[r.domain];
-                    if (!hist || hist.length < 2) return null;
-                    const drop = hist[hist.length - 1].dr - hist[0].dr;
-                    const title = `${tr("drHistHint")}\n\n${drSeriesText(hist)}`
-                      + (drop <= -5 ? `\n\n${tr("drHistFlag").replace("{n}", String(Math.abs(drop)))}` : "");
-                    return <span title={title} style={{ marginLeft: 6, display: "inline-flex", verticalAlign: "-4px", alignItems: "center", gap: 3 }}>
-                      <DrSparkline points={hist} />
-                      {drop <= -5 && <AlertTriangle size={12} color="#ff6b62" style={{ flexShrink: 0 }} />}
-                    </span>;
-                  })()}
-                </td>
-                <td style={tdNum}>{r.refdomainsDofollow ?? r.refdomains ?? "—"}</td>
-                <td style={tdNum} title={tr("dropsSnapshotsHint")}>
-                  {/* The number is the summary; the link is the archive itself. The starred
-                      wildcard form is Wayback's own timeline view for the whole domain. */}
-                  {r.waybackSnapshots != null
-                    ? <a href={`https://web.archive.org/web/*/${r.domain}*`} target="_blank" rel="noreferrer"
-                        style={{ color: "var(--color-accent-blue)", textDecoration: "none" }}>
-                        {r.waybackSnapshots}
-                      </a>
-                    : "—"}
-                </td>
-                <td style={{ ...tdNum, fontWeight: 800, color: r.score != null ? "var(--color-text-primary)" : "var(--color-text-tertiary)" }}>
-                  {r.score != null ? Math.round(r.score) : "—"}
-                </td>
-                <td style={{ ...td, color: "var(--color-text-tertiary)" }}>
-                  {r.lastCheckedAt ? new Date(r.lastCheckedAt).toLocaleDateString() : tr("dropsNever")}
-                </td>
-              </tr>;
-            })}
+              const stripe = seg.stripe % 2 === 1 ? { background: "var(--color-row-alt, rgba(127,127,127,0.055))" } : undefined;
+              return <Fragment key={r.id}>
+                <tr style={{ borderTop: "1px solid var(--color-border)", ...stripe }}>
+                  <td style={td}>
+                    <input type="checkbox" checked={checked} onChange={() => toggleRow(r.id)}
+                      aria-label={r.domain} style={{ cursor: "pointer" }} />
+                  </td>
+                  <td style={{ ...td, fontWeight: 600, color: "var(--color-text-primary)" }}>
+                    {r.domain}
+                    {/* The domain's Wayback timeline, one click away — always, not only after the
+                        Wayback pass has filled the snapshots column. */}
+                    <a href={`https://web.archive.org/web/*/${r.domain}*`} target="_blank" rel="noreferrer"
+                      title={tr("dropsWaybackLink")}
+                      style={{ marginLeft: 6, color: "var(--color-accent-blue)", display: "inline-flex", verticalAlign: "-2px" }}>
+                      <History size={12} />
+                    </a>
+                    {/* The referring-domain profile, same one-click access — the drawer reuses
+                        the dashboard's Backlinks tab, providers and all. */}
+                    <button onClick={() => setOpenLinks(cur => (cur === r.domain ? null : r.domain))}
+                      title={tr("dropsBacklinksShow")} aria-label={tr("dropsBacklinksShow")}
+                      style={{
+                        marginLeft: 4, display: "inline-flex", verticalAlign: "-2px", cursor: "pointer",
+                        background: "none", border: "none", padding: 0,
+                        color: openLinks === r.domain ? "var(--color-accent-blue)" : "var(--color-text-tertiary)",
+                      }}>
+                      <Link2 size={12} />
+                    </button>
+                    {/* The AI history verdict next to the name it is about — the pass is no use
+                        if its answer only exists in the database. The note rides in the tooltip. */}
+                    {(() => {
+                      const v = r.historyVerdict ? HISTORY_VERDICTS[r.historyVerdict] : undefined;
+                      if (!v) return null;
+                      return <span title={`${tr(v.key)}${r.historyNote ? ` — ${r.historyNote}` : ""}`}
+                        style={{ marginLeft: 5, color: v.color, display: "inline-flex", verticalAlign: "-2px" }}>
+                        <v.Icon size={12} />
+                      </span>;
+                    })()}
+                    {/* The watch toggle. Lit means the scheduler is polling this domain and will
+                        notify once it frees; the funnel stages stay the source of truth about the
+                        row, the watch only decides whether the row keeps being re-asked. */}
+                    <button onClick={() => void toggleWatch(r)}
+                      title={r.watched ? tr("dropsWatchHintOff") : tr("dropsWatchHint")}
+                      aria-label={r.watched ? tr("dropsWatchHintOff") : tr("dropsWatch")}
+                      style={{
+                        marginLeft: 4, display: "inline-flex", verticalAlign: "-2px", cursor: "pointer",
+                        background: "none", border: "none", padding: 0,
+                        color: r.watched ? "var(--color-accent-green, #34c759)" : "var(--color-text-tertiary)",
+                      }}>
+                      <Radar size={12} />
+                    </button>
+                  </td>
+                  <td style={td}>
+                    <span style={{ color: s?.color ?? "var(--color-text-secondary)" }}>{s ? tr(s.key) : r.stage}</span>
+                    {/* An `available` seen by one source only is not shown as free — it is shown as
+                        needing another look. Everything downstream depends on that distinction. */}
+                    {r.stage === "available" && !r.corroborated &&
+                      <span title={tr("dropsUncorroborated")} style={{ marginLeft: 6, color: "var(--color-accent-orange, #ff9f0a)" }}>?</span>}
+                    {r.lastError === "zone_uncheckable" &&
+                      <span title={tr("dropsZoneUncheckable")} style={{ marginLeft: 6, color: "var(--color-text-tertiary)", cursor: "help" }}>⚖</span>}
+                  </td>
+                  <td style={tdNum}>
+                    {r.dr ?? "—"}
+                    {/* The stored monthly series, next to the number it qualifies — and the veto
+                        flag when the window shows a ≥5-point fall. Nothing stored, nothing drawn:
+                        the series appears as the panel accumulates it. */}
+                    {(() => {
+                      const hist = drHist[r.domain];
+                      if (!hist || hist.length < 2) return null;
+                      const drop = hist[hist.length - 1].dr - hist[0].dr;
+                      const title = `${tr("drHistHint")}\n\n${drSeriesText(hist)}`
+                        + (drop <= -5 ? `\n\n${tr("drHistFlag").replace("{n}", String(Math.abs(drop)))}` : "");
+                      return <span title={title} style={{ marginLeft: 6, display: "inline-flex", verticalAlign: "-4px", alignItems: "center", gap: 3 }}>
+                        <DrSparkline points={hist} />
+                        {drop <= -5 && <AlertTriangle size={12} color="#ff6b62" style={{ flexShrink: 0 }} />}
+                      </span>;
+                    })()}
+                  </td>
+                  <td style={tdNum}>{r.refdomainsDofollow ?? r.refdomains ?? "—"}</td>
+                  <td style={tdNum} title={tr("dropsTfHint")}>
+                    {r.majesticTf != null
+                      ? <>{Math.round(r.majesticTf)}{r.majesticCf != null && <span style={{ color: "var(--color-text-tertiary)", fontWeight: 400 }}>/{Math.round(r.majesticCf)}</span>}</>
+                      : "—"}
+                  </td>
+                  <td style={tdNum} title={tr("dropsSnapshotsHint")}>
+                    {/* The number is the summary; the link is the archive itself. The starred
+                        wildcard form is Wayback's own timeline view for the whole domain. */}
+                    {r.waybackSnapshots != null
+                      ? <a href={`https://web.archive.org/web/*/${r.domain}*`} target="_blank" rel="noreferrer"
+                          style={{ color: "var(--color-accent-blue)", textDecoration: "none" }}>
+                          {r.waybackSnapshots}
+                        </a>
+                      : "—"}
+                  </td>
+                  <td style={{ ...tdNum, fontWeight: 800, color: r.score != null ? "var(--color-text-primary)" : "var(--color-text-tertiary)" }}>
+                    {r.score != null ? Math.round(r.score) : "—"}
+                  </td>
+                  <td style={{ ...td, color: "var(--color-text-tertiary)" }}>
+                    {r.lastCheckedAt ? new Date(r.lastCheckedAt).toLocaleDateString() : tr("dropsNever")}
+                  </td>
+                </tr>
+                {openLinks === r.domain && <tr style={{ borderTop: "1px solid var(--color-border)", background: "var(--color-bg)" }}>
+                  <td colSpan={COLUMNS.length + 1} style={{ padding: 14 }}>
+                    <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                      <button onClick={() => setOpenLinks(null)} style={pagerBtn(false)}>
+                        {tr("dropsBacklinksHide")}
+                      </button>
+                    </div>
+                    <BacklinkProfile dropDomain={r.domain} />
+                  </td>
+                </tr>}
+              </Fragment>;
+            })())}
           </tbody>
         </table>
       </div>}
@@ -1040,6 +1320,19 @@ const th: React.CSSProperties = { padding: "9px 14px", fontWeight: 600, whiteSpa
 const thNum: React.CSSProperties = { ...th, textAlign: "right" };
 const td: React.CSSProperties = { padding: "9px 14px", color: "var(--color-text-secondary)", whiteSpace: "nowrap" };
 const tdNum: React.CSSProperties = { ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" };
+
+/** The small icon buttons inside a group header row. */
+const groupBtn: React.CSSProperties = {
+  display: "inline-flex", alignItems: "center", padding: 3, borderRadius: 6,
+  background: "none", border: "none", cursor: "pointer",
+  color: "var(--color-text-tertiary)",
+};
+
+/** The bulk-bar group picker — native select, so it matches the pager select. */
+const pagerSelect: React.CSSProperties = {
+  border: "1px solid var(--color-border)", borderRadius: 7, background: "transparent",
+  color: "var(--color-text-secondary)", padding: "5px 8px", fontSize: 12, cursor: "pointer",
+};
 
 function pagerBtn(disabled: boolean): React.CSSProperties {
   return {

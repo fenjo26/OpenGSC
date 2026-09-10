@@ -40,9 +40,16 @@ export function schemaMissing(error: unknown): boolean {
   const value = error as { code?: string; message?: string } | undefined;
   return (
     value?.code === "P2021" ||
-    /Drop(?:Run|Candidate|Event).*(?:does not exist|no such table)/i.test(String(value?.message ?? ""))
+    /Drop(?:Run|Candidate|Event|Group).*(?:does not exist|no such table)/i.test(String(value?.message ?? ""))
   );
 }
+
+/** Funnel stages and import sources, in canonical order — the routes whitelist with these. */
+export const STAGE_VALUES: DropStage[] = [
+  "ingested", "dns_checked", "resolved_taken", "checking",
+  "available", "taken", "confirmed", "rejected", "acquired",
+];
+export const SOURCE_VALUES: DropSource[] = ["csv", "ahrefs_refdomains", "ahrefs_broken", "crawler", "zone_diff"];
 
 export interface CreateRunInput {
   label?: string | null;
@@ -146,7 +153,7 @@ export async function listRuns(userId: string, limit = 50) {
  * reach the query.
  */
 export type CandidateSortField =
-  | "score" | "createdAt" | "domain" | "dr" | "refdomains" | "snapshots" | "checkedAt";
+  | "score" | "createdAt" | "domain" | "dr" | "refdomains" | "snapshots" | "checkedAt" | "tf";
 
 /** The column behind a sort field. `refdomains` sorts by the dofollow count the score uses. */
 const SORT_COLUMNS: Record<CandidateSortField, string> = {
@@ -157,6 +164,7 @@ const SORT_COLUMNS: Record<CandidateSortField, string> = {
   refdomains: "refdomainsDofollow",
   snapshots: "waybackSnapshots",
   checkedAt: "lastCheckedAt",
+  tf: "majesticTf",
 };
 
 export interface CandidateFilter {
@@ -175,6 +183,15 @@ export interface CandidateFilter {
   drMin?: number;
   drMax?: number;
   drNull?: boolean;
+  /** Referring-domain range, inclusive. Filters the displayed number — dofollow when known. */
+  refMin?: number;
+  refMax?: number;
+  /** Majestic Trust Flow range, inclusive. Never-enriched rows fall outside any range. */
+  tfMin?: number;
+  tfMax?: number;
+  /** One curated group; `ungrouped` is its complement, for the working pile. */
+  groupId?: string;
+  ungrouped?: boolean;
   starred?: boolean;
   /** Only rows the watch loop is polling (see scheduler.ts). */
   watched?: boolean;
@@ -182,6 +199,45 @@ export interface CandidateFilter {
   offset?: number;
   orderBy?: CandidateSortField;
   orderDir?: "asc" | "desc";
+}
+
+// `Number("  ")` is 0, so a whitespace-only field would become a real bound — trim strings
+// before converting, and let nothing that is not a finite number through.
+const filterNum = (v: unknown): number | undefined => {
+  const s = typeof v === "string" ? v.trim() : v;
+  const n = Number(s);
+  return s !== "" && s != null && Number.isFinite(n) ? n : undefined;
+};
+
+/**
+ * HTTP-shaped filter object → {@link CandidateFilter}. The one parser for every surface that
+ * names a filter — the candidates route (query string and bulk body), the check route's
+ * "проверить по фильтру", the bulk group actions — so a field added on the UI has exactly one
+ * place to gain backend meaning, and "select all by filter" can never mean a narrower set than
+ * the table showed.
+ */
+export function parseCandidateFilter(raw: Record<string, unknown>): CandidateFilter {
+  const o = raw ?? {};
+  const str = (k: string) => (typeof o[k] === "string" && o[k] ? (o[k] as string) : undefined);
+  return {
+    runId: str("runId"),
+    stage: STAGE_VALUES.includes(str("stage") as DropStage) ? (str("stage") as DropStage) : undefined,
+    source: SOURCE_VALUES.includes(str("source") as DropSource) ? (str("source") as DropSource) : undefined,
+    tld: str("tld")?.toLowerCase().replace(/^\./, "") || undefined,
+    q: typeof o.q === "string" ? o.q : undefined,
+    minScore: filterNum(o.minScore),
+    drMin: filterNum(o.drMin),
+    drMax: filterNum(o.drMax),
+    drNull: o.drNull === "1" || o.drNull === 1 || o.drNull === true ? true : undefined,
+    refMin: filterNum(o.refMin),
+    refMax: filterNum(o.refMax),
+    tfMin: filterNum(o.tfMin),
+    tfMax: filterNum(o.tfMax),
+    groupId: str("groupId"),
+    ungrouped: o.ungrouped === "1" || o.ungrouped === 1 || o.ungrouped === true ? true : undefined,
+    starred: o.starred === "1" || o.starred === 1 || o.starred === true ? true : undefined,
+    watched: o.watched === "1" || o.watched === 1 || o.watched === true ? true : undefined,
+  };
 }
 
 /**
@@ -196,6 +252,8 @@ function buildCandidateWhere(userId: string, f: CandidateFilter = {}): Record<st
   if (f.tld) where.tld = f.tld;
   if (f.starred !== undefined) where.starred = f.starred;
   if (f.watched !== undefined) where.watched = f.watched;
+  if (f.groupId) where.groupId = f.groupId;
+  if (f.ungrouped) where.groupId = null;
   if (typeof f.minScore === "number") where.score = { gte: f.minScore };
   // `drNull` cannot share the range object: `{ gte: 0 }` would read as "enriched and non-zero",
   // which is the one thing the garbage-cleanup band must not imply.
@@ -206,6 +264,22 @@ function buildCandidateWhere(userId: string, f: CandidateFilter = {}): Record<st
     if (typeof f.drMax === "number") dr.lte = f.drMax;
     if (Object.keys(dr).length) where.dr = dr;
   }
+  // The displayed refdomain count is dofollow-when-known, total otherwise — the range must
+  // filter the number the user sees, so each bound ORs the two columns. SQL NULL comparisons
+  // never match, so never-enriched rows stay outside any range by design, same as DR.
+  if (typeof f.refMin === "number" || typeof f.refMax === "number") {
+    const range = (col: string) => {
+      const r: Record<string, number> = {};
+      if (typeof f.refMin === "number") r.gte = f.refMin;
+      if (typeof f.refMax === "number") r.lte = f.refMax;
+      return { [col]: r };
+    };
+    where.OR = [range("refdomainsDofollow"), { refdomainsDofollow: null, ...range("refdomains") }];
+  }
+  const tf: Record<string, number> = {};
+  if (typeof f.tfMin === "number") tf.gte = f.tfMin;
+  if (typeof f.tfMax === "number") tf.lte = f.tfMax;
+  if (Object.keys(tf).length) where.majesticTf = tf;
   // `contains` without `mode: "insensitive"`: that option is Postgres-only, and domains are
   // stored lower-cased on the way in, so folding the needle is enough and works on both engines.
   if (f.q?.trim()) where.domain = { contains: f.q.trim().toLowerCase() };
@@ -235,7 +309,9 @@ export async function listCandidates(userId: string, f: CandidateFilter = {}) {
     : { [column]: dir };
 
   const [rows, total] = await Promise.all([
-    db.dropCandidate.findMany({ where, orderBy, take, skip }),
+    // The group name rides with the row so the table can render its sections without a
+    // second request; it is a scalar join, not a list.
+    db.dropCandidate.findMany({ where, orderBy, take, skip, include: { group: { select: { name: true } } } }),
     db.dropCandidate.count({ where }),
   ]);
 
@@ -285,23 +361,33 @@ export async function countPendingDns(userId: string, runId?: string): Promise<n
  * Candidates ready for the availability stage: DNS found no delegation, so the registry is the
  * only thing left that can answer. `checking` is included so a batch interrupted mid-flight is
  * picked up again instead of stranding rows.
+ *
+ * `filter` narrows the queue to a user selection ("выбрать все по фильтру → проверить") — the
+ * same builder the table reads with, ANDed with the pending conditions rather than merged key
+ * by key, so a user's `stage` filter intersects with the pending set instead of being silently
+ * replaced by it (and a filter that selects only `available` rows correctly checks nothing).
  */
 export async function pendingAvailabilityCandidates(
   userId: string,
-  opts: { runId?: string; limit?: number; domains?: string[] } = {},
+  opts: { runId?: string; limit?: number; domains?: string[]; filter?: CandidateFilter } = {},
 ): Promise<string[]> {
+  const base = opts.filter
+    ? buildCandidateWhere(userId, opts.filter)
+    : { userId } as Record<string, unknown>;
+  // Rows the registry refused earlier wait for their backoff to expire; without this a
+  // throttled zone would be retried on every pass and never recover.
+  const pending = { stage: { in: ["dns_checked", "checking"] as DropStage[] } };
+  const where = opts.filter
+    ? { ...base, AND: [pending, { OR: [{ nextCheckAt: null }, { nextCheckAt: { lte: new Date() } }] }] }
+    : {
+        ...base,
+        ...pending,
+        ...(opts.runId ? { runId: opts.runId } : {}),
+        ...(opts.domains?.length ? { domain: { in: opts.domains } } : {}),
+        OR: [{ nextCheckAt: null }, { nextCheckAt: { lte: new Date() } }],
+      };
   const rows = (await db.dropCandidate.findMany({
-    where: {
-      userId,
-      stage: { in: ["dns_checked", "checking"] as DropStage[] },
-      ...(opts.runId ? { runId: opts.runId } : {}),
-      // A bulk "проверить выбранных" narrows the queue to the named rows; rows outside the
-      // selection — including ones already backed off — are nobody's business this round.
-      ...(opts.domains?.length ? { domain: { in: opts.domains } } : {}),
-      // Rows the registry refused earlier wait for their backoff to expire; without this a
-      // throttled zone would be retried on every pass and never recover.
-      OR: [{ nextCheckAt: null }, { nextCheckAt: { lte: new Date() } }],
-    },
+    where,
     orderBy: { createdAt: "asc" },
     take: Math.min(Math.max(opts.limit ?? 40, 1), 200),
     select: { domain: true },
@@ -309,15 +395,22 @@ export async function pendingAvailabilityCandidates(
   return rows.map(r => r.domain);
 }
 
-export async function countPendingAvailability(userId: string, runId?: string): Promise<number> {
-  return db.dropCandidate.count({
-    where: {
-      userId,
-      stage: { in: ["dns_checked", "checking"] as DropStage[] },
-      ...(runId ? { runId } : {}),
-      OR: [{ nextCheckAt: null }, { nextCheckAt: { lte: new Date() } }],
-    },
-  });
+export async function countPendingAvailability(
+  userId: string,
+  runId?: string,
+  filter?: CandidateFilter,
+): Promise<number> {
+  const base = filter
+    ? buildCandidateWhere(userId, filter)
+    : ({ userId, ...(runId ? { runId } : {}) } as Record<string, unknown>);
+  const where = filter
+    ? { ...base, AND: [{ stage: { in: ["dns_checked", "checking"] as DropStage[] } }, { OR: [{ nextCheckAt: null }, { nextCheckAt: { lte: new Date() } }] }] }
+    : {
+        ...base,
+        stage: { in: ["dns_checked", "checking"] as DropStage[] },
+        OR: [{ nextCheckAt: null }, { nextCheckAt: { lte: new Date() } }],
+      };
+  return db.dropCandidate.count({ where });
 }
 
 /**
@@ -563,13 +656,17 @@ export interface MetricsUpdate {
   refdomains?: number | null;
   /** Total live backlinks, when the source reports them. */
   backlinks?: number | null;
+  /** Majestic Trust Flow / Citation Flow, from the index-item call. */
+  tf?: number | null;
+  cf?: number | null;
 }
 
 /**
  * Persist enrichment numbers (DR from the free endpoint, refdomains/backlinks from the paid
- * metrics call) onto candidates. The numbers are computed elsewhere and arrive ready; this only
- * decides what a missing value means — `undefined` leaves the column alone, `null` would clear
- * it, and the callers never send `null`: a check that failed says nothing and overwrites less.
+ * metrics call, TF/CF from Majestic) onto candidates. The numbers are computed elsewhere and
+ * arrive ready; this only decides what a missing value means — `undefined` leaves the column
+ * alone, `null` would clear it, and the callers never send `null`: a check that failed says
+ * nothing and overwrites less.
  */
 export async function writeMetricsUpdates(userId: string, entries: MetricsUpdate[]): Promise<number> {
   let touched = 0;
@@ -578,6 +675,9 @@ export async function writeMetricsUpdates(userId: string, entries: MetricsUpdate
     if (e.dr != null) data.dr = e.dr;
     if (e.refdomains != null) data.refdomains = e.refdomains;
     if (e.backlinks != null) data.liveBacklinks = e.backlinks;
+    if (e.tf != null || e.cf != null) data.majesticAt = new Date();
+    if (e.tf != null) data.majesticTf = e.tf;
+    if (e.cf != null) data.majesticCf = e.cf;
     const res = await db.dropCandidate.updateMany({
       where: { userId, domain: e.domain },
       data,
@@ -716,6 +816,91 @@ export async function setWatched(
 /** How many rows the watch loop is currently polling. */
 export async function countWatched(userId: string): Promise<number> {
   return db.dropCandidate.count({ where: { userId, watched: true } });
+}
+
+// ─── Groups ─────────────────────────────────────────────────────────────────────
+//
+// User-curated buckets over the catalogue ("выкупить в октябре", "отложить") — orthogonal to
+// the funnel stage and to the run. Every function here is user-scoped first: a groupId that
+// belongs to somebody else must be indistinguishable from one that does not exist.
+
+export interface DropGroupRow {
+  id: string;
+  name: string;
+  count: number;
+  createdAt: string;
+}
+
+export async function listDropGroups(userId: string): Promise<DropGroupRow[]> {
+  const grouped = (await db.dropGroup.findMany({
+    where: { userId },
+    orderBy: { createdAt: "asc" },
+    include: { _count: { select: { candidates: true } } },
+  })) as { id: string; name: string; createdAt: Date; _count: { candidates: number } }[];
+  return grouped.map(g => ({
+    id: g.id, name: g.name, count: g._count.candidates, createdAt: g.createdAt.toISOString(),
+  }));
+}
+
+export async function createDropGroup(userId: string, name: string): Promise<DropGroupRow> {
+  const clean = name.trim().slice(0, 80);
+  if (!clean) throw new Error("name_required");
+  // Re-creating the same name returns the existing group rather than erroring — the UI flow
+  // ("в группу…", typo, retry) should not demand a delete first.
+  const existing = (await db.dropGroup.findFirst({ where: { userId, name: clean } })) as { id: string; name: string; createdAt: Date } | null;
+  if (existing) {
+    const groups = await listDropGroups(userId);
+    return groups.find(g => g.id === existing.id) ?? { id: existing.id, name: existing.name, count: 0, createdAt: existing.createdAt.toISOString() };
+  }
+  const g = (await db.dropGroup.create({ data: { userId, name: clean } })) as { id: string; name: string; createdAt: Date };
+  return { id: g.id, name: g.name, count: 0, createdAt: g.createdAt.toISOString() };
+}
+
+export async function renameDropGroup(userId: string, groupId: string, name: string): Promise<boolean> {
+  const clean = name.trim().slice(0, 80);
+  if (!clean) throw new Error("name_required");
+  const res = await db.dropGroup.updateMany({ where: { userId, id: groupId }, data: { name: clean } });
+  return res.count > 0;
+}
+
+/** Deleting a group never touches its rows — the FK is SetNull, so they just leave it. */
+export async function deleteDropGroup(userId: string, groupId: string): Promise<boolean> {
+  const res = await db.dropGroup.deleteMany({ where: { userId, id: groupId } });
+  return res.count > 0;
+}
+
+/** True only when the groupId names one of this user's groups — the assign guard. */
+export async function dropGroupExists(userId: string, groupId: string): Promise<boolean> {
+  const n = await db.dropGroup.count({ where: { userId, id: groupId } });
+  return n > 0;
+}
+
+/**
+ * Assign / unassign rows to a group, over the same selection shapes as star and watch: checked
+ * ids, or "выбрать все по фильтру" — assigning a whole filtered set to a group is the point of
+ * the filter. `groupId: null` unassigns.
+ */
+export async function setCandidateGroup(
+  userId: string,
+  scope: { ids?: string[]; filter?: CandidateFilter },
+  groupId: string | null,
+): Promise<number> {
+  const data: Record<string, unknown> = { groupId };
+  if (scope.ids?.length) {
+    let touched = 0;
+    for (let i = 0; i < scope.ids.length; i += CHUNK) {
+      const res = await db.dropCandidate.updateMany({
+        where: { userId, id: { in: scope.ids.slice(i, i + CHUNK) } }, data,
+      });
+      touched += res.count;
+    }
+    return touched;
+  }
+  if (scope.filter) {
+    const res = await db.dropCandidate.updateMany({ where: buildCandidateWhere(userId, scope.filter), data });
+    return res.count;
+  }
+  return 0;
 }
 
 /**

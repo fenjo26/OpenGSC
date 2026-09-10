@@ -887,6 +887,18 @@ async function majesticItemInfo(
 }
 
 /**
+ * The public face of the batched index-item call, for callers outside this module that want
+ * TF/CF for a list of domains (the drops TF/CF pass and its MCP mirror). One call answers up
+ * to 100 items; `raw` travels on each row so writers can persist exactly what was billed for.
+ */
+export async function fetchMajesticItemStats(
+  creds: MetricsCreds,
+  items: string[],
+): Promise<{ items: MajesticItemStats[]; units: number; error?: string }> {
+  return majesticItemInfo(creds, items);
+}
+
+/**
  * Majestic domain metrics. One call, one unit. Majestic has no concept of organic traffic or
  * ad spend, so those stay null rather than zero — same distinction `num()` exists for.
  * TF/CF ride in the payload for callers that want them; `dr` stays null exactly as on the

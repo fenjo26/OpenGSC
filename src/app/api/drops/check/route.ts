@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { checkAvailabilityBatch } from "@/lib/drops/availability";
 import { profileForDomain, registryAnswerable } from "@/lib/drops/registries";
-import { countPendingAvailability, markUncheckableZones, pendingAvailabilityCandidates, recordAvailabilityResults, schemaMissing } from "@/lib/drops/store";
+import { countPendingAvailability, markUncheckableZones, parseCandidateFilter, pendingAvailabilityCandidates, recordAvailabilityResults, schemaMissing } from "@/lib/drops/store";
 
 export const dynamic = "force-dynamic";
 
@@ -31,10 +31,17 @@ export async function POST(req: Request) {
     const domains = Array.isArray(body?.domains)
       ? body.domains.filter((d: unknown): d is string => typeof d === "string").slice(0, 200)
       : undefined;
+    // "Выбрать все по фильтру → проверить": the queue narrows to the same filter the table
+    // reads with, so the promised selection is the checked set. Explicit ids take precedence —
+    // the two shapes never travel together.
+    const filter = !domains?.length && body?.filter && typeof body.filter === "object"
+      ? parseCandidateFilter(body.filter as Record<string, unknown>)
+      : undefined;
 
-    const pending = await pendingAvailabilityCandidates(userId, { runId, limit: batch, domains });
+    const pending = await pendingAvailabilityCandidates(userId, { runId, limit: batch, domains, filter });
     if (!pending.length) {
-      return NextResponse.json({ checked: 0, available: 0, taken: 0, deferred: 0, uncheckable: 0, remaining: 0, done: true });
+      const remaining = await countPendingAvailability(userId, runId, filter);
+      return NextResponse.json({ checked: 0, available: 0, taken: 0, deferred: 0, uncheckable: 0, remaining, done: true });
     }
 
     // A zone with no registry that can answer (`.gr`) is skipped before the walk: every query
@@ -52,7 +59,7 @@ export async function POST(req: Request) {
       markUncheckableZones(userId, uncheckable),
     ]);
     const written = await recordAvailabilityResults(userId, results);
-    const remaining = await countPendingAvailability(userId, runId);
+    const remaining = await countPendingAvailability(userId, runId, filter);
 
     return NextResponse.json({
       checked: results.size,

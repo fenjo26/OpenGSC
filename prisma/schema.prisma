@@ -1566,6 +1566,23 @@ model DropRun {
   @@index([userId, createdAt])
 }
 
+/// A user-curated bucket of candidates — "выкупить в октябре", "отложить", "спросить партнёра".
+/// Orthogonal to both the funnel stage and the import run: a group can span runs and stages,
+/// because the decision it records ("what do I want to do with these") is the user's, not the
+/// pipeline's. Per-user and name-unique; deleting one leaves its rows in the catalogue.
+model DropGroup {
+  id     String @id @default(cuid())
+  userId String
+  name   String
+
+  createdAt DateTime @default(now())
+
+  candidates DropCandidate[]
+
+  @@unique([userId, name])
+  @@index([userId, createdAt])
+}
+
 /// One candidate domain.
 ///
 /// Unique per (userId, domain), not per run: the same name arriving from three sources is one
@@ -1607,6 +1624,14 @@ model DropCandidate {
   topAnchors         String?   // JSON: { anchor: string, count: number }[]
   metricsAt          DateTime?
 
+  // ── enrichment (Majestic) ────────────────────────────────────────────────────────
+  /// Trust Flow / Citation Flow from GetIndexItemInfo. Kept in their own columns rather
+  /// than folded into `dr`: TF is a different scale, and the buy decision reads both —
+  /// DR without TF misses a PBN-heavy profile, TF without DR misses a fresh one.
+  majesticTf Float?
+  majesticCf Float?
+  majesticAt DateTime?
+
   // ── history (Wayback) ────────────────────────────────────────────────────────────
   waybackSnapshots Int?
   waybackFirstAt   DateTime?
@@ -1626,12 +1651,18 @@ model DropCandidate {
   updatedAt DateTime @updatedAt
 
   run    DropRun?    @relation(fields: [runId], references: [id], onDelete: SetNull)
+  group  DropGroup?  @relation(fields: [groupId], references: [id], onDelete: SetNull)
   events DropEvent[]
+
+  /// A user-curated bucket ("выкупить в октябре", "отложить") — orthogonal to the funnel
+  /// stage and to the run. Deleting a group leaves the rows in place, ungrouped.
+  groupId String?
 
   @@unique([userId, domain])
   @@index([userId, stage])
   @@index([userId, score])
   @@index([runId])
+  @@index([groupId])
   @@index([nextCheckAt])
   @@index([watched, nextCheckAt])
 }
