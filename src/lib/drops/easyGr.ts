@@ -47,29 +47,90 @@ export interface EasyGrOutcome {
   verdict: EasyGrVerdict;
   /** Причина отказа, как её назвал сам сервис. Пароль сюда попасть не может — его нет в ответе. */
   reason?: string;
+  /** Что удалось прочитать из записи занятого домена. Дата окончания — это дата будущего дропа. */
+  record?: {
+    expiresAt?: Date;
+    createdAt?: Date;
+    nameServers?: string[];
+    registryStatus?: string[];
+  };
 }
 
 /**
- * Маркеры «домен свободен» из документации easy.gr: у греческих зон это `not exist`, у gTLD —
- * `No match for`. Проверяются на ответе в нижнем регистре.
+ * Маркеры «домен свободен». Снято с живого ответа 2026-09-10: свободный `.gr` возвращает
+ * ровно строку `Domain Does not exist`. Для gTLD, которые easy.gr перепродаёт, документирован
+ * `No match for`.
  */
 const FREE_MARKERS = ["not exist", "no match for", "no match", "not found"];
 
 /**
- * Признаки того, что перед нами настоящая запись о занятом домене.
+ * Признаки настоящей записи о занятом домене.
  *
  * Отдельный список, а не «раз не свободен, значит занят»: пустой ответ, страница-заглушка и
- * текст об ошибке тоже «не содержат маркера свободы», и превращать их в вердикт «занят» — это
- * тихо выбрасывать хорошего кандидата.
+ * текст об ошибке тоже «не содержат маркера свободы», и превращать их в вердикт «занят» —
+ * это тихо выбрасывать хорошего кандидата.
+ *
+ * Половина списка греческая, и это не украшение. Занятый `.gr` приходит не текстом whois, а
+ * HTML-таблицей реестра на греческом: `Όνομα χώρου`, `Ημερομηνία λήξης`, `ΣΤΟΙΧΕΙΑ ΚΑΤΑΧΩΡΗΤΗ`.
+ * Английские слова в ней не встречаются вообще, так что список только из них молча читал бы
+ * каждый занятый греческий домен как «ответ непонятен». Английская половина остаётся для
+ * gTLD, которые приходят классическим текстом.
  */
 const REGISTERED_MARKERS = [
+  // .gr — шаблон реестра, как его отдаёт easy.gr
+  "domain-wrap", "όνομα χώρου", "ημερομηνία δημιουργίας", "ημερομηνία λήξης",
+  "εξυπηρετητής ονοματοδοσίας", "στοιχεία καταχωρητή", "αριθμός πρωτοκόλλου",
+  // gTLD — обычный whois
   "registrar", "registrant", "creation date", "created on", "expiration",
-  "expires", "domain status", "nameserver", "name server", "status:",
+  "expires", "domain status", "nameserver", "name server",
 ];
+
+/** `<td>Метка</td><th…> Значение</th>` — форма, в которой реестр отдаёт каждую строку таблицы. */
+const ROW_RE = /<td[^>]*>([\s\S]*?)<\/td>\s*(?:<br\s*\/?>\s*)*<th[^>]*>([\s\S]*?)<\/th>/gi;
+
+const stripTags = (v: string) => v.replace(/<[^>]*>/g, " ").replace(/&nbsp;/gi, " ").replace(/\s+/g, " ").trim();
+
+/** `30-11-2026` → Date. Формат реестра — день-месяц-год, и перепутать его с ISO нельзя. */
+function parseGrDate(value: string): Date | undefined {
+  const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(value.trim());
+  if (!m) return undefined;
+  const d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+  return Number.isNaN(d.getTime()) ? undefined : d;
+}
+
+/**
+ * Поля из HTML-таблицы реестра.
+ *
+ * Достаются потому, что они бесплатны и в этом модуле дороги: дата окончания у занятого `.gr`
+ * — это дата будущего дропа, а вся затея как раз про то, чтобы оказаться рядом вовремя.
+ */
+export function parseEasyGrRecord(body: string): {
+  expiresAt?: Date;
+  createdAt?: Date;
+  nameServers?: string[];
+  registryStatus?: string[];
+} {
+  const rows: [label: string, value: string][] = [];
+  for (const m of body.matchAll(ROW_RE)) rows.push([stripTags(m[1]).toLowerCase(), stripTags(m[2])]);
+  if (!rows.length) return {};
+
+  const pick = (needle: string) => rows.find(r => r[0].includes(needle))?.[1];
+  const nameServers = rows.filter(r => r[0].includes("εξυπηρετητής")).map(r => r[1]).filter(Boolean);
+  const status = pick("κατάταση") ?? pick("κατάσταση");
+
+  const out: ReturnType<typeof parseEasyGrRecord> = {};
+  const expires = pick("ημερομηνία λήξης");
+  const created = pick("ημερομηνία δημιουργίας");
+  if (expires) { const d = parseGrDate(expires); if (d) out.expiresAt = d; }
+  if (created) { const d = parseGrDate(created); if (d) out.createdAt = d; }
+  if (nameServers.length) out.nameServers = nameServers;
+  if (status) out.registryStatus = [status];
+  return out;
+}
 
 /**
  * Разбор ответа. Вынесен из сети, чтобы контракт можно было закрепить тестами, не имея ни
- * ключей, ни разрешённого IP — а именно так этот код и писался.
+ * ключей, ни разрешённого IP.
  */
 export function parseEasyGrBody(raw: string): EasyGrOutcome {
   const body = (raw ?? "").trim();
@@ -89,10 +150,11 @@ export function parseEasyGrBody(raw: string): EasyGrOutcome {
           : String(json.error ?? json.message ?? "refused");
         return { verdict: "refused", reason: reason.slice(0, 200) };
       }
-      // Успешный JSON: ищем ответ в любом текстовом поле, не угадывая имя схемы.
       const flat = JSON.stringify(json).toLowerCase();
       if (FREE_MARKERS.some(m => flat.includes(m))) return { verdict: "available" };
-      if (REGISTERED_MARKERS.some(m => flat.includes(m))) return { verdict: "registered" };
+      if (REGISTERED_MARKERS.some(m => flat.includes(m))) {
+        return { verdict: "registered", record: parseEasyGrRecord(body) };
+      }
       return { verdict: "empty" };
     } catch {
       return { verdict: "empty" };
@@ -101,7 +163,9 @@ export function parseEasyGrBody(raw: string): EasyGrOutcome {
 
   const lower = body.toLowerCase();
   if (FREE_MARKERS.some(m => lower.includes(m))) return { verdict: "available" };
-  if (REGISTERED_MARKERS.some(m => lower.includes(m))) return { verdict: "registered" };
+  if (REGISTERED_MARKERS.some(m => lower.includes(m))) {
+    return { verdict: "registered", record: parseEasyGrRecord(body) };
+  }
   return { verdict: "empty" };
 }
 

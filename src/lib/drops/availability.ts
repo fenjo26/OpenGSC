@@ -181,7 +181,15 @@ export async function checkAvailability(
       return { ok: true, status: "available", http: 200, via: "registrar", corroborated: true };
     }
     if (out.verdict === "registered") {
-      return { ok: true, status: "registered", http: 200, via: "registrar" };
+      // The expiry date of a taken .gr is the date of a future drop — the one number this whole
+      // module exists to be early for. It comes free with the answer, so it is kept.
+      return {
+        ok: true, status: "registered", http: 200, via: "registrar",
+        expiresAt: out.record?.expiresAt,
+        createdAt: out.record?.createdAt,
+        registryStatus: out.record?.registryStatus,
+        nameServers: out.record?.nameServers,
+      };
     }
     // A refusal is not a verdict — same rule as everywhere else in this file. The row keeps its
     // stage and comes back on the backoff instead of being recorded as taken.
