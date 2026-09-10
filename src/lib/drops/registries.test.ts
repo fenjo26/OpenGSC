@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { tldOf, resolveProfile, profileForDomain, allProfiles, RDAP_BOOTSTRAP } from "./registries";
+import { tldOf, resolveProfile, profileForDomain, allProfiles, RDAP_BOOTSTRAP, registryAnswerable } from "./registries";
 
 test("the effective TLD survives the spellings a real list contains", () => {
   assert.equal(tldOf("example.com"), "com");
@@ -48,12 +48,25 @@ test("an unknown zone gets a cautious bootstrap profile", () => {
 
 // .gr deliberately ships without an RDAP endpoint. Guessing one would hand the checker a 404
 // from a bootstrap redirector that cannot route the zone, which reads as "free".
-test(".gr has no guessed RDAP endpoint and cannot be bought on the registry answer alone", () => {
+test(".gr has no registry to ask, and is answered by a registrar instead", () => {
+  // Settled twice over rather than inferred from a silent port: IANA publishes empty `whois:`
+  // and `refer:` fields for the zone, and `gr` is absent from the RDAP bootstrap — so guessing
+  // an endpoint here would manufacture a 404 that means nothing and read it as "free".
   const gr = resolveProfile("gr");
   assert.equal(gr.rdap, undefined);
+  assert.equal(gr.whoisHost, undefined);
   assert.equal(gr.needsRegistrarConfirm, true);
-  assert.equal(gr.verified, false);
-  assert.ok(gr.minIntervalMs >= 10_000, "a rate-limited registry gets a wide gap by default");
+  assert.equal(gr.registrarSource, "easy.gr");
+});
+
+test("a registrar source counts only once its credentials exist", () => {
+  // A profile naming a registrar, on a server with no keys for it, is still a zone nobody can
+  // ask — and the check route has to park those rows rather than walk them into a dead call.
+  const gr = resolveProfile("gr");
+  assert.equal(registryAnswerable(gr), false);
+  assert.equal(registryAnswerable(gr, true), true);
+  // A zone with a real registry does not depend on any of that.
+  assert.equal(registryAnswerable(resolveProfile("com")), true);
 });
 
 test("unverified profiles carry a note saying what still needs checking", () => {

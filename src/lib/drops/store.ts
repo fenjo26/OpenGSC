@@ -671,6 +671,31 @@ export async function markUncheckableZones(userId: string, domains: string[]): P
 }
 
 /**
+ * Bring `no_registry` rows back into the queue for zones that just became answerable.
+ *
+ * The stage is terminal for the built-in checker, not for the domain: configuring a registrar
+ * API turns `.gr` from "nobody to ask" into an ordinary zone, and the rows parked there have to
+ * return by themselves. Asking the user to re-import a catalogue he already imported, because
+ * a setting changed, is not a workflow.
+ *
+ * Scoped to the zones named, so enabling one registrar does not wake rows in zones that are
+ * still dead. `dns_checked` is where they go — the DNS verdict they carry is still true.
+ */
+export async function revivePendingZones(userId: string, tlds: string[] = ["gr"]): Promise<number> {
+  const res = await db.dropCandidate.updateMany({
+    where: { userId, stage: "no_registry" satisfies DropStage, tld: { in: tlds } },
+    data: {
+      stage: "dns_checked" satisfies DropStage,
+      lastError: null,
+      lastStatus: null,
+      nextCheckAt: null,
+      consecutiveErrors: 0,
+    },
+  });
+  return res.count;
+}
+
+/**
  * Rows flagged `zone_uncheckable` before `no_registry` existed are still sitting in the pending
  * stages behind a week-long backoff, so the funnel keeps counting them and the user keeps being
  * invited to press a button that cannot help them. One sweep at the top of the check route

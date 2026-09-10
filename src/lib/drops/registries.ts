@@ -26,6 +26,15 @@ export interface RegistryProfile {
   minIntervalMs: number;
   /** The registry's own answer is not good enough to buy on — ask a registrar API first. */
   needsRegistrarConfirm?: boolean;
+  /**
+   * A registrar API that answers for this zone when the registry itself cannot be asked.
+   *
+   * Only `.gr` needs it today, and the reason is settled rather than assumed: IANA publishes
+   * EMPTY `whois:` and `refer:` fields for the zone (so no port-43 server exists to find), and
+   * `gr` is absent from the RDAP bootstrap (438 services on 2026-09-09), so rdap.org has no
+   * route and its 404 means nothing. A commercial registrar is the only remaining source.
+   */
+  registrarSource?: "easy.gr";
   /** Confirmed by hand against the live registry (phase 0). */
   verified: boolean;
   notes?: string;
@@ -149,14 +158,20 @@ const PROFILES: RegistryProfile[] = [
     // publishes an empty `whois:` line for the zone — so discovery correctly finds nothing
     // and every check lands on "no_usable_source" with its backoff, instead of hanging 8s
     // per row against a dark port or, worse, reading RIPE's "not found" as an answer.
-    minIntervalMs: 10_000,
+    // Not the registry's limit — the registrar's API is a paid commercial service with its own
+    // IP allowlist, and there is no anonymous quota to be polite about. Kept modest anyway.
+    minIntervalMs: 1_000,
     needsRegistrarConfirm: true,
-    verified: false,
+    registrarSource: "easy.gr",
+    verified: true,
     notes:
-      "ICS-FORTH. Uncheckable from here as of 2026-09-07: no RDAP, no working public WHOIS. " +
-      "Treat .gr as a watchlist of dozens served by a registrar API (phase 6), never as a " +
-      "zone to sweep; gr.whois-servers.net points at RIPE, whose \"not found\" proves nothing. " +
-      "Never buy on the registry answer alone here.",
+      "ICS-FORTH. No RDAP and no public WHOIS, and this is now proven twice over rather than " +
+      "inferred from a silent port: IANA publishes empty whois: and refer: fields for the zone " +
+      "(a `whois cyclorama.gr` stops at that record and goes no further), and `gr` is absent " +
+      "from the RDAP bootstrap, so rdap.org has no route and its 404 carries no information. " +
+      "Answered through the easy.gr registrar API when EASY_GR_USERNAME / EASY_GR_PASSWORD are " +
+      "set; that API is IP-allowlisted, so its calls never go through the proxy pool. " +
+      "gr.whois-servers.net points at RIPE, whose \"not found\" still proves nothing.",
   },
 ];
 
@@ -192,8 +207,10 @@ export function resolveProfile(tld: string): RegistryProfile {
  * polite silence per row and ends in the same error, so the check route skips such zones up
  * front and tells the user why, instead of backing off into nothing.
  */
-export function registryAnswerable(p: RegistryProfile): boolean {
-  return Boolean(p.rdap || p.whoisHost);
+export function registryAnswerable(p: RegistryProfile, hasRegistrar = false): boolean {
+  // A registrar source counts only when its credentials are actually configured: a profile
+  // naming one, with no keys on the server, is still a zone nobody can ask.
+  return Boolean(p.rdap || p.whoisHost || (p.registrarSource && hasRegistrar));
 }
 
 /** Convenience: the profile that governs a whole domain rather than a bare zone. */

@@ -16,6 +16,7 @@ import { createRun, listCandidates, stageCounts, pendingDnsCandidates, countPend
 import { checkDnsBatch } from "@/lib/drops/dns";
 import { checkAvailabilityBatch } from "@/lib/drops/availability";
 import { profileForDomain, registryAnswerable } from "@/lib/drops/registries";
+import { easyGrCreds } from "@/lib/drops/easyGr";
 import { fetchSnapshotTimestamps, fetchWaybackProfile } from "@/lib/drops/wayback";
 import { drForDomains } from "@/lib/drops/drFree";
 import { flagDrSeries, readDrHistory, recordDrSnapshots } from "@/lib/seo/drHistory";
@@ -235,7 +236,7 @@ export const DROPS_TOOLS: McpTool[] = [
       const uncheckable: string[] = [];
       for (const domain of pending) {
         const profile = profileForDomain(domain);
-        (profile && registryAnswerable(profile) ? answerable : uncheckable).push(domain);
+        (profile && registryAnswerable(profile, Boolean(easyGrCreds())) ? answerable : uncheckable).push(domain);
       }
       const [results, skipped] = await Promise.all([
         checkAvailabilityBatch(answerable, { deadlineMs: CHECK_DEADLINE_MS }),

@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { checkAvailabilityBatch } from "@/lib/drops/availability";
 import { profileForDomain, registryAnswerable } from "@/lib/drops/registries";
-import { countPendingAvailability, EXCLUDE_MAX, loadProxyPool, markUncheckableZones, retireUncheckableRows, parseCandidateFilter, pendingAvailabilityCandidates, recordAvailabilityResults, schemaMissing } from "@/lib/drops/store";
+import { easyGrCreds } from "@/lib/drops/easyGr";
+import { countPendingAvailability, EXCLUDE_MAX, loadProxyPool, markUncheckableZones, retireUncheckableRows, revivePendingZones, parseCandidateFilter, pendingAvailabilityCandidates, recordAvailabilityResults, schemaMissing } from "@/lib/drops/store";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +47,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "too_many_exclusions", max: EXCLUDE_MAX }, { status: 400 });
     }
 
+    // Configuring a registrar API turns a dead zone live, so the rows parked in `no_registry`
+    // have to come back on their own — asking the user to re-import them would be absurd.
+    const hasRegistrar = Boolean(easyGrCreds());
+    if (hasRegistrar) await revivePendingZones(userId);
+
     // Catalogues flagged before `no_registry` existed still carry those rows in the pending
     // stages; retiring them here keeps the funnel counts honest without a migration.
     await retireUncheckableRows(userId);
@@ -63,7 +69,7 @@ export async function POST(req: Request) {
     const uncheckable: string[] = [];
     for (const domain of pending) {
       const profile = profileForDomain(domain);
-      (profile && registryAnswerable(profile) ? answerable : uncheckable).push(domain);
+      (profile && registryAnswerable(profile, hasRegistrar) ? answerable : uncheckable).push(domain);
     }
 
     // The pool changes which address a registry sees, never how often one address asks: the

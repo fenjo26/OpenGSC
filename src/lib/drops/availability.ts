@@ -13,6 +13,7 @@
 // Derived in part from BigDesigner/project-backorder (MIT).
 
 import { safeFetch } from "@/lib/security/safeFetch";
+import { easyGrAvailability, easyGrCreds } from "./easyGr";
 import { DIRECT_POOL, type ProxyEndpoint, type ProxyPool } from "./proxies";
 import { proxyConnector, whoisConnector } from "./proxyTransport";
 import { parseWhoisAvailability, parseWhoisCreated, parseWhoisExpiry, parseWhoisNameServers, parseWhoisStatuses } from "./patterns";
@@ -167,6 +168,26 @@ export async function checkAvailability(
 ): Promise<AvailabilityResult> {
   const profile = profileForDomain(domain);
   if (!profile) return { ok: false, status: "error", http: 0, error: "not_a_domain" };
+
+  // A zone with a registrar source has no registry to ask at all — that is why it has one. The
+  // answer is authoritative in a way an RDAP 404 never is (a commercial registrar either sells
+  // you the name or does not), so it is corroborated on its own. Never through the pool: the
+  // registrar allowlists IPs.
+  if (profile.registrarSource === "easy.gr") {
+    const creds = easyGrCreds();
+    if (!creds) return { ok: false, status: "error", http: 0, error: "no_usable_source" };
+    const out = await easyGrAvailability(domain, creds);
+    if (out.verdict === "available") {
+      return { ok: true, status: "available", http: 200, via: "registrar", corroborated: true };
+    }
+    if (out.verdict === "registered") {
+      return { ok: true, status: "registered", http: 200, via: "registrar" };
+    }
+    // A refusal is not a verdict — same rule as everywhere else in this file. The row keeps its
+    // stage and comes back on the backoff instead of being recorded as taken.
+    if (out.verdict === "refused") return { ok: false, status: "rate_limited", http: 429 };
+    return { ok: false, status: "error", http: 0, error: "no_usable_source" };
+  }
 
   await jitter();
   const rdap = await askRdap(domain, profile, via);

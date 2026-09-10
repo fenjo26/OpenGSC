@@ -43,7 +43,7 @@ export type DropStage =
  * form driven by the user's own tool. It exists for zones the built-in checker cannot ask at all
  * (`.gr`), and it is never corroborated: one source is one source, whoever typed it.
  */
-export type AvailabilitySource = "rdap" | "whois" | "dns" | "aparser" | "manual";
+export type AvailabilitySource = "rdap" | "whois" | "dns" | "aparser" | "manual" | "registrar";
 
 export type AvailabilityResult =
   | {
