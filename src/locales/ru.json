@@ -3836,6 +3836,7 @@
   "dropsGroupRename": "Переименовать группу",
   "dropsGroupCountHint": "Доменов в группе (на всех страницах)",
   "dropsGroupPartial": "выбрано: {n}",
+  "dropsGroupTooBig": "Группа больше 500 доменов — выделите её фильтром по группе и кнопкой «Выбрать все по фильтру»",
   "dropsGroupSelectHint": "Выделить всю группу ({n}) — по всем страницам",
   "dropsGroupUnselectHint": "Снять выделение со всей группы",
   "dropsEnrichCancelled": "Действие отменено",

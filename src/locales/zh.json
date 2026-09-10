@@ -3836,6 +3836,7 @@
   "dropsGroupRename": "重命名分组",
   "dropsGroupCountHint": "分组内域名数（跨所有页）",
   "dropsGroupPartial": "已选：{n}",
+  "dropsGroupTooBig": "分组超过 500 个域名 — 请使用分组筛选加「按筛选全选」来选择",
   "dropsGroupSelectHint": "选择整组（{n}）— 跨所有页",
   "dropsGroupUnselectHint": "取消整组选择",
   "dropsEnrichCancelled": "操作已取消",

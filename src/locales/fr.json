@@ -3836,6 +3836,7 @@
   "dropsGroupRename": "Renommer le groupe",
   "dropsGroupCountHint": "Domaines dans le groupe (toutes pages)",
   "dropsGroupPartial": "sélectionnés : {n}",
+  "dropsGroupTooBig": "Le groupe dépasse 500 domaines — sélectionnez-le via le filtre de groupe et « Tout sélectionner par filtre »",
   "dropsGroupSelectHint": "Sélectionner tout le groupe ({n}) — toutes pages confondues",
   "dropsGroupUnselectHint": "Effacer la sélection du groupe entier",
   "dropsEnrichCancelled": "Action annulée",
