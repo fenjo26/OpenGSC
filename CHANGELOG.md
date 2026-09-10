@@ -3,6 +3,70 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
+## [1.7.0] — 2026-09-10
+
+### Added
+
+- **The drops catalogue became a pipeline.** `/drops` now shows the five stages it always had —
+  import, proxies, DNS pre-filter, registry check, free domains — as a strip with live counts,
+  reading the current step off the funnel rather than off the last button pressed, plus a "how
+  this works" panel that finally explains where the input file comes from and why DNS runs
+  before the registry. The page used to be a flat row of buttons with the order and the reasons
+  invisible.
+- **Ahrefs exports are read by column.** An "Outgoing links" export puts the source URL before
+  the target URL, so the old "first field that looks like a domain" rule imported the donor site
+  once and 143 000 duplicates after it — the published method for finding drops could not pass
+  through the importer at all. Columns are now matched by header with a deny list, quoting
+  follows RFC 4180 (anchors carry commas and newlines), and the file's DR and referring-domain
+  columns land on the candidate at import, so those rows never need paid enrichment. The screen
+  shows which columns will be read before the import runs, and lets you override each one.
+- **A proxy pool for the registry stage.** Politeness is enforced per address, so the per-zone
+  interval is now held per (zone, proxy) pair: several proxies may query one zone at once while
+  a single proxy still may not. SOCKS5 carries WHOIS (port 43 is raw TCP and HTTP proxies refuse
+  CONNECT to it); HTTP proxies carry RDAP. The pool is optional — with none configured the check
+  behaves exactly as before — and when every proxy is resting the run continues directly rather
+  than stalling.
+- **`.gr` is answered through a registrar API.** The zone has no RDAP endpoint and no public
+  WHOIS server: IANA publishes empty `whois:` and `refer:` fields for it, and `gr` is absent
+  from the RDAP bootstrap. easy.gr is wired as an availability source behind
+  `EASY_GR_USERNAME` / `EASY_GR_PASSWORD`; its calls never go through the proxy pool because the
+  service is IP-allowlisted. The registry's own table is parsed too — the expiry date of a taken
+  `.gr` is the date of a future drop, and it now feeds the watch loop.
+- **Manual verdicts.** Export the domains of a zone nobody can ask, check them in a registrar
+  panel or your own tool, paste the answers back. A row without a verdict is dropped rather than
+  read as free, and a manual verdict is never marked corroborated.
+- **Export.** The catalogue as CSV under the current filter, paged server-side with the row cap
+  written into the file, or as a plain domain list for an external checker.
+- **Range filters, group sections and Majestic TF/CF in the catalogue**, with per-domain backlink
+  counts and bulk actions that apply to the whole filter rather than the visible page.
+
+### Fixed
+
+- **Select-all is a scope, not a list of rows.** The header checkbox was a three-step cycle whose
+  middle state rendered as a stray dash; it is now two states, one click each way. Unchecking a
+  row after "select everything" used to collapse the selection to whatever rows happened to be on
+  screen, silently dropping every selected row on the pages you never opened — the filter-wide
+  scope now survives and carries the unchecked rows as exclusions all the way to the server.
+  Changing a filter drops that scope, so a later Delete cannot take rows you never saw.
+- **A zone with no registry is a stage, not a weekly retry.** Rows in a zone the checker cannot
+  ask were parked for a week but left in the pending stage, so the funnel advertised them as
+  waiting forever and re-marked them every week for nothing.
+- **The Wayback gap is counted in calendar days.** It was computed from raw milliseconds, so a
+  gap spanning a daylight-saving change was an hour short and lost a day — the same domain read
+  as a day less dead depending on the server's timezone, and that number feeds the score a
+  purchase is sorted by.
+- **The backlinks units figure without a monthly cap** reported spend as though it were the
+  remaining balance.
+- **Charts no longer warn on every mount**: full-height responsive containers are seeded with an
+  initial dimension, which recharts 3.x needs.
+
+### Changed
+
+- `safeFetch` accepts an outbound proxy connector. The private-address guard is unchanged: the
+  target is still resolved and still refused if private, so a proxy cannot become a hop into the
+  local network.
+- The dashboard traffic figure renders as a metric slot rather than a floating chip.
+
 ## [1.6.1] — 2026-09-09
 
 ### Added
