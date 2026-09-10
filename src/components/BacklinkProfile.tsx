@@ -336,7 +336,11 @@ export default function BacklinkProfile({ siteDbId }: { siteDbId: string }) {
   const placard = (p: BlProvider, withBalance: boolean) => {
     const src = srcs[p];
     if (!src) return null;
-    const unitsLeft = src.cap > 0 ? Math.max(0, src.cap - (usage[p] ?? 0)) : usage[p];
+    const used = usage[p] ?? 0;
+    // With a monthly cap the honest figure is what remains of it. Without one there is no
+    // "left" to speak of — the raw counter is what was SPENT, and labelling it "left" turned
+    // 3 595 spent units into a phantom balance.
+    const unitsLeft = src.cap > 0 ? Math.max(0, src.cap - used) : null;
     return (
       <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
         <span>{withBalance ? `${PROVIDER_NAME[p]}: ` : ""}<strong style={{ color: "var(--color-text-primary)" }}>
@@ -349,7 +353,9 @@ export default function BacklinkProfile({ siteDbId }: { siteDbId: string }) {
             ? <span>{t("blsrcRemaining")} <strong style={{ color: "var(--color-text-primary)" }}>{remaining.toLocaleString()}</strong> {t("blsrcOf")} {balLimit.toLocaleString()}</span>
             : <span>
                 {t("blsrcBalanceUnknown")}
-                {unitsLeft != null && <> · {fill(t("blsrcUnitsLeft"), { n: unitsLeft.toLocaleString() })}</>}
+                {unitsLeft != null
+                  ? <> · {fill(t("blsrcUnitsLeft"), { n: unitsLeft.toLocaleString() })}</>
+                  : used > 0 && <> · {t("metricsUsage")}: <strong style={{ color: "var(--color-text-primary)" }}>{used.toLocaleString()}</strong> {t("metricsUnits")}</>}
               </span>
         ) : (
           <span style={{ color: "var(--color-text-tertiary)" }}>{t("blsrcNoKey")}</span>
