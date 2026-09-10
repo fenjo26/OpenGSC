@@ -1578,7 +1578,7 @@ model DropProxy {
   userId    String
   /// http | socks5. WHOIS needs socks5: port 43 is raw TCP and HTTP proxies refuse CONNECT.
   kind      String   @default("http")
-  host      String   @db.VarChar(191)
+  host      String
   port      Int
   username  String?
   password  String?
