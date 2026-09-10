@@ -217,6 +217,18 @@ export default function DropsPage() {
     try { window.localStorage.setItem("dropsCollapsedGroups", JSON.stringify(next)); } catch { /* private mode */ }
   };
 
+  // A group's checkbox is the whole group, on every page — there is no page-scope half-measure
+  // here, because a group IS a named selection and half of it is a lie. Whole-group scope rides
+  // the server machinery instead of id lists: filter to the group + "all by filter", so bulk
+  // actions run over every row of the group at any size, and the table shows exactly what is
+  // selected. Clicking the checked box clears the selection (the group filter stays).
+  const groupScoped = (gid: string) => groupId === gid && selectAllFilter;
+  const toggleGroupSelection = (gid: string) => {
+    if (groupScoped(gid)) { clearSelection(); return; }
+    setGroupId(gid);
+    setSelectAllFilter(true);
+  };
+
   const loadRuns = useCallback(async () => {
     try {
       const res = await fetch("/api/drops/runs", { cache: "no-store" });
@@ -623,7 +635,7 @@ export default function DropsPage() {
     if (enrichBusy) return;
     const targets = selectAllFilter ? [] : rows.filter(r => selectedIds.has(r.id));
     if (!targets.length || targets.length > 5) { setNotice(tr("dropsEnrichHistoryPick")); return; }
-    if (!window.confirm(tr("dropsEnrichHistoryConfirm").replace("{n}", String(targets.length)))) return;
+    if (!window.confirm(tr("dropsEnrichHistoryConfirm").replace("{n}", String(targets.length)))) { setNotice(tr("dropsEnrichCancelled")); return; }
     setEnrichBusy("history"); setError(""); setNotice("");
     setEnrichProgress({ done: 0, total: targets.length, updated: 0 });
     try {
@@ -663,7 +675,7 @@ export default function DropsPage() {
     const creds = getMetricsCreds();
     if (!creds.apiKey) { setError(tr("dropsEnrichNoKey")); return; }
     const n = enrichTargets().length;
-    if (!window.confirm(tr("dropsEnrichRefsConfirm").replace("{n}", String(n)))) return;
+    if (!window.confirm(tr("dropsEnrichRefsConfirm").replace("{n}", String(n)))) { setNotice(tr("dropsEnrichCancelled")); return; }
     return walkEnrichment("refs", enrichTargets(), 25, async slice => {
       const res = await fetch("/api/metrics/domain", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -674,6 +686,9 @@ export default function DropsPage() {
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body?.error || "metrics_failed");
+      // Same 200-with-refused-batch shape the TF path guards: fetched 0 + an error field is a
+      // gateway refusal, not an empty answer.
+      if (body.fetched === 0 && body.error) throw new Error(body.error);
       const metrics = (body?.metrics ?? {}) as Record<string, { refDomains?: number | null; backlinks?: number | null }>;
       return persistMetrics(Object.entries(metrics).map(([domain, m]) => ({
         domain, refdomains: m?.refDomains ?? undefined, backlinks: m?.backlinks ?? undefined,
@@ -684,12 +699,15 @@ export default function DropsPage() {
   // TF/CF via Majestic: the cheapest meaningful enrichment on the page (one index-item unit
   // per domain), and the read the DR number cannot replace — TF catches a PBN-heavy profile
   // DR is happy with. Always speaks Majestic explicitly, whatever the active provider is;
-  // the route batches 100 domains into one GetIndexItemInfo call.
+  // the route batches 100 domains into one GetIndexItemInfo call. Works on any catalogue
+  // domain — nothing here is tied to owned sites.
   const enrichTf = () => {
     const creds = getMetricsCreds("majestic");
     if (!creds.apiKey) { setError(tr("dropsEnrichNoTfKey")); return; }
     const n = enrichTargets().length;
-    if (!window.confirm(tr("dropsEnrichTfConfirm").replace("{n}", String(n)))) return;
+    // A refused (or browser-suppressed — "never show more dialogs") confirm must never be
+    // silent: it reads as a dead button, which is exactly the report this guard answers.
+    if (!window.confirm(tr("dropsEnrichTfConfirm").replace("{n}", String(n)))) { setNotice(tr("dropsEnrichCancelled")); return; }
     return walkEnrichment("tf", enrichTargets(), 100, async slice => {
       const res = await fetch("/api/metrics/domain", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -700,6 +718,9 @@ export default function DropsPage() {
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body?.error || "tf_failed");
+      // The route answers HTTP 200 even when the gateway refused the whole batch (fetched: 0
+      // + an error field); throwing beats a silent "updated 0" with all dashes still showing.
+      if (body.fetched === 0 && body.error) throw new Error(body.error);
       const metrics = (body?.metrics ?? {}) as Record<string, { tf?: number | null; cf?: number | null }>;
       return persistMetrics(Object.entries(metrics).map(([domain, m]) => ({
         domain, tf: m?.tf ?? undefined, cf: m?.cf ?? undefined,
@@ -1046,23 +1067,23 @@ export default function DropsPage() {
       {/* While a DR pass is running this is its Stop button — same pattern as the DNS and
           registry stages, because a run-wide sweep can legitimately run for a while. */}
       <button onClick={enrichBusy === "dr" ? () => { enrichStop.current = true; } : enrichDr}
-        disabled={enrichBusy !== "" && enrichBusy !== "dr"} style={ghostBtn}>
+        disabled={enrichBusy !== "" && enrichBusy !== "dr"} style={ghostBtnDisabled(enrichBusy !== "" && enrichBusy !== "dr")}>
         {enrichBusy === "dr" ? <Square size={13} /> : <Star size={13} />}
         {enrichBusy === "dr" ? tr("dropsDnsStop") : tr("dropsEnrichDr")}
       </button>
-      <button onClick={enrichWayback} disabled={enrichBusy !== ""} style={ghostBtn}>
+      <button onClick={enrichWayback} disabled={enrichBusy !== ""} style={ghostBtnDisabled(enrichBusy !== "")}>
         {enrichBusy === "wayback" ? <Loader2 className="spin" size={13} /> : <History size={13} />}
         {enrichBusy === "wayback" ? tr("dropsEnrichWaybackBusy") : tr("dropsEnrichWayback")}
       </button>
-      <button onClick={enrichTf} disabled={enrichBusy !== ""} style={ghostBtn}>
+      <button onClick={enrichTf} disabled={enrichBusy !== ""} style={ghostBtnDisabled(enrichBusy !== "")}>
         {enrichBusy === "tf" ? <Loader2 className="spin" size={13} /> : <Sparkles size={13} />}
         {enrichBusy === "tf" ? tr("dropsEnrichTfBusy") : tr("dropsEnrichTf")}
       </button>
-      <button onClick={enrichRefs} disabled={enrichBusy !== ""} style={ghostBtn}>
+      <button onClick={enrichRefs} disabled={enrichBusy !== ""} style={ghostBtnDisabled(enrichBusy !== "")}>
         {enrichBusy === "refs" ? <Loader2 className="spin" size={13} /> : <Database size={13} />}
         {enrichBusy === "refs" ? tr("dropsEnrichRefsBusy") : tr("dropsEnrichRefs")}
       </button>
-      <button onClick={() => void enrichHistory()} disabled={enrichBusy !== ""} style={ghostBtn}
+      <button onClick={() => void enrichHistory()} disabled={enrichBusy !== ""} style={ghostBtnDisabled(enrichBusy !== "")}
         title={tr("dropsEnrichHistoryPick")}>
         {enrichBusy === "history" ? <Loader2 className="spin" size={13} /> : <Sparkles size={13} />}
         {enrichBusy === "history" ? tr("dropsEnrichHistoryBusy") : tr("dropsEnrichHistory")}
@@ -1142,6 +1163,10 @@ export default function DropsPage() {
               return <tr key={`group-${seg.id}`} style={{ background: "var(--color-bg)" }}>
                 <td colSpan={COLUMNS.length + 1} style={{ padding: "6px 14px", borderBottom: "1px solid var(--color-border)" }}>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <input type="checkbox" checked={groupScoped(seg.id)} onChange={() => toggleGroupSelection(seg.id)}
+                      aria-label={groupScoped(seg.id) ? tr("dropsGroupUnselectHint") : tr("dropsGroupSelectHint").replace("{n}", String(totalIn))}
+                      title={groupScoped(seg.id) ? tr("dropsGroupUnselectHint") : tr("dropsGroupSelectHint").replace("{n}", String(totalIn))}
+                      style={{ cursor: "pointer" }} />
                     <button onClick={() => toggleCollapsed(seg.id)}
                       aria-label={isCollapsed ? tr("dropsGroupExpand") : tr("dropsGroupCollapse")}
                       style={groupBtn}>
@@ -1315,6 +1340,11 @@ const ghostBtn: React.CSSProperties = {
   border: "1px solid var(--color-border)", background: "transparent",
   color: "var(--color-text-secondary)", fontSize: 12.5, fontWeight: 600, cursor: "pointer",
 };
+
+/** A disabled enrichment button must look disabled — a greyed-out-looking normal button is
+ * exactly how "I pressed it and nothing happened" reports are born. */
+const ghostBtnDisabled = (disabled: boolean): React.CSSProperties =>
+  disabled ? { ...ghostBtn, opacity: 0.45, cursor: "default" } : ghostBtn;
 
 const th: React.CSSProperties = { padding: "9px 14px", fontWeight: 600, whiteSpace: "nowrap" };
 const thNum: React.CSSProperties = { ...th, textAlign: "right" };
