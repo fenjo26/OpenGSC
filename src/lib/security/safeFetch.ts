@@ -1,7 +1,9 @@
 import { lookup } from "node:dns/promises";
 import http from "node:http";
 import https from "node:https";
-import { isIP } from "node:net";
+import net, { isIP } from "node:net";
+import type { Duplex } from "node:stream";
+import tls from "node:tls";
 import { brotliDecompressSync, gunzipSync, inflateSync } from "node:zlib";
 
 export type SafeFetchErrorCode =
@@ -37,11 +39,32 @@ export interface SafeFetchOptions {
    * unauthenticated (it came over a connection whose peer was not verified).
    */
   allowInsecureTls?: boolean;
+  /**
+   * Route the connection through an outbound proxy instead of dialling the target directly.
+   *
+   * The guard does NOT relax: `assertSafeTarget` still resolves the target and still refuses a
+   * private address, so a proxy cannot be used as a hop into the local network. What changes is
+   * only the socket — the pinned-address dial is meaningless once the proxy does the resolving.
+   *
+   * The connector itself is opaque here on purpose: this file must not learn about proxy list
+   * formats or credentials. Whoever supplies one has already validated the proxy endpoint.
+   */
+  proxy?: ProxyConnect;
   headers?: HeadersInit;
   redirect?: "follow" | "manual";
   timeoutMs?: number;
   maxBytes?: number;
   maxRedirects?: number;
+}
+
+/**
+ * A way to obtain a TCP socket already tunnelled to `host:port`. Implemented outside this file
+ * (SOCKS5, HTTP CONNECT, …) so the security layer stays free of transport detail.
+ */
+export interface ProxyConnect {
+  /** Shown in errors and logs. MUST NOT contain a password. */
+  readonly label: string;
+  connect(host: string, port: number, timeoutMs: number): Promise<net.Socket>;
 }
 
 export interface SafeFetchResponse {
@@ -288,21 +311,54 @@ function requestPinned(
   timeoutMs: number,
   maxBytes: number,
   rejectUnauthorized: boolean,
+  proxy?: ProxyConnect,
 ): Promise<RawResponse> {
   return new Promise((resolve, reject) => {
     const transport = url.protocol === "https:" ? https : http;
     const outgoingHeaders = Object.fromEntries(headers.entries());
     outgoingHeaders.host = url.host;
+    const isTls = url.protocol === "https:";
+    const port = url.port ? Number(url.port) : isTls ? 443 : 80;
 
     const request = transport.request({
       protocol: url.protocol,
-      hostname: address.address,
-      family: address.family,
-      port: url.port ? Number(url.port) : url.protocol === "https:" ? 443 : 80,
+      // Through a proxy the name travels to the proxy and it does the resolving, so the pinned
+      // address is not a thing that can be dialled. Direct calls keep the pin.
+      hostname: proxy ? normalizedHostname(url) : address.address,
+      ...(proxy ? {} : { family: address.family }),
+      port,
       path: `${url.pathname}${url.search}`,
       method,
       headers: outgoingHeaders,
       agent: false,
+      ...(proxy ? {
+        // Node accepts an asynchronous createConnection through its callback: return nothing and
+        // hand the socket over when the tunnel is up.
+        createConnection: (
+          _opts: http.ClientRequestArgs,
+          oncreate: (err: Error | null, socket: Duplex) => void,
+        ): Duplex | null => {
+          // Node calls back with the error first and ignores the socket argument on failure,
+          // so the cast below is never dereferenced.
+          const fail = (err: unknown) =>
+            oncreate(err instanceof Error ? err : new Error(String(err)), null as unknown as Duplex);
+          proxy.connect(normalizedHostname(url), port, timeoutMs).then(socket => {
+            // A tunnelled socket arrives paused (see the connector's contract), and after an
+            // explicit pause Node does not resume on a `data` subscription. Both branches
+            // resume only AFTER their reader is attached, so nothing is read into the void.
+            if (!isTls) { oncreate(null, socket); socket.resume(); return; }
+            const secure = tls.connect({
+              socket,
+              servername: normalizedHostname(url),
+              rejectUnauthorized,
+            });
+            socket.resume();
+            secure.once("error", fail);
+            secure.once("secureConnect", () => oncreate(null, secure));
+          }).catch(fail);
+          return null;
+        },
+      } : {}),
       // Only the certificate check is conditional; SNI and Host pinning to the resolved public
       // address stay on regardless (see SafeFetchOptions.allowInsecureTls).
       ...(url.protocol === "https:" ? { servername: normalizedHostname(url), rejectUnauthorized } : {}),
@@ -395,11 +451,11 @@ export async function safeFetch(input: string | URL, options: SafeFetchOptions =
 
     // A hostname may return several CDN addresses. Try a small bounded set, while one deadline
     // covers the entire operation so a bad DNS answer cannot multiply the timeout indefinitely.
-    for (const address of addresses.slice(0, 4)) {
+    for (const address of (options.proxy ? addresses.slice(0, 1) : addresses.slice(0, 4))) {
       const remaining = deadline - Date.now();
       if (remaining <= 0) throw new SafeFetchError("request_timeout", "The request timed out.");
       try {
-        raw = await requestPinned(url, address, method, headers, remaining, maxBytes, rejectUnauthorized);
+        raw = await requestPinned(url, address, method, headers, remaining, maxBytes, rejectUnauthorized, options.proxy);
         break;
       } catch (error) {
         if (error instanceof SafeFetchError && error.code === "response_too_large") throw error;

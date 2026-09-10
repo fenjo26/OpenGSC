@@ -22,7 +22,7 @@
     "lint": "next lint",
     "check:i18n": "node scripts/check-keys.js",
     "check:release": "node scripts/check-release.js",
-    "test:unit": "tsx --test src/lib/team/roles.test.ts src/lib/scanner/fingerprints.test.ts src/lib/security/safeFetch.test.ts src/lib/audit/verification.test.ts src/lib/audit/rules.test.ts src/lib/audit/exportMd.test.ts src/lib/audit/historyRows.test.ts src/lib/cannibalization/relatedIntent.test.ts src/lib/outreach/types.test.ts src/lib/contentOps/types.test.ts src/lib/contentOps/outcomeMath.test.ts src/lib/sitemap/inventory.test.ts src/lib/sitemap/metadata.test.ts src/lib/sitemap/diff.test.ts src/lib/sourceAudit/rules.test.ts src/lib/mcp/outlineShape.test.ts src/lib/seo/textSimilarity.test.ts src/lib/seo/drHistory.test.ts src/lib/seo/googlebot.test.ts src/lib/seo/metrics.test.ts src/lib/seo/semrushTraffic.test.ts src/lib/seo/linkPlacement.test.ts src/lib/seo/placementRunner.test.ts src/lib/seo/backlinkImport.test.ts src/lib/seo/rewriteGate.test.ts src/lib/backlinkDigest.test.ts src/lib/seo/backlinksApi.test.ts src/lib/seo/mechanics.test.ts src/lib/seo/marksScrub.test.ts src/lib/seo/promptContract.test.ts src/lib/seo/judge.test.ts src/lib/seo/historyShared.test.ts src/lib/seo/geoAparser.test.ts src/lib/seo/regions.test.ts src/lib/seo/aparser.test.ts src/lib/seo/geoExportMd.test.ts src/lib/providerLog/context.test.ts src/lib/providerLog/redact.test.ts src/lib/providerLog/errorRedaction.test.ts src/lib/providerLog/tokens.test.ts src/lib/providerLog/log.test.ts src/lib/providerLog/providerModules.test.ts src/lib/providerLog/retention.test.ts src/lib/providerLog/bodies.test.ts src/lib/providerLog/viewRoute.test.ts src/lib/providerLog/llmLogging.test.ts src/lib/prisma.test.ts src/lib/team/workspaceCallContext.test.ts src/lib/schedulerCallContext.test.ts src/lib/drops/filter.test.ts src/lib/drops/registries.test.ts src/lib/drops/patterns.test.ts src/lib/drops/ingest.test.ts src/lib/drops/ingestRows.test.ts src/lib/drops/score.test.ts src/lib/drops/dns.test.ts src/lib/drops/availability.test.ts src/lib/drops/wayback.test.ts src/lib/drops/history.test.ts src/lib/drops/watch.test.ts",
+    "test:unit": "tsx --test src/lib/team/roles.test.ts src/lib/scanner/fingerprints.test.ts src/lib/security/safeFetch.test.ts src/lib/audit/verification.test.ts src/lib/audit/rules.test.ts src/lib/audit/exportMd.test.ts src/lib/audit/historyRows.test.ts src/lib/cannibalization/relatedIntent.test.ts src/lib/outreach/types.test.ts src/lib/contentOps/types.test.ts src/lib/contentOps/outcomeMath.test.ts src/lib/sitemap/inventory.test.ts src/lib/sitemap/metadata.test.ts src/lib/sitemap/diff.test.ts src/lib/sourceAudit/rules.test.ts src/lib/mcp/outlineShape.test.ts src/lib/seo/textSimilarity.test.ts src/lib/seo/drHistory.test.ts src/lib/seo/googlebot.test.ts src/lib/seo/metrics.test.ts src/lib/seo/semrushTraffic.test.ts src/lib/seo/linkPlacement.test.ts src/lib/seo/placementRunner.test.ts src/lib/seo/backlinkImport.test.ts src/lib/seo/rewriteGate.test.ts src/lib/backlinkDigest.test.ts src/lib/seo/backlinksApi.test.ts src/lib/seo/mechanics.test.ts src/lib/seo/marksScrub.test.ts src/lib/seo/promptContract.test.ts src/lib/seo/judge.test.ts src/lib/seo/historyShared.test.ts src/lib/seo/geoAparser.test.ts src/lib/seo/regions.test.ts src/lib/seo/aparser.test.ts src/lib/seo/geoExportMd.test.ts src/lib/providerLog/context.test.ts src/lib/providerLog/redact.test.ts src/lib/providerLog/errorRedaction.test.ts src/lib/providerLog/tokens.test.ts src/lib/providerLog/log.test.ts src/lib/providerLog/providerModules.test.ts src/lib/providerLog/retention.test.ts src/lib/providerLog/bodies.test.ts src/lib/providerLog/viewRoute.test.ts src/lib/providerLog/llmLogging.test.ts src/lib/prisma.test.ts src/lib/team/workspaceCallContext.test.ts src/lib/schedulerCallContext.test.ts src/lib/drops/filter.test.ts src/lib/drops/registries.test.ts src/lib/drops/patterns.test.ts src/lib/drops/ingest.test.ts src/lib/drops/ingestRows.test.ts src/lib/drops/proxyTransport.test.ts src/lib/drops/proxies.test.ts src/lib/drops/score.test.ts src/lib/drops/dns.test.ts src/lib/drops/availability.test.ts src/lib/drops/wayback.test.ts src/lib/drops/history.test.ts src/lib/drops/watch.test.ts",
     "check": "npm run check:i18n && npm run check:release && npm run test:unit",
     "postinstall": "prisma generate"
   },
@@ -30,15 +30,17 @@
     "@next-auth/prisma-adapter": "^1.0.7",
     "@prisma/adapter-better-sqlite3": "^7.0.0",
     "@prisma/client": "^7.0.0",
-    "dotenv": "^16.0.0",
     "bcryptjs": "^3.0.3",
+    "dotenv": "^16.0.0",
     "googleapis": "^171.4.0",
     "lucide-react": "^1.8.0",
     "next": "16.2.12",
     "next-auth": "^4.24.14",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "recharts": "^3.8.1"
+    "recharts": "^3.8.1",
+    "socks": "^2.8.10",
+    "undici": "^8.10.2"
   },
   "optionalDependencies": {
     "playwright": "^1.49.0"
@@ -52,9 +54,9 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
     "prisma": "^7.0.0",
+    "sql.js": "^1.13.0",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
-    "typescript": "^5",
-    "sql.js": "^1.13.0"
+    "typescript": "^5"
   }
 }

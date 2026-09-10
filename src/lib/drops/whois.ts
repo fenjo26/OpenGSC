@@ -27,20 +27,55 @@ export class WhoisError extends Error {
  * read timeout is mandatory. A registry that accepts the connection and then says nothing would
  * otherwise hold the connection for as long as the process lives.
  */
-export function whoisQuery(host: string, query: string): Promise<string> {
+export function whoisQuery(
+  host: string,
+  query: string,
+  /**
+   * Where the socket comes from. Default is a direct dial. A pool supplies a SOCKS5 tunnel here
+   * — and only SOCKS5: port 43 is raw TCP, and public HTTP proxies refuse CONNECT to it, so an
+   * HTTP proxy can carry RDAP and nothing else.
+   */
+  connect?: () => Promise<net.Socket>,
+): Promise<string> {
   return new Promise((resolve, reject) => {
     let out = "";
     let bytes = 0;
     let settled = false;
+    let socket: net.Socket;
 
-    const socket = net.createConnection({ host, port: 43 });
-    socket.setEncoding("utf8");
+    if (connect) {
+      // The tunnel is already open by the time it arrives, so there is no "connect" event to
+      // wait for — the query goes out as soon as the socket is in hand.
+      const pending = connect();
+      pending.then(s => {
+        if (settled) { s.destroy(); return; }
+        socket = s;
+        wire(socket);
+        socket.setEncoding("utf8");
+        socket.write(`${query}\r\n`);
+        // Туннель приезжает приостановленным, и после явной паузы подписка на `data` сама его
+        // не будит. Без этого запрос уходит, ответ приходит в ядро и там и остаётся — снаружи
+        // выглядит как реестр, который принял соединение и молчит.
+        socket.resume();
+      }).catch(err =>
+        finish(() => reject(new WhoisError("connect", `whois ${host} via proxy: ${err instanceof Error ? err.message : String(err)}`))),
+      );
+    } else {
+      socket = net.createConnection({ host, port: 43 });
+      socket.setEncoding("utf8");
+      wire(socket);
+      socket.on("connect", () => {
+        // CRLF, not LF. Several registry servers ignore a bare newline and then sit there, which
+        // presents as a timeout on a server that is in fact fine.
+        socket.write(`${query}\r\n`);
+      });
+    }
 
     const finish = (fn: () => void) => {
       if (settled) return;
       settled = true;
       clearTimeout(readTimer);
-      socket.destroy();
+      socket?.destroy();
       fn();
     };
 
@@ -48,28 +83,24 @@ export function whoisQuery(host: string, query: string): Promise<string> {
       () => finish(() => reject(new WhoisError("timeout", `whois ${host} read timeout`))),
       READ_TIMEOUT_MS,
     );
-    socket.setTimeout(CONNECT_TIMEOUT_MS, () =>
-      finish(() => reject(new WhoisError("timeout", `whois ${host} idle timeout`))),
-    );
-
-    socket.on("connect", () => {
-      // CRLF, not LF. Several registry servers ignore a bare newline and then sit there, which
-      // presents as a timeout on a server that is in fact fine.
-      socket.write(`${query}\r\n`);
-    });
-    socket.on("data", chunk => {
-      bytes += Buffer.byteLength(chunk);
-      if (bytes > MAX_BYTES) {
-        finish(() => reject(new WhoisError("too_large", `whois ${host} response over ${MAX_BYTES} bytes`)));
-        return;
-      }
-      out += chunk;
-    });
-    socket.on("end", () => finish(() => resolve(out)));
-    socket.on("close", () => finish(() => resolve(out)));
-    socket.on("error", err =>
-      finish(() => reject(new WhoisError("socket", `whois ${host}: ${err instanceof Error ? err.message : String(err)}`))),
-    );
+    function wire(s: net.Socket) {
+      s.setTimeout(CONNECT_TIMEOUT_MS, () =>
+        finish(() => reject(new WhoisError("timeout", `whois ${host} idle timeout`))),
+      );
+      s.on("data", chunk => {
+        bytes += Buffer.byteLength(chunk);
+        if (bytes > MAX_BYTES) {
+          finish(() => reject(new WhoisError("too_large", `whois ${host} response over ${MAX_BYTES} bytes`)));
+          return;
+        }
+        out += chunk;
+      });
+      s.on("end", () => finish(() => resolve(out)));
+      s.on("close", () => finish(() => resolve(out)));
+      s.on("error", err =>
+        finish(() => reject(new WhoisError("socket", `whois ${host}: ${err instanceof Error ? err.message : String(err)}`))),
+      );
+    }
   });
 }
 
