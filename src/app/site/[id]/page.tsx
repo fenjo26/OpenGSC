@@ -2046,7 +2046,9 @@ function GA4Tab({ domain, period, setPeriod, periodOptions }: {
 
           {report?.series && report.series.length > 0 ? (
             <div style={{ height: "260px" }}>
-              <ResponsiveContainer width="100%" height="100%">
+              {/* initialDimension seeds the pre-measure render: recharts 3.x defaults it to -1×-1
+                  and logs a width(-1)/height(-1) warning before the first ResizeObserver report */}
+              <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 600, height: 260 }}>
                 <LineChart data={report.series} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" />
                   <XAxis dataKey="date" tickFormatter={(d: string) => (typeof d === "string" && d.length >= 10 ? d.slice(5) : d)} tick={{ fontSize: 10, fill: "var(--color-text-secondary)" }} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={24} />

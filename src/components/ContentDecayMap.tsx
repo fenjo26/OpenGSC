@@ -530,7 +530,9 @@ function PositionDecayScatter({ siteDbId }: { siteDbId: string }) {
         </div>
       ) : (
         <div style={{ height: "420px", background: "var(--color-bg)", borderRadius: "8px", padding: "16px", border: "1px solid var(--color-border)" }}>
-          <ResponsiveContainer width="100%" height="100%">
+          {/* initialDimension seeds the pre-measure render: recharts 3.x defaults it to -1×-1
+            and logs a width(-1)/height(-1) warning before the first ResizeObserver report */}
+        <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 600, height: 388 }}>
             <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 10 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
               <XAxis 

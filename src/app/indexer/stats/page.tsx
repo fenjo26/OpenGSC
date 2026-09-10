@@ -304,7 +304,9 @@ export default function IndexerStatsPage() {
             </div>
 
             <div style={{ width: "100%", height: "220px", marginTop: "10px" }}>
-              <ResponsiveContainer width="100%" height="100%">
+              {/* initialDimension seeds the pre-measure render: recharts 3.x defaults it to -1×-1
+                  and logs a width(-1)/height(-1) warning before the first ResizeObserver report */}
+              <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 600, height: 220 }}>
                 <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorGoogle" x1="0" y1="0" x2="0" y2="1">
