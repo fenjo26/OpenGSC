@@ -200,6 +200,7 @@ export default function DropsPage() {
   const [dragOver, setDragOver] = useState(false);
   /** Hand-picked column indexes, when the detected header was wrong or absent. */
   const [colOverride, setColOverride] = useState<{ domain?: number; dr?: number; refdomains?: number }>({});
+  const [showHow, setShowHow] = useState(false);
   const [showProxies, setShowProxies] = useState(false);
   const [proxies, setProxies] = useState<StoredProxy[]>([]);
   const [proxyRaw, setProxyRaw] = useState("");
@@ -1109,6 +1110,23 @@ export default function DropsPage() {
     ? tr("dropsClearSelection")
     : tr("dropsSelectAllFilter").replace("{n}", total.toLocaleString());
 
+  /**
+   * Where the catalogue actually is, read off the funnel counts rather than off what the user
+   * last clicked. The page used to be a flat row of buttons with no order in it: nothing said
+   * that DNS comes before the registry, or why, and a first-time user pressed whichever button
+   * looked most promising. The strip below is that order, made visible.
+   */
+  const stepState = useMemo(() => {
+    const ingested = counts.ingested ?? 0;
+    const dnsChecked = counts.dns_checked ?? 0;
+    const decided = (counts.available ?? 0) + (counts.confirmed ?? 0);
+    const anything = Object.values(counts).reduce((a, b) => a + b, 0);
+    // The first step that still has work waiting is the current one. A catalogue with rows in
+    // several stages at once is normal — the earliest unfinished stage is what to press next.
+    const current = anything === 0 ? 1 : ingested > 0 ? 3 : dnsChecked > 0 ? 4 : 5;
+    return { ingested, dnsChecked, decided, anything, current };
+  }, [counts]);
+
   // WHOIS rides only on SOCKS5; an HTTP-only pool silently means "RDAP through proxies, WHOIS
   // from this server", which changes both the speed and the corroboration rate.
   const hasSocksProxy = proxies.some(p => p.enabled && p.kind === "socks5");
@@ -1185,6 +1203,64 @@ export default function DropsPage() {
       {error && <div style={{ color: "#ff6b62" }}><AlertTriangle size={13} style={{ verticalAlign: -2, marginRight: 6 }} />{error}</div>}
       {notice && <div style={{ color: "var(--color-accent-orange, #ff9f0a)" }}>{notice}</div>}
     </div>}
+
+    {/* The conveyor: what the stages are, which one is live, and what to do next. Nothing here
+        performs work — the buttons stay where their own state lives. This panel exists because
+        the order and the reasons were invisible, not because the buttons were hard to find. */}
+    <div className="panel" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "stretch" }}>
+        {([
+          { n: 1, name: tr("dropsStepImportName"), state: stepState.anything > 0 ? tr("dropsStepDone").replace("{n}", stepState.anything.toLocaleString()) : tr("dropsStepWaiting") },
+          { n: 2, name: tr("dropsStepProxyName"), state: proxies.filter(p => p.enabled).length > 0 ? tr("dropsStepProxyOn").replace("{n}", String(proxies.filter(p => p.enabled).length)) : tr("dropsStepProxyOff") },
+          { n: 3, name: tr("dropsStepDnsName"), state: stepState.ingested > 0 ? tr("dropsStepQueued").replace("{n}", stepState.ingested.toLocaleString()) : tr("dropsStepClear") },
+          { n: 4, name: tr("dropsStepRegistryName"), state: stepState.dnsChecked > 0 ? tr("dropsStepQueued").replace("{n}", stepState.dnsChecked.toLocaleString()) : tr("dropsStepClear") },
+          { n: 5, name: tr("dropsStepResultName"), state: tr("dropsStepFound").replace("{n}", stepState.decided.toLocaleString()) },
+        ]).map(step => {
+          const live = step.n === stepState.current;
+          // Step 2 is never "current": the pool is optional and out of the sequence.
+          const dim = step.n === 2 && proxies.length === 0;
+          return <div key={step.n} style={{
+            flex: "1 1 150px", minWidth: 140, padding: "8px 10px", borderRadius: 9,
+            border: `1px solid ${live ? "var(--color-accent-blue)" : "var(--color-border)"}`,
+            background: live ? "rgba(10,132,255,0.06)" : "transparent",
+            opacity: dim ? 0.6 : 1,
+          }}>
+            <div style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>{step.n}</div>
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--color-text-primary)" }}>{step.name}</div>
+            <div style={{ fontSize: 11.5, color: live ? "var(--color-accent-blue)" : "var(--color-text-secondary)" }}>{step.state}</div>
+          </div>;
+        })}
+      </div>
+
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", fontSize: 12.5 }}>
+        <span style={{ color: "var(--color-text-secondary)" }}>
+          {stepState.current === 1 ? tr("dropsNextImport")
+            : stepState.current === 3 ? tr("dropsNextDns")
+              : stepState.current === 4 ? tr("dropsNextRegistry")
+                : tr("dropsNextResult")}
+        </span>
+        <button onClick={() => setShowHow(v => !v)} style={groupBtn}>
+          <CircleHelp size={13} /> {showHow ? tr("dropsHowHide") : tr("dropsHowShow")}
+        </button>
+      </div>
+
+      {showHow && <div style={{ fontSize: 12.5, lineHeight: 1.65, color: "var(--color-text-secondary)", display: "flex", flexDirection: "column", gap: 10 }}>
+        {/* Where the file comes from. Without this the page starts one step too late: the user
+            has no list, and nothing on screen says how anyone gets one. */}
+        <div>
+          <b style={{ color: "var(--color-text-primary)" }}>{tr("dropsRecipeTitle")}</b>
+          <div style={{ marginTop: 4 }}><b>{tr("dropsRecipe1Title")}</b> — {tr("dropsRecipe1Body")}</div>
+          <div style={{ marginTop: 4 }}><b>{tr("dropsRecipe2Title")}</b> — {tr("dropsRecipe2Body")}</div>
+        </div>
+        <div>
+          <b style={{ color: "var(--color-text-primary)" }}>{tr("dropsWhyTitle")}</b>
+          <div style={{ marginTop: 4 }}>{tr("dropsWhyDns")}</div>
+          <div style={{ marginTop: 4 }}>{tr("dropsWhyCorroborated")}</div>
+          <div style={{ marginTop: 4 }}>{tr("dropsWhyProxy")}</div>
+          <div style={{ marginTop: 4 }}>{tr("dropsWhyNoRegistry")}</div>
+        </div>
+      </div>}
+    </div>
 
     {showImport && <div className="panel" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -1493,6 +1569,17 @@ export default function DropsPage() {
         </span>}
         {loading && <Loader2 className="spin" size={14} color="var(--color-text-tertiary)" />}
         <span style={{ flex: 1 }} />
+        {/* The loop closes here: an export goes back out the way it came in. Server-side under
+            the current filter, not "whatever the table is holding" — the table has one page. */}
+        <button onClick={() => {
+          const qs = new URLSearchParams({
+            ...Object.fromEntries(Object.entries(filterPayload()).map(([k, v]) => [k, String(v)])),
+            orderBy, order: orderDir,
+          });
+          window.location.href = `/api/drops/export?${qs.toString()}`;
+        }} disabled={total === 0} style={pagerBtn(total === 0)}>
+          {tr("dropsExportCsv")}
+        </button>
         <button onClick={selectAll}
           disabled={total === 0} style={pagerBtn(total === 0)}>
           {tr("dropsSelectAllFilter").replace("{n}", total.toLocaleString())}
