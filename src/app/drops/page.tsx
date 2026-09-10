@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, BadgeCheck, Boxes, CircleHelp, Database, Globe2, History, Link2, Loader2, Minus, Pencil, Plus, Radar, RefreshCw, Search, ShieldAlert, Sparkles, Square, Star, Upload, X } from "lucide-react";
+import { AlertTriangle, BadgeCheck, Boxes, ChevronDown, ChevronRight, CircleHelp, Database, Globe2, History, Link2, Loader2, Pencil, Plus, Radar, RefreshCw, Search, ShieldAlert, Sparkles, Square, Star, Upload, X } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import type { DropSource, DropStage } from "@/lib/drops/types";
 import { usePersistedState } from "@/lib/usePersistedState";
@@ -108,7 +108,7 @@ const DEFAULT_DIR: Record<SortField, "asc" | "desc"> = {
 const isPageSize = (v: unknown): boolean => typeof v === "number" && PAGE_SIZES.includes(v);
 
 /** One rendered table fragment: either a group's header row or a candidate row. */
-type Segment = { kind: "group"; id: string; name: string; pageRows: number } | { kind: "row"; r: Candidate; stripe: number };
+type Segment = { kind: "group"; id: string; name: string; pageRows: number; pageSelected: number } | { kind: "row"; r: Candidate; stripe: number };
 
 export default function DropsPage() {
   const { t } = useLanguage();
@@ -207,18 +207,38 @@ export default function DropsPage() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const toggleCollapsed = (id: string) => setCollapsed(prev => ({ ...prev, [id]: !prev[id] }));
 
-  // A group's checkbox selects the WHOLE group, on every page — there is no page-scope
-  // half-measure here, because a group IS a named selection and half of it is a lie. It never
-  // touches the table filter: checking a group swaps out any explicit selection (the scopes
-  // are mutually exclusive, so the counter stays honest), unchecking leaves other groups be.
-  const toggleGroupSelection = (gid: string) => {
-    setSelectAllFilter(false);
-    setSelectedIds(new Set());
-    setSelectedGroupIds(prev => {
-      const next = new Set(prev);
-      if (next.has(gid)) next.delete(gid); else next.add(gid);
-      return next;
-    });
+  // A group's checkbox must tell the TRUTH about its members in every selection scope: a group
+  // whose rows are selected "through everything" (select-all-by-filter) shows checked, a
+  // partially covered group shows indeterminate. An unchecked box next to selected rows is how
+  // a person concludes "the group is not in the selection" — and deletes it thinking they are
+  // deleting only the rest. Clicking toggles the whole group's membership in the selection and
+  // never touches the table filter.
+  const toggleGroupSelection = (gid: string, full: boolean, groupPageRows: Candidate[]) => {
+    if (full) {
+      if (selectedGroupIds.has(gid)) {
+        setSelectedGroupIds(prev => { const n = new Set(prev); n.delete(gid); return n; });
+      } else if (selectAllFilter) {
+        // "Everything is selected" minus one group is only expressible as an explicit
+        // selection: all visible rows outside the group. The counter drops honestly if the
+        // filter has rows beyond this page.
+        setSelectAllFilter(false);
+        setSelectedIds(new Set(rows.filter(r => r.groupId !== gid).map(r => r.id)));
+      } else {
+        setSelectedIds(prev => {
+          const n = new Set(prev);
+          for (const r of groupPageRows) n.delete(r.id);
+          return n;
+        });
+      }
+    } else {
+      setSelectAllFilter(false);
+      setSelectedIds(new Set());
+      setSelectedGroupIds(prev => {
+        const n = new Set(prev);
+        n.add(gid);
+        return n;
+      });
+    }
   };
 
   const loadRuns = useCallback(async () => {
@@ -898,15 +918,22 @@ export default function DropsPage() {
       const i = groups.findIndex(g => g.id === gid);
       return i < 0 ? Number.MAX_SAFE_INTEGER : i;
     };
+    const isRowSelected = (r: Candidate) =>
+      selectAllFilter || selectedIds.has(r.id) || (r.groupId != null && selectedGroupIds.has(r.groupId));
     const segs: Segment[] = [];
     let stripe = 0;
     for (const [gid, rs] of [...byGroup.entries()].sort((a, b) => orderOf(a[0]) - orderOf(b[0]))) {
-      segs.push({ kind: "group", id: gid, name: rs[0]?.groupName || groups.find(g => g.id === gid)?.name || gid, pageRows: rs.length });
+      segs.push({
+        kind: "group", id: gid,
+        name: rs[0]?.groupName || groups.find(g => g.id === gid)?.name || gid,
+        pageRows: rs.length,
+        pageSelected: rs.filter(isRowSelected).length,
+      });
       if (!collapsed[gid]) for (const r of rs) segs.push({ kind: "row", r, stripe: stripe++ });
     }
     for (const r of loose) segs.push({ kind: "row", r, stripe: stripe++ });
     return segs;
-  }, [rows, groups, collapsed]);
+  }, [rows, groups, collapsed, selectAllFilter, selectedIds, selectedGroupIds]);
 
   return <div className="main-content" style={{ display: "flex", flexDirection: "column", gap: 16, paddingTop: 20, paddingBottom: 40 }}>
     <div style={{ display: "flex", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
@@ -1191,22 +1218,35 @@ export default function DropsPage() {
             {segments.map(seg => seg.kind === "group" ? (() => {
               const totalIn = groups.find(g => g.id === seg.id)?.count ?? seg.pageRows;
               const isCollapsed = !!collapsed[seg.id];
+              // Truth first: full when any whole-scope covers the group, or when every row of
+              // the group is on this page and explicitly checked. Indeterminate when only part
+              // of its rows ride along in the selection.
+              const full = selectAllFilter || selectedGroupIds.has(seg.id)
+                || (seg.pageRows > 0 && seg.pageRows >= totalIn && seg.pageSelected === seg.pageRows);
+              const partial = !full && seg.pageSelected > 0;
+              const groupPageRows = rows.filter(r => r.groupId === seg.id);
+              const hint = full ? tr("dropsGroupUnselectHint")
+                : tr("dropsGroupSelectHint").replace("{n}", String(totalIn));
               return <tr key={`group-${seg.id}`} style={{ background: "var(--color-bg)" }}>
                 <td colSpan={COLUMNS.length + 1} style={{ padding: "6px 14px", borderBottom: "1px solid var(--color-border)" }}>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <input type="checkbox" checked={selectedGroupIds.has(seg.id)} onChange={() => toggleGroupSelection(seg.id)}
-                      aria-label={selectedGroupIds.has(seg.id) ? tr("dropsGroupUnselectHint") : tr("dropsGroupSelectHint").replace("{n}", String(totalIn))}
-                      title={selectedGroupIds.has(seg.id) ? tr("dropsGroupUnselectHint") : tr("dropsGroupSelectHint").replace("{n}", String(totalIn))}
+                    <input type="checkbox" checked={full}
+                      ref={el => { if (el) el.indeterminate = partial; }}
+                      onChange={() => toggleGroupSelection(seg.id, full, groupPageRows)}
+                      aria-label={hint} title={partial ? `${hint} (${tr("dropsGroupPartial").replace("{n}", String(seg.pageSelected))})` : hint}
                       style={{ cursor: "pointer" }} />
                     <button onClick={() => toggleCollapsed(seg.id)}
                       aria-label={isCollapsed ? tr("dropsGroupExpand") : tr("dropsGroupCollapse")}
                       style={groupBtn}>
-                      {isCollapsed ? <Plus size={13} /> : <Minus size={13} />}
+                      {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
                     </button>
                     <b style={{ color: "var(--color-text-primary)" }}>{seg.name}</b>
                     <span style={{ color: "var(--color-text-tertiary)", fontSize: 12 }} title={tr("dropsGroupCountHint")}>
                       {totalIn.toLocaleString()}
                     </span>
+                    {partial && <span style={{ color: "var(--color-accent-orange, #ff9f0a)", fontSize: 12 }}>
+                      {tr("dropsGroupPartial").replace("{n}", String(seg.pageSelected))}
+                    </span>}
                     <button onClick={() => void renameGroup(seg.id, seg.name)} aria-label={tr("dropsGroupRename")} style={groupBtn}>
                       <Pencil size={12} />
                     </button>

@@ -3835,6 +3835,7 @@
   "dropsGroupCollapse": "Згорнути групу",
   "dropsGroupRename": "Перейменувати групу",
   "dropsGroupCountHint": "Доменів у групі (на всіх сторінках)",
+  "dropsGroupPartial": "вибрано: {n}",
   "dropsGroupSelectHint": "Виділити всю групу ({n}) — по всіх сторінках",
   "dropsGroupUnselectHint": "Зняти виділення з усієї групи",
   "dropsEnrichCancelled": "Дію скасовано",

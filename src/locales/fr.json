@@ -3835,6 +3835,7 @@
   "dropsGroupCollapse": "Replier le groupe",
   "dropsGroupRename": "Renommer le groupe",
   "dropsGroupCountHint": "Domaines dans le groupe (toutes pages)",
+  "dropsGroupPartial": "sélectionnés : {n}",
   "dropsGroupSelectHint": "Sélectionner tout le groupe ({n}) — toutes pages confondues",
   "dropsGroupUnselectHint": "Effacer la sélection du groupe entier",
   "dropsEnrichCancelled": "Action annulée",
