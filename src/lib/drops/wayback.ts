@@ -25,6 +25,20 @@ export interface WaybackProfile {
 const CDX_LIMIT = 2000;
 
 /**
+ * Whole days between two local midnights.
+ *
+ * NOT `(now - then) / 86_400_000`. Both dates are built from local Y/M/D, so a gap that spans a
+ * daylight-saving change is short (or long) by an hour, and `Math.floor` turns 920.958 into 920.
+ * The same domain then reads as dead for a different number of days depending on the server's
+ * timezone and the time of year — and `gapDays` feeds the score a purchase is sorted by.
+ * Projecting the calendar components onto UTC removes the offset from the arithmetic entirely.
+ */
+function daysBetween(then: Date, now: Date): number {
+  const atMidnightUtc = (d: Date) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  return Math.round((atMidnightUtc(now) - atMidnightUtc(then)) / 86_400_000);
+}
+
+/**
  * What a CDX request actually said, beyond the old collapsed `null`. The archive refuses this
  * app's IP in two very different moods — a 429/403 throttle that clears itself, and a genuine
  * network failure — and everything downstream (error messages, retries, "try later" advice)
@@ -86,7 +100,7 @@ export function parseCdxRows(raw: unknown, now = new Date()): WaybackProfile {
   times.sort((a, b) => a.getTime() - b.getTime());
   const firstAt = times[0];
   const lastAt = times[times.length - 1];
-  const gapDays = Math.max(0, Math.floor((now.getTime() - lastAt.getTime()) / 86_400_000));
+  const gapDays = Math.max(0, daysBetween(lastAt, now));
   return { snapshots: times.length, firstAt, lastAt, gapDays };
 }
 
@@ -113,7 +127,7 @@ export function profileFromTimestamps(timestamps: string[], now = new Date()): W
     snapshots: times.length,
     firstAt,
     lastAt,
-    gapDays: Math.max(0, Math.floor((now.getTime() - lastAt.getTime()) / 86_400_000)),
+    gapDays: Math.max(0, daysBetween(lastAt, now)),
   };
 }
 

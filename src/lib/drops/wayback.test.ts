@@ -20,8 +20,26 @@ test("a CDX reply turns into months-lived, first/last and the dead gap", () => {
     [profile.lastAt!.getFullYear(), profile.lastAt!.getMonth(), profile.lastAt!.getDate()],
     [2024, 1, 29],
   );
-  // 2024-02-29 → 2026-09-07; a leap day sits inside the gap on purpose.
-  assert.equal(profile.gapDays, 920);
+  // 2024-02-29 → 2026-09-07 is 921 days. A leap day sits inside the gap on purpose.
+  assert.equal(profile.gapDays, 921);
+});
+
+test("the gap is whole calendar days, whatever the timezone and DST do", () => {
+  // This assertion used to hold at 920 in Europe/Athens and 921 in UTC, because the gap was
+  // computed from raw milliseconds: 2024-02-29 is winter time (+02:00), 2026-09-07 is summer
+  // (+03:00), the difference is short by an hour, and Math.floor swallowed the day. The same
+  // domain therefore looked a day less dead on one server than on another, and gapDays feeds
+  // the score a purchase is sorted by.
+  const [first] = [new Date(2024, 1, 29)];
+  const gap = parseCdxRows([["timestamp"], ["20240229120000"]], new Date(2026, 8, 7)).gapDays;
+  assert.equal(gap, 921);
+  assert.equal(first.getDate(), 29);
+
+  // Both directions of the DST boundary, in one day steps around the changeover.
+  const spring = parseCdxRows([["timestamp"], ["20260328000000"]], new Date(2026, 2, 30)).gapDays;
+  assert.equal(spring, 2, "a clock that jumps forward must not eat a day");
+  const autumn = parseCdxRows([["timestamp"], ["20261024000000"]], new Date(2026, 9, 26)).gapDays;
+  assert.equal(autumn, 2, "a clock that falls back must not invent one");
 });
 
 test("shorter timestamps parse: CDX pads to 14 digits but old exports do not", () => {
