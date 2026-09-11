@@ -3710,6 +3710,8 @@
   "dropsProxyPlaceholder": "socks5://user:pass@1.2.3.4:1080\nuser:pass@5.6.7.8:8080\n9.10.11.12:8000:user:pass",
   "dropsProxyAdd": "Añadir",
   "dropsProxyCheck": "Comprobar el pool",
+  "dropsProxyPrune": "Eliminar los muertos",
+  "dropsProxyPruned": "{n} eliminados.",
   "dropsProxyAdded": "{n} añadidos, {u} actualizados, {s} sin interpretar.",
   "dropsProxyChecked": "{alive} de {n} tunelizaron hasta un host de registro.",
   "dropsProxyAlive": "activo",

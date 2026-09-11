@@ -3710,6 +3710,8 @@
   "dropsProxyPlaceholder": "socks5://user:pass@1.2.3.4:1080\nuser:pass@5.6.7.8:8080\n9.10.11.12:8000:user:pass",
   "dropsProxyAdd": "添加",
   "dropsProxyCheck": "检查代理池",
+  "dropsProxyPrune": "移除失效的",
+  "dropsProxyPruned": "已移除 {n} 个。",
   "dropsProxyAdded": "新增 {n}，更新 {u}，无法解析 {s}。",
   "dropsProxyChecked": "{n} 个中有 {alive} 个成功隧道到注册局主机。",
   "dropsProxyAlive": "可用",

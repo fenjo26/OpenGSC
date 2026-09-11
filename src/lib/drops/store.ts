@@ -812,6 +812,34 @@ export async function recordProxyCheck(
   }
 }
 
+/**
+ * Drop every proxy whose last live check failed.
+ *
+ * Exists because the common mistake produces a dozen of them at once: a provider hands out one
+ * port that speaks SOCKS5, the same list is pasted a second time as http, and ten entries come
+ * back dead. Leaving them enabled is not harmless — the pool keeps handing them out, collecting
+ * a refusal, resting them, and handing them out again.
+ *
+ * Only rows that were actually checked AND failed go: an entry never checked is unknown, not
+ * dead, and deleting it on a guess would quietly shrink the pool the user pasted.
+ */
+export async function pruneDeadProxies(userId: string): Promise<number> {
+  const rows = (await db.dropProxy.findMany({
+    where: { userId, NOT: { lastCheckedAt: null } },
+    select: { id: true, lastOkAt: true, lastCheckedAt: true, lastError: true },
+  })) as { id: string; lastOkAt: Date | null; lastCheckedAt: Date | null; lastError: string | null }[];
+
+  const dead = rows.filter(r => {
+    if (!r.lastError) return false;
+    // Failed since the last success — or never succeeded at all.
+    return !r.lastOkAt || (r.lastCheckedAt?.getTime() ?? 0) > r.lastOkAt.getTime();
+  }).map(r => r.id);
+
+  if (!dead.length) return 0;
+  const res = await db.dropProxy.deleteMany({ where: { userId, id: { in: dead } } });
+  return res.count;
+}
+
 /** Endpoints with credentials — server-side only, never serialised to a response. */
 export async function proxyEndpoints(userId: string): Promise<ProxyEndpoint[]> {
   const rows = (await db.dropProxy.findMany({ where: { userId, enabled: true } })) as ProxyRow[];

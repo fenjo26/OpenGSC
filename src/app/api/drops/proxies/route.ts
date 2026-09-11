@@ -3,7 +3,8 @@ import { workspaceUserId } from "@/lib/team/workspace";
 import { parseProxyList, redactProxy, type ProxyEndpoint } from "@/lib/drops/proxies";
 import { proxyConnector } from "@/lib/drops/proxyTransport";
 import {
-  addProxies, deleteProxy, listProxies, proxyEndpoints, recordProxyCheck, schemaMissing, setProxyEnabled,
+  addProxies, deleteProxy, listProxies, proxyEndpoints, pruneDeadProxies, recordProxyCheck,
+  schemaMissing, setProxyEnabled,
 } from "@/lib/drops/store";
 
 export const dynamic = "force-dynamic";
@@ -89,6 +90,11 @@ export async function POST(req: Request) {
         results,
         proxies: await listProxies(userId),
       });
+    }
+
+    if (action === "prune") {
+      const removed = await pruneDeadProxies(userId);
+      return NextResponse.json({ removed, proxies: await listProxies(userId) });
     }
 
     return NextResponse.json({ error: "unknown_action" }, { status: 400 });

@@ -71,3 +71,6 @@ backups/
 # tsconfigs. Never repo content; see docs/tasks/README.md for the workflow.
 /.worktrees/
 /_to_delete/wtlocks/
+
+# Narrow tsconfig used by agent check recipes; the full one carries tolerated pre-existing errors.
+.tscheck/

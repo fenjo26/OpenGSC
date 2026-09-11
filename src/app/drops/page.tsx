@@ -1407,6 +1407,13 @@ export default function DropsPage() {
         <button onClick={() => void checkProxies()} disabled={!!proxyBusy || !proxies.length} style={pagerBtn(!proxies.length)}>
           {proxyBusy === "check" ? <Loader2 className="spin" size={13} /> : null} {tr("dropsProxyCheck")}
         </button>
+        {proxies.some(p => p.lastCheckedAt && p.lastError && (!p.lastOkAt || p.lastCheckedAt > p.lastOkAt)) &&
+          <button onClick={() => void (async () => {
+            const body = await proxyAction({ method: "POST", body: JSON.stringify({ action: "prune" }) });
+            if (body) setProxyNote(tr("dropsProxyPruned").replace("{n}", String(body.removed ?? 0)));
+          })()} disabled={!!proxyBusy} style={pagerBtn(false)}>
+            {tr("dropsProxyPrune")}
+          </button>}
         {proxyNote && <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{proxyNote}</span>}
       </div>
 
