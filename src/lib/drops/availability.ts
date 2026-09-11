@@ -17,9 +17,10 @@ import { easyGrAvailability, easyGrCreds } from "./easyGr";
 import { DIRECT_POOL, type ProxyEndpoint, type ProxyPool } from "./proxies";
 import { proxyConnector, whoisConnector } from "./proxyTransport";
 import { parseWhoisAvailability, parseWhoisCreated, parseWhoisExpiry, parseWhoisNameServers, parseWhoisStatuses } from "./patterns";
-import { profileForDomain, sanitiseForUrl, type RegistryProfile } from "./registries";
+import { profileForDomain, sanitiseForUrl, RDAP_BOOTSTRAP, type RegistryProfile } from "./registries";
 import { WhoisError, discoverWhoisHost, whoisQuery } from "./whois";
-import type { AvailabilityResult } from "./types";
+import { rdapBaseFor } from "./rdapBootstrap";
+import type { AvailabilityResult, RegistrarConfirmer } from "./types";
 
 const RDAP_TIMEOUT_MS = 12_000;
 const RDAP_MAX_BYTES = 512 * 1024;
@@ -56,9 +57,12 @@ interface RdapOutcome {
  * A 500 from a registry endpoint and a 404 from a bootstrap redirector carry no information about
  * the domain, and collapsing either into a verdict is how a checker reports live domains as free.
  */
-async function askRdap(domain: string, profile: RegistryProfile, via: ProxyEndpoint | null): Promise<RdapOutcome> {
-  if (!profile.rdap) return { kind: "unusable", http: 0 };
-  const base = profile.rdap.endsWith("/") ? profile.rdap : `${profile.rdap}/`;
+async function askRdap(
+  domain: string, profile: RegistryProfile, via: ProxyEndpoint | null, endpoint?: string | null,
+): Promise<RdapOutcome> {
+  const chosen = endpoint || profile.rdap;
+  if (!chosen) return { kind: "unusable", http: 0 };
+  const base = chosen.endsWith("/") ? chosen : `${chosen}/`;
 
   try {
     const res = await safeFetch(`${base}${sanitiseForUrl(domain)}`, {
@@ -142,6 +146,55 @@ async function askWhois(domain: string, profile: RegistryProfile, via: ProxyEndp
 }
 
 /**
+ * Ask a registrar to confirm a name the registry says is free.
+ *
+ * The asymmetry is the design and it is not negotiable: a registrar may CONFIRM `available` and
+ * may never turn it into `registered`. A registry record is the only thing that means registered;
+ * a registrar's "no" can equally mean reserved, premium, blocklisted, or a zone it does not
+ * carry. Reading that as "taken" would swap this module's rare false "free" — which costs one
+ * wasted check — for a steady drip of false "taken", which silently drops good domains out of
+ * the funnel where nobody ever sees them again.
+ *
+ * So the only thing this can change is `corroborated`, plus a note the UI can show.
+ */
+async function confirmWithRegistrar(
+  result: AvailabilityResult, domain: string, confirmer: RegistrarConfirmer,
+): Promise<AvailabilityResult> {
+  if (!result.ok || result.status !== "available") return result;
+
+  let answer: { verdict: string; reason?: string; price?: string };
+  try {
+    answer = await confirmer.confirm(domain);
+  } catch {
+    return result; // A confirmer that throws has told us nothing.
+  }
+
+  if (answer.verdict === "available") {
+    return { ...result, corroborated: true, registrarVerdict: "available" };
+  }
+  if (answer.verdict === "premium") {
+    // Free in the registry, and priced as a premium. Corroboration is untouched — the name IS
+    // unregistered — but the row must carry the price, because "free" here means four figures.
+    return {
+      ...result,
+      corroborated: false,
+      registrarVerdict: "premium",
+      registrarNote: `${confirmer.name}: premium${answer.price ? ` (${answer.price})` : ""}`,
+    };
+  }
+  if (answer.verdict === "unavailable") {
+    return {
+      ...result,
+      corroborated: false,
+      registrarVerdict: "unavailable",
+      registrarNote: `${confirmer.name}: ${answer.reason || "will not sell this name"}`,
+    };
+  }
+  // refused / unknown: a rate limit or an unreadable body says nothing about the domain.
+  return { ...result, registrarVerdict: answer.verdict === "refused" ? "refused" : "unknown" };
+}
+
+/**
  * The verdict for one domain.
  *
  * The order of the branches is the contract:
@@ -162,9 +215,12 @@ async function askWhois(domain: string, profile: RegistryProfile, via: ProxyEndp
 export async function checkAvailability(
   domain: string,
   via: ProxyEndpoint | null = null,
+  opts: { confirmer?: RegistrarConfirmer } = {},
 ): Promise<AvailabilityResult> {
   const profile = profileForDomain(domain);
   if (!profile) return { ok: false, status: "error", http: 0, error: "not_a_domain" };
+  const decide = (r: AvailabilityResult) =>
+    opts.confirmer ? confirmWithRegistrar(r, domain, opts.confirmer) : Promise.resolve(r);
 
   // A zone with a registrar source has no registry to ask at all — that is why it has one. The
   // answer is authoritative in a way an RDAP 404 never is (a commercial registrar either sells
@@ -195,7 +251,16 @@ export async function checkAvailability(
   }
 
   await jitter();
-  const rdap = await askRdap(domain, profile, via);
+  // IANA's bootstrap says which server actually speaks for this zone. Asking it directly is what
+  // makes a 404 mean something: `rdap.org` answers 404 both for an unregistered name and for a
+  // zone it cannot route, and on 2026-09-11 that ambiguity was the entire reason three
+  // uncorroborated rows sat in the catalogue (`.cool`, `.bzh`, `.guide` — all zones with no
+  // hand-written profile). A hand-written `rdap` on the profile still wins: it was put there by
+  // somebody who checked.
+  const endpoint = profile.rdap && profile.rdap !== RDAP_BOOTSTRAP
+    ? profile.rdap
+    : (await rdapBaseFor(profile.tld)) ?? profile.rdap;
+  const rdap = await askRdap(domain, profile, via, endpoint);
 
   if (rdap.kind === "registered") {
     return {
@@ -214,7 +279,7 @@ export async function checkAvailability(
       };
     }
     if (whois.kind === "absent") {
-      return { ok: true, status: "available", http: 429, via: "whois", corroborated: false };
+      return decide({ ok: true, status: "available", http: 429, via: "whois", corroborated: false });
     }
     return { ok: false, status: "rate_limited", http: 429, retryAfterSec: rdap.retryAfterSec };
   }
@@ -229,11 +294,17 @@ export async function checkAvailability(
     };
   }
   if (whois.kind === "absent") {
-    return {
-      ok: true, status: "available", http: rdap.http || 200, via: rdap.kind === "absent" ? "rdap" : "whois",
+    return decide({
+      ok: true, status: "available",
+      // `rdap.http` and not `rdap.http || 200`: zero is what an RDAP call that never completed
+      // returns, and rewriting it as 200 put a status in the database for a request that was
+      // never answered — which is exactly how `wwwlesmaillonsdelespoir.org` came to be recorded
+      // as `via: whois, http: 200` when RDAP had in fact failed outright.
+      http: rdap.http,
+      via: rdap.kind === "absent" ? "rdap" : "whois",
       // Corroborated only when RDAP independently returned 404 as well.
       corroborated: rdap.kind === "absent",
-    };
+    });
   }
   if (whois.kind === "refused") {
     return { ok: false, status: "rate_limited", http: 429 };
@@ -243,7 +314,7 @@ export async function checkAvailability(
   // reported as such rather than thrown away — a zone with no working WHOIS would otherwise never
   // produce a candidate at all.
   if (rdap.kind === "absent") {
-    return { ok: true, status: "available", http: 404, via: "rdap", corroborated: false };
+    return decide({ ok: true, status: "available", http: 404, via: "rdap", corroborated: false });
   }
   return { ok: false, status: "error", http: rdap.http, error: "no_usable_source" };
 }
@@ -278,6 +349,13 @@ export async function checkAvailabilityBatch(
     deadlineMs?: number;
     /** Пул прокси. По умолчанию — прямое соединение, ровно прежнее поведение. */
     pool?: ProxyPool;
+    /**
+     * Optional registrar second opinion for names the registry says are free.
+     *
+     * Not throttled by the zone intervals below, because it is not a registry: it has its own
+     * per-account limit, enforced inside the confirmer itself.
+     */
+    confirmer?: RegistrarConfirmer;
   } = {},
 ): Promise<Map<string, AvailabilityResult>> {
   const pool = opts.pool ?? DIRECT_POOL;
@@ -315,7 +393,7 @@ export async function checkAvailabilityBatch(
 
         let res: AvailabilityResult;
         try {
-          res = await checkAvailability(list[i], lease.endpoint);
+          res = await checkAvailability(list[i], lease.endpoint, { confirmer: opts.confirmer });
         } catch (e) {
           lease.release(false);
           throw e;

@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false,
+    "noEmit": true
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/lib/drops/**/*.ts",
+    "src/app/api/drops/**/*.ts",
+    "src/app/drops/**/*.tsx"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

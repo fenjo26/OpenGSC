@@ -3,6 +3,8 @@ import { workspaceUserId } from "@/lib/team/workspace";
 import { checkAvailabilityBatch } from "@/lib/drops/availability";
 import { profileForDomain, registryAnswerable } from "@/lib/drops/registries";
 import { easyGrCreds } from "@/lib/drops/easyGr";
+import { dynadotConfirmer, dynadotCreds } from "@/lib/drops/dynadot";
+import { getUserSettings } from "@/lib/mcp/shared";
 import { countPendingAvailability, EXCLUDE_MAX, loadProxyPool, markUncheckableZones, retireUncheckableRows, revivePendingZones, parseCandidateFilter, pendingAvailabilityCandidates, recordAvailabilityResults, schemaMissing } from "@/lib/drops/store";
 
 export const dynamic = "force-dynamic";
@@ -76,8 +78,16 @@ export async function POST(req: Request) {
     // zone intervals below are unchanged, they are just held per (zone, proxy) now. An owner
     // with no proxies gets the direct pool and the previous behaviour exactly.
     const pool = await loadProxyPool(userId);
+
+    // The registrar second opinion, when one is configured. It answers a question no registry
+    // can — "will anyone actually sell me this at a normal price" — so it runs on names the
+    // registry already called free, and it can only ever confirm that or annotate it. It never
+    // marks a name taken: see `confirmWithRegistrar`.
+    const dyn = dynadotCreds(await getUserSettings(userId));
+    const confirmer = dyn ? dynadotConfirmer(dyn) : undefined;
+
     const [results, skippedCount] = await Promise.all([
-      checkAvailabilityBatch(answerable, { deadlineMs: DEADLINE_MS, pool }),
+      checkAvailabilityBatch(answerable, { deadlineMs: DEADLINE_MS, pool, confirmer }),
       markUncheckableZones(userId, uncheckable),
     ]);
     const written = await recordAvailabilityResults(userId, results);
@@ -87,6 +97,8 @@ export async function POST(req: Request) {
       checked: results.size,
       /** So the UI can say "through N proxies" instead of leaving the speed unexplained. */
       viaProxies: pool.size,
+      /** Whether a registrar confirmed this slice, so the UI can offer to configure one. */
+      registrar: confirmer?.name ?? null,
       ...written,
       uncheckable: skippedCount,
       remaining,

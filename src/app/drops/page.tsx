@@ -205,6 +205,15 @@ export default function DropsPage() {
   const [showManual, setShowManual] = useState(false);
   const [manualRaw, setManualRaw] = useState("");
   const [manualBusy, setManualBusy] = useState(false);
+  // The registrar second opinion. Its key lives in localStorage like every other provider key
+  // in this app and is mirrored server-side by SeoKeysSync (the `seoKey_` prefix), so the check
+  // route finds it without a second storage path.
+  const [showRegistrar, setShowRegistrar] = useState(false);
+  const [dynKey, setDynKey] = useState("");
+  const [dynFromEnv, setDynFromEnv] = useState(false);
+  const [dynBusy, setDynBusy] = useState(false);
+  const [dynNote, setDynNote] = useState("");
+  const [dynRaw, setDynRaw] = useState<unknown>(null);
   const [proxies, setProxies] = useState<StoredProxy[]>([]);
   const [proxyRaw, setProxyRaw] = useState("");
   const [proxyBusy, setProxyBusy] = useState<"add" | "check" | null>(null);
@@ -325,6 +334,19 @@ export default function DropsPage() {
       setGroupBusy(null);
     }
   };
+
+  // The key itself is read from localStorage; the server is only asked whether an environment
+  // variable is overriding it, because a self-hosted instance configured in `.env` must not show
+  // an empty field that invites the operator to type a second key that would never be used.
+  const loadRegistrar = useCallback(async () => {
+    try { setDynKey(localStorage.getItem("seoKey_dynadot") || ""); } catch {}
+    try {
+      const res = await fetch("/api/drops/registrar", { cache: "no-store" });
+      if (!res.ok) return; // not the owner, or not configured — the panel still works locally
+      const body = await res.json();
+      setDynFromEnv(Boolean(body?.fromEnv));
+    } catch { /* the panel is optional; a failure here must not break the page */ }
+  }, []);
 
   const loadProxies = useCallback(async () => {
     try {
@@ -462,7 +484,7 @@ export default function DropsPage() {
   // cannot: every state write inside `loadRuns` happens after an awaited fetch, several ticks
   // later. The linter cannot see across the await, so the suppression is narrow and local.
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { void loadRuns(); void loadGroups(); void loadProxies(); }, [loadRuns, loadGroups, loadProxies]);
+  useEffect(() => { void loadRuns(); void loadGroups(); void loadProxies(); void loadRegistrar(); }, [loadRuns, loadGroups, loadProxies, loadRegistrar]);
   // Debounced so typing in the search box does not fire a query per keystroke against a table
   // that can hold 50 000 rows.
   useEffect(() => {
@@ -1219,6 +1241,9 @@ export default function DropsPage() {
         <button onClick={() => setShowProxies(v => !v)} style={pagerBtn(false)}>
           {tr("dropsProxies")}{proxies.length > 0 ? ` · ${proxies.filter(p => p.enabled).length}` : ""}
         </button>
+        <button onClick={() => setShowRegistrar(v => !v)} style={pagerBtn(false)}>
+          {tr("dropsRegistrar")}{dynKey.trim() || dynFromEnv ? " · ✓" : ""}
+        </button>
         <button onClick={() => setShowManual(v => !v)} style={pagerBtn(false)}>
           {tr("dropsManual")}{(counts.no_registry ?? 0) > 0 ? ` · ${(counts.no_registry ?? 0).toLocaleString()}` : ""}
         </button>
@@ -1437,6 +1462,57 @@ export default function DropsPage() {
           </div>;
         })}
       </div>}
+    </div>}
+
+    {/* The registrar second opinion.
+        Separate from the proxy panel because it answers a different question and carries a
+        different risk: proxies change WHO asks the registry, this asks somebody else entirely —
+        "will anyone sell me this at a normal price" — which no registry can answer. The key is
+        optional; without it the funnel behaves exactly as before. */}
+    {showRegistrar && <div className="panel" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ fontSize: 12.5, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+        {tr("dropsRegistrarWhy")}
+      </div>
+      {dynFromEnv
+        ? <div style={{ fontSize: 12.5, color: "var(--color-accent-green, #34c759)" }}>{tr("dropsRegistrarEnv")}</div>
+        : <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <input className="tool-input" type="password" autoComplete="off" style={{ flex: 1, minWidth: 220 }}
+              placeholder={tr("dropsRegistrarKeyPh")} value={dynKey}
+              onChange={e => setDynKey(e.target.value)} />
+            <button style={pagerBtn(false)} onClick={() => {
+              const v = dynKey.trim();
+              try { if (v) localStorage.setItem("seoKey_dynadot", v); else localStorage.removeItem("seoKey_dynadot"); } catch {}
+              setDynNote(tr("dropsRegistrarSaved"));
+            }}>{tr("dropsRegistrarSave")}</button>
+          </div>}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <button style={pagerBtn(false)} disabled={dynBusy || (!dynKey.trim() && !dynFromEnv)} onClick={async () => {
+          setDynBusy(true); setDynNote(""); setDynRaw(null);
+          try {
+            const res = await fetch("/api/drops/registrar", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ op: "ping", apiKey: dynFromEnv ? undefined : dynKey.trim() || undefined }),
+            });
+            const body = await res.json();
+            if (!res.ok) throw new Error(String(body?.error || res.status));
+            setDynRaw(body.probes ?? null);
+            setDynNote(body.ok ? tr("dropsRegistrarOk") : tr("dropsRegistrarFail"));
+          } catch (e) {
+            setDynNote(`${tr("dropsRegistrarFail")}: ${e instanceof Error ? e.message : String(e)}`);
+          }
+          setDynBusy(false);
+        }}>{dynBusy ? tr("dropsRegistrarTesting") : tr("dropsRegistrarTest")}</button>
+        {dynNote && <span style={{ fontSize: 12.5, color: "var(--color-text-secondary)" }}>{dynNote}</span>}
+      </div>
+      {/* The raw probe responses. They are here because the response envelope was written
+          against documentation rather than a live account: if these two read correctly, the
+          parser reads everything, and if they do not, this is the evidence needed to fix it. */}
+      {dynRaw != null && <details>
+        <summary style={{ fontSize: 12.5, color: "var(--color-accent-blue)", cursor: "pointer" }}>{tr("dropsRegistrarRaw")}</summary>
+        <pre style={{ fontSize: 11, lineHeight: 1.5, maxHeight: 280, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", color: "var(--color-text-secondary)" }}>
+          {JSON.stringify(dynRaw, null, 2)}
+        </pre>
+      </details>}
     </div>}
 
     {/* The way out of `no_registry`. A zone the checker cannot ask (.gr) would otherwise sit

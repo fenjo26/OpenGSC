@@ -551,12 +551,20 @@ export async function recordAvailabilityResults(
           stage: "available" satisfies DropStage,
           lastStatus: "available", lastHttp: res.http, lastVia: res.via, lastError: null,
           consecutiveErrors: 0, corroborated: res.corroborated, lastCheckedAt: now, nextCheckAt: null,
+          // A free name has no EPP statuses, so this column is empty for every `available` row —
+          // which makes it the one place a registrar flag fits without a migration. The prefix
+          // keeps the two namespaces apart: registry statuses never contain a colon.
+          registryStatus: res.registrarVerdict && res.registrarVerdict !== "available"
+            ? `registrar:${res.registrarVerdict}`
+            : null,
         },
       });
       await addEventByDomain(userId, domain, "available",
-        res.corroborated
-          ? `${domain} is free (confirmed by two sources)`
-          : `${domain} looks free via ${res.via} only — not corroborated`);
+        res.registrarNote
+          ? `${domain} is free at the registry, but ${res.registrarNote}`
+          : res.corroborated
+            ? `${domain} is free (confirmed by two sources)`
+            : `${domain} looks free via ${res.via} only — not corroborated`);
     } else {
       deferred++;
       const existing = (await db.dropCandidate.findFirst({

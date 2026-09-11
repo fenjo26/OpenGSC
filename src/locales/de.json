@@ -3920,5 +3920,16 @@
   "adsDomains": "Domains, die Anzeigen kaufen",
   "adsOwnSiteHint": "Eine Domain ohne eigene Google Ads antwortet leer — bei der eigenen Seite normal. Prüfe oben eine Wettbewerbs-Domain oder suche ein Keyword, um zu sehen, wer sonst kauft.",
   "crawlerAdsOpen": "Ads-Intelligenz zeigen",
-  "crawlerAdsHide": "Ausblenden"
+  "crawlerAdsHide": "Ausblenden",
+  "dropsRegistrar": "Registrar",
+  "dropsRegistrarWhy": "Eine Registry sagt, ob ein Eintrag existiert. Ein Registrar sagt, ob Ihnen jemand den Namen tatsächlich verkauft — bei reservierten und Premium-Namen ist das eine andere Antwort, und der Unterschied ist der Preis. Mit einem Dynadot-Schlüssel bekommen freie Namen eine zweite Meinung: bestätigen darf er sie, als vergeben markieren nie.",
+  "dropsRegistrarKeyPh": "Dynadot-API-Schlüssel",
+  "dropsRegistrarSave": "Speichern",
+  "dropsRegistrarSaved": "In diesem Browser gespeichert",
+  "dropsRegistrarTest": "Schlüssel testen",
+  "dropsRegistrarTesting": "Teste…",
+  "dropsRegistrarOk": "Schlüssel funktioniert — beide Proben antworteten wie erwartet",
+  "dropsRegistrarFail": "Schlüssel hat nicht funktioniert",
+  "dropsRegistrarEnv": "Der Schlüssel stammt aus DYNADOT_API_KEY auf dem Server und ist hier nicht änderbar.",
+  "dropsRegistrarRaw": "Rohantworten der beiden Proben"
 }

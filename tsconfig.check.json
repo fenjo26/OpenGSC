@@ -13,5 +13,8 @@
     "src/app/seo-tools/**/*.tsx",
     "src/components/**/*.tsx"
   ],
-  "exclude": ["node_modules", "src/generated"]
+  "exclude": [
+    "node_modules",
+    "src/generated"
+  ]
 }

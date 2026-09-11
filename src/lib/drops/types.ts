@@ -45,6 +45,24 @@ export type DropStage =
  */
 export type AvailabilitySource = "rdap" | "whois" | "dns" | "aparser" | "manual" | "registrar";
 
+/**
+ * A registrar's answer, kept wider than a boolean.
+ *
+ * "Not for sale" and "already registered" are different facts and must stay different: a
+ * registrar refusing to sell a name is not evidence that anybody owns it.
+ */
+export type RegistrarVerdict = "available" | "premium" | "unavailable" | "refused" | "unknown";
+
+/**
+ * Something that can be asked to confirm a free name, without this module knowing which
+ * registrar it is. Implemented by `dynadot.ts`; wired in by the route that has the credentials.
+ */
+export interface RegistrarConfirmer {
+  /** For the event log, e.g. "Dynadot". */
+  name: string;
+  confirm(domain: string): Promise<{ verdict: RegistrarVerdict; reason?: string; price?: string }>;
+}
+
 export type AvailabilityResult =
   | {
       ok: true;
@@ -73,6 +91,17 @@ export type AvailabilityResult =
        * and must never be shown as free — it is a reason to ask again, not an answer.
        */
       corroborated: boolean;
+      /**
+       * What a registrar said when asked to confirm — a different question from the registry's.
+       *
+       * The registry answers "is there a record"; the registrar answers "can I sell you this".
+       * `premium` and `unavailable` both mean the name is free in the registry and still not
+       * obtainable on the terms the funnel assumes, which is worth knowing BEFORE the buying
+       * decision rather than at checkout. Absent means nobody asked.
+       */
+      registrarVerdict?: RegistrarVerdict;
+      /** The registrar's own words, for the event log. Never carries a credential. */
+      registrarNote?: string;
     }
   | { ok: false; status: "rate_limited"; http: number; retryAfterSec?: number }
   | { ok: false; status: "error"; http: number; error: string };

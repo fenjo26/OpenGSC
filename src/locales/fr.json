@@ -3920,5 +3920,16 @@
   "adsDomains": "Domaines qui achètent des annonces",
   "adsOwnSiteHint": "Un domaine sans Google Ads répond vide — c'est normal pour le vôtre. Cherchez un domaine concurrent ci-dessus, ou interrogez un mot-clé pour voir qui achète.",
   "crawlerAdsOpen": "Afficher l'intelligence publicitaire",
-  "crawlerAdsHide": "Masquer"
+  "crawlerAdsHide": "Masquer",
+  "dropsRegistrar": "Registrar",
+  "dropsRegistrarWhy": "Un registre dit s'il existe un enregistrement. Un registrar dit si quelqu'un vous vendra réellement le nom — pour les noms réservés et premium ce n'est pas la même réponse, et l'écart se mesure en prix. Avec une clé Dynadot, les noms libres obtiennent un second avis : il peut confirmer qu'un nom est libre, jamais le déclarer pris.",
+  "dropsRegistrarKeyPh": "Clé API Dynadot",
+  "dropsRegistrarSave": "Enregistrer",
+  "dropsRegistrarSaved": "Enregistré dans ce navigateur",
+  "dropsRegistrarTest": "Tester la clé",
+  "dropsRegistrarTesting": "Test en cours…",
+  "dropsRegistrarOk": "La clé fonctionne — les deux sondes ont répondu comme prévu",
+  "dropsRegistrarFail": "La clé n'a pas fonctionné",
+  "dropsRegistrarEnv": "La clé vient de DYNADOT_API_KEY sur le serveur et n'est pas modifiable ici.",
+  "dropsRegistrarRaw": "Réponses brutes des deux sondes"
 }

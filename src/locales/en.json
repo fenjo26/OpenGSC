@@ -3920,5 +3920,16 @@
   "adsDomains": "Domains buying ads",
   "adsOwnSiteHint": "A domain with no Google Ads answers empty — normal for your own site. Look up a competitor above, or search a keyword to see who else is buying.",
   "crawlerAdsOpen": "Show ad intel",
-  "crawlerAdsHide": "Hide"
+  "crawlerAdsHide": "Hide",
+  "dropsRegistrar": "Registrar",
+  "dropsRegistrarWhy": "A registry says whether a record exists. A registrar says whether anyone will actually sell you the name — which is a different answer for reserved and premium names, and the difference is the price. Configure a Dynadot key and free names get a second opinion: it can confirm a name is free, and it is never allowed to mark one taken.",
+  "dropsRegistrarKeyPh": "Dynadot API key",
+  "dropsRegistrarSave": "Save",
+  "dropsRegistrarSaved": "Saved in this browser",
+  "dropsRegistrarTest": "Test key",
+  "dropsRegistrarTesting": "Testing…",
+  "dropsRegistrarOk": "Key works — both probes answered as expected",
+  "dropsRegistrarFail": "Key did not work",
+  "dropsRegistrarEnv": "Key comes from DYNADOT_API_KEY on the server and cannot be changed here.",
+  "dropsRegistrarRaw": "Raw responses from the two probes"
 }

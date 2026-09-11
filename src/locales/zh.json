@@ -3920,5 +3920,16 @@
   "adsDomains": "购买广告的域名",
   "adsOwnSiteHint": "域名没有自己的 Google 广告时结果为空——自己的网站很正常。在上方查一个竞对域名，或搜索关键词看看还有谁在买广告。",
   "crawlerAdsOpen": "显示广告情报",
-  "crawlerAdsHide": "隐藏"
+  "crawlerAdsHide": "隐藏",
+  "dropsRegistrar": "注册商",
+  "dropsRegistrarWhy": "注册局回答的是「有没有这条记录」，注册商回答的是「有没有人真的会把这个名字卖给你」——对于保留域名和溢价域名，这是两个不同的答案，差别就是价格。填入 Dynadot 密钥后，判定为空闲的域名会得到第二意见：它可以确认域名空闲，但永远不能把域名标记为已被注册。",
+  "dropsRegistrarKeyPh": "Dynadot API 密钥",
+  "dropsRegistrarSave": "保存",
+  "dropsRegistrarSaved": "已保存在此浏览器",
+  "dropsRegistrarTest": "测试密钥",
+  "dropsRegistrarTesting": "测试中…",
+  "dropsRegistrarOk": "密钥可用——两次探测的结果都符合预期",
+  "dropsRegistrarFail": "密钥不可用",
+  "dropsRegistrarEnv": "密钥来自服务器上的 DYNADOT_API_KEY，无法在此处修改。",
+  "dropsRegistrarRaw": "两次探测的原始响应"
 }

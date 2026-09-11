@@ -74,3 +74,6 @@ backups/
 
 # Narrow tsconfig used by agent check recipes; the full one carries tolerated pre-existing errors.
 .tscheck/
+
+# Scratch: device_bash cannot unlink, so stale .git/*.lock files get moved here.
+_to_delete/
