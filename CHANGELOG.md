@@ -3,6 +3,46 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
+## [Unreleased]
+
+### Fixed
+
+- **An update could replace your database with an empty one.** `dev.db` is a tracked file in this
+  repository — an empty schema template — and `.env.template` shipped
+  `DATABASE_URL="file:./dev.db"`. Anyone who installed by copying the template was running their
+  live instance out of a path git owns, and `update.sh` does `git reset --hard`, which restores
+  tracked files. The pre-update backup made this recoverable, not acceptable. The updater now
+  relocates such a database to `data/` — gitignored, and therefore out of reach of the reset —
+  before touching the working tree, verifying the copy before repointing `.env` and deleting
+  nothing. Installs on Docker (`/data/prod.db`), on `install.sh` (absolute `data/prod.db`) or on
+  any other absolute path were never affected and are skipped. The template default is now
+  `file:./data/dev.db`.
+- **A domain days from release was watched as if it had years left.** The watch loop accelerates
+  to a 15-minute check for `pendingDelete` and an hourly one for `redemptionPeriod`, matching the
+  EPP spelling WHOIS returns. RDAP returns the same statuses spaced (`pending delete`), so for
+  every row answered by RDAP the acceleration never fired — on exactly the domains the module
+  exists to catch. The table had the same blind spot: a name paid up to 2027 and a name being
+  deleted this week both read as "taken". Such rows now carry a badge with the registry date.
+- **The check counters showed the previous run.** The DNS and registry progress lines accumulate
+  one pass and were never cleared, so the last run's totals stayed on screen until the first
+  slice of the next one returned — up to 35 seconds, during which they described a catalogue that
+  rows had since been deleted from. Both reset when a pass starts, and both now say they count
+  that pass rather than the catalogue.
+
+### Added
+
+- **A registrar can confirm a free name.** A registry answers "is there a record"; a registrar
+  answers "will anyone sell you this", and for reserved and premium names those differ by the
+  price. With a Dynadot key (`DYNADOT_API_KEY`, or Settings → the Registrar panel on `/drops`),
+  names the registry called free get a second opinion. It may confirm `available` and may never
+  turn it into `taken` — a registrar's "no" can mean reserved, premium or a zone it does not
+  carry, and reading that as registered would drop good domains out of the funnel silently.
+  Premium is flagged rather than hidden, because "free" there can mean four figures.
+- **RDAP goes to the registry, not through a redirector.** Zones without a hand-written profile
+  were asked through rdap.org, whose 404 means both "no such name" and "no route for that zone" —
+  so it could never corroborate anything. Endpoints now come from IANA's own bootstrap
+  (`dns.json`, RFC 9224), cached daily, falling back to the previous behaviour when unreachable.
+
 ## [1.6.2] — 2026-09-10
 
 ### Added

@@ -34,6 +34,21 @@ else
   echo "[update] no backup script in this checkout yet — it arrives with this update"
 fi
 
+# The reset below restores every TRACKED file, and `dev.db` is tracked — an empty 23 MB schema
+# template committed long ago. An install left on the `.env.template` default
+# (DATABASE_URL="file:./dev.db") therefore has its live database replaced by that empty template
+# on every update. The backup above is why this is survivable; it is not why it is acceptable.
+#
+# So before the reset, move such a database to data/, which is gitignored and which a hard reset
+# never touches. It runs once per install and skips silently everywhere else: Docker
+# (/data/prod.db), install.sh (absolute data/prod.db) and any other absolute path are untouched.
+# Nothing is deleted — the copy is verified before .env is repointed, and the old file is left for
+# the reset to overwrite.
+if [ -f scripts/relocate-sqlite.mjs ]; then
+  echo "[update] checking whether the database sits inside the repository..."
+  node scripts/relocate-sqlite.mjs || { echo "[update] database relocation FAILED — nothing was changed"; echo "___OPENGSC_UPDATE_FAIL___"; exit 1; }
+fi
+
 echo "[update] git reset --hard origin/main..."
 git reset --hard origin/main || { echo "[update] git reset FAILED"; echo "___OPENGSC_UPDATE_FAIL___"; exit 1; }
 
