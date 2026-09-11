@@ -3935,5 +3935,6 @@
   "dropsPhasePendingDelete": "fällt",
   "dropsPhaseRedemption": "Rückkauf",
   "dropsPhasePendingDeleteHint": "Die Registry löscht den Namen — er wird in wenigen Tagen frei. Auf Beobachtung setzen: in dieser Phase wird alle 15 Minuten geprüft.",
-  "dropsPhaseRedemptionHint": "Abgelaufen, in der Redemption-Frist. Der Inhaber kann ihn noch zurückholen; sonst folgt pendingDelete und dann die Freigabe."
+  "dropsPhaseRedemptionHint": "Abgelaufen, in der Redemption-Frist. Der Inhaber kann ihn noch zurückholen; sonst folgt pendingDelete und dann die Freigabe.",
+  "dropsThisPass": "dieser Durchlauf"
 }

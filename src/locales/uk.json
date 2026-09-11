@@ -3935,5 +3935,6 @@
   "dropsPhasePendingDelete": "падає",
   "dropsPhaseRedemption": "викуп",
   "dropsPhasePendingDeleteHint": "Реєстр видаляє ім'я — звільниться за кілька днів. Поставте на стеження: на цій стадії перевірка йде кожні 15 хвилин.",
-  "dropsPhaseRedemptionHint": "Термін минув, триває пільговий період викупу. Власник ще може повернути домен; якщо ні — далі pendingDelete і звільнення."
+  "dropsPhaseRedemptionHint": "Термін минув, триває пільговий період викупу. Власник ще може повернути домен; якщо ні — далі pendingDelete і звільнення.",
+  "dropsThisPass": "за цей прохід"
 }

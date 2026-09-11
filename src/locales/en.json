@@ -3935,5 +3935,6 @@
   "dropsPhasePendingDelete": "dropping",
   "dropsPhaseRedemption": "redemption",
   "dropsPhasePendingDeleteHint": "Registry is deleting this name — it is released within days. Watch it: the check runs every 15 minutes at this stage.",
-  "dropsPhaseRedemptionHint": "Expired, in the redemption grace period. The owner can still restore it; if they do not, pendingDelete follows and then release."
+  "dropsPhaseRedemptionHint": "Expired, in the redemption grace period. The owner can still restore it; if they do not, pendingDelete follows and then release.",
+  "dropsThisPass": "this pass"
 }

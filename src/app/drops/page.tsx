@@ -757,6 +757,7 @@ export default function DropsPage() {
     if (dnsBusy) return;
     dnsStop.current = false;
     setDnsBusy(true); setError("");
+    setDnsProgress(null);
     const totals = { checked: 0, retired: 0, advanced: 0, remaining: 0 };
     try {
       for (;;) {
@@ -786,6 +787,7 @@ export default function DropsPage() {
     if (checkBusy) return;
     checkStop.current = false;
     setCheckBusy(true); setError(""); setNotice("");
+    setCheckProgress(null);
     const totals = { checked: 0, available: 0, taken: 0, deferred: 0, uncheckable: 0, remaining: 0 };
     try {
       for (;;) {
@@ -1559,6 +1561,7 @@ export default function DropsPage() {
       </span>}
       {dnsBusy && <Loader2 className="spin" size={14} color="var(--color-text-tertiary)" />}
       {dnsProgress && <span style={{ fontSize: 12.5, color: "var(--color-text-secondary)" }}>
+        <span style={{ color: "var(--color-text-tertiary)" }}>{tr("dropsThisPass")}: </span>
         {dnsProgress.checked.toLocaleString()} → <b style={{ color: "var(--color-text-tertiary)" }}>{dnsProgress.retired.toLocaleString()}</b> {tr("dropsDnsRetired")}
         {" · "}<b style={{ color: "var(--color-accent-green, #34c759)" }}>{dnsProgress.advanced.toLocaleString()}</b> {tr("dropsDnsAdvanced")}
       </span>}
@@ -1575,6 +1578,7 @@ export default function DropsPage() {
       </span>}
       {checkBusy && <Loader2 className="spin" size={14} color="var(--color-text-tertiary)" />}
       {checkProgress && <span style={{ fontSize: 12.5, color: "var(--color-text-secondary)" }}>
+        <span style={{ color: "var(--color-text-tertiary)" }}>{tr("dropsThisPass")}: </span>
         {checkProgress.checked.toLocaleString()} → <b style={{ color: "var(--color-accent-green, #34c759)" }}>{checkProgress.available.toLocaleString()}</b> {tr("dropsCheckFree")}
         {" · "}<b style={{ color: "var(--color-text-tertiary)" }}>{checkProgress.taken.toLocaleString()}</b> {tr("dropsCheckTaken")}
         {checkProgress.deferred > 0 && <> · <b style={{ color: "var(--color-accent-orange, #ff9f0a)" }}>{checkProgress.deferred.toLocaleString()}</b> {tr("dropsCheckDeferred")}</>}

@@ -3935,5 +3935,6 @@
   "dropsPhasePendingDelete": "tombe",
   "dropsPhaseRedemption": "rachat",
   "dropsPhasePendingDeleteHint": "Le registre supprime ce nom — il sera libéré sous quelques jours. Mettez-le sous surveillance : à ce stade la vérification tourne toutes les 15 minutes.",
-  "dropsPhaseRedemptionHint": "Expiré, en période de rachat. Le titulaire peut encore le récupérer ; sinon vient pendingDelete puis la libération."
+  "dropsPhaseRedemptionHint": "Expiré, en période de rachat. Le titulaire peut encore le récupérer ; sinon vient pendingDelete puis la libération.",
+  "dropsThisPass": "ce passage"
 }

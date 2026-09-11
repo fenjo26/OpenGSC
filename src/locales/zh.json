@@ -3935,5 +3935,6 @@
   "dropsPhasePendingDelete": "即将释放",
   "dropsPhaseRedemption": "赎回期",
   "dropsPhasePendingDeleteHint": "注册局正在删除该域名——几天内就会释放。建议加入监视：此阶段每 15 分钟检查一次。",
-  "dropsPhaseRedemptionHint": "已过期，处于赎回宽限期。持有人仍可赎回；若不赎回，接下来是 pendingDelete，然后释放。"
+  "dropsPhaseRedemptionHint": "已过期，处于赎回宽限期。持有人仍可赎回；若不赎回，接下来是 pendingDelete，然后释放。",
+  "dropsThisPass": "本次运行"
 }
