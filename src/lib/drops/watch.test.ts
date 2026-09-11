@@ -32,6 +32,13 @@ test("watchAcceleration: names the lifecycle stage behind an interval override",
   assert.equal(watchAcceleration(["pendingDelete"]), "pending_delete");
   assert.equal(watchAcceleration("redemptionPeriod"), "redemption");
   assert.equal(watchAcceleration(["clientHold"]), null);
+  // RDAP spells the same statuses with spaces (RFC 9083 §10.2.2) while WHOIS returns EPP
+  // camelCase. Only the WHOIS spelling used to match, so a pendingDelete row answered by RDAP —
+  // days from release, the most valuable row there is — kept the slow watch interval.
+  assert.equal(watchAcceleration("pending delete"), "pending_delete");
+  assert.equal(watchAcceleration(["client transfer prohibited", "pending delete"]), "pending_delete");
+  assert.equal(watchAcceleration("redemption period"), "redemption");
+  assert.equal(watchAcceleration("clientHold,clientTransferProhibited,redemptionPeriod"), "redemption");
   assert.equal(watchAcceleration(null), null);
 });
 

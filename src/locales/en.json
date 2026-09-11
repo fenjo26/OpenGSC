@@ -3931,5 +3931,9 @@
   "dropsRegistrarOk": "Key works — both probes answered as expected",
   "dropsRegistrarFail": "Key did not work",
   "dropsRegistrarEnv": "Key comes from DYNADOT_API_KEY on the server and cannot be changed here.",
-  "dropsRegistrarRaw": "Raw responses from the two probes"
+  "dropsRegistrarRaw": "Raw responses from the two probes",
+  "dropsPhasePendingDelete": "dropping",
+  "dropsPhaseRedemption": "redemption",
+  "dropsPhasePendingDeleteHint": "Registry is deleting this name — it is released within days. Watch it: the check runs every 15 minutes at this stage.",
+  "dropsPhaseRedemptionHint": "Expired, in the redemption grace period. The owner can still restore it; if they do not, pendingDelete follows and then release."
 }

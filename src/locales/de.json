@@ -3931,5 +3931,9 @@
   "dropsRegistrarOk": "Schlüssel funktioniert — beide Proben antworteten wie erwartet",
   "dropsRegistrarFail": "Schlüssel hat nicht funktioniert",
   "dropsRegistrarEnv": "Der Schlüssel stammt aus DYNADOT_API_KEY auf dem Server und ist hier nicht änderbar.",
-  "dropsRegistrarRaw": "Rohantworten der beiden Proben"
+  "dropsRegistrarRaw": "Rohantworten der beiden Proben",
+  "dropsPhasePendingDelete": "fällt",
+  "dropsPhaseRedemption": "Rückkauf",
+  "dropsPhasePendingDeleteHint": "Die Registry löscht den Namen — er wird in wenigen Tagen frei. Auf Beobachtung setzen: in dieser Phase wird alle 15 Minuten geprüft.",
+  "dropsPhaseRedemptionHint": "Abgelaufen, in der Redemption-Frist. Der Inhaber kann ihn noch zurückholen; sonst folgt pendingDelete und dann die Freigabe."
 }

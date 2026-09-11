@@ -3931,5 +3931,9 @@
   "dropsRegistrarOk": "Ключ работает — обе пробы ответили как ожидалось",
   "dropsRegistrarFail": "Ключ не сработал",
   "dropsRegistrarEnv": "Ключ берётся из DYNADOT_API_KEY на сервере, здесь его не поменять.",
-  "dropsRegistrarRaw": "Сырые ответы на обе пробы"
+  "dropsRegistrarRaw": "Сырые ответы на обе пробы",
+  "dropsPhasePendingDelete": "падает",
+  "dropsPhaseRedemption": "выкуп",
+  "dropsPhasePendingDeleteHint": "Реестр удаляет имя — освободится в течение нескольких дней. Поставьте на слежение: на этой стадии проверка идёт каждые 15 минут.",
+  "dropsPhaseRedemptionHint": "Срок истёк, идёт льготный период выкупа. Владелец ещё может вернуть домен; если не вернёт — дальше pendingDelete и освобождение."
 }

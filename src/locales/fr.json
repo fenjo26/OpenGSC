@@ -3931,5 +3931,9 @@
   "dropsRegistrarOk": "La clé fonctionne — les deux sondes ont répondu comme prévu",
   "dropsRegistrarFail": "La clé n'a pas fonctionné",
   "dropsRegistrarEnv": "La clé vient de DYNADOT_API_KEY sur le serveur et n'est pas modifiable ici.",
-  "dropsRegistrarRaw": "Réponses brutes des deux sondes"
+  "dropsRegistrarRaw": "Réponses brutes des deux sondes",
+  "dropsPhasePendingDelete": "tombe",
+  "dropsPhaseRedemption": "rachat",
+  "dropsPhasePendingDeleteHint": "Le registre supprime ce nom — il sera libéré sous quelques jours. Mettez-le sous surveillance : à ce stade la vérification tourne toutes les 15 minutes.",
+  "dropsPhaseRedemptionHint": "Expiré, en période de rachat. Le titulaire peut encore le récupérer ; sinon vient pendingDelete puis la libération."
 }

@@ -63,9 +63,15 @@ export function nextWatchCheckMin(
 export function watchAcceleration(
   registryStatus: string | string[] | null | undefined,
 ): "pending_delete" | "redemption" | null {
-  const joined = Array.isArray(registryStatus)
-    ? registryStatus.join(",").toLowerCase()
-    : String(registryStatus ?? "").toLowerCase();
+  const raw = Array.isArray(registryStatus)
+    ? registryStatus.join(",")
+    : String(registryStatus ?? "");
+  // Letters only, because the two sources spell the same status differently and the difference
+  // was silently fatal: WHOIS returns EPP camelCase (`redemptionPeriod`) while RDAP returns the
+  // spaced form (`pending delete`, RFC 9083 §10.2.2). Matching on `pendingdelete` therefore only
+  // ever fired for WHOIS rows — a domain days from release that happened to be answered by RDAP
+  // kept the slow interval and the watch missed the moment it exists for.
+  const joined = raw.toLowerCase().replace(/[^a-z]/g, "");
   if (joined.includes("pendingdelete")) return "pending_delete";
   if (joined.includes("redemptionperiod")) return "redemption";
   return null;

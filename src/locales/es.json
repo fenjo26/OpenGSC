@@ -3931,5 +3931,9 @@
   "dropsRegistrarOk": "La clave funciona: ambas sondas respondieron como se esperaba",
   "dropsRegistrarFail": "La clave no funcionó",
   "dropsRegistrarEnv": "La clave viene de DYNADOT_API_KEY en el servidor y no se puede cambiar aquí.",
-  "dropsRegistrarRaw": "Respuestas en crudo de las dos sondas"
+  "dropsRegistrarRaw": "Respuestas en crudo de las dos sondas",
+  "dropsPhasePendingDelete": "cae",
+  "dropsPhaseRedemption": "rescate",
+  "dropsPhasePendingDeleteHint": "El registro está borrando el nombre: se liberará en unos días. Ponlo en seguimiento: en esta fase la comprobación corre cada 15 minutos.",
+  "dropsPhaseRedemptionHint": "Caducado, en periodo de rescate. El titular aún puede recuperarlo; si no, sigue pendingDelete y después la liberación."
 }

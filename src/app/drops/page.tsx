@@ -7,6 +7,9 @@ import type { DropSource, DropStage } from "@/lib/drops/types";
 // Pure parsing, no server imports — the same function the route uses, so the columns the preview
 // promises are the columns the import reads. Two implementations would drift within a week.
 import { parseDomainRows } from "@/lib/drops/ingest";
+// Also pure, and the same classifier the watch scheduler uses to decide a row's interval — so the
+// badge below and the polling cadence can never disagree about what "dying" means.
+import { watchAcceleration } from "@/lib/drops/watch";
 import { usePersistedState } from "@/lib/usePersistedState";
 import { getMetricsCreds } from "@/lib/seo/metricsClient";
 import { DrSparkline, drSeriesText, type DrPoint } from "@/components/DrSparkline";
@@ -23,6 +26,9 @@ type Candidate = {
   majesticTf: number | null; majesticCf: number | null;
   waybackSnapshots: number | null; score: number | null; lastCheckedAt: string | null;
   corroborated: boolean; watched: boolean; lastError?: string | null;
+  /** EPP/RDAP lifecycle statuses, comma-joined. What tells a dying domain from a healthy one. */
+  registryStatus?: string | null;
+  registryExpiresAt?: string | null;
   historyVerdict?: string | null; historyNote?: string | null;
   groupId?: string | null; groupName?: string | null;
 };
@@ -1881,6 +1887,25 @@ export default function DropsPage() {
                       <span title={tr("dropsUncorroborated")} style={{ marginLeft: 6, color: "var(--color-accent-orange, #ff9f0a)" }}>?</span>}
                     {r.lastError === "zone_uncheckable" &&
                       <span title={tr("dropsZoneUncheckable")} style={{ marginLeft: 6, color: "var(--color-text-tertiary)", cursor: "help" }}>⚖</span>}
+                    {/* "Taken" covered two completely different situations and the table showed
+                        them identically: a name paid up until 2027, and a name in pendingDelete
+                        that the registry releases within days. The second is the entire point of
+                        a drop catalogue. The statuses were already stored — nothing read them. */}
+                    {(() => {
+                      const phase = r.stage === "taken" ? watchAcceleration(r.registryStatus) : null;
+                      if (!phase) return null;
+                      const soon = phase === "pending_delete";
+                      return <span
+                        title={`${tr(soon ? "dropsPhasePendingDeleteHint" : "dropsPhaseRedemptionHint")}${r.registryExpiresAt ? ` (${new Date(r.registryExpiresAt).toLocaleDateString()})` : ""}`}
+                        style={{
+                          marginLeft: 6, padding: "1px 6px", borderRadius: 5, fontSize: 10.5, fontWeight: 700,
+                          cursor: "help", whiteSpace: "nowrap",
+                          background: soon ? "rgba(52,199,89,0.16)" : "rgba(255,159,10,0.14)",
+                          color: soon ? "var(--color-accent-green, #34c759)" : "var(--color-accent-orange, #ff9f0a)",
+                        }}>
+                        {tr(soon ? "dropsPhasePendingDelete" : "dropsPhaseRedemption")}
+                      </span>;
+                    })()}
                   </td>
                   <td style={tdNum}>
                     {r.dr ?? "—"}
