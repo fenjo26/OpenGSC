@@ -33,7 +33,35 @@ export function proxyKey(p: ProxyEndpoint): string {
   return `${p.kind}://${p.username ? `${p.username}@` : ""}${p.host}:${p.port}`;
 }
 
+/**
+ * Адрес без протокола — единица, по которой реестр считает частоту.
+ *
+ * Отличается от `proxyKey` намеренно. Один и тот же прокси часто говорит и по HTTP, и по SOCKS5
+ * на том же порту, и добавить его обоими способами разумно: HTTP повезёт RDAP, SOCKS5 — WHOIS.
+ * Но для реестра это ОДИН адрес. Считай мы вежливость по `proxyKey`, две записи одной машины
+ * стали бы двумя независимыми полосами и вдвое превысили интервал зоны — ровно то, ради
+ * предотвращения чего интервал и существует.
+ */
+export function proxyAddress(p: ProxyEndpoint): string {
+  return `${p.host}:${p.port}`;
+}
+
 const isPort = (n: number) => Number.isInteger(n) && n > 0 && n < 65536;
+
+/** `1.2.3.4:1080` or `proxy.example.com:8080` — an address with a port, and nothing else. */
+function looksLikeHostPort(value: string): boolean {
+  const parts = value.split(":");
+  if (parts.length !== 2) return false;
+  return isHost(parts[0]) && isPort(Number(parts[1]));
+}
+
+/** The stronger claim: the host is a literal IPv4, not a name that merely contains a dot. */
+function looksLikeIpHostPort(value: string): boolean {
+  const parts = value.split(":");
+  if (parts.length !== 2 || !isPort(Number(parts[1]))) return false;
+  const octets = parts[0].split(".");
+  return octets.length === 4 && octets.every(o => /^\d{1,3}$/.test(o) && Number(o) <= 255);
+}
 // Хост: IPv4 или доменное имя. IPv6 в квадратных скобках сознательно не поддерживаем —
 // провайдеры прокси их не выдают, а разбор `[::1]:8080` вперемешку с `ip:port:user:pass`
 // превращает парсер в угадайку.
@@ -72,8 +100,33 @@ export function parseProxyLine(line: string): { proxy: ProxyEndpoint } | { reaso
 
   const at = rest.lastIndexOf("@");
   if (at >= 0) {
-    const creds = rest.slice(0, at);
-    hostPart = rest.slice(at + 1);
+    // Which side of the `@` is the address is NOT a given. The classic spelling is
+    // `user:pass@host:port`, but plenty of panels hand out `host:port@user:pass` — same data,
+    // mirrored — and assuming one ordering rejects every line of the other with "not a proxy",
+    // which reads as "these proxies are broken" rather than "this field wants them differently".
+    // So the side that actually looks like an address decides.
+    const left = rest.slice(0, at);
+    const right = rest.slice(at + 1);
+    const leftIsAddress = looksLikeHostPort(left);
+    const rightIsAddress = looksLikeHostPort(right);
+
+    let creds: string;
+    if (rightIsAddress && !leftIsAddress) {
+      creds = left; hostPart = right;
+    } else if (leftIsAddress && !rightIsAddress) {
+      creds = right; hostPart = left;
+    } else if (leftIsAddress && rightIsAddress) {
+      // Both readable as an address — a username with a dot in it and a numeric password can do
+      // that. An IP literal is the stronger claim; failing that, the classic ordering wins.
+      const leftIsIp = looksLikeIpHostPort(left);
+      const rightIsIp = looksLikeIpHostPort(right);
+      if (leftIsIp && !rightIsIp) { creds = right; hostPart = left; }
+      else { creds = left; hostPart = right; }
+    } else {
+      // Neither side is an address; fall through to the checks below, which name the reason.
+      creds = left; hostPart = right;
+    }
+
     const colon = creds.indexOf(":");
     username = colon >= 0 ? creds.slice(0, colon) : creds;
     password = colon >= 0 ? creds.slice(colon + 1) : undefined;
@@ -226,9 +279,11 @@ export function createProxyPool(endpoints: ProxyEndpoint[]): ProxyPool {
 
   const byKey = new Map(endpoints.map(p => [proxyKey(p), p]));
   const health = new Map([...byKey.keys()].map(k => [k, newHealth(k)]));
-  /** Когда пара (зона, прокси) последний раз ходила в реестр. */
+  /** Ключ здоровья → адрес. Здоровье живёт по записи, вежливость — по адресу. */
+  const addressOf = new Map([...byKey.entries()].map(([k, p]) => [k, proxyAddress(p)]));
+  /** Когда пара (зона, АДРЕС) последний раз ходила в реестр. */
   const zoneUse = new Map<string, number>();
-  /** Прокси, занятые прямо сейчас: одно соединение на адрес за раз. */
+  /** Адреса, занятые прямо сейчас: одно соединение на машину за раз. */
   const busy = new Set<string>();
 
   const pool: ProxyPool = {
@@ -238,7 +293,8 @@ export function createProxyPool(endpoints: ProxyEndpoint[]): ProxyPool {
     async lease(zone, minIntervalMs) {
       for (;;) {
         const now = Date.now();
-        const free = [...health.values()].filter(h => !busy.has(h.key) && h.restingUntil <= now);
+        const addr = (h: ProxyHealth) => addressOf.get(h.key) ?? h.key;
+        const free = [...health.values()].filter(h => !busy.has(addr(h)) && h.restingUntil <= now);
         if (!free.length) {
           // Либо все заняты (ждём освобождения), либо все отдыхают (ждём конца отдыха). Если
           // отдыхают ВСЕ и надолго — идём напрямую: остановить проверку целиком хуже, чем
@@ -249,19 +305,20 @@ export function createProxyPool(endpoints: ProxyEndpoint[]): ProxyPool {
           continue;
         }
         // Дольше всех не ходивший в ЭТУ зону — так интервал зоны выжидается реже всего.
-        free.sort((a, b) => (zoneUse.get(`${zone}|${a.key}`) ?? 0) - (zoneUse.get(`${zone}|${b.key}`) ?? 0));
+        free.sort((a, b) => (zoneUse.get(`${zone}|${addr(a)}`) ?? 0) - (zoneUse.get(`${zone}|${addr(b)}`) ?? 0));
         const chosen = free[0];
-        const zoneKey = `${zone}|${chosen.key}`;
+        const chosenAddr = addr(chosen);
+        const zoneKey = `${zone}|${chosenAddr}`;
         const wait = (zoneUse.get(zoneKey) ?? 0) + minIntervalMs - now;
         if (wait > 0) {
-          // Ждём, ПОМЕТИВ прокси занятым: иначе соседний воркер выберет тот же адрес и обгонит
-          // нас, и интервал зоны для него не выждет никто.
-          busy.add(chosen.key);
+          // Ждём, ПОМЕТИВ адрес занятым: иначе соседний воркер выберет его же и обгонит нас,
+          // и интервал зоны для него не выждет никто.
+          busy.add(chosenAddr);
           await sleep(Math.min(wait, minIntervalMs));
-          busy.delete(chosen.key);
+          busy.delete(chosenAddr);
           continue;
         }
-        busy.add(chosen.key);
+        busy.add(chosenAddr);
         zoneUse.set(zoneKey, Date.now());
         chosen.lastUsedAt = Date.now();
         let released = false;
@@ -270,7 +327,7 @@ export function createProxyPool(endpoints: ProxyEndpoint[]): ProxyPool {
           release(ok: boolean) {
             if (released) return;
             released = true;
-            busy.delete(chosen.key);
+            busy.delete(chosenAddr);
             markProxyResult(chosen, ok);
           },
         };

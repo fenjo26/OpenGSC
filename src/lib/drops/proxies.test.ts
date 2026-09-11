@@ -24,6 +24,28 @@ test("the formats proxy panels actually hand out all parse", () => {
   assert.equal(ok("proxy.example.com:8080").host, "proxy.example.com");
 });
 
+test("host:port@user:pass — the mirrored spelling some panels hand out", () => {
+  // Proxy5 delivers exactly this. Assuming the classic ordering rejected every line with "not a
+  // proxy", which reads as "these proxies are broken" rather than "this field wants them the
+  // other way round".
+  assert.deepEqual(ok("157.22.126.95:1080@mix379E4SOP99:gy5i2iKS"),
+    { kind: "http", host: "157.22.126.95", port: 1080, username: "mix379E4SOP99", password: "gy5i2iKS" });
+  assert.deepEqual(ok("socks5://45.80.104.72:1080@user:pw"),
+    { kind: "socks5", host: "45.80.104.72", port: 1080, username: "user", password: "pw" });
+  // And the classic ordering still wins when it is the one that looks like an address.
+  assert.equal(ok("mix379E4SOP99:gy5i2iKS@157.22.126.95:1080").host, "157.22.126.95");
+});
+
+test("when both sides could be an address, the IP literal decides", () => {
+  // A username with a dot and a numeric password make the left side look like a host:port too.
+  const p = ok("1.2.3.4:1080@my.user:12345");
+  assert.equal(p.host, "1.2.3.4");
+  assert.equal(p.username, "my.user");
+  assert.equal(p.password, "12345");
+  // Neither side an IP → the classic ordering is the tie-break.
+  assert.equal(ok("my.user:12345@proxy.example.com:8080").host, "proxy.example.com");
+});
+
 test("a password with a colon in it survives — only the first colon splits", () => {
   const p = ok("user:pa:ss@1.2.3.4:8080");
   assert.equal(p.username, "user");
@@ -169,4 +191,31 @@ test("release is idempotent — a double release cannot free someone else's turn
   l.release(true);
   l.release(false);
   assert.equal(pool.snapshot()[0].resting, false);
+});
+
+test("one machine added as both http and socks5 is still ONE address to a registry", () => {
+  // The natural setup for a proxy that speaks both: HTTP entries carry RDAP, SOCKS5 entries
+  // carry WHOIS. They are two pool entries — but one machine, one IP, and the registry counts
+  // requests per address. Letting them run as two independent lanes would double the rate the
+  // zone interval exists to hold.
+  const pool = createProxyPool(parseProxyList("1.1.1.1:1080\nsocks5://1.1.1.1:1080").proxies);
+  assert.equal(pool.size, 2, "both entries are in the pool");
+  return (async () => {
+    const held = await pool.lease("com", 0);
+    let secondDone = false;
+    const second = pool.lease("com", 0).then(l => { secondDone = true; return l; });
+    await new Promise(r => setTimeout(r, 120));
+    assert.equal(secondDone, false, "the second entry waited: same address, one turn at a time");
+    held.release(true);
+    (await second).release(true);
+  })();
+});
+
+test("the same address waits out the zone interval across protocols too", async () => {
+  const pool = createProxyPool(parseProxyList("2.2.2.2:1080\nsocks5://2.2.2.2:1080").proxies);
+  (await pool.lease("com", 300)).release(true);
+  const started = Date.now();
+  const next = await pool.lease("com", 300);
+  assert.ok(Date.now() - started >= 250, `the second protocol waited ${Date.now() - started}ms`);
+  next.release(true);
 });
