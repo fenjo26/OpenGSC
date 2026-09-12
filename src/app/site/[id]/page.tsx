@@ -23,7 +23,7 @@ import {
 import { useParams, useRouter } from "next/navigation";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
-import { usePersistedState, isGscPeriod } from "@/lib/usePersistedState";
+import { usePersistedState, isGscPeriod, isIsoDate } from "@/lib/usePersistedState";
 import { getTaskCreds, getAhrefsDrKey } from "@/lib/seo/keys";
 import TrafficChip from "@/components/TrafficChip";
 import { DrSparkline, drSeriesText, type DrPoint } from "@/components/DrSparkline";
@@ -832,7 +832,7 @@ function updateRules(item: SetupItem, patternStr: string): SetupItem {
 }
 
 // ─── Branded Chart ────────────────────────────────────────────────────────────
-function BrandedChart({ siteDbId, period, keywords }: { siteDbId: string; period: string; keywords: string[] }) {
+function BrandedChart({ siteDbId, period, customDays, keywords }: { siteDbId: string; period: string; customDays?: number | null; keywords: string[] }) {
   const { t } = useLanguage();
   const [tab, setTab] = useState<'Trend' | 'Comparison'>('Trend');
   const [rows, setRows] = useState<any[]>([]);
@@ -841,12 +841,12 @@ function BrandedChart({ siteDbId, period, keywords }: { siteDbId: string; period
   useEffect(() => {
     if (!siteDbId) return;
     setLoading(true);
-    fetch(`/api/gsc/branded-report?siteId=${siteDbId}&period=${period}`)
+    fetch(`/api/gsc/branded-report?siteId=${siteDbId}&period=${period}${period === "custom" && customDays ? `&days=${customDays}` : ""}`)
       .then(r => r.json())
       .then(d => setRows(d.rows ?? []))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [siteDbId, period]);
+  }, [siteDbId, period, customDays]);
 
   const fmt = (d: string) => { const dt = new Date(d); return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
 
@@ -1372,7 +1372,16 @@ function SimpleDropdown({ trigger, children, align = "right" }: { trigger: React
 }
 
 // ─── Period Dropdown ─────────────────────────────────────────────────────────
-function PeriodDropdown({ period, onChange }: { period: string; onChange: (p: string) => void }) {
+const siteDateInput: React.CSSProperties = {
+  padding: "5px 8px", borderRadius: "8px", border: "1px solid var(--color-border)",
+  background: "var(--color-card)", color: "var(--color-text-primary)", fontSize: "12px",
+  flex: "1 1 0", minWidth: 0,
+};
+
+function PeriodDropdown({ period, onChange, rangeStart, rangeEnd, onRangeChange }: {
+  period: string; onChange: (p: string) => void;
+  rangeStart: string; rangeEnd: string; onRangeChange: (s: string, e: string) => void;
+}) {
   const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -1381,7 +1390,12 @@ function PeriodDropdown({ period, onChange }: { period: string; onChange: (p: st
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, []);
-  const label = t((PERIOD_OPTIONS.find(o => o.key === period)?.label ?? period) as never);
+  const customActive = period === "custom";
+  const customReady = !!rangeStart && !!rangeEnd && rangeStart <= rangeEnd;
+  const fmtShort = (iso: string) => new Date(iso).toLocaleDateString("ru", { day: "numeric", month: "short" });
+  const label = customActive && customReady
+    ? `${fmtShort(rangeStart)} – ${fmtShort(rangeEnd)}`
+    : t((PERIOD_OPTIONS.find(o => o.key === period)?.label ?? period) as never);
   return (
     <div ref={ref} style={{ position: "relative" }}>
       <button onClick={() => setOpen(o => !o)} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "6px 12px", borderRadius: "8px", border: "1px solid var(--color-border)", background: open ? "rgba(255,255,255,0.07)" : "var(--color-card)", color: "var(--color-text-primary)", fontSize: "13px", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
@@ -1409,6 +1423,18 @@ function PeriodDropdown({ period, onChange }: { period: string; onChange: (p: st
               })}
             </div>
           ))}
+          <div style={{ height: "1px", background: "var(--color-border)", margin: "4px 0" }} />
+          {/* Custom range — applies the moment both dates are picked and ordered */}
+          <div style={{ padding: "8px 14px 10px", display: "flex", flexDirection: "column", gap: "6px", background: customActive ? "rgba(59,130,246,0.07)" : "transparent" }}>
+            <div style={{ fontSize: "11px", fontWeight: 600, color: customActive ? "#3B82F6" : "var(--color-text-secondary)" }}>{t("custom")}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }} onClick={e => e.stopPropagation()}>
+              <input type="date" value={rangeStart} max={rangeEnd || undefined}
+                onChange={e => onRangeChange(e.target.value, rangeEnd)} style={siteDateInput}/>
+              <span style={{ color: "var(--color-text-secondary)", fontSize: "12px" }}>–</span>
+              <input type="date" value={rangeEnd} min={rangeStart || undefined}
+                onChange={e => onRangeChange(rangeStart, e.target.value)} style={siteDateInput}/>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -1839,11 +1865,12 @@ function GA4SetupSteps({ errors }: { errors?: string[] }) {
   );
 }
 
-function GA4Tab({ domain, period, setPeriod, periodOptions }: {
+function GA4Tab({ domain, period, setPeriod, periodOptions, customDays }: {
   domain: string;
   period: string;
   setPeriod: (p: string) => void;
   periodOptions: string[];
+  customDays?: number | null;
 }) {
   const [activeMetrics, setActiveMetrics] = useState<Set<GA4Metric>>(new Set(["sessions", "engagement", "events", "revenue"]));
   const [selectedProp, setSelectedProp] = useState("");
@@ -1868,7 +1895,7 @@ function GA4Tab({ domain, period, setPeriod, periodOptions }: {
   const loadReport = async () => {
     setLoading(true);
     try {
-      const res = await fetch(withShare(`/api/ga4/report?domain=${encodeURIComponent(domain)}&period=${encodeURIComponent(period)}`));
+      const res = await fetch(withShare(`/api/ga4/report?domain=${encodeURIComponent(domain)}&period=${encodeURIComponent(period)}${period === "custom" && customDays ? `&days=${customDays}` : ""}`));
       const data: GA4Report = await res.json();
       setReport(data);
       if (!data.linked) { loadProperties(); setBd(null); }
@@ -1883,7 +1910,7 @@ function GA4Tab({ domain, period, setPeriod, periodOptions }: {
 
   const loadBreakdowns = async () => {
     try {
-      const res = await fetch(withShare(`/api/ga4/breakdowns?domain=${encodeURIComponent(domain)}&period=${encodeURIComponent(period)}`));
+      const res = await fetch(withShare(`/api/ga4/breakdowns?domain=${encodeURIComponent(domain)}&period=${encodeURIComponent(period)}${period === "custom" && customDays ? `&days=${customDays}` : ""}`));
       const data = await res.json();
       setBd(data.linked && !data.error ? data : null);
     } catch {
@@ -4299,8 +4326,8 @@ function annotationWindow(period: string): number {
   return Math.max(7, Math.min(90, Math.round(span / 3)));
 }
 
-function AnnotationsTab({ period, setPeriod, periodOptions, onSetupBranded, siteDbId, chartData, algoMarkers }: {
-  period: string; setPeriod: (p: string) => void; periodOptions: string[]; onSetupBranded?: () => void;
+function AnnotationsTab({ period, setPeriod, periodOptions, customDays, onSetupBranded, siteDbId, chartData, algoMarkers }: {
+  period: string; setPeriod: (p: string) => void; periodOptions: string[]; customDays?: number | null; onSetupBranded?: () => void;
   siteDbId?: string;
   /** The same series and markers the dashboard draws — passed down rather than refetched, so the
    *  two views cannot disagree about what happened in the selected period. `dateIso` is what
@@ -4323,7 +4350,7 @@ function AnnotationsTab({ period, setPeriod, periodOptions, onSetupBranded, site
   const [unavailable, setUnavailable] = useState(false);
   const [activeMetrics, setActiveMetrics] = useState<Set<Metric>>(new Set(["clicks", "impressions", "ctr", "position"]));
 
-  const days = annotationWindow(period);
+  const days = period === "custom" && customDays ? customDays : annotationWindow(period);
   // The list always reaches across the whole tracking history: hiding a note because it is older
   // than the selected period is exactly the trap that made the onboarding panel appear over notes
   // that were sitting there all along. The period now controls only the before/after comparison
@@ -5031,6 +5058,27 @@ export default function SitePage({
   // hands its window over in the ?period= it appends when opening a site, a refresh or a
   // shared site link reproduces it, and changing it here is what the dashboard shows next.
   const [period, setPeriod]       = usePersistedState<string>("gsc_period", "7d", isGscPeriod, "period");
+  // The custom range's two halves — same stores and URL params as the dashboard, so the
+  // window it hands over (?period=custom&start=&end=) reproduces exactly, here and on refresh.
+  const [rangeStart, setRangeStart] = usePersistedState<string>("gsc_start", "", isIsoDate, "start");
+  const [rangeEnd, setRangeEnd]     = usePersistedState<string>("gsc_end", "", isIsoDate, "end");
+  const customReady = period === "custom" && !!rangeStart && !!rangeEnd && rangeStart <= rangeEnd;
+  // Day count of the custom window for the consumers that speak days rather than date strings
+  // (GA4, the engine series, annotations). UTC-midnight anchors — exact calendar days.
+  const customDays = customReady
+    ? Math.max(1, Math.round((new Date(rangeEnd).getTime() - new Date(rangeStart).getTime()) / 86_400_000) + 1)
+    : null;
+  const rangeQ = customReady ? `&start=${rangeStart}&end=${rangeEnd}` : "";
+  // Both dates picked and ordered = the window applies; clearing both steps back to the
+  // default preset instead of leaving the page on a phantom window.
+  const applySiteRange = (s: string, e: string) => {
+    if (s && e && s <= e) {
+      setRangeStart(s); setRangeEnd(e); setPeriod("custom");
+    } else {
+      setRangeStart(s); setRangeEnd(e);
+      if (!s && !e && period === "custom") setPeriod("7d");
+    }
+  };
   const [siteData, setSiteData]   = useState<any>(null);
   const [dataLoading, setDataLoading] = useState(true);
 
@@ -5120,7 +5168,7 @@ export default function SitePage({
   const fetchClusterMetrics = (p = period) => {
     if (!siteDbId) return;
     setClusterLoading(true);
-    fetch(getUrl(`/api/gsc/cluster-metrics?siteId=${encodeURIComponent(siteDbId)}&period=${p}`))
+    fetch(getUrl(`/api/gsc/cluster-metrics?siteId=${encodeURIComponent(siteDbId)}&period=${p}${p === "custom" && customDays ? `&days=${customDays}` : ""}`))
       .then(r => r.json())
       .then(d => setClusterMetrics(d))
       .catch(() => {})
@@ -5141,7 +5189,7 @@ export default function SitePage({
   // Fetch data from DB whenever domain or period changes
   useEffect(() => {
     setDataLoading(true);
-    fetch(getUrl(`/api/gsc/site?domain=${encodeURIComponent(domain)}&period=${period}`))
+    fetch(getUrl(`/api/gsc/site?domain=${encodeURIComponent(domain)}&period=${period}${rangeQ}`))
       .then(r => r.json())
       .then(d => setSiteData(d))
       .catch(() => {})
@@ -5198,7 +5246,7 @@ export default function SitePage({
     rememberSyncedAt(at);
     // Sync-all: also refresh the live Bing/Yandex views if any are connected.
     setEngineRefresh(k => k + 1);
-    fetch(getUrl(`/api/gsc/site?domain=${encodeURIComponent(domain)}&period=${period}`))
+    fetch(getUrl(`/api/gsc/site?domain=${encodeURIComponent(domain)}&period=${period}${rangeQ}`))
       .then(r => r.json())
       .then(d => { if (d?.chartData) setSiteData(d); })
       .catch(() => {})
@@ -5486,7 +5534,7 @@ export default function SitePage({
 
       {/* ── GA4 tab ── */}
       {activeTab === "ga4" && (
-        <GA4Tab domain={domain} period={period} setPeriod={setPeriod} periodOptions={periodOptions} />
+        <GA4Tab domain={domain} period={period} setPeriod={setPeriod} periodOptions={periodOptions} customDays={customDays} />
       )}
 
       {/* ── Indexing tab ── */}
@@ -5501,7 +5549,7 @@ export default function SitePage({
 
       {/* ── Annotations tab ── */}
       {activeTab === "annotations" && (
-        <AnnotationsTab period={period} setPeriod={setPeriod} periodOptions={periodOptions} onSetupBranded={() => setShowSetupModal(true)} siteDbId={siteDbId} chartData={siteData?.chartData} algoMarkers={visibleAlgoUpdates} />
+        <AnnotationsTab period={period} setPeriod={setPeriod} periodOptions={periodOptions} customDays={customDays} onSetupBranded={() => setShowSetupModal(true)} siteDbId={siteDbId} chartData={siteData?.chartData} algoMarkers={visibleAlgoUpdates} />
       )}
 
       {/* ── Optimize tab ── */}
@@ -5612,7 +5660,7 @@ export default function SitePage({
             {!readOnly && siteDbId && (
               <ShareLinkButton siteDbId={siteDbId} domain={domain} onOpenSettings={() => setActiveTab("settings")} />
             )}
-            <PeriodDropdown period={period} onChange={setPeriod} />
+            <PeriodDropdown period={period} onChange={setPeriod} rangeStart={rangeStart} rangeEnd={rangeEnd} onRangeChange={applySiteRange} />
             <button
               onClick={handleSync}
               disabled={syncing}
@@ -5629,7 +5677,7 @@ export default function SitePage({
 
         {/* Main chart — GSC (local) or a live Bing/Yandex view */}
         {engine !== "google" ? (
-          <EngineView engine={engine} domain={domain} siteDbId={siteDbId} refreshKey={engineRefresh} metrics={activeMetrics} days={periodToDays(period)} onSummary={setEngineSummary} />
+          <EngineView engine={engine} domain={domain} siteDbId={siteDbId} refreshKey={engineRefresh} metrics={activeMetrics} days={period === "custom" && customDays ? customDays : periodToDays(period)} onSummary={setEngineSummary} />
         ) : (
         <div style={{ background: "var(--color-card)", borderRadius: "12px", padding: "16px", border: "1px solid var(--color-border)" }}>
           <ResponsiveContainer width="100%" height={300}>
@@ -5761,7 +5809,7 @@ export default function SitePage({
               )}
             </div>
             {brandedKeywords.length > 0 ? (
-              <BrandedChart siteDbId={siteDbId} period={period} keywords={brandedKeywords} />
+              <BrandedChart siteDbId={siteDbId} period={period} customDays={customDays} keywords={brandedKeywords} />
             ) : (
               <Placeholder icon={
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="9"/><path d="M9 9h1.5a1.5 1.5 0 0 1 0 3H9v3m3-6h1.5"/></svg>

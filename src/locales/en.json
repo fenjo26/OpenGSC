@@ -59,6 +59,7 @@
   "compPrevious": "Previous Period",
   "compYoy": "Year Over Year",
   "compPrevMonth": "Previous Month",
+  "comparisonOffHint": "Comparison is off — deltas and the previous-trend line are hidden.",
   "comparisonSettings": "Comparison Settings",
   "prevTrendLine": "Previous Trend Line",
   "matchWeekdays": "Match Weekdays",

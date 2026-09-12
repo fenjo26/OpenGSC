@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { google } from 'googleapis';
 import { verifyAuthOrShare } from '@/lib/authShare';
+import { daysParam } from '@/lib/periodWindow';
 
 function periodToDays(period: string): number {
   const today = new Date();
@@ -121,7 +122,7 @@ export async function GET(req: Request) {
   }
 
   // Date windows
-  const days = periodToDays(period);
+  const days = daysParam(searchParams.get('days')) ?? periodToDays(period);
   const endDate = new Date(); endDate.setDate(endDate.getDate() - 2);
   const startDate = new Date(endDate); startDate.setDate(endDate.getDate() - days + 1);
   const prevEnd = new Date(startDate); prevEnd.setDate(startDate.getDate() - 1);

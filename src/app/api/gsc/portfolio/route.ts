@@ -2,21 +2,9 @@ import { NextResponse } from 'next/server';
 import { authOptions } from '@/lib/auth';
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from '@/lib/prisma';
+import { resolveWindow, previousWindow, comparisonShift } from '@/lib/periodWindow';
 
-function periodToDays(period: string): number {
-  const today = new Date();
-  const map: Record<string, number> = {
-    yesterday: 1,
-    '7d': 7, '14d': 14, '28d': 28,
-    last_week: 7,
-    this_month: today.getDate(),
-    last_month: new Date(today.getFullYear(), today.getMonth(), 0).getDate(),
-    this_quarter: 90, last_quarter: 90,
-    ytd: Math.floor((today.getTime() - new Date(today.getFullYear(), 0, 1).getTime()) / 86400000),
-    '3m': 90, '6m': 180, '8m': 240, '12m': 365, '16m': 480, '2y': 730, '3y': 1095,
-  };
-  return map[period] ?? 28;
-}
+type DailyRow = Awaited<ReturnType<typeof prisma.dailyMetric.findMany>>[number];
 
 function pct(curr: number, prev: number) {
   if (prev === 0) return 0;   // no previous data — can't compute real change
@@ -28,35 +16,18 @@ export async function GET(req: Request) {
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
-  const period   = searchParams.get('period')   || '7d';
-  const matchWd  = searchParams.get('matchWd')  === 'true';
-  const days = periodToDays(period);
+  const period     = searchParams.get('period')   || '7d';
+  const matchWd    = searchParams.get('matchWd')  === 'true';
+  const comparison = searchParams.get('comparison') || 'previous';
 
-  // GSC 'final' data lags ~2 days
-  const endDate = new Date();
-  endDate.setDate(endDate.getDate() - 2);
-  endDate.setHours(23, 59, 59, 999);
-
-  const startDate = new Date(endDate);
-  startDate.setDate(endDate.getDate() - days + 1);
-  startDate.setHours(0, 0, 0, 0);
-
-  const prevEnd = new Date(startDate);
-  prevEnd.setDate(startDate.getDate() - 1);
-  prevEnd.setHours(23, 59, 59, 999);
-
-  const prevStart = new Date(prevEnd);
-  prevStart.setDate(prevEnd.getDate() - days + 1);
-  prevStart.setHours(0, 0, 0, 0);
-
-  // Match Weekdays: shift comparison period so it ends on the same weekday as endDate
-  if (matchWd) {
-    const shift = (endDate.getDay() - prevEnd.getDay() + 7) % 7;
-    if (shift > 0) {
-      prevEnd.setDate(prevEnd.getDate() + shift);
-      prevStart.setDate(prevStart.getDate() + shift);
-    }
-  }
+  // Current window from the period key or the custom range; the comparison window from the
+  // mode (previous / yoy / prev_month, weekday-aligned) — or none at all when disabled, in
+  // which case no previous-period query runs and every delta ships as 0.
+  const window = resolveWindow(period, searchParams.get('start'), searchParams.get('end'));
+  const { start: startDate, end: endDate, days } = window;
+  const prev = previousWindow(window, comparison, matchWd);
+  const shift = prev ? comparisonShift(window, prev) : 0;
+  const noPrev: DailyRow[] = [];
 
   const sites = await prisma.site.findMany({ where: { userId }, orderBy: { createdAt: 'asc' } });
 
@@ -82,9 +53,11 @@ export async function GET(req: Request) {
           where: { siteId: site.id, date: { gte: startDate, lte: endDate }, url: '', query: '' },
           orderBy: { date: 'asc' },
         }),
-        prisma.dailyMetric.findMany({
-          where: { siteId: site.id, date: { gte: prevStart, lte: prevEnd }, url: '', query: '' },
-        }),
+        prev
+          ? prisma.dailyMetric.findMany({
+              where: { siteId: site.id, date: { gte: prev.start, lte: prev.end }, url: '', query: '' },
+            })
+          : Promise.resolve(noPrev),
       ]);
 
       // Summaries
@@ -125,7 +98,7 @@ export async function GET(req: Request) {
       const positions   = currRows.map(r => +r.position.toFixed(1));
 
       // For each current row, look up the corresponding prev-period row
-      // by shifting the date back by `days`
+      // by shifting the date back to where the comparison window starts
       const clicksC: number[] = [];
       const impressionsC: number[] = [];
       const ctrsC: number[] = [];
@@ -133,7 +106,7 @@ export async function GET(req: Request) {
 
       for (const r of currRows) {
         const shifted = new Date(r.date);
-        shifted.setDate(shifted.getDate() - days);
+        shifted.setDate(shifted.getDate() - shift);
         const key = shifted.toISOString().split('T')[0];
         const prev = prevByDate.get(key);
         clicksC.push(prev?.clicks ?? 0);

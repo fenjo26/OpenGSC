@@ -59,6 +59,7 @@
   "compPrevious": "Попередній період",
   "compYoy": "Рік до року",
   "compPrevMonth": "Попередній місяць",
+  "comparisonOffHint": "Порівняння вимкнено — дельти та лінію минулого тренду приховано.",
   "comparisonSettings": "Налаштування порівняння",
   "prevTrendLine": "Лінія попереднього тренду",
   "matchWeekdays": "Збіг днів тижня",

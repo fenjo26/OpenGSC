@@ -16,13 +16,13 @@ import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { useHealthStatus } from "@/components/SiteHealthPanel";
 import { loadSyncedAt, rememberSyncedAt, fetchSyncState, watchSync, type SyncState } from "@/lib/syncedAt";
 import { marketFor } from "@/lib/seo/market";
-import { usePersistedState, isGscPeriod } from "@/lib/usePersistedState";
+import { usePersistedState, isGscPeriod, isIsoDate } from "@/lib/usePersistedState";
 import { getAhrefsDrKey } from "@/lib/seo/keys";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Metric = "clicks" | "impressions" | "ctr" | "position";
 type SortBy = "az" | "total" | "growth" | "growth_pct" | "decline" | "decline_imp" | "decline_pos" | "tags";
-type Comparison = "disabled" | "previous" | "yoy" | "prev_month" | "custom";
+type Comparison = "disabled" | "previous" | "yoy" | "prev_month";
 type SearchType = "web" | "discover" | "news" | "image" | "video";
 type BrandedFilter = "all" | "branded" | "nonbranded";
 
@@ -551,6 +551,11 @@ const tbBtn = (active = false): React.CSSProperties => ({
   color: active ? "var(--color-accent-blue)" : "var(--color-text-secondary)",
   fontSize: "12px", fontWeight: active ? 700 : 500, cursor: "pointer", whiteSpace: "nowrap" as const,
 });
+const customDateInput: React.CSSProperties = {
+  padding: "5px 8px", borderRadius: "8px", border: "1px solid var(--color-border)",
+  background: "var(--color-card)", color: "var(--color-text-primary)", fontSize: "12px",
+  flex: "1 1 0", minWidth: 0,
+};
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 const DashGoogleIcon = ({ s = 14 }) => (<svg width={s} height={s} viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>);
@@ -613,6 +618,13 @@ function PortfolioPageContent() {
   // was set to) and travels: opening a site carries it, so the portfolio and the site page
   // describe the same range instead of silently snapping back to 7 days.
   const [period, setPeriod]     = usePersistedState<string>("gsc_period", "7d", isGscPeriod, "period");
+  // The custom range's two halves — "custom" in the period above only means "use these".
+  // Same URL/localStorage pair as the period, so a shared link reproduces the exact window.
+  const [rangeStart, setRangeStart] = usePersistedState<string>("gsc_start", "", isIsoDate, "start");
+  const [rangeEnd, setRangeEnd]     = usePersistedState<string>("gsc_end", "", isIsoDate, "end");
+  // A custom period is fetchable only when both halves are picked and ordered — a half-set
+  // range must never reach the API looking like a window.
+  const customReady = period === "custom" && !!rangeStart && !!rangeEnd && rangeStart <= rangeEnd;
   // Search-engine portfolio tabs. Google = local DB; Bing/Yandex = live, fetched on tab
   // click and cached per engine+period so switching back is instant.
   const [engine, setEngine] = useState<"google" | "bing" | "yandex">("google");
@@ -623,7 +635,7 @@ function PortfolioPageContent() {
   const [engineLoading, setEngineLoading] = useState(false);
   // Chart granularity and the comparison mode are presentation of the same window, so they
   // persist per browser (a shared link does not need to reproduce them) but stay out of the URL.
-  const [comparison, setComparison] = usePersistedState<Comparison>("gsc_comparison", "previous", v => v === "disabled" || v === "previous" || v === "yoy" || v === "prev_month" || v === "custom");
+  const [comparison, setComparison] = usePersistedState<Comparison>("gsc_comparison", "previous", v => v === "disabled" || v === "previous" || v === "yoy" || v === "prev_month");
   const [prevTrend, setPrevTrend]   = useState(true);
   const [matchWd, setMatchWd]       = useState(true);
   const [showPct, setShowPct]       = useState(true);
@@ -660,8 +672,12 @@ function PortfolioPageContent() {
 
   const [newSitesFound, setNewSitesFound] = useState(0);
 
+  // Stable identity of the current window: a preset key, or the custom range spelled out —
+  // fetch effects and engine caches key on this so two different ranges never collide.
+  const windowKey = period === "custom" ? `custom:${rangeStart || ""}:${rangeEnd || ""}` : period;
+
   const portfolioUrl = (p = period) =>
-    `/api/gsc/portfolio?period=${p}&matchWd=${matchWd}`;
+    `/api/gsc/portfolio?period=${p}&matchWd=${matchWd}&comparison=${comparison}${p === "custom" && customReady ? `&start=${rangeStart}&end=${rangeEnd}` : ""}`;
 
   const refetchPortfolio = (p = period) => {
     fetch(portfolioUrl(p))
@@ -780,7 +796,9 @@ function PortfolioPageContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Fetch real data from portfolio API whenever period or comparison settings change
+  // Fetch real data from the portfolio API whenever the window (preset or custom range) or the
+  // comparison settings change. Keyed on windowKey, not on the raw state pieces, so picking
+  // dates while a preset is active does not refetch a window that did not change.
   useEffect(() => {
     setLoading(true);
     fetch(portfolioUrl(period))
@@ -788,7 +806,7 @@ function PortfolioPageContent() {
       .then(d => { if (d.sites) setSites(d.sites); })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [period, matchWd]);
+  }, [windowKey, matchWd, comparison]);
 
   // Which engine tabs to show (owner keys live in localStorage, same as the site page).
   useEffect(() => {
@@ -811,14 +829,14 @@ function PortfolioPageContent() {
     setEngineAccounts({ bing: accsOf("bing"), yandex: accsOf("yandex") });
   }, []);
 
-  const engineKey = `${engine}_${period}`;
+  const engineKey = `${engine}_${windowKey}`;
 
   // Fetch one engine's portfolio. Normally serves the stored server-side snapshot instantly;
   // pass force=true (Sync / Refresh) to rebuild from the live APIs.
   const loadEngine = (eng: "bing" | "yandex", p = period, setLoading = false, force = false) => {
-    const key = `${eng}_${p}`;
+    const key = `${eng}_${p === "custom" ? windowKey : p}`;
     if (setLoading) setEngineLoading(true);
-    return fetch(`/api/gsc/portfolio-engine?engine=${eng}&period=${p}${force ? "&refresh=1" : ""}`)
+    return fetch(`/api/gsc/portfolio-engine?engine=${eng}&period=${p}${p === "custom" && customReady ? `&start=${rangeStart}&end=${rangeEnd}` : ""}${force ? "&refresh=1" : ""}`)
       .then(r => r.json())
       .then(d => { if (d.sites) { setEngineCache(c => ({ ...c, [key]: d.sites })); setEngineSyncedAt(t => ({ ...t, [key]: d.cachedAt ? new Date(d.cachedAt).getTime() : Date.now() })); } })
       .catch(() => {})
@@ -1129,9 +1147,8 @@ function PortfolioPageContent() {
       { label: t("period16m"), value: "16m", desc: r(mAgo(16), yesterday) },
     ],
     [
-      { label: t("period2y"), value: "2y",     desc: r(yAgo(2), yesterday) },
-      { label: t("period3y"), value: "3y",     desc: r(yAgo(3), yesterday) },
-      { label: t("custom"),   value: "custom", desc: "" },
+      { label: t("period2y"), value: "2y", desc: r(yAgo(2), yesterday) },
+      { label: t("period3y"), value: "3y", desc: r(yAgo(3), yesterday) },
     ],
   ];
 
@@ -1139,6 +1156,24 @@ function PortfolioPageContent() {
     for (const g of periodGroups) for (const p of g) if (p.value === v) return p.label;
     return v;
   };
+
+  // "Вручную" applies as a real window only once both dates are picked and ordered — a
+  // half-set range never switches the period. Clearing both dates while custom is active
+  // steps back to the default preset instead of leaving the dashboard on a phantom window.
+  const applyCustomRange = (s: string, e: string) => {
+    if (s && e && s <= e) {
+      setRangeStart(s); setRangeEnd(e); setPeriod("custom");
+    } else {
+      setRangeStart(s); setRangeEnd(e);
+      if (!s && !e && period === "custom") setPeriod("7d");
+    }
+  };
+  const customActive = period === "custom";
+  const fmtShort = (d: Date) => d.toLocaleDateString("ru", { day: "numeric", month: "short" });
+  // The trigger reads as the range itself when a custom window is live; a preset keeps its label.
+  const periodTriggerLabel = customActive
+    ? (customReady ? `${fmtShort(new Date(rangeStart))} – ${fmtShort(new Date(rangeEnd))}` : t("custom"))
+    : getPeriodLabel(period);
 
   const metricLabels: Record<Metric, string> = {
     clicks:      t("clicks"),
@@ -1343,8 +1378,9 @@ function PortfolioPageContent() {
   );
 
   // Period dropdown
+  const cmpOff = comparison === "disabled";
   const PeriodDd = (
-    <Dropdown trigger={<button style={{...tbBtn(),gap:"8px"}}>{getPeriodLabel(period)} <ChevronDown size={13}/></button>} align="right" width={600}>
+    <Dropdown trigger={<button style={{...tbBtn(),gap:"8px"}}>{periodTriggerLabel} <ChevronDown size={13}/></button>} align="right" width={600}>
       <div className="period-grid">
         {/* Left: comparison & search type */}
         <div className="period-col-compare" style={{minWidth:0}}>
@@ -1354,7 +1390,6 @@ function PortfolioPageContent() {
             {l: t("compPrevious"),   v:"previous"},
             {l: t("compYoy"),        v:"yoy"},
             {l: t("compPrevMonth"),  v:"prev_month"},
-            {l: t("custom"),         v:"custom"},
           ] as {l:string;v:Comparison}[]).map(({l,v}) => (
             <button key={v} style={{...mi(comparison===v),fontWeight:comparison===v?600:400,color:comparison===v?"#3B82F6":"var(--color-text-secondary)"}} onClick={()=>setComparison(v)}>{l}</button>
           ))}
@@ -1364,13 +1399,16 @@ function PortfolioPageContent() {
             {l: t("matchWeekdays"), val:matchWd,   set:setMatchWd},
             {l: t("showChangePct"), val:showPct,   set:setShowPct},
           ]).map(({l,val,set}) => (
-            <button key={l} style={mi()} onClick={()=>set(!val)}>
+            <button key={l} style={{...mi(),opacity:cmpOff?0.4:1,cursor:cmpOff?"default":"pointer"}} onClick={()=>{ if (!cmpOff) set(!val); }}>
               <div style={{width:"16px",height:"16px",borderRadius:"4px",flexShrink:0,border:`2px solid ${val?"#3B82F6":"var(--color-border)"}`,background:val?"#3B82F6":"transparent",display:"flex",alignItems:"center",justifyContent:"center"}}>
                 {val && <Check size={10} color="#fff" />}
               </div>
               {l}
             </button>
           ))}
+          {cmpOff && (
+            <div style={{padding:"4px 14px 8px",fontSize:"11px",lineHeight:1.5,color:"var(--color-text-secondary)"}}>{t("comparisonOffHint")}</div>
+          )}
           {md}{ms(t("searchType"))}
           {([
             {l: t("searchTypeWeb"),      v:"web",      i:<Globe size={13}/>},
@@ -1382,7 +1420,7 @@ function PortfolioPageContent() {
             <button key={v} style={mi(searchType===v)} onClick={()=>setSearchType(v)}>{i} {l}{searchType===v&&<Check size={12} style={{marginLeft:"auto"}}/>}</button>
           ))}
         </div>
-        {/* Right: period presets */}
+        {/* Right: period presets + custom range */}
         <div style={{minWidth:0}}>
           {periodGroups.map((grp, gi) => (
             <div key={gi}>
@@ -1398,6 +1436,18 @@ function PortfolioPageContent() {
               {gi < periodGroups.length-1 && md}
             </div>
           ))}
+          {md}
+          {/* Custom range — applies the moment both dates are picked; highlighted while live */}
+          <div style={{padding:"8px 16px 10px",display:"flex",flexDirection:"column",gap:"6px",background:customActive?"rgba(59,130,246,0.07)":"transparent"}}>
+            <div style={{fontSize:"11px",fontWeight:600,color:customActive?"#3B82F6":"var(--color-text-secondary)"}}>{t("custom")}</div>
+            <div style={{display:"flex",alignItems:"center",gap:"6px"}} onClick={e=>e.stopPropagation()}>
+              <input type="date" value={rangeStart} max={rangeEnd || undefined}
+                onChange={e=>applyCustomRange(e.target.value, rangeEnd)} style={customDateInput}/>
+              <span style={{color:"var(--color-text-secondary)",fontSize:"12px"}}>–</span>
+              <input type="date" value={rangeEnd} min={rangeStart || undefined}
+                onChange={e=>applyCustomRange(rangeStart, e.target.value)} style={customDateInput}/>
+            </div>
+          </div>
         </div>
       </div>
     </Dropdown>
@@ -1425,7 +1475,7 @@ function PortfolioPageContent() {
       : {};
 
     return (
-      <div onClick={() => router.push(`/site/${encodeURIComponent(domain)}?period=${period}`)} className="card" style={{padding:"14px 16px",display:"flex",flexDirection:"column",gap:"8px",cursor:"pointer",textDecoration:"none",color:"inherit",...declineBorder}}>
+      <div onClick={() => router.push(`/site/${encodeURIComponent(domain)}?period=${period}${period === "custom" && customReady ? `&start=${rangeStart}&end=${rangeEnd}` : ""}`)} className="card" style={{padding:"14px 16px",display:"flex",flexDirection:"column",gap:"8px",cursor:"pointer",textDecoration:"none",color:"inherit",...declineBorder}}>
         {/* Header */}
         <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:"8px"}}>
           {/* Domain (name row + DR line underneath — the badge no longer squeezes the name) */}
@@ -1506,7 +1556,7 @@ function PortfolioPageContent() {
                     {m==="clicks"?"✦":m==="impressions"?"◉":m==="ctr"?"%":"↑"}
                   </span>
                   <span style={{fontWeight:600,filter:blur?"blur(5px)":"none",transition:"filter 0.25s"}}>{fmtVal(m,value)}</span>
-                  {change !== 0 && showPct && (
+                  {change !== 0 && showPct && comparison !== "disabled" && (
                     <span style={{fontSize:"10px",color:good?"#10B981":"#EF4444",fontWeight:500,filter:blur?"blur(5px)":"none",transition:"filter 0.25s"}}>
                       {arrow}{Math.abs(change)}%
                     </span>
@@ -1518,7 +1568,7 @@ function PortfolioPageContent() {
         </div>
 
         {/* Chart */}
-        <MultiMetricChart data={site.data} activeMetrics={activeMetrics} prevTrend={prevTrend} />
+        <MultiMetricChart data={site.data} activeMetrics={activeMetrics} prevTrend={prevTrend && comparison !== "disabled"} />
 
         {/* Footer: tags and 4 action icons */}
         <div style={{display:"flex",flexDirection:"column",gap:"6px",paddingTop:"2px"}} onClick={e=>e.stopPropagation()}>
@@ -1747,18 +1797,10 @@ function PortfolioPageContent() {
 
       {(
         <>
-          {/* ─── Period quick buttons + Metric text toggles ─── */}
+          {/* ─── Period dropdown + Metric text toggles ─── */}
           <div style={{display:"flex",alignItems:"center",gap:"6px",flexWrap:"wrap",marginBottom:"8px"}}>
-        {/* Quick period buttons */}
-        {(["7d","28d","3m","6m","12m","16m"] as string[]).map(p => {
-          const active = period === p;
-          return (
-            <button key={p} onClick={() => setPeriod(p)} style={{padding:"6px 13px",borderRadius:"9999px",fontSize:"12px",fontWeight:active?700:500,cursor:"pointer",border:`1px solid ${active?"var(--color-accent-blue)":"var(--color-border)"}`,background:active?"rgba(0,102,204,0.12)":"var(--color-card)",color:active?"var(--color-accent-blue)":"var(--color-text-secondary)",transition:"all 0.15s",whiteSpace:"nowrap"}}>
-              {getPeriodLabel(p)}
-            </button>
-          );
-        })}
-        {/* More periods */}
+        {/* The single period control — the quick pills it used to sit beside were the same
+            six shortcuts the menu already lists, so they only doubled the surface */}
         {PeriodDd}
 
         <div style={{flex:1,minWidth:"8px"}}/>

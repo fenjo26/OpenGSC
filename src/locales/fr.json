@@ -59,6 +59,7 @@
   "compPrevious": "Période précédente",
   "compYoy": "Année sur année",
   "compPrevMonth": "Mois précédent",
+  "comparisonOffHint": "Comparaison désactivée — les deltas et la ligne de tendance précédente sont masqués.",
   "comparisonSettings": "Paramètres de comparaison",
   "prevTrendLine": "Ligne de tendance précédente",
   "matchWeekdays": "Correspondre aux jours de la semaine",

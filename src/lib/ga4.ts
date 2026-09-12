@@ -64,9 +64,11 @@ export function ymd(d: Date): string {
   return d.toISOString().split('T')[0];
 }
 
-// Build current + previous date windows for a period.
-export function dateWindows(period: string) {
-  const days = periodToDays(period);
+// Build current + previous date windows for a period. `daysOverride` carries a custom GSC
+// window in (the site page forwards its manually-picked range as ?days=N) — GA4 only needs
+// the length, not the exact dates.
+export function dateWindows(period: string, daysOverride?: number | null) {
+  const days = daysOverride && daysOverride >= 1 ? daysOverride : periodToDays(period);
   const end = new Date();
   // GA4 includes today, but the current day is always partial — end yesterday
   // so deltas compare like-for-like complete days.

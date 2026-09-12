@@ -1,21 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { google } from 'googleapis';
-
-function periodToDays(period: string): number {
-  const today = new Date();
-  const map: Record<string, number> = {
-    yesterday: 1,
-    '7d': 7, '14d': 14, '28d': 28,
-    last_week: 7,
-    this_month: today.getDate(),
-    last_month: new Date(today.getFullYear(), today.getMonth(), 0).getDate(),
-    this_quarter: 90, last_quarter: 90,
-    ytd: Math.floor((today.getTime() - new Date(today.getFullYear(), 0, 1).getTime()) / 86400000),
-    '3m': 90, '6m': 180, '8m': 240, '12m': 365, '16m': 480, '2y': 730, '3y': 1095,
-  };
-  return map[period] ?? 28;
-}
+import { resolveWindow } from '@/lib/periodWindow';
 
 function pct(curr: number, prev: number) {
   if (prev === 0) return curr > 0 ? 100 : 0;
@@ -85,21 +71,17 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const domain = searchParams.get('domain') || '';
   const period = searchParams.get('period') || '7d';
-  const days = periodToDays(period);
 
   const auth = await verifyAuthOrShare(req, domain, true);
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { userId, site } = auth;
 
   // ── Date windows ──────────────────────────────────────────────────────────────
+  // One resolver for the whole app: the period key, or the custom range the dashboard
+  // carries as ?start=&end= when it was left on a manually-picked window.
   // GSC 'final' data lags ~2 days
-  const endDate = new Date();
-  endDate.setDate(endDate.getDate() - 2);
-  endDate.setHours(23, 59, 59, 999);
-
-  const startDate = new Date(endDate);
-  startDate.setDate(endDate.getDate() - days + 1);
-  startDate.setHours(0, 0, 0, 0);
+  const window = resolveWindow(period, searchParams.get('start'), searchParams.get('end'));
+  const { start: startDate, end: endDate, days } = window;
 
   const prevEnd = new Date(startDate);
   prevEnd.setDate(startDate.getDate() - 1);
@@ -109,8 +91,10 @@ export async function GET(req: Request) {
   prevStart.setDate(prevEnd.getDate() - days + 1);
   prevStart.setHours(0, 0, 0, 0);
 
-  const startStr    = startDate.toISOString().split('T')[0];
-  const endStr      = endDate.toISOString().split('T')[0];
+  // A custom window brings its own exact calendar strings; presets keep the historic
+  // derivation from the window instants.
+  const startStr    = window.startStr ?? startDate.toISOString().split('T')[0];
+  const endStr      = window.endStr   ?? endDate.toISOString().split('T')[0];
   const prevStartStr = prevStart.toISOString().split('T')[0];
   const prevEndStr   = prevEnd.toISOString().split('T')[0];
 

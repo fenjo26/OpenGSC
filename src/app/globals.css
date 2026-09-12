@@ -446,6 +446,11 @@ input:-webkit-autofill {
   -webkit-text-fill-color: #1d1d1f !important;
 }
 
+/* The custom-period date inputs (dashboard + site page): the native picker must follow the
+   app's theme, not the OS preference, or a dark UI gets a white calendar popup. */
+[data-theme="dark"] input[type="date"] { color-scheme: dark; }
+[data-theme="light"] input[type="date"] { color-scheme: light; }
+
 /* ── Metrics primitives (Ahrefs/Semrush layer) ─────────────────────────────────
  * Three shapes repeat across every metrics surface — the weights toolbar, the
  * backlink profile, the competitor gap, the Indexer domain chip. They live here

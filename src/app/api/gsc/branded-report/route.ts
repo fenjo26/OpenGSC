@@ -3,6 +3,7 @@ import { authOptions } from '@/lib/auth';
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from '@/lib/prisma';
 import { google } from 'googleapis';
+import { daysParam } from '@/lib/periodWindow';
 
 export async function GET(req: Request) {
   const userId = await workspaceUserId();
@@ -19,7 +20,7 @@ export async function GET(req: Request) {
   if (brandedKeywords.length === 0) return NextResponse.json({ rows: [] });
 
   // Date range
-  const days = period === '7d' ? 7 : period === '30d' ? 30 : period === '90d' ? 90 : period === '180d' ? 180 : 30;
+  const days = daysParam(searchParams.get('days')) ?? (period === '7d' ? 7 : period === '30d' ? 30 : period === '90d' ? 90 : period === '180d' ? 180 : 30);
   const end = new Date(); end.setDate(end.getDate() - 2);
   const start = new Date(end); start.setDate(end.getDate() - days);
   const startStr = start.toISOString().split('T')[0];

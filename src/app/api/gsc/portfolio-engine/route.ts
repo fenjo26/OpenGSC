@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getOwnerSettings, listEngineKeys } from "@/lib/engineKeysServer";
 import { runUpsert } from "@/lib/db/upsert";
 import { rawQuery } from "@/lib/db/raw";
+import { periodToDays, resolveWindow } from "@/lib/periodWindow";
 
 // Live portfolio for Bing / Yandex. Unlike the Google portfolio (which lists the sites in our
 // DB), this enumerates the engine's OWN verified sites — across every connected account —
@@ -16,17 +17,6 @@ import { rawQuery } from "@/lib/db/raw";
 // Cost: Bing = 1 GetUserSites/key + 1 traffic call/site. Yandex = 1 user + 1 hosts/token + 1
 // history/site. Concurrency-limited; the client caches the result per engine+period.
 
-function periodToDays(period: string): number {
-  const today = new Date();
-  const map: Record<string, number> = {
-    yesterday: 1, "7d": 7, "14d": 14, "28d": 28, last_week: 7,
-    this_month: today.getDate(), last_month: new Date(today.getFullYear(), today.getMonth(), 0).getDate(),
-    this_quarter: 90, last_quarter: 90,
-    ytd: Math.floor((today.getTime() - new Date(today.getFullYear(), 0, 1).getTime()) / 86400000),
-    "3m": 90, "6m": 180, "8m": 240, "12m": 365, "16m": 480, "2y": 730, "3y": 1095,
-  };
-  return map[period] ?? 28;
-}
 const pct = (curr: number, prev: number) => (prev === 0 ? 0 : Math.round(((curr - prev) / prev) * 100));
 const clean = (u: string) => u.replace(/^https?:\/\//, "").replace(/^sc-domain:/, "").replace(/\/.*$/, "");
 const dstr = (d: Date) => d.toISOString().slice(0, 10);
@@ -148,19 +138,31 @@ export async function GET(req: Request) {
   const engine = searchParams.get("engine") === "yandex" ? "yandex" : "bing";
   const period = searchParams.get("period") || "7d";
   const refresh = searchParams.get("refresh") === "1";
-  const days = periodToDays(period);
+
+  // A custom range is resolved once here: the engines speak calendar strings, so the window's
+  // own resolved strings travel with it. The comparison is always the immediately-previous
+  // window of the same length — engine tabs have no comparison modes. A "custom" period with
+  // missing/invalid dates (hand-edited URL; the UI never sends one) degrades to the plain 28d
+  // preset path.
+  const customWin = period === "custom"
+    ? resolveWindow("custom", searchParams.get("start"), searchParams.get("end"))
+    : null;
+  const isCustom = !!(customWin?.startStr && customWin?.endStr);
+  const cacheKey = isCustom ? `custom:${customWin!.startStr}:${customWin!.endStr}` : period;
+  const days = isCustom ? customWin!.days : periodToDays(period);
 
   // Serve the stored snapshot instantly unless a rebuild was explicitly requested.
   if (!refresh) {
-    const cached = await readCache(userId, engine, period);
+    const cached = await readCache(userId, engine, cacheKey);
     if (cached) return NextResponse.json({ sites: cached.sites, engine, cachedAt: cached.cachedAt, cached: true });
   }
 
   const now = new Date();
-  const curEnd = dstr(now);
-  const start = dstr(new Date(now.getTime() - (days - 1) * 86_400_000));
-  const prevEnd = dstr(new Date(now.getTime() - days * 86_400_000));
-  const prevStart = dstr(new Date(now.getTime() - (2 * days - 1) * 86_400_000));
+  const curEnd = isCustom ? customWin!.endStr! : dstr(now);
+  const start = isCustom ? customWin!.startStr! : dstr(new Date(now.getTime() - (days - 1) * 86_400_000));
+  const startDate = new Date(`${start}T00:00:00Z`);
+  const prevEnd = isCustom ? dstr(new Date(startDate.getTime() - 86_400_000)) : dstr(new Date(now.getTime() - days * 86_400_000));
+  const prevStart = isCustom ? dstr(new Date(startDate.getTime() - days * 86_400_000)) : dstr(new Date(now.getTime() - (2 * days - 1) * 86_400_000));
 
   const settings = await getOwnerSettings(userId);
   const keys = listEngineKeys(settings, engine);
@@ -217,8 +219,8 @@ export async function GET(req: Request) {
       }
       return payload;
     });
-    const sites = await mergeSticky(userId, engine, period, res.filter(Boolean));
-    await writeCache(userId, engine, period, sites);
+    const sites = await mergeSticky(userId, engine, cacheKey, res.filter(Boolean));
+    await writeCache(userId, engine, cacheKey, sites);
     return NextResponse.json({ sites, engine, cachedAt: new Date().toISOString() });
   }
 
@@ -260,7 +262,7 @@ export async function GET(req: Request) {
     const { curr, prev } = splitWindows(daily, start, curEnd, prevStart, prevEnd);
     return buildPayload(makeSite(url), curr, prev, days);
   });
-  const sites = await mergeSticky(userId, engine, period, res.filter(Boolean));
-  await writeCache(userId, engine, period, sites);
+  const sites = await mergeSticky(userId, engine, cacheKey, res.filter(Boolean));
+  await writeCache(userId, engine, cacheKey, sites);
   return NextResponse.json({ sites, engine, cachedAt: new Date().toISOString() });
 }

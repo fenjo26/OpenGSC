@@ -60,18 +60,26 @@ export function usePersistedState<T extends string | number>(
   return [value, set];
 }
 
-// Every GSC window the app offers — the dashboard's "More periods" menu, the site page's
-// PERIOD_OPTIONS, and the /api/gsc/portfolio vocabulary all agree on these 17 keys. One
+// Every GSC window the app offers — the dashboard's period menu, the site page's
+// PERIOD_OPTIONS, and the /api/gsc/portfolio vocabulary all agree on these 18 keys. One
 // allow-list, because the dashboard and the site page deliberately share one "last window I
 // was working in" value: a URL param or a stored value outside this set falls back to the
-// default rather than putting the UI in a state no selector can display.
+// default rather than putting the UI in a state no selector can display. "custom" is the
+// manually-picked range; its dates travel separately as ?start=/&end= (isIsoDate below).
 export const GSC_PERIODS: ReadonlySet<string> = new Set([
   "yesterday", "7d", "14d", "28d", "last_week", "this_month", "last_month",
   "this_quarter", "last_quarter", "ytd", "3m", "6m", "8m", "12m", "16m", "2y", "3y",
+  "custom",
 ]);
 
 export const isGscPeriod = (v: unknown): boolean =>
   typeof v === "string" && GSC_PERIODS.has(v);
+
+// The two halves of the custom range (?start=2026-05-12&end=2026-06-09). Date-only strings —
+// the same shape GSC itself speaks — and nothing looser, so a stray value can never be read
+// as a window.
+export const isIsoDate = (v: unknown): boolean =>
+  typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(new Date(v).getTime());
 
 // The report panels (striking distance, CTR benchmark, cannibalization, related intent) all
 // offer the same day windows and share one stored value — the window you are analysing in is

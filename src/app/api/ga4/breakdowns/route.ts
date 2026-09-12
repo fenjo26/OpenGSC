@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { verifyAuthOrShare } from '@/lib/authShare';
 import { google } from 'googleapis';
 import { makeOAuth2, dateWindows, type GoogleAccount } from '@/lib/ga4';
+import { daysParam } from '@/lib/periodWindow';
 
 type Row = { label: string; value: number; sub?: number };
 
@@ -42,7 +43,7 @@ export async function GET(req: Request) {
     select: { id: true, access_token: true, refresh_token: true, expires_at: true },
   })) as GoogleAccount[];
 
-  const w = dateWindows(period);
+  const w = dateWindows(period, daysParam(searchParams.get('days')));
   const property = `properties/${propertyId}`;
   const dateRanges = [{ startDate: w.start, endDate: w.end }];
 

@@ -59,6 +59,7 @@
   "compPrevious": "上一周期",
   "compYoy": "同比",
   "compPrevMonth": "上月",
+  "comparisonOffHint": "对比已关闭 — 增幅和上期趋势线已隐藏。",
   "comparisonSettings": "对比设置",
   "prevTrendLine": "上一周期趋势线",
   "matchWeekdays": "匹配工作日",

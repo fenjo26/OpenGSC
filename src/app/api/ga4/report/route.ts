@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { verifyAuthOrShare } from '@/lib/authShare';
 import { google } from 'googleapis';
 import { makeOAuth2, dateWindows, pct, GA4_API_METRICS, type GoogleAccount } from '@/lib/ga4';
+import { daysParam } from '@/lib/periodWindow';
 
 type Totals = { sessions: number; engagement: number; events: number; revenue: number };
 
@@ -44,7 +45,7 @@ export async function GET(req: Request) {
     select: { id: true, access_token: true, refresh_token: true, expires_at: true },
   })) as GoogleAccount[];
 
-  const w = dateWindows(period);
+  const w = dateWindows(period, daysParam(searchParams.get('days')));
   const property = `properties/${propertyId}`;
 
   // Try each linked account until one can read this property.
