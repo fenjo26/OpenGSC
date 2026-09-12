@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { authOptions } from '@/lib/auth';
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from '@/lib/prisma';
-import { resolveWindow, previousWindow, comparisonShift } from '@/lib/periodWindow';
+import { resolveWindow, previousWindow, comparisonShift, SEARCH_TYPES } from '@/lib/periodWindow';
 
 type DailyRow = Awaited<ReturnType<typeof prisma.dailyMetric.findMany>>[number];
 
@@ -19,6 +19,10 @@ export async function GET(req: Request) {
   const period     = searchParams.get('period')   || '7d';
   const matchWd    = searchParams.get('matchWd')  === 'true';
   const comparison = searchParams.get('comparison') || 'previous';
+  // Which GSC search type the window describes. The rollup stores one row-kind per type, so
+  // every dailyMetric read below MUST carry this — an unfiltered read counts five types.
+  const searchType = searchParams.get('searchType');
+  const type = searchType && SEARCH_TYPES.has(searchType) ? searchType : 'web';
 
   // Current window from the period key or the custom range; the comparison window from the
   // mode (previous / yoy / prev_month, weekday-aligned) — or none at all when disabled, in
@@ -50,12 +54,12 @@ export async function GET(req: Request) {
 
       const [currRows, prevRows] = await Promise.all([
         prisma.dailyMetric.findMany({
-          where: { siteId: site.id, date: { gte: startDate, lte: endDate }, url: '', query: '' },
+          where: { siteId: site.id, date: { gte: startDate, lte: endDate }, url: '', query: '', searchType: type },
           orderBy: { date: 'asc' },
         }),
         prev
           ? prisma.dailyMetric.findMany({
-              where: { siteId: site.id, date: { gte: prev.start, lte: prev.end }, url: '', query: '' },
+              where: { siteId: site.id, date: { gte: prev.start, lte: prev.end }, url: '', query: '', searchType: type },
             })
           : Promise.resolve(noPrev),
       ]);

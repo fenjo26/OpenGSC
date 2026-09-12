@@ -107,11 +107,11 @@ export async function GET(req: Request) {
   // ── Chart data from DB ────────────────────────────────────────────────────────
   const [currRows, prevRows] = await Promise.all([
     prisma.dailyMetric.findMany({
-      where: { siteId: site.id, date: { gte: startDate, lte: endDate }, url: '', query: '' },
+      where: { siteId: site.id, date: { gte: startDate, lte: endDate }, url: '', query: '', searchType: 'web' },
       orderBy: { date: 'asc' },
     }),
     prisma.dailyMetric.findMany({
-      where: { siteId: site.id, date: { gte: prevStart, lte: endDate }, url: '', query: '' },
+      where: { siteId: site.id, date: { gte: prevStart, lte: endDate }, url: '', query: '', searchType: 'web' },
     }),
   ]);
 

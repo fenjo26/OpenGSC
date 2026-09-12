@@ -189,8 +189,8 @@ async function checkUser(userId: string, s: AlertSettings): Promise<Pending[]> {
     const d14 = new Date(now); d14.setDate(d14.getDate() - 14);
     for (const site of sites) {
       const [cur, prev] = await Promise.all([
-        prisma.dailyMetric.aggregate({ where: { siteId: site.id, date: { gte: d7 } }, _sum: { clicks: true } }),
-        prisma.dailyMetric.aggregate({ where: { siteId: site.id, date: { gte: d14, lt: d7 } }, _sum: { clicks: true } }),
+        prisma.dailyMetric.aggregate({ where: { siteId: site.id, date: { gte: d7 }, searchType: "web" }, _sum: { clicks: true } }),
+        prisma.dailyMetric.aggregate({ where: { siteId: site.id, date: { gte: d14, lt: d7 }, searchType: "web" }, _sum: { clicks: true } }),
       ]);
       const c = cur._sum.clicks ?? 0, p = prev._sum.clicks ?? 0;
       if (p >= 50 && c < p * (1 - s.trafficDrop.percent / 100)) {

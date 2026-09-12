@@ -136,7 +136,8 @@ export async function buildDigestData(
   };
   if (!siteIds.length) return base;
 
-  const dateOnly = { url: "", query: "" };
+  // Rollups are one row-kind per search type now — digests describe web traffic only.
+  const dateOnly = { url: "", query: "", searchType: "web" };
   const nameOf = new Map(sites.map(s => [s.id, clean(s.url)]));
 
   // ── per-site traffic (one grouped query per period; scoped to date-only totals so the

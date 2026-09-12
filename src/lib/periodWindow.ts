@@ -98,6 +98,12 @@ export const COMPARISON_MODES: ReadonlySet<string> = new Set<string>([
   "disabled", "previous", "yoy", "prev_month",
 ]);
 
+// Search types the GSC rollup distinguishes — what the dashboard's "Тип поиска" speaks and
+// what the sync stores date-only rows for. Anything else a client sends reads as "web".
+export const SEARCH_TYPES: ReadonlySet<string> = new Set([
+  "web", "discover", "news", "image", "video",
+]);
+
 // The window a metric is compared against. All modes give a window the same length as the
 // current one: "previous" sits immediately before it, "yoy" the same dates a year earlier,
 // "prev_month" the same day-of-month one calendar month back. Match Weekdays then slides any

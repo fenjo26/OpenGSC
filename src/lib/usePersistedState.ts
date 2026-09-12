@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { SEARCH_TYPES } from "./periodWindow";
 
 // Period-style controls (the dashboard window, report days, decay buckets) used to be bare
 // component state: a refresh reset them, no link could carry them, and every screen silently
@@ -80,6 +81,11 @@ export const isGscPeriod = (v: unknown): boolean =>
 // as a window.
 export const isIsoDate = (v: unknown): boolean =>
   typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(new Date(v).getTime());
+
+// The GSC search type the window describes (the "Тип поиска" section). One vocabulary with
+// the sync and the routes — SEARCH_TYPES lives in periodWindow.ts (pure module, client-safe).
+export const isSearchType = (v: unknown): boolean =>
+  typeof v === "string" && SEARCH_TYPES.has(v);
 
 // The report panels (striking distance, CTR benchmark, cannibalization, related intent) all
 // offer the same day windows and share one stored value — the window you are analysing in is

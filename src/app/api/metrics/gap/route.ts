@@ -80,7 +80,7 @@ export async function POST(req: Request) {
       since.setDate(since.getDate() - 90);
       const rows = await prisma.dailyMetric.groupBy({
         by: ["query", "url"],
-        where: { siteId: site.id, date: { gte: since } },
+        where: { siteId: site.id, date: { gte: since }, query: { not: "" }, url: { not: "" } },
         _sum: { impressions: true },
         _avg: { position: true },
       });

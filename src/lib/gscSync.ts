@@ -278,63 +278,78 @@ export async function runGscSync() {
           }
         }
 
-        // ── Step 2: sync daily metrics (recent first, then history) ─────────
-        // Check if we already have recent data (to decide whether to do full history)
-        const recentCount = await prisma.dailyMetric.count({
-          where: { siteId: dbSite.id, date: { gte: recentStart }, url: '', query: '' },
-        });
-        const needsHistory = recentCount === 0; // new site → fetch full history
+        // ── Step 2: sync daily metrics per search type (recent first, then history) ──
+        // The date-only rollup is one row-kind per GSC search type (url='' query='' +
+        // searchType), so every count/delete/insert below is type-scoped. Web keeps the
+        // historic rhythm (empty recent window → full-history refetch); a non-web type
+        // backfills its full history exactly once — the first sync where it has no rows —
+        // then follows the recent window. A type GSC rejects is logged and skipped: it must
+        // never take the web sync down with it.
+        const rollupTypes = ['web', 'discover', 'news', 'image', 'video'];
+        for (const searchType of rollupTypes) {
+          const hasRecent = (await prisma.dailyMetric.count({
+            where: { siteId: dbSite.id, date: { gte: recentStart }, url: '', query: '', searchType },
+          })) > 0;
+          const needsTypeHistory = searchType === 'web'
+            ? !hasRecent
+            : !hasRecent && (await prisma.dailyMetric.count({
+                where: { siteId: dbSite.id, url: '', query: '', searchType },
+              })) === 0;
+          const typeStartStr = needsTypeHistory ? histStartStr : recentStartStr;
 
-        const startDateStr = needsHistory ? histStartStr : recentStartStr;
-        note.push(`${startDateStr} → ${endDateStr}${needsHistory ? ' (full history)' : ''}`);
-
-        try {
-          const res = await withQuotaRetry(hostname, () => wm.searchanalytics.query({
-            siteUrl: gscUrl,
-            requestBody: {
-              startDate:  startDateStr,
-              endDate:    endDateStr,
-              dimensions: ['date'],
-              rowLimit:   25000,
-              dataState:  'all',
-            },
-          }));
-
-          const rows = res.data.rows ?? [];
-          note.push(`${rows.length} days`);
-
-          if (rows.length > 0) {
-            const rangeStart = new Date(startDateStr);
-
-            // Delete existing records for this range in one query, then bulk-insert
-            await prisma.dailyMetric.deleteMany({
-              where: {
-                siteId: dbSite.id,
-                url:    '',
-                query:  '',
-                date:   { gte: rangeStart, lte: endDate },
+          try {
+            const res = await withQuotaRetry(hostname, () => wm.searchanalytics.query({
+              siteUrl: gscUrl,
+              requestBody: {
+                startDate:  typeStartStr,
+                endDate:    endDateStr,
+                dimensions: ['date'],
+                searchType,
+                rowLimit:   25000,
+                dataState:  'all',
               },
-            });
+            }));
 
-            await prisma.dailyMetric.createMany({
-              data: rows
-                .filter(row => row.keys?.[0])
-                .map(row => ({
-                  siteId:      dbSite.id,
-                  date:        new Date(row.keys![0]),
-                  url:         '',
-                  query:       '',
-                  clicks:      row.clicks      ?? 0,
-                  impressions: row.impressions ?? 0,
-                  ctr:         row.ctr         ?? 0,
-                  position:    row.position    ?? 0,
-                })),
-            });
-            result.sitesSynced++;
+            const rows = res.data.rows ?? [];
+            note.push(`${searchType}:${rows.length}d${needsTypeHistory ? '(full)' : ''}`);
+
+            if (rows.length > 0) {
+              const rangeStart = new Date(typeStartStr);
+
+              // Delete this type's records for the range in one query, then bulk-insert
+              await prisma.dailyMetric.deleteMany({
+                where: {
+                  siteId:     dbSite.id,
+                  url:        '',
+                  query:      '',
+                  searchType,
+                  date:       { gte: rangeStart, lte: endDate },
+                },
+              });
+
+              await prisma.dailyMetric.createMany({
+                data: rows
+                  .filter(row => row.keys?.[0])
+                  .map(row => ({
+                    siteId:      dbSite.id,
+                    date:        new Date(row.keys![0]),
+                    url:         '',
+                    query:       '',
+                    searchType,
+                    clicks:      row.clicks      ?? 0,
+                    impressions: row.impressions ?? 0,
+                    ctr:         row.ctr         ?? 0,
+                    position:    row.position    ?? 0,
+                  })),
+              });
+              if (searchType === 'web') result.sitesSynced++;
+            }
+          } catch (err: any) {
+            console.error(`[GSC Sync]     Error syncing ${hostname} (${searchType}): ${err.message}`);
+            if (searchType === 'web') {
+              result.siteErrors.push({ site: hostname, error: err.message });
+            }
           }
-        } catch (err: any) {
-          console.error(`[GSC Sync]     Error syncing ${hostname}: ${err.message}`);
-          result.siteErrors.push({ site: hostname, error: err.message });
         }
 
         // ── Step 3: sync per-URL daily data (Content Decay Map) ─────────────

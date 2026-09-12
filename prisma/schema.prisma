@@ -535,6 +535,11 @@ model DailyMetric {
   date        DateTime
   url         String
   query       String
+  // Which GSC search type this row belongs to ("web" | "discover" | "news" | "image" |
+  // "video"). Only the date-only rollup (url='' query='') is synced per type; page/query
+  // rows are web-only. Readers of rollup rows MUST filter by type or web aggregates will
+  // count every type five times.
+  searchType  String   @default("web")
   clicks      Int
   impressions Int
   ctr         Float
@@ -543,6 +548,7 @@ model DailyMetric {
   site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
 
   @@index([siteId, date])
+  @@index([siteId, searchType, date])
   @@index([url])
   @@index([query])
 }

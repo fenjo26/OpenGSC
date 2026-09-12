@@ -139,7 +139,7 @@ async function warmOneUser(userId: string): Promise<void> {
 
     const rows = await prisma.dailyMetric.groupBy({
       by: ["query"],
-      where: { siteId: site.id, date: { gte: cutoff }, position: { gte: 4, lte: 20 } },
+      where: { siteId: site.id, date: { gte: cutoff }, position: { gte: 4, lte: 20 }, query: { not: "" } },
       _sum: { impressions: true },
       having: { impressions: { _sum: { gte: 10 } } },
       orderBy: { _sum: { impressions: "desc" } },

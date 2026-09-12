@@ -125,7 +125,7 @@ async function ourQueries(siteId: string) {
     since.setDate(since.getDate() - GSC_LOOKBACK_DAYS);
     const rows = await prisma.dailyMetric.groupBy({
       by: ["query", "url"],
-      where: { siteId, date: { gte: since } },
+      where: { siteId, date: { gte: since }, query: { not: "" }, url: { not: "" } },
       _sum: { impressions: true },
       _avg: { position: true },
     });

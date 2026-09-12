@@ -60,6 +60,7 @@
   "compYoy": "Год к году",
   "compPrevMonth": "Предыдущий месяц",
   "comparisonOffHint": "Сравнение выключено — дельты и линия прошлого тренда скрыты.",
+  "searchTypeGoogleOnly": "Типы поиска есть только в данных Google",
   "comparisonSettings": "Настройки сравнения",
   "prevTrendLine": "Линия предыдущего тренда",
   "matchWeekdays": "Совпадение дней недели",

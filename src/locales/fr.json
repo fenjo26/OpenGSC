@@ -60,6 +60,7 @@
   "compYoy": "Année sur année",
   "compPrevMonth": "Mois précédent",
   "comparisonOffHint": "Comparaison désactivée — les deltas et la ligne de tendance précédente sont masqués.",
+  "searchTypeGoogleOnly": "Les types de recherche n'existent que dans les données Google",
   "comparisonSettings": "Paramètres de comparaison",
   "prevTrendLine": "Ligne de tendance précédente",
   "matchWeekdays": "Correspondre aux jours de la semaine",

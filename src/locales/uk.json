@@ -60,6 +60,7 @@
   "compYoy": "Рік до року",
   "compPrevMonth": "Попередній місяць",
   "comparisonOffHint": "Порівняння вимкнено — дельти та лінію минулого тренду приховано.",
+  "searchTypeGoogleOnly": "Типи пошуку є лише в даних Google",
   "comparisonSettings": "Налаштування порівняння",
   "prevTrendLine": "Лінія попереднього тренду",
   "matchWeekdays": "Збіг днів тижня",

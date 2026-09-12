@@ -60,6 +60,7 @@
   "compYoy": "Jährlich (YoY)",
   "compPrevMonth": "Vorheriger Monat",
   "comparisonOffHint": "Vergleich ist aus — Deltas und die Trendlinie der Vorperiode sind ausgeblendet.",
+  "searchTypeGoogleOnly": "Suchtypen gibt es nur in Google-Daten",
   "comparisonSettings": "Vergleichseinstellungen",
   "prevTrendLine": "Vorherige Trendlinie",
   "matchWeekdays": "Wochentage abgleichen",

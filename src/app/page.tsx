@@ -16,7 +16,7 @@ import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { useHealthStatus } from "@/components/SiteHealthPanel";
 import { loadSyncedAt, rememberSyncedAt, fetchSyncState, watchSync, type SyncState } from "@/lib/syncedAt";
 import { marketFor } from "@/lib/seo/market";
-import { usePersistedState, isGscPeriod, isIsoDate } from "@/lib/usePersistedState";
+import { usePersistedState, isGscPeriod, isIsoDate, isSearchType } from "@/lib/usePersistedState";
 import { getAhrefsDrKey } from "@/lib/seo/keys";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -639,7 +639,10 @@ function PortfolioPageContent() {
   const [prevTrend, setPrevTrend]   = useState(true);
   const [matchWd, setMatchWd]       = useState(true);
   const [showPct, setShowPct]       = useState(true);
-  const [searchType, setSearchType] = useState<SearchType>("web");
+  // The GSC search type the portfolio describes. Persisted + URL-carried like the period:
+  // a shared link reproduces the exact view. Bing/Yandex have no types — the menu greys the
+  // section out on those tabs, and the engine fetches never carry the param.
+  const [searchType, setSearchType] = usePersistedState<SearchType>("gsc_search_type", "web", isSearchType, "searchType");
   const [branded, setBranded]       = useState<BrandedFilter>("all");
   const [filterDimension, setFilterDimension] = useState<"query"|"page"|"country"|"device"|null>(null);
   const [filterText, setFilterText] = useState("");
@@ -677,7 +680,7 @@ function PortfolioPageContent() {
   const windowKey = period === "custom" ? `custom:${rangeStart || ""}:${rangeEnd || ""}` : period;
 
   const portfolioUrl = (p = period) =>
-    `/api/gsc/portfolio?period=${p}&matchWd=${matchWd}&comparison=${comparison}${p === "custom" && customReady ? `&start=${rangeStart}&end=${rangeEnd}` : ""}`;
+    `/api/gsc/portfolio?period=${p}&matchWd=${matchWd}&comparison=${comparison}&searchType=${searchType}${p === "custom" && customReady ? `&start=${rangeStart}&end=${rangeEnd}` : ""}`;
 
   const refetchPortfolio = (p = period) => {
     fetch(portfolioUrl(p))
@@ -806,7 +809,7 @@ function PortfolioPageContent() {
       .then(d => { if (d.sites) setSites(d.sites); })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [windowKey, matchWd, comparison]);
+  }, [windowKey, matchWd, comparison, searchType]);
 
   // Which engine tabs to show (owner keys live in localStorage, same as the site page).
   useEffect(() => {
@@ -1410,15 +1413,24 @@ function PortfolioPageContent() {
             <div style={{padding:"4px 14px 8px",fontSize:"11px",lineHeight:1.5,color:"var(--color-text-secondary)"}}>{t("comparisonOffHint")}</div>
           )}
           {md}{ms(t("searchType"))}
-          {([
-            {l: t("searchTypeWeb"),      v:"web",      i:<Globe size={13}/>},
-            {l: t("searchTypeDiscover"), v:"discover", i:<Compass size={13}/>},
-            {l: t("searchTypeNews"),     v:"news",     i:<Newspaper size={13}/>},
-            {l: t("searchTypeImage"),    v:"image",    i:<Image size={13}/>},
-            {l: t("searchTypeVideo"),    v:"video",    i:<Video size={13}/>},
-          ] as {l:string;v:SearchType;i:React.ReactNode}[]).map(({l,v,i}) => (
-            <button key={v} style={mi(searchType===v)} onClick={()=>setSearchType(v)}>{i} {l}{searchType===v&&<Check size={12} style={{marginLeft:"auto"}}/>}</button>
-          ))}
+          {/* Search types exist only in Google's data — greyed on the Bing/Yandex tabs */}
+          {(() => {
+            const stOff = engine !== "google";
+            return (
+              <>
+                {stOff && <div style={{ padding: "0 14px 4px", fontSize: "11px", color: "var(--color-text-secondary)" }}>{t("searchTypeGoogleOnly")}</div>}
+                {([
+                  {l: t("searchTypeWeb"),      v:"web",      i:<Globe size={13}/>},
+                  {l: t("searchTypeDiscover"), v:"discover", i:<Compass size={13}/>},
+                  {l: t("searchTypeNews"),     v:"news",     i:<Newspaper size={13}/>},
+                  {l: t("searchTypeImage"),    v:"image",    i:<Image size={13}/>},
+                  {l: t("searchTypeVideo"),    v:"video",    i:<Video size={13}/>},
+                ] as {l:string;v:SearchType;i:React.ReactNode}[]).map(({l,v,i}) => (
+                  <button key={v} style={{...mi(searchType===v),opacity:stOff?0.4:1,cursor:stOff?"default":"pointer"}} onClick={()=>{ if (!stOff) setSearchType(v); }}>{i} {l}{searchType===v&&<Check size={12} style={{marginLeft:"auto"}}/>}</button>
+                ))}
+              </>
+            );
+          })()}
         </div>
         {/* Right: period presets + custom range */}
         <div style={{minWidth:0}}>
