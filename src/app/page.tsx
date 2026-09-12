@@ -504,19 +504,19 @@ function Dropdown({ trigger, children, align = "left", width }: { trigger: React
   }, []);
 
   // Clamp panel inside the viewport after it renders: horizontally shift away
-  // from the right edge, vertically cap the height so tall panels scroll
+  // from the right edge AND the left edge (a right-aligned panel whose trigger sits near
+  // the left edge — the period menu once the quick pills row was gone — hung off-screen
+  // to the left), vertically cap the height so tall panels scroll
   // inside instead of running past the bottom of the screen.
   useEffect(() => {
     if (!open || !panelRef.current) return;
     const panel = panelRef.current;
     const rect  = panel.getBoundingClientRect();
-    const vw    = window.innerWidth;
-    if (rect.right > vw - 8) {
-      const overflow = rect.right - (vw - 8);
-      panel.style.transform = `translateX(-${overflow}px)`;
-    } else {
-      panel.style.transform = "";
-    }
+    const vw = window.innerWidth;
+    let shift = 0;
+    if (rect.right > vw - 8) shift = vw - 8 - rect.right;
+    if (rect.left + shift < 8) shift = 8 - rect.left;
+    panel.style.transform = shift ? `translateX(${shift}px)` : "";
     panel.style.maxHeight = `${window.innerHeight - rect.top - 8}px`;
     panel.style.overflowY = "auto";
   }, [open]);
@@ -1383,7 +1383,7 @@ function PortfolioPageContent() {
   // Period dropdown
   const cmpOff = comparison === "disabled";
   const PeriodDd = (
-    <Dropdown trigger={<button style={{...tbBtn(),gap:"8px"}}>{periodTriggerLabel} <ChevronDown size={13}/></button>} align="right" width={600}>
+    <Dropdown trigger={<button style={{...tbBtn(),gap:"8px"}}>{periodTriggerLabel} <ChevronDown size={13}/></button>} align="left" width={600}>
       <div className="period-grid">
         {/* Left: comparison & search type */}
         <div className="period-col-compare" style={{minWidth:0}}>
