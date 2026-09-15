@@ -4044,6 +4044,7 @@
   "serpmonColHost": "域名",
   "serpmonColAge": "年龄",
   "serpmonColDr": "DR",
+  "serpmonColLinks": "外链",
   "serpmonColKeywords": "关键词数",
   "serpmonColTop10": "Top 10",
   "serpmonColBest": "最佳",
@@ -4053,7 +4054,9 @@
   "serpmonAgeYears": "{n} 年",
   "serpmonLoadAge": "加载注册日期",
   "serpmonLoadDr": "加载 DR",
+  "serpmonLoadLinks": "加载外链",
   "serpmonLoadFreeNote": "免费：公开 RDAP/WHOIS 和 Ahrefs 免费 DR 接口",
+  "serpmonLoadLinksNote": "使用你的 SEO 指标密钥（Ahrefs/Semrush 单位）",
   "serpmonAgeUnknown": "该域名后缀没有公开的注册日期",
   "serpmonTagNew": "新增",
   "serpmonTagYoung": "年轻",
@@ -4076,5 +4079,6 @@
   "serpmonMoreCount": "还有 {n} 个",
   "serpmonStop": "停止",
   "serpmonNoDrKey": "未配置 Ahrefs DR 密钥 — 请在设置 → API 密钥中添加",
+  "serpmonNoMetricsKey": "未配置 SEO 指标密钥 — 请在设置 → API 密钥中添加",
   "serpmonEnrichDone": "已更新 {n} 个"
 }

@@ -135,6 +135,7 @@ export interface DomainRow {
   firstSeenAt: string; lastSeenAt: string;
   registeredAt: string | null; ageMonths: number | null; ageError: string | null;
   dr: number | null;
+  refdomains: number | null;
   keywords: number; prevKeywords: number; top10: number; top30: number;
   bestPos: number | null; avgPos: number | null; bounces: number;
   tags: DomainTag[];
@@ -143,7 +144,7 @@ export interface DomainRow {
 export interface DomainQuery {
   preset?: "all" | "new" | "young" | "rising" | "falling" | "bounced";
   q?: string; maxAgeMonths?: number; includePlatforms?: boolean;
-  sort?: "keywords" | "top10" | "bestPos" | "firstSeen" | "age" | "dr";
+  sort?: "keywords" | "top10" | "bestPos" | "firstSeen" | "age" | "dr" | "links";
   page?: number; pageSize?: number;
 }
 

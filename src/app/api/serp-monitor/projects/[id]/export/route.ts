@@ -13,7 +13,7 @@ import {
 const BOM = "\uFEFF";
 const DOMAIN_CSV_COLUMNS = [
   "domain", "registrable", "keywords", "prev_keywords", "top10", "top30",
-  "best", "avg", "first_seen", "registered", "age_months", "dr", "tags",
+  "best", "avg", "first_seen", "registered", "age_months", "dr", "refdomains", "tags",
 ] as const;
 
 function csvResponse(body: string, filename: string): Response {
@@ -80,7 +80,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         lines.push(csvLine([
           r.host, r.registrable, r.keywords, r.prevKeywords, r.top10, r.top30,
           r.bestPos ?? "", num(r.avgPos), day(r.firstSeenAt), day(r.registeredAt),
-          r.ageMonths ?? "", r.dr ?? "", r.tags.join(" "),
+          r.ageMonths ?? "", r.dr ?? "", r.refdomains ?? "", r.tags.join(" "),
         ]));
       }
       if (result.rows.length === 0 || lines.length - 1 >= result.total) break;

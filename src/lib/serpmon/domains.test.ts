@@ -18,6 +18,7 @@ function mkRow(over: Partial<Omit<DomainRow, "tags">>): Omit<DomainRow, "tags"> 
     firstSeenAt: "2026-09-01T00:00:00.000Z", lastSeenAt: "2026-09-14T00:00:00.000Z",
     registeredAt: "2020-01-15T00:00:00.000Z", ageMonths: 67, ageError: null,
     dr: 31,
+    refdomains: null,
     keywords: 10, prevKeywords: 10, top10: 3, top30: 6,
     bestPos: 4, avgPos: 22.5, bounces: 0,
     ...over,

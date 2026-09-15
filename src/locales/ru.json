@@ -4044,6 +4044,7 @@
   "serpmonColHost": "Домен",
   "serpmonColAge": "Возраст",
   "serpmonColDr": "DR",
+  "serpmonColLinks": "Ссылки",
   "serpmonColKeywords": "Запросов",
   "serpmonColTop10": "Топ-10",
   "serpmonColBest": "Лучшая",
@@ -4053,7 +4054,9 @@
   "serpmonAgeYears": "{n} г.",
   "serpmonLoadAge": "Загрузить возраст",
   "serpmonLoadDr": "Загрузить DR",
+  "serpmonLoadLinks": "Загрузить ссылки",
   "serpmonLoadFreeNote": "Бесплатно: открытые RDAP/WHOIS и бесплатный DR от Ahrefs",
+  "serpmonLoadLinksNote": "Использует ваш ключ SEO-метрик (единицы Ahrefs/Semrush)",
   "serpmonAgeUnknown": "у этой зоны нет открытой даты регистрации",
   "serpmonTagNew": "новый",
   "serpmonTagYoung": "молодой",
@@ -4076,5 +4079,6 @@
   "serpmonMoreCount": "ещё {n}",
   "serpmonStop": "Стоп",
   "serpmonNoDrKey": "Ключ Ahrefs DR не настроен — добавьте его в Настройках → API-ключи",
+  "serpmonNoMetricsKey": "Ключ SEO-метрик не настроен — добавьте его в Настройках → API-ключи",
   "serpmonEnrichDone": "Обновлено {n}"
 }

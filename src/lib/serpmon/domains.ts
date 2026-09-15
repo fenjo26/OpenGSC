@@ -326,7 +326,7 @@ export async function rebuildProjectHosts(projectId: string, runId: string): Pro
 // ─── Listing ────────────────────────────────────────────────────────────────────
 
 const DOMAIN_PRESETS = ["all", "new", "young", "rising", "falling", "bounced"] as const;
-const DOMAIN_SORTS = ["keywords", "top10", "bestPos", "firstSeen", "age", "dr"] as const;
+const DOMAIN_SORTS = ["keywords", "top10", "bestPos", "firstSeen", "age", "dr", "links"] as const;
 
 /** DomainQuery from a URL query string; unknown values fall back to defaults, numbers clamp. */
 export function domainQueryFromSearchParams(sp: URLSearchParams): DomainQuery {
@@ -372,6 +372,7 @@ export async function domainRows(userId: string, projectId: string, q: DomainQue
   const hosts = new Map<number, {
     id: number; host: string; registrable: string;
     registeredAt: Date | null; ageError: string | null; dr: number | null;
+    refdomains: number | null;
   }>();
   const hostIds = [...new Set(projectHosts.map(r => r.hostId))];
   for (const ids of chunks(hostIds, ID_CHUNK)) {
@@ -426,6 +427,7 @@ export async function domainRows(userId: string, projectId: string, q: DomainQue
       ageMonths: registeredAt ? calcAgeMonths(registeredAt, now) : null,
       ageError: h.ageError,
       dr: h.dr,
+      refdomains: h.refdomains,
       keywords: r.keywords,
       prevKeywords: r.prevKeywords,
       top10: r.top10,
@@ -448,6 +450,7 @@ export async function domainRows(userId: string, projectId: string, q: DomainQue
     firstSeen: (a, b) => Date.parse(b.firstSeenAt) - Date.parse(a.firstSeenAt),
     age: (a, b) => (a.ageMonths ?? Number.POSITIVE_INFINITY) - (b.ageMonths ?? Number.POSITIVE_INFINITY),
     dr: (a, b) => (b.dr ?? -1) - (a.dr ?? -1),
+    links: (a, b) => (b.refdomains ?? -1) - (a.refdomains ?? -1),
   };
   rows.sort((a, b) => cmp[sort](a, b) || a.host.localeCompare(b.host));
 

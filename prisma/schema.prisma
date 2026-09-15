@@ -1848,10 +1848,13 @@ model SerpHost {
   ageError           String?
   dr                 Float?
   drCheckedAt        DateTime?
+  refdomains         Int?                 // referring domains of `registrable` (paid metrics stats call)
+  refdomainsCheckedAt DateTime?
 
   @@index([registrable])
   @@index([ageCheckedAt])
   @@index([drCheckedAt])
+  @@index([refdomainsCheckedAt])
 }
 
 model SerpChange {

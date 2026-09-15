@@ -1,8 +1,8 @@
 "use client";
 
-// Domains tab — who holds how many keywords, who is new/young/rising/falling/bounced. The age
-// and DR loaders walk the bounded POST domains/enrich step in a client-side loop (each step is
-// durable on its own; a closed tab costs the current step), with a Stop and an honest
+// Domains tab — who holds how many keywords, who is new/young/rising/falling/bounced. The age,
+// DR and referring-domain loaders walk their bounded POST step in a client-side loop (each
+// step is durable on its own; a closed tab costs the current step), with a Stop and an honest
 // "no key" ending instead of a silent zero.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -19,7 +19,7 @@ import {
 const DEFAULT_PAGE_SIZE = 50;
 const PRESETS = ["all", "new", "young", "rising", "falling", "bounced"] as const;
 type Preset = (typeof PRESETS)[number];
-const SORTS = ["keywords", "top10", "bestPos", "firstSeen", "age", "dr"] as const;
+const SORTS = ["keywords", "top10", "bestPos", "firstSeen", "age", "dr", "links"] as const;
 type Sort = (typeof SORTS)[number];
 
 /** Theme-safe row shading: a whisper of the text color works on every palette. */
@@ -75,7 +75,7 @@ export default function DomainsTab({ projectId, version, onOpenDomain }: {
 
   // The enrich walkers. Stop flags are refs: the loop reads them between steps, and a state
   // read there would be the value captured when the loop started.
-  const [enrichBusy, setEnrichBusy] = useState<"" | "age" | "dr">("");
+  const [enrichBusy, setEnrichBusy] = useState<"" | "age" | "dr" | "links">("");
   const [enrichProgress, setEnrichProgress] = useState<{ remaining: number; updated: number } | null>(null);
   const enrichStop = useRef(false);
 
@@ -123,28 +123,33 @@ export default function DomainsTab({ projectId, version, onOpenDomain }: {
   }
 
   /**
-   * Walk POST domains/enrich one bounded step at a time until `remaining` hits 0.
-   * A step that updates nothing AND does not shrink `remaining` is the honest end — the rest
-   * of the list is hosts whose zones have no public answer, and looping further would only
-   * hammer the registries.
+   * Walk one bounded enrichment endpoint a step at a time until `remaining` hits 0 — age/DR
+   * via domains/enrich, referring domains via domains/backlinks (that one bills the owner's
+   * SEO-metrics units server-side). A step that updates nothing AND does not shrink `remaining`
+   * is the honest end — the rest of the list is hosts whose zones have no answer (or platform
+   * hosts, which are never fetched), and looping further would only hammer the registries.
    */
-  async function runEnrich(what: "age" | "dr") {
+  async function runEnrich(what: "age" | "dr" | "links") {
     if (enrichBusy) return;
     enrichStop.current = false;
     setEnrichBusy(what); setError(""); setNotice(""); setNotMigrated(false);
     setEnrichProgress({ remaining: 0, updated: 0 });
+    const paid = what === "links";
     let updated = 0;
     let prevRemaining = Number.POSITIVE_INFINITY;
     try {
       for (;;) {
-        const { status, body } = await sendJson(`/api/serp-monitor/projects/${projectId}/domains/enrich`, "POST", { what });
+        const { status, body } = paid
+          ? await sendJson(`/api/serp-monitor/projects/${projectId}/domains/backlinks`, "POST")
+          : await sendJson(`/api/serp-monitor/projects/${projectId}/domains/enrich`, "POST", { what });
         if (body.notMigrated) { setNotMigrated(true); break; }
         if (status >= 400) { setError(String(body.error ?? status)); break; }
-        // The DR half rides on the free Ahrefs endpoint; without a key anywhere there is
-        // nothing to loop for, and that must be said out loud rather than shown as "0 updated".
-        if (body.keyFound === false) { setError(tr("serpmonNoDrKey")); break; }
+        // Each loader rides on a different key source; a missing one must be said out loud
+        // rather than shown as "0 updated".
+        if (!paid && body.keyFound === false) { setError(tr("serpmonNoDrKey")); break; }
+        if (paid && body.noKey) { setError(tr("serpmonNoMetricsKey")); break; }
         const remaining = Number(body.remaining ?? 0);
-        updated += Number(body[what] ?? 0);
+        updated += Number(paid ? body.updated : body[what] ?? 0);
         setEnrichProgress({ remaining, updated });
         const stalled = remaining >= prevRemaining && remaining > 0;
         prevRemaining = remaining;
@@ -216,19 +221,26 @@ export default function DomainsTab({ projectId, version, onOpenDomain }: {
       {/* Loaders + export */}
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <button onClick={enrichBusy ? () => { enrichStop.current = true; } : () => void runEnrich("age")}
-          style={btnGhostDisabled(enrichBusy === "dr")}>
+          style={btnGhostDisabled(enrichBusy === "dr" || enrichBusy === "links")}>
           {enrichBusy === "age" ? <Loader2 size={12} className="spin" /> : null}
           {enrichBusy === "age" ? tr("serpmonStop") : tr("serpmonLoadAge")}
         </button>
         <button onClick={enrichBusy ? () => { enrichStop.current = true; } : () => void runEnrich("dr")}
-          style={btnGhostDisabled(enrichBusy === "age")}>
+          style={btnGhostDisabled(enrichBusy === "age" || enrichBusy === "links")}>
           {enrichBusy === "dr" ? <Loader2 size={12} className="spin" /> : null}
           {enrichBusy === "dr" ? tr("serpmonStop") : tr("serpmonLoadDr")}
         </button>
+        <button onClick={enrichBusy ? () => { enrichStop.current = true; } : () => void runEnrich("links")}
+          style={btnGhostDisabled(enrichBusy === "age" || enrichBusy === "dr")}>
+          {enrichBusy === "links" ? <Loader2 size={12} className="spin" /> : null}
+          {enrichBusy === "links" ? tr("serpmonStop") : tr("serpmonLoadLinks")}
+        </button>
         <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>{tr("serpmonLoadFreeNote")}</span>
+        <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>{tr("serpmonLoadLinksNote")}</span>
         {enrichProgress && (
           <span style={{ fontSize: 12, color: "var(--color-text-secondary)", fontVariantNumeric: "tabular-nums" }}>
-            {enrichBusy === "age" ? tr("serpmonLoadAge") : tr("serpmonLoadDr")}: {enrichProgress.updated} · {enrichProgress.remaining}
+            {enrichBusy === "age" ? tr("serpmonLoadAge") : enrichBusy === "dr" ? tr("serpmonLoadDr") : tr("serpmonLoadLinks")}
+            : {enrichProgress.updated} · {enrichProgress.remaining}
           </span>
         )}
         <a href={`/api/serp-monitor/projects/${projectId}/export?kind=domains&${queryString}`}
@@ -262,6 +274,7 @@ export default function DomainsTab({ projectId, version, onOpenDomain }: {
                   { key: "serpmonColHost", sort: null as Sort | null },
                   { key: "serpmonColAge", sort: "age" as Sort | null },
                   { key: "serpmonColDr", sort: "dr" as Sort | null },
+                  { key: "serpmonColLinks", sort: "links" as Sort | null },
                   { key: "serpmonColKeywords", sort: "keywords" as Sort | null },
                   { key: "serpmonColTop10", sort: "top10" as Sort | null },
                   { key: "serpmonColBest", sort: "bestPos" as Sort | null },
@@ -302,6 +315,11 @@ export default function DomainsTab({ projectId, version, onOpenDomain }: {
                     <td style={tdStyle}>{ageCell(r)}</td>
                     <td style={tdNum}>{r.dr != null ? Math.round(r.dr) : <span style={{ color: "var(--color-text-tertiary)" }}>—</span>}</td>
                     <td style={tdNum}>
+                      {r.refdomains != null
+                        ? r.refdomains.toLocaleString()
+                        : <span style={{ color: "var(--color-text-tertiary)" }} title={tr("serpmonNoMetricsKey")}>—</span>}
+                    </td>
+                    <td style={tdNum}>
                       {r.keywords}
                       {delta !== 0 && (
                         <span style={{
@@ -320,7 +338,7 @@ export default function DomainsTab({ projectId, version, onOpenDomain }: {
                 );
               })}
               {!loading && rows.length === 0 && !error && (
-                <tr><td colSpan={8} style={{ ...tdStyle, textAlign: "center", padding: 22, color: "var(--color-text-tertiary)" }}>—</td></tr>
+                <tr><td colSpan={9} style={{ ...tdStyle, textAlign: "center", padding: 22, color: "var(--color-text-tertiary)" }}>—</td></tr>
               )}
             </tbody>
           </table>

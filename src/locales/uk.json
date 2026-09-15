@@ -4044,6 +4044,7 @@
   "serpmonColHost": "Домен",
   "serpmonColAge": "Вік",
   "serpmonColDr": "DR",
+  "serpmonColLinks": "Посилання",
   "serpmonColKeywords": "Запитів",
   "serpmonColTop10": "Топ-10",
   "serpmonColBest": "Краща",
@@ -4053,7 +4054,9 @@
   "serpmonAgeYears": "{n} р.",
   "serpmonLoadAge": "Завантажити вік",
   "serpmonLoadDr": "Завантажити DR",
+  "serpmonLoadLinks": "Завантажити посилання",
   "serpmonLoadFreeNote": "Безкоштовно: відкриті RDAP/WHOIS і безкоштовний DR від Ahrefs",
+  "serpmonLoadLinksNote": "Використовує ваш ключ SEO-метрик (одиниці Ahrefs/Semrush)",
   "serpmonAgeUnknown": "у цієї зони немає відкритої дати реєстрації",
   "serpmonTagNew": "новий",
   "serpmonTagYoung": "молодий",
@@ -4076,5 +4079,6 @@
   "serpmonMoreCount": "ще {n}",
   "serpmonStop": "Стоп",
   "serpmonNoDrKey": "Ключ Ahrefs DR не налаштовано — додайте його в Налаштуваннях → API-ключі",
+  "serpmonNoMetricsKey": "Ключ SEO-метрик не налаштовано — додайте його в Налаштуваннях → API-ключі",
   "serpmonEnrichDone": "Оновлено {n}"
 }

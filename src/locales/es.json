@@ -4044,6 +4044,7 @@
   "serpmonColHost": "Dominio",
   "serpmonColAge": "Antigüedad",
   "serpmonColDr": "DR",
+  "serpmonColLinks": "Enlaces",
   "serpmonColKeywords": "Palabras clave",
   "serpmonColTop10": "Top 10",
   "serpmonColBest": "Mejor",
@@ -4053,7 +4054,9 @@
   "serpmonAgeYears": "{n} a.",
   "serpmonLoadAge": "Cargar fechas de registro",
   "serpmonLoadDr": "Cargar DR",
+  "serpmonLoadLinks": "Cargar enlaces",
   "serpmonLoadFreeNote": "Gratis: RDAP/WHOIS públicos y el endpoint gratuito de DR de Ahrefs",
+  "serpmonLoadLinksNote": "Usa tu clave de métricas SEO (unidades Ahrefs/Semrush)",
   "serpmonAgeUnknown": "no hay fecha de registro pública para esta zona",
   "serpmonTagNew": "nuevo",
   "serpmonTagYoung": "joven",
@@ -4076,5 +4079,6 @@
   "serpmonMoreCount": "{n} más",
   "serpmonStop": "Detener",
   "serpmonNoDrKey": "No hay clave de DR de Ahrefs configurada — añádela en Ajustes → Claves API",
+  "serpmonNoMetricsKey": "No hay clave de métricas SEO configurada — añádela en Ajustes → Claves API",
   "serpmonEnrichDone": "{n} actualizados"
 }
