@@ -20,6 +20,10 @@ export async function register() {
     // calls only, and a tick with nothing due is a single indexed query.
     const { startDropsScheduler } = await import('@/lib/drops/scheduler');
     startDropsScheduler();
+    // SERP Monitor: resumes running checks, starts scheduled ones, then enriches new hosts.
+    // A-Parser only, so no per-request bill; idle ticks are one indexed query.
+    const { startSerpmonScheduler } = await import('@/lib/serpmon/scheduler');
+    startSerpmonScheduler();
     // The only scheduler here that can spend money, so it is also the only one that does nothing
     // until a user turns it on and gives it a budget of its own.
     const { startWarmupScheduler } = await import('@/lib/warmupScheduler');
