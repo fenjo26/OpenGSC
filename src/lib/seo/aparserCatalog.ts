@@ -17,8 +17,8 @@
 export interface AparserCapability { parser: string; useKey: string; wired: boolean }
 
 export const APARSER_CAPABILITIES: AparserCapability[] = [
-  // SERP — wired once the provider branch lands in lib/seo/serp.ts.
-  { parser: "SE::Google", useKey: "aparserCapGoogle", wired: false },
+  // SERP — the runSerp("aparser") branch and SERP Monitor's only v1 source.
+  { parser: "SE::Google", useKey: "aparserCapGoogle", wired: true },
   { parser: "SE::Bing", useKey: "aparserCapBing", wired: false },
   { parser: "SE::Yandex", useKey: "aparserCapYandex", wired: false },
   // Rank Tracker — the purpose-built position parsers.

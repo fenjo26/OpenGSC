@@ -1,0 +1,519 @@
+{
+  "success": 1,
+  "totalcount": "8720000",
+  "query": {
+    "query": "casino online",
+    "orig": "casino online"
+  },
+  "serp": [
+    {
+      "link": "https://result001.example.com/page/1",
+      "anchor": "Result 001 — synthetic",
+      "snippet": "Synthetic snippet for organic row 1."
+    },
+    {
+      "link": "https://result002.example.com/page/2",
+      "anchor": "Result 002 — synthetic",
+      "snippet": "Synthetic snippet for organic row 2."
+    },
+    {
+      "link": "https://result003.example.com/page/3",
+      "anchor": "Result 003 — synthetic",
+      "snippet": "Synthetic snippet for organic row 3."
+    },
+    {
+      "link": "https://result004.example.com/page/4",
+      "anchor": "Result 004 — synthetic",
+      "snippet": "Synthetic snippet for organic row 4."
+    },
+    {
+      "link": "https://result005.example.com/page/5",
+      "anchor": "Result 005 — synthetic",
+      "snippet": "Synthetic snippet for organic row 5."
+    },
+    {
+      "link": "https://result006.example.com/page/6",
+      "anchor": "Result 006 — synthetic",
+      "snippet": "Synthetic snippet for organic row 6."
+    },
+    {
+      "link": "https://result007.example.com/page/7",
+      "anchor": "Result 007 — synthetic",
+      "snippet": "Synthetic snippet for organic row 7."
+    },
+    {
+      "link": "https://result008.example.com/page/8",
+      "anchor": "Result 008 — synthetic",
+      "snippet": "Synthetic snippet for organic row 8."
+    },
+    {
+      "link": "https://result009.example.com/page/9",
+      "anchor": "Result 009 — synthetic",
+      "snippet": "Synthetic snippet for organic row 9."
+    },
+    {
+      "link": "https://result010.example.com/page/10",
+      "anchor": "Result 010 — synthetic",
+      "snippet": "Synthetic snippet for organic row 10."
+    },
+    {
+      "link": "https://result011.example.com/page/11",
+      "anchor": "Result 011 — synthetic",
+      "snippet": "Synthetic snippet for organic row 11."
+    },
+    {
+      "link": "https://result012.example.com/page/12",
+      "anchor": "Result 012 — synthetic",
+      "snippet": "Synthetic snippet for organic row 12."
+    },
+    {
+      "link": "https://result013.example.com/page/13",
+      "anchor": "Result 013 — synthetic",
+      "snippet": "Synthetic snippet for organic row 13."
+    },
+    {
+      "link": "https://result014.example.com/page/14",
+      "anchor": "Result 014 — synthetic",
+      "snippet": "Synthetic snippet for organic row 14."
+    },
+    {
+      "link": "https://result015.example.com/page/15",
+      "anchor": "Result 015 — synthetic",
+      "snippet": "Synthetic snippet for organic row 15."
+    },
+    {
+      "link": "https://result016.example.com/page/16",
+      "anchor": "Result 016 — synthetic",
+      "snippet": "Synthetic snippet for organic row 16."
+    },
+    {
+      "link": "https://result017.example.com/page/17",
+      "anchor": "Result 017 — synthetic",
+      "snippet": "Synthetic snippet for organic row 17."
+    },
+    {
+      "link": "https://result018.example.com/page/18",
+      "anchor": "Result 018 — synthetic",
+      "snippet": "Synthetic snippet for organic row 18."
+    },
+    {
+      "link": "https://result019.example.com/page/19",
+      "anchor": "Result 019 — synthetic",
+      "snippet": "Synthetic snippet for organic row 19."
+    },
+    {
+      "link": "https://result020.example.com/page/20",
+      "anchor": "Result 020 — synthetic",
+      "snippet": "Synthetic snippet for organic row 20."
+    },
+    {
+      "link": "https://result021.example.com/page/21",
+      "anchor": "Result 021 — synthetic",
+      "snippet": "Synthetic snippet for organic row 21."
+    },
+    {
+      "link": "https://result022.example.com/page/22",
+      "anchor": "Result 022 — synthetic",
+      "snippet": "Synthetic snippet for organic row 22."
+    },
+    {
+      "link": "https://result023.example.com/page/23",
+      "anchor": "Result 023 — synthetic",
+      "snippet": "Synthetic snippet for organic row 23."
+    },
+    {
+      "link": "https://result024.example.com/page/24",
+      "anchor": "Result 024 — synthetic",
+      "snippet": "Synthetic snippet for organic row 24."
+    },
+    {
+      "link": "https://result025.example.com/page/25",
+      "anchor": "Result 025 — synthetic",
+      "snippet": "Synthetic snippet for organic row 25."
+    },
+    {
+      "link": "https://result026.example.com/page/26",
+      "anchor": "Result 026 — synthetic",
+      "snippet": "Synthetic snippet for organic row 26."
+    },
+    {
+      "link": "https://result027.example.com/page/27",
+      "anchor": "Result 027 — synthetic",
+      "snippet": "Synthetic snippet for organic row 27."
+    },
+    {
+      "link": "https://result028.example.com/page/28",
+      "anchor": "Result 028 — synthetic",
+      "snippet": "Synthetic snippet for organic row 28."
+    },
+    {
+      "link": "https://result029.example.com/page/29",
+      "anchor": "Result 029 — synthetic",
+      "snippet": "Synthetic snippet for organic row 29."
+    },
+    {
+      "link": "https://result030.example.com/page/30",
+      "anchor": "Result 030 — synthetic",
+      "snippet": "Synthetic snippet for organic row 30."
+    },
+    {
+      "link": "https://result031.example.com/page/31",
+      "anchor": "Result 031 — synthetic",
+      "snippet": "Synthetic snippet for organic row 31."
+    },
+    {
+      "link": "https://result032.example.com/page/32",
+      "anchor": "Result 032 — synthetic",
+      "snippet": "Synthetic snippet for organic row 32."
+    },
+    {
+      "link": "https://result033.example.com/page/33",
+      "anchor": "Result 033 — synthetic",
+      "snippet": "Synthetic snippet for organic row 33."
+    },
+    {
+      "link": "https://result034.example.com/page/34",
+      "anchor": "Result 034 — synthetic",
+      "snippet": "Synthetic snippet for organic row 34."
+    },
+    {
+      "link": "https://result035.example.com/page/35",
+      "anchor": "Result 035 — synthetic",
+      "snippet": "Synthetic snippet for organic row 35."
+    },
+    {
+      "link": "https://result036.example.com/page/36",
+      "anchor": "Result 036 — synthetic",
+      "snippet": "Synthetic snippet for organic row 36."
+    },
+    {
+      "link": "https://result037.example.com/page/37",
+      "anchor": "Result 037 — synthetic",
+      "snippet": "Synthetic snippet for organic row 37."
+    },
+    {
+      "link": "https://result038.example.com/page/38",
+      "anchor": "Result 038 — synthetic",
+      "snippet": "Synthetic snippet for organic row 38."
+    },
+    {
+      "link": "https://result039.example.com/page/39",
+      "anchor": "Result 039 — synthetic",
+      "snippet": "Synthetic snippet for organic row 39."
+    },
+    {
+      "link": "https://result040.example.com/page/40",
+      "anchor": "Result 040 — synthetic",
+      "snippet": "Synthetic snippet for organic row 40."
+    },
+    {
+      "link": "https://result041.example.com/page/41",
+      "anchor": "Result 041 — synthetic",
+      "snippet": "Synthetic snippet for organic row 41."
+    },
+    {
+      "link": "https://result042.example.com/page/42",
+      "anchor": "Result 042 — synthetic",
+      "snippet": "Synthetic snippet for organic row 42."
+    },
+    {
+      "link": "https://result043.example.com/page/43",
+      "anchor": "Result 043 — synthetic",
+      "snippet": "Synthetic snippet for organic row 43."
+    },
+    {
+      "link": "https://result044.example.com/page/44",
+      "anchor": "Result 044 — synthetic",
+      "snippet": "Synthetic snippet for organic row 44."
+    },
+    {
+      "link": "https://result045.example.com/page/45",
+      "anchor": "Result 045 — synthetic",
+      "snippet": "Synthetic snippet for organic row 45."
+    },
+    {
+      "link": "https://result046.example.com/page/46",
+      "anchor": "Result 046 — synthetic",
+      "snippet": "Synthetic snippet for organic row 46."
+    },
+    {
+      "link": "https://result047.example.com/page/47",
+      "anchor": "Result 047 — synthetic",
+      "snippet": "Synthetic snippet for organic row 47."
+    },
+    {
+      "link": "https://result048.example.com/page/48",
+      "anchor": "Result 048 — synthetic",
+      "snippet": "Synthetic snippet for organic row 48."
+    },
+    {
+      "link": "https://result049.example.com/page/49",
+      "anchor": "Result 049 — synthetic",
+      "snippet": "Synthetic snippet for organic row 49."
+    },
+    {
+      "link": "https://result050.example.com/page/50",
+      "anchor": "Result 050 — synthetic",
+      "snippet": "Synthetic snippet for organic row 50."
+    },
+    {
+      "link": "https://result051.example.com/page/51",
+      "anchor": "Result 051 — synthetic",
+      "snippet": "Synthetic snippet for organic row 51."
+    },
+    {
+      "link": "https://result052.example.com/page/52",
+      "anchor": "Result 052 — synthetic",
+      "snippet": "Synthetic snippet for organic row 52."
+    },
+    {
+      "link": "https://result053.example.com/page/53",
+      "anchor": "Result 053 — synthetic",
+      "snippet": "Synthetic snippet for organic row 53."
+    },
+    {
+      "link": "https://result054.example.com/page/54",
+      "anchor": "Result 054 — synthetic",
+      "snippet": "Synthetic snippet for organic row 54."
+    },
+    {
+      "link": "https://result055.example.com/page/55",
+      "anchor": "Result 055 — synthetic",
+      "snippet": "Synthetic snippet for organic row 55."
+    },
+    {
+      "link": "https://result056.example.com/page/56",
+      "anchor": "Result 056 — synthetic",
+      "snippet": "Synthetic snippet for organic row 56."
+    },
+    {
+      "link": "https://result057.example.com/page/57",
+      "anchor": "Result 057 — synthetic",
+      "snippet": "Synthetic snippet for organic row 57."
+    },
+    {
+      "link": "https://result058.example.com/page/58",
+      "anchor": "Result 058 — synthetic",
+      "snippet": "Synthetic snippet for organic row 58."
+    },
+    {
+      "link": "https://result059.example.com/page/59",
+      "anchor": "Result 059 — synthetic",
+      "snippet": "Synthetic snippet for organic row 59."
+    },
+    {
+      "link": "https://result060.example.com/page/60",
+      "anchor": "Result 060 — synthetic",
+      "snippet": "Synthetic snippet for organic row 60."
+    },
+    {
+      "link": "https://result061.example.com/page/61",
+      "anchor": "Result 061 — synthetic",
+      "snippet": "Synthetic snippet for organic row 61."
+    },
+    {
+      "link": "https://result062.example.com/page/62",
+      "anchor": "Result 062 — synthetic",
+      "snippet": "Synthetic snippet for organic row 62."
+    },
+    {
+      "link": "https://result063.example.com/page/63",
+      "anchor": "Result 063 — synthetic",
+      "snippet": "Synthetic snippet for organic row 63."
+    },
+    {
+      "link": "https://result064.example.com/page/64",
+      "anchor": "Result 064 — synthetic",
+      "snippet": "Synthetic snippet for organic row 64."
+    },
+    {
+      "link": "https://result065.example.com/page/65",
+      "anchor": "Result 065 — synthetic",
+      "snippet": "Synthetic snippet for organic row 65."
+    },
+    {
+      "link": "https://result066.example.com/page/66",
+      "anchor": "Result 066 — synthetic",
+      "snippet": "Synthetic snippet for organic row 66."
+    },
+    {
+      "link": "https://result067.example.com/page/67",
+      "anchor": "Result 067 — synthetic",
+      "snippet": "Synthetic snippet for organic row 67."
+    },
+    {
+      "link": "https://result068.example.com/page/68",
+      "anchor": "Result 068 — synthetic",
+      "snippet": "Synthetic snippet for organic row 68."
+    },
+    {
+      "link": "https://result069.example.com/page/69",
+      "anchor": "Result 069 — synthetic",
+      "snippet": "Synthetic snippet for organic row 69."
+    },
+    {
+      "link": "https://result070.example.com/page/70",
+      "anchor": "Result 070 — synthetic",
+      "snippet": "Synthetic snippet for organic row 70."
+    },
+    {
+      "link": "https://result071.example.com/page/71",
+      "anchor": "Result 071 — synthetic",
+      "snippet": "Synthetic snippet for organic row 71."
+    },
+    {
+      "link": "https://result072.example.com/page/72",
+      "anchor": "Result 072 — synthetic",
+      "snippet": "Synthetic snippet for organic row 72."
+    },
+    {
+      "link": "https://result073.example.com/page/73",
+      "anchor": "Result 073 — synthetic",
+      "snippet": "Synthetic snippet for organic row 73."
+    },
+    {
+      "link": "https://result074.example.com/page/74",
+      "anchor": "Result 074 — synthetic",
+      "snippet": "Synthetic snippet for organic row 74."
+    },
+    {
+      "link": "https://result075.example.com/page/75",
+      "anchor": "Result 075 — synthetic",
+      "snippet": "Synthetic snippet for organic row 75."
+    },
+    {
+      "link": "https://result076.example.com/page/76",
+      "anchor": "Result 076 — synthetic",
+      "snippet": "Synthetic snippet for organic row 76."
+    },
+    {
+      "link": "https://result077.example.com/page/77",
+      "anchor": "Result 077 — synthetic",
+      "snippet": "Synthetic snippet for organic row 77."
+    },
+    {
+      "link": "https://result078.example.com/page/78",
+      "anchor": "Result 078 — synthetic",
+      "snippet": "Synthetic snippet for organic row 78."
+    },
+    {
+      "link": "https://result079.example.com/page/79",
+      "anchor": "Result 079 — synthetic",
+      "snippet": "Synthetic snippet for organic row 79."
+    },
+    {
+      "link": "https://result080.example.com/page/80",
+      "anchor": "Result 080 — synthetic",
+      "snippet": "Synthetic snippet for organic row 80."
+    },
+    {
+      "link": "https://result081.example.com/page/81",
+      "anchor": "Result 081 — synthetic",
+      "snippet": "Synthetic snippet for organic row 81."
+    },
+    {
+      "link": "https://result082.example.com/page/82",
+      "anchor": "Result 082 — synthetic",
+      "snippet": "Synthetic snippet for organic row 82."
+    },
+    {
+      "link": "https://result083.example.com/page/83",
+      "anchor": "Result 083 — synthetic",
+      "snippet": "Synthetic snippet for organic row 83."
+    },
+    {
+      "link": "https://result084.example.com/page/84",
+      "anchor": "Result 084 — synthetic",
+      "snippet": "Synthetic snippet for organic row 84."
+    },
+    {
+      "link": "https://result085.example.com/page/85",
+      "anchor": "Result 085 — synthetic",
+      "snippet": "Synthetic snippet for organic row 85."
+    },
+    {
+      "link": "https://result086.example.com/page/86",
+      "anchor": "Result 086 — synthetic",
+      "snippet": "Synthetic snippet for organic row 86."
+    },
+    {
+      "link": "https://result087.example.com/page/87",
+      "anchor": "Result 087 — synthetic",
+      "snippet": "Synthetic snippet for organic row 87."
+    },
+    {
+      "link": "https://result088.example.com/page/88",
+      "anchor": "Result 088 — synthetic",
+      "snippet": "Synthetic snippet for organic row 88."
+    },
+    {
+      "link": "https://result089.example.com/page/89",
+      "anchor": "Result 089 — synthetic",
+      "snippet": "Synthetic snippet for organic row 89."
+    },
+    {
+      "link": "https://result090.example.com/page/90",
+      "anchor": "Result 090 — synthetic",
+      "snippet": "Synthetic snippet for organic row 90."
+    },
+    {
+      "link": "https://result091.example.com/page/91",
+      "anchor": "Result 091 — synthetic",
+      "snippet": "Synthetic snippet for organic row 91."
+    },
+    {
+      "link": "https://result092.example.com/page/92",
+      "anchor": "Result 092 — synthetic",
+      "snippet": "Synthetic snippet for organic row 92."
+    },
+    {
+      "link": "https://result093.example.com/page/93",
+      "anchor": "Result 093 — synthetic",
+      "snippet": "Synthetic snippet for organic row 93."
+    },
+    {
+      "link": "https://result094.example.com/page/94",
+      "anchor": "Result 094 — synthetic",
+      "snippet": "Synthetic snippet for organic row 94."
+    },
+    {
+      "link": "https://result095.example.com/page/95",
+      "anchor": "Result 095 — synthetic",
+      "snippet": "Synthetic snippet for organic row 95."
+    },
+    {
+      "link": "https://result096.example.com/page/96",
+      "anchor": "Result 096 — synthetic",
+      "snippet": "Synthetic snippet for organic row 96."
+    },
+    {
+      "link": "https://result097.example.com/page/97",
+      "anchor": "Result 097 — synthetic",
+      "snippet": "Synthetic snippet for organic row 97."
+    },
+    {
+      "link": "https://result098.example.com/page/98",
+      "anchor": "Result 098 — synthetic",
+      "snippet": "Synthetic snippet for organic row 98."
+    },
+    {
+      "link": "https://result099.example.com/page/99",
+      "anchor": "Result 099 — synthetic",
+      "snippet": "Synthetic snippet for organic row 99."
+    },
+    {
+      "link": "https://result100.example.com/page/100",
+      "anchor": "Result 100 — synthetic",
+      "snippet": "Synthetic snippet for organic row 100."
+    }
+  ],
+  "related": [
+    "casino online argentina",
+    "mejores casinos online"
+  ],
+  "paa": [
+    {
+      "question": "Which online casino is legal?"
+    }
+  ]
+}

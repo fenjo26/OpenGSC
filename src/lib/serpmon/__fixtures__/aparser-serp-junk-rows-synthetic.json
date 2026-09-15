@@ -1,0 +1,28 @@
+{
+  "success": 1,
+  "totalcount": "154000",
+  "serp": [
+    {
+      "anchor": "Images carousel — no link field",
+      "snippet": ""
+    },
+    {
+      "link": "javascript:void(0)",
+      "anchor": "JS pseudo-link"
+    },
+    {
+      "link": "",
+      "anchor": "Empty link"
+    },
+    {
+      "link": "https://good-one.example.com/a",
+      "anchor": "Good One",
+      "snippet": "first organic"
+    },
+    {
+      "link": "https://www.good-two.example.net/b",
+      "anchor": "Good Two",
+      "snippet": "second organic"
+    }
+  ]
+}
