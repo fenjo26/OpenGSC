@@ -191,11 +191,13 @@ export default function MarketTab({ projectId, groups, host, setHost, version, o
                       : <span style={{ color: "var(--color-text-tertiary)" }}>—</span>}
                   </td>
                   <td style={{ ...tdStyle, maxWidth: 420, whiteSpace: "normal" }}>
-                    {r.status === "failed" || r.status === "partial" ? (
-                      // No chips off a failed/partial take: the problem line is the truth, and a
-                      // "−host" off a burned proxy would be a fake storm (CONTRACT §0.1).
+                    {r.status === "failed" ? (
+                      // No chips off a failed take: the problem line is the truth, and a
+                      // "−host" off a burned proxy would be a fake storm (CONTRACT §0.1). A
+                      // partial take DID take part in the comparison, so its chips are real
+                      // and stay visible.
                       <span title={r.problem ? problemLabel(r.problem, tr) : tr("serpmonNoComparison")}
-                        style={{ display: "inline-flex", alignItems: "center", gap: 5, color: r.status === "failed" ? "var(--color-danger)" : "var(--color-accent-orange)" }}>
+                        style={{ display: "inline-flex", alignItems: "center", gap: 5, color: "var(--color-danger)" }}>
                         <AlertTriangle size={12} />
                         <span style={{ fontSize: 11.5 }}>
                           {r.problem ? problemLabel(r.problem, tr) : tr("serpmonNoComparison")}
