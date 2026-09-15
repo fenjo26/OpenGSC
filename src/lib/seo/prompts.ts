@@ -494,10 +494,12 @@ ${bannedWordsBlock(args.bannedWords)}
 }
 
 // ─── Landing wireframe (block-by-block skeleton, no visual design) ──────────────────
-// Turns the already-built outline (ТЗ) + optionally the author's own page structure into an
-// ordered list of landing-page BLOCKS (hero, USP bar, card lists, reviews, FAQ, CTA…), each with
-// concrete, checkable requirements — mirrors the "Wireframe (макет лендинга)" step of the
-// reference tool. Runs AFTER buildOutlinePrompt so it can reuse the same entities/keywords/intent.
+// Turns the already-built outline (ТЗ) + the scraped top-page skeletons + optionally the author's
+// own page structure into an ordered list of landing-page BLOCKS (hero, USP bar, card lists,
+// reviews, FAQ, CTA…), each with concrete, checkable requirements — mirrors the "Wireframe
+// (макет лендинга)" step of the reference tool. Runs AFTER buildOutlinePrompt so it can reuse the
+// same entities/keywords/intent, and reads the REAL heading trees of the ranking pages so the
+// block order mirrors what actually ranks, not an abstract template.
 export const WIREFRAME_BLOCK_TYPES = [
   "HERO_FORM", "USP_BAR", "ITEM_CARD_LIST", "HOW_IT_WORKS", "COMPARISON_TABLE",
   "PRICING_TABLE", "FEATURE_LIST", "GALLERY", "REVIEWS", "TRUST_BADGES", "MAP",
@@ -509,6 +511,8 @@ export function buildWireframePrompt(args: {
   language: string;
   country: string;
   outline: any;
+  /** Scraped top-page skeletons ({ url, title, headings, word_count, has_price_table, has_faq }) — the real structures the wireframe should mirror. */
+  competitors?: any[];
   structureMode?: "serp" | "my_1to1" | "hybrid" | "seo_block";
   myStructure?: { level: string; text: string; words: number }[];
   targetWordCount?: number;
@@ -533,6 +537,15 @@ export function buildWireframePrompt(args: {
     entities: (s.entities_to_cover || []).map((e: any) => typeof e === "string" ? e : e.name),
     keywords: s.keywords,
   }));
+  // Real skeletons of the ranking pages, trimmed to what a wireframe needs: heading tree in
+  // document order + the structural markers (price table, FAQ, size).
+  const slimCompetitors = (Array.isArray(args.competitors) ? args.competitors : []).slice(0, 12).map((c: any) => ({
+    domain: c.domain || ((): string => { try { return new URL(c.url).hostname.replace(/^www\./, ""); } catch { return ""; } })(),
+    word_count: Number(c.word_count) || 0,
+    has_price_table: !!c.has_price_table,
+    has_faq: !!c.has_faq,
+    headings: (Array.isArray(c.headings) ? c.headings : []).slice(0, 40),
+  })).filter((c: any) => c.headings.length > 0);
   const mode = args.structureMode || "serp";
   const modeBlock = mode === "my_1to1" && args.myStructure?.length
     ? `\n\nРЕЖИМ: ПО МОЕЙ СТРУКТУРЕ (1:1). У пользователя уже есть готовая страница со СВОИМИ заголовками — используй ИХ порядок и формулировки ДОСЛОВНО как каркас wireframe-блоков (не придумывай новые заголовки, не переставляй и не выкидывай). Для каждого заголовка подбери наиболее подходящий тип блока из каталога и требования, наполненные фактурой из ТЗ (сущности/ключи ниже). "words" ориентир для секции указан у пользователя — держись его при формулировке requirements по объёму.\nМОЯ СТРУКТУРА СТРАНИЦЫ: ${JSON.stringify(args.myStructure)}`
@@ -568,6 +581,7 @@ export function buildWireframePrompt(args: {
 - Для КАЖДОГО блока: "heading" — конкретный заголовок ЭТОГО блока (не общее название типа), на языке ${args.language}, с ключом, где уместно.
 - "requirements" (2-4 шт. на блок) — КОНКРЕТНЫЕ, проверяемые пункты содержимого (например "≥3 карточки типов авто", "у каждой карточки: фото, название, вместимость, цена от", "агрегированный рейтинг с известной площадки (Google/Trustpilot)", "≥3 именных отзыва с деталями поездки"). НЕ общие фразы вроде «сделать хорошо».
 - Используй сущности/ключи/факты из ТЗ ниже, чтобы requirements были предметными (конкретные типы авто/тарифов/сущности, а не абстракции).
+- Опирайся на РЕАЛЬНЫЕ структуры топ-страниц (ниже, если даны): повторяй проверенный порядок секций и типы блоков, которые встречаются у лидеров выдачи (у кого-то таблица цен — значит блок PRICING_TABLE обязателен; почти у всех FAQ — блок FAQ). Отличайся от топов только там, где у страницы явное преимущество.
 - source_section (опционально) — heading соответствующей секции из ТЗ, если блок её раскрывает.
 - НЕ выдумывай лицензий/отзывов/цифр — требования должны описывать ЧТО показать, а не выдуманные значения.${modeBlock}
 
@@ -575,7 +589,7 @@ export function buildWireframePrompt(args: {
 - keyword: ${args.keyword}
 - язык/страна: ${args.language}/${args.country}
 - доминирующий интент: ${dominant || "не определён"}${twc}
-- ТЗ (сокращённо — заголовки/summary/сущности/ключи по секциям): ${JSON.stringify(slimSections).slice(0, 9000)}
+${slimCompetitors.length ? `- Структуры топ-страниц выдачи (реальные заголовки в порядке документа, word_count, маркеры таблиц/FAQ): ${JSON.stringify(slimCompetitors).slice(0, 7000)}\n` : ""}- ТЗ (сокращённо — заголовки/summary/сущности/ключи по секциям): ${JSON.stringify(slimSections).slice(0, 9000)}
 
 ВЕРНИ JSON строго по схеме (только JSON):
 { "blocks": [ { "type": "HERO_FORM", "heading": "", "requirements": ["",""], "source_section": "" } ] }`;

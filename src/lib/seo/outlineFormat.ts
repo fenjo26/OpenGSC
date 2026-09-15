@@ -203,6 +203,28 @@ export function htmlDocument(title: string, bodyHtml: string): string {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title></head><body>${bodyHtml}</body></html>`;
 }
 
+// Landing-flow wireframe → Markdown brief for a designer/developer: one numbered section per
+// block (type + its concrete heading) with checkable requirements — the same data WireframeView
+// renders as the page mockup, in a form you can paste into a task tracker.
+export function wireframeToMarkdown(w: any, keyword?: string): string {
+  const blocks = Array.isArray(w?.blocks) ? w.blocks : [];
+  if (!blocks.length) return "";
+  const L: string[] = [];
+  L.push(`# Wireframe${keyword ? `: ${keyword}` : ""}\n`);
+  L.push("Блок-схема секций лендинга с проверяемыми требованиями к содержимому — без визуального дизайна, можно сразу отдавать дизайнеру/верстальщику.\n");
+  blocks.forEach((b: any, i: number) => {
+    L.push(`## ${i + 1}. ${b.type || "BLOCK"}${b.heading ? ` — ${b.heading}` : ""}`);
+    if (b.source_section) L.push(`*Источник в ТЗ: ${b.source_section}*`);
+    const reqs: string[] = Array.isArray(b.requirements) ? b.requirements : [];
+    if (reqs.length) {
+      L.push("");
+      reqs.forEach((r: string) => L.push(`- [ ] ${r}`));
+    }
+    L.push("");
+  });
+  return L.join("\n");
+}
+
 // Headings parsed from a generated article (markdown).
 export function articleHeadings(md: string): Heading[] {
   return (md.match(/^#{1,6}\s.+$/gm) || []).map((line) => {

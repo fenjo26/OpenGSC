@@ -1652,6 +1652,7 @@ export async function genWireframe(b: any): Promise<GenResult> {
     language: String(b.language ?? b.outline?.meta?.language ?? "en"),
     country: String(b.country ?? b.outline?.meta?.country ?? "us"),
     outline: b.outline,
+    competitors: Array.isArray(b.competitors) ? b.competitors : undefined,
     structureMode: b.structureMode,
     myStructure: Array.isArray(b.myStructure) ? b.myStructure : undefined,
     targetWordCount: b.targetWordCount ? Number(b.targetWordCount) : undefined,
@@ -1669,6 +1670,25 @@ export async function genWireframe(b: any): Promise<GenResult> {
   return { ok: true, data: wireframe };
 }
 
+// Slim competitor skeleton persisted with a landing result: enough to redraw each top page's real
+// structure (heading tree, price-table/FAQ markers, size) in the detail view, without the scraped
+// text_sample bulk. Pure scraped data — no extra model call.
+function slimCompetitors(list: any): any[] {
+  if (!Array.isArray(list)) return [];
+  const domainOf = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
+  return list.slice(0, 30).map((c: any) => ({
+    position: Number(c.position) || 0,
+    url: String(c.url || ""),
+    domain: String(c.domain || domainOf(c.url || "")),
+    title: String(c.title || ""),
+    headings: Array.isArray(c.headings) ? c.headings.slice(0, 40).map((h: any) => String(h)) : [],
+    word_count: Number(c.word_count) || 0,
+    has_price_table: !!c.has_price_table,
+    has_faq: !!c.has_faq,
+    site_type: c.site_type ? String(c.site_type) : undefined,
+  }));
+}
+
 // ─── Landing-flow orchestrator: ТЗ (+ wireframe) (+ текст), per "что генерировать" ───
 // b.generate: "tz" | "tz_text" | "tz_wireframe" | "all" (default "tz_wireframe", matches the
 // reference tool's Landing-flow which always ships a wireframe alongside the ТЗ).
@@ -1682,6 +1702,10 @@ export async function genLanding(b: any): Promise<GenResult> {
   const outline = outlineRes.data;
 
   const result: any = { outline };
+
+  // The real top-page skeletons ride along: the wireframe is grounded on them and the detail
+  // view shows them next to it as "how the ranking pages are actually built".
+  result.competitors = slimCompetitors(b.competitors);
 
   if (wantsWireframe) {
     const wfRes = await genWireframe({ ...b, outline });

@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { FileText, Wand2, Download, Loader2, ChevronDown, ChevronRight, BarChart3, LayoutTemplate } from "lucide-react";
+import { FileText, Wand2, Download, Loader2, ChevronDown, ChevronRight, BarChart3, LayoutTemplate, Globe } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import { wireframeToMarkdown } from "@/lib/seo/outlineFormat";
 
 const W_COLOR = (w: number) => w >= 9 ? "#ff453a" : w >= 7 ? "#ff9f0a" : "#2997ff";
 const PRI: Record<string, string> = { high: "#ff453a", medium: "#ff9f0a", low: "#34c759" };
@@ -320,10 +321,16 @@ function ReqCard({ text }: { text: string }) {
     </div>
   );
 }
-export function WireframeView({ wireframe }: { wireframe: any }) {
+export function WireframeView({ wireframe, keyword }: { wireframe: any; keyword?: string }) {
   const { t } = useLanguage();
   const blocks = Array.isArray(wireframe?.blocks) ? wireframe.blocks : [];
   if (!blocks.length) return null;
+  function downloadMd() {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([wireframeToMarkdown(wireframe, keyword)], { type: "text/markdown" }));
+    a.download = `wireframe-${(keyword || "landing").replace(/\s+/g, "-").slice(0, 40)}.md`;
+    a.click();
+  }
   const BUTTON_BLOCKS = new Set(["HERO_FORM", "CTA_BANNER"]);
   const IMAGE_BLOCKS = new Set(["USP_BAR", "GALLERY", "MAP"]);
   const hatch: React.CSSProperties = {
@@ -333,10 +340,15 @@ export function WireframeView({ wireframe }: { wireframe: any }) {
   };
   return (
     <div className="panel">
-      <h3 style={{ fontSize: "16px", fontWeight: 700, margin: "0 0 4px", color: "var(--color-text-primary)", display: "flex", alignItems: "center", gap: "8px" }}>
-        <LayoutTemplate size={18} color="var(--color-accent-purple)" /> {t("seoWireframeTitle")}
-      </h3>
-      <p style={{ fontSize: "12px", color: "var(--color-text-tertiary)", margin: "0 0 12px" }}>{t("seoWireframeSub")}</p>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px" }}>
+        <div>
+          <h3 style={{ fontSize: "16px", fontWeight: 700, margin: "0 0 4px", color: "var(--color-text-primary)", display: "flex", alignItems: "center", gap: "8px" }}>
+            <LayoutTemplate size={18} color="var(--color-accent-purple)" /> {t("seoWireframeTitle")}
+          </h3>
+          <p style={{ fontSize: "12px", color: "var(--color-text-tertiary)", margin: "0 0 12px" }}>{t("seoWireframeSub")}</p>
+        </div>
+        <button onClick={downloadMd} style={{ ...btnGhost, flexShrink: 0 }}><Download size={14} /> MD</button>
+      </div>
 
       {/* The page: one bordered canvas, blocks separated by dashed cut lines */}
       <div style={{ border: "1px solid var(--color-border)", borderRadius: "12px", overflow: "hidden", background: "var(--color-card)" }}>
@@ -378,6 +390,59 @@ export function WireframeView({ wireframe }: { wireframe: any }) {
     </div>
   );
 }
+
+// ─── Landing top-page skeletons: how the ranking pages are actually built ─────────
+// Each card redraws a scraped competitor's real structure — heading tree in document order
+// plus price-table/FAQ markers — so you can eyeball the block order that ranks before looking
+// at the generated wireframe below it.
+const HEAD_CHIP: Record<string, React.CSSProperties> = {
+  H1: { background: "var(--color-bg)", color: "var(--color-text-secondary)" },
+  H2: { background: "rgba(41,151,255,0.12)", color: "var(--color-accent-blue)" },
+  H3: { background: "rgba(52,199,89,0.14)", color: "var(--color-accent-green)" },
+};
+export function CompetitorSkeletons({ competitors }: { competitors: any[] }) {
+  const { t } = useLanguage();
+  const list = (Array.isArray(competitors) ? competitors : []).filter((c: any) => Array.isArray(c.headings) && c.headings.length);
+  if (!list.length) return null;
+  return (
+    <div className="panel">
+      <h3 style={{ fontSize: "16px", fontWeight: 700, margin: "0 0 4px", color: "var(--color-text-primary)", display: "flex", alignItems: "center", gap: "8px" }}>
+        <Globe size={18} color="var(--color-accent-blue)" /> {t("seoLpCompetitorsTitle")}
+      </h3>
+      <p style={{ fontSize: "12px", color: "var(--color-text-tertiary)", margin: "0 0 12px" }}>{t("seoLpCompetitorsSub")}</p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "10px" }}>
+        {list.map((c: any, i: number) => (
+          <div key={i} style={{ border: "1px solid var(--color-border)", borderRadius: "10px", padding: "12px 14px", background: "var(--color-bg)", display: "flex", flexDirection: "column", gap: "8px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "7px", flexWrap: "wrap" }}>
+              <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>#{c.position || i + 1}</span>
+              <a href={c.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: "12px", fontWeight: 700, color: "var(--color-accent-blue)", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {c.domain || c.url}
+              </a>
+              {!!c.word_count && <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>{c.word_count} {t("seoWordsShort")}</span>}
+              {c.has_price_table && <span style={{ ...badge, background: "rgba(255,159,10,0.14)", color: "var(--color-accent-orange)" }}>{t("seoCompPriceTable")}</span>}
+              {c.has_faq && <span style={{ ...badge, background: "var(--color-card)", color: "var(--color-text-secondary)" }}>FAQ</span>}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "5px", maxHeight: "300px", overflowY: "auto", borderTop: "1px solid var(--color-border)", paddingTop: "8px" }}>
+              {(c.headings as string[]).map((h: string, j: number) => {
+                const m = h.match(/^(H[1-6])\s*:\s*(.*)$/);
+                const level = m ? m[1] : "H2";
+                const text = (m ? m[2] : h).trim();
+                if (!text) return null;
+                return (
+                  <div key={j} style={{ display: "flex", gap: "6px", alignItems: "flex-start", paddingLeft: (Number(level[1]) - 1) * 10 }}>
+                    <span style={{ fontSize: "8.5px", fontWeight: 700, padding: "2px 4px", borderRadius: "4px", flexShrink: 0, marginTop: "1px", ...(HEAD_CHIP[level] || HEAD_CHIP.H3) }}>{level}</span>
+                    <span style={{ fontSize: "11px", color: level === "H1" ? "var(--color-text-primary)" : "var(--color-text-secondary)", lineHeight: 1.4, fontWeight: level === "H1" ? 700 : 400 }}>{text}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+const badge: React.CSSProperties = { fontSize: "9px", fontWeight: 700, padding: "2px 7px", borderRadius: "20px", flexShrink: 0, letterSpacing: "0.03em" };
 
 // ─── Gap report (content analysis) ───────────────────────────────────────────────
 export function GapReport({ report }: { report: any }) {
