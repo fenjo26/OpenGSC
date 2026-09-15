@@ -4066,5 +4066,9 @@
   "serpmonTestAlertSent": "Enviado",
   "serpmonAlertNoChannel": "No hay Telegram ni Slack configurado",
   "serpmonPrev": "Anterior",
-  "serpmonNext": "Siguiente"
+  "serpmonNext": "Siguiente",
+  "serpmonMoreCount": "{n} más",
+  "serpmonStop": "Detener",
+  "serpmonNoDrKey": "No hay clave de DR de Ahrefs configurada — añádela en Ajustes → Claves API",
+  "serpmonEnrichDone": "{n} actualizados"
 }

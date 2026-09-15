@@ -4066,5 +4066,9 @@
   "serpmonTestAlertSent": "Отправлено",
   "serpmonAlertNoChannel": "Не настроен Telegram или Slack",
   "serpmonPrev": "Назад",
-  "serpmonNext": "Далее"
+  "serpmonNext": "Далее",
+  "serpmonMoreCount": "ещё {n}",
+  "serpmonStop": "Стоп",
+  "serpmonNoDrKey": "Ключ Ahrefs DR не настроен — добавьте его в Настройках → API-ключи",
+  "serpmonEnrichDone": "Обновлено {n}"
 }
