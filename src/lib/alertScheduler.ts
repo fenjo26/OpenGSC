@@ -37,6 +37,11 @@ export interface AlertSettings {
   favoriteLink: { on: boolean };
   balanceLow: { on: boolean; percent: number; minUsd: number };
   providerDown: { on: boolean; failures: number };
+  // SERP Monitor storm alert (serp_storm). On by default: it fires only for projects whose run
+  // actually beat its own baseline, and the per-project switch (SerpProject.alertStorm) is the
+  // finer-grained off switch. Field name follows the T6 brief (`enabled`), not the `on` of the
+  // neighbours above.
+  serpmonStorm: { enabled: boolean };
   lang: NotifyLang; // language of delivered alerts (saved from the UI language)
 }
 
@@ -58,6 +63,7 @@ export const DEFAULT_ALERT_SETTINGS: AlertSettings = {
   // (DataForSEO) сравнивают остаток с абсолютным полом minUsd.
   balanceLow: { on: true, percent: 15, minUsd: 10 },
   providerDown: { on: true, failures: 5 },
+  serpmonStorm: { enabled: true },
   lang: "en",
 };
 
@@ -77,6 +83,7 @@ export async function getAlertSettings(userId: string): Promise<AlertSettings> {
       favoriteLink: { ...DEFAULT_ALERT_SETTINGS.favoriteLink, ...(s.favoriteLink ?? {}) },
       balanceLow: { ...DEFAULT_ALERT_SETTINGS.balanceLow, ...(s.balanceLow ?? {}) },
       providerDown: { ...DEFAULT_ALERT_SETTINGS.providerDown, ...(s.providerDown ?? {}) },
+      serpmonStorm: { ...DEFAULT_ALERT_SETTINGS.serpmonStorm, ...(s.serpmonStorm ?? {}) },
       lang: normalizeLang(s.lang),
     };
   } catch {
