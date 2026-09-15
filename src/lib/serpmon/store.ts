@@ -378,6 +378,7 @@ export interface SnapshotWriteInput {
   keywordId: string;
   status: SnapshotStatus;
   problem: string | null;
+  detail: string | null;                 // raw provider/transport error, sanitized; null when none
   depth: number;
   totalCount: string;
   features: string[];
@@ -398,8 +399,8 @@ export interface SnapshotWriteResult {
  * Store one keyword's snapshot: dictionaries, the snapshot (`rows` as [position, urlId] JSON),
  * its SerpChange rows, the keyword's last* columns and the run's progress counter — one
  * transaction, so a crash halfway leaves nothing half-written. A `failed` snapshot is stored
- * with empty rows and touches only lastStatus/lastProblem: it must never become the keyword's
- * comparison base.
+ * with empty rows and touches only lastStatus/lastProblem/lastDetail: it must never become the
+ * keyword's comparison base.
  */
 export async function writeSnapshot(input: SnapshotWriteInput): Promise<SnapshotWriteResult> {
   const notCompared: SnapshotWriteResult = { written: false, compared: false, volatility: null, visibleChanges: 0 };
@@ -437,6 +438,7 @@ export async function writeSnapshot(input: SnapshotWriteInput): Promise<Snapshot
             takenAt: now,
             status: input.status,
             problem: input.problem ?? null,
+            detail: input.detail ?? null,
             depth: input.depth,
             got: input.rows.length,
             totalCount: input.totalCount ?? "",
@@ -476,10 +478,11 @@ export async function writeSnapshot(input: SnapshotWriteInput): Promise<Snapshot
       await tx.serpKeyword.update({
         where: { id: input.keywordId },
         data: failed
-          ? { lastStatus: input.status, lastProblem: input.problem ?? null }
+          ? { lastStatus: input.status, lastProblem: input.problem ?? null, lastDetail: input.detail ?? null }
           : {
               lastStatus: input.status,
               lastProblem: input.problem ?? null,
+              lastDetail: input.detail ?? null,
               lastSnapshotId: snapshotId,
               lastOkAt: now,
               lastChangeCount: diff ? diff.visibleCount : 0,
@@ -905,6 +908,7 @@ export async function marketRows(
       group: k.groupName ?? "",
       status: (k.lastStatus ?? "") as MarketRow["status"],
       problem: k.lastProblem ?? null,
+      detail: k.lastDetail ?? null,
       lastOkAt: k.lastOkAt ? k.lastOkAt.toISOString() : null,
       leaders,
       changes,
@@ -930,7 +934,7 @@ export async function keywordHistory(userId: string, keywordId: string, limit: n
     orderBy: { takenAt: "desc" },
     take: clampInt(limit, 1, 100),
     select: {
-      id: true, takenAt: true, status: true, problem: true, depth: true, got: true,
+      id: true, takenAt: true, status: true, problem: true, detail: true, depth: true, got: true,
       volatility: true, changeCount: true, rows: true,
     },
   }) as Record<string, DbRow>[];
@@ -961,6 +965,7 @@ export async function keywordHistory(userId: string, keywordId: string, limit: n
       takenAt: s.takenAt.toISOString(),
       status: s.status as SnapshotStatus,
       problem: s.problem ?? null,
+      detail: s.detail ?? null,
       depth: s.depth,
       got: s.got,
       volatility: s.volatility ?? null,

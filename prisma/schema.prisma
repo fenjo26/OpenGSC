@@ -1759,6 +1759,7 @@ model SerpKeyword {
   lastSnapshotId  String?                  // last snapshot with status ok|partial
   lastStatus      String    @default("")   // status of the most recent snapshot, any status
   lastProblem     String?
+  lastDetail      String?                  // raw provider/transport error, sanitized (no password), ≤ 300 chars
   lastChangeCount Int       @default(0)    // visible host changes in the last comparison
   lastVolatility  Float?
 
@@ -1803,6 +1804,7 @@ model SerpSnapshot {
   takenAt      DateTime @default(now())
   status       String                    // ok | partial | failed
   problem      String?                   // SnapshotProblem
+  detail       String?                   // raw provider/transport error, sanitized (no password), ≤ 300 chars
   depth        Int                       // requested
   got          Int      @default(0)      // organic rows returned (after dedupe)
   totalCount   String   @default("")     // engine-reported count, as text

@@ -196,13 +196,21 @@ export default function MarketTab({ projectId, groups, host, setHost, version, o
                       // "−host" off a burned proxy would be a fake storm (CONTRACT §0.1). A
                       // partial take DID take part in the comparison, so its chips are real
                       // and stay visible.
-                      <span title={r.problem ? problemLabel(r.problem, tr) : tr("serpmonNoComparison")}
-                        style={{ display: "inline-flex", alignItems: "center", gap: 5, color: "var(--color-danger)" }}>
-                        <AlertTriangle size={12} />
-                        <span style={{ fontSize: 11.5 }}>
-                          {r.problem ? problemLabel(r.problem, tr) : tr("serpmonNoComparison")}
+                      <>
+                        <span title={r.detail || (r.problem ? problemLabel(r.problem, tr) : tr("serpmonNoComparison"))}
+                          style={{ display: "inline-flex", alignItems: "center", gap: 5, color: "var(--color-danger)" }}>
+                          <AlertTriangle size={12} />
+                          <span style={{ fontSize: 11.5 }}>
+                            {r.problem ? problemLabel(r.problem, tr) : tr("serpmonNoComparison")}
+                          </span>
                         </span>
-                      </span>
+                        {r.detail && (
+                          <div title={r.detail} style={{
+                            fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 2,
+                            maxWidth: 380, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                          }}>{r.detail}</div>
+                        )}
+                      </>
                     ) : r.changes.length ? (
                       <ChangeChips changes={r.changes} showPlatforms={platforms === "1"} onHostClick={setHost} />
                     ) : (

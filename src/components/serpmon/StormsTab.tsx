@@ -299,6 +299,13 @@ export default function StormsTab({ projectId, runs, version }: {
                     {r.error === "all_failed" && (
                       <span style={{ fontSize: 11.5, color: "var(--color-danger)" }}>{tr("serpmonRunAllFailed")}</span>
                     )}
+                    {r.error && r.error !== "all_failed" && (
+                      // e.g. an aborted mass failure — the raw provider error is the only useful
+                      // thing about such a run, so show it (truncated, full text on hover).
+                      <span title={r.error} style={{ fontSize: 11, color: "var(--color-danger)" }}>
+                        {r.error.length > 64 ? `${r.error.slice(0, 64)}…` : r.error}
+                      </span>
+                    )}
                     {r.status === "running" && <Loader2 size={12} className="spin" />}
                   </td>
                 </tr>

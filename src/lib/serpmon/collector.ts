@@ -85,6 +85,21 @@ interface ProjectLite {
   id: string; userId: string; country: string; lang: string; depth: number; ignoreHosts: string;
 }
 
+/** Raw error text worth showing to the user: the provider's own error string or the exception
+ * message, password redacted, capped — `problem` alone ("provider_error") is not diagnosable. */
+function sanitizeDetail(raw: string | null | undefined, password: string): string | null {
+  const text = (raw ?? "").trim();
+  if (!text) return null;
+  const safe = password ? text.split(password).join("***") : text;
+  return safe.length > 300 ? `${safe.slice(0, 300)}…` : safe;
+}
+
+interface KeywordOutcome {
+  status: SnapshotStatus;
+  problem: SnapshotProblem | null;
+  detail: string | null;
+}
+
 /** Fetch one keyword's SERP and store it. A throw here means provider/transport trouble — the
  * keyword is recorded as failed/provider_error and the run goes on. */
 async function collectKeyword(
@@ -93,9 +108,10 @@ async function collectKeyword(
   runId: string,
   creds: AparserCreds,
   ignore: (host: string) => boolean,
-): Promise<void> {
+): Promise<KeywordOutcome> {
   let status: SnapshotStatus = "failed";
   let problem: SnapshotProblem | null = "provider_error";
+  let detail: string | null = null;
   let rows: SerpRow[] = [];
   let totalCount = "";
   let features: string[] = [];
@@ -114,6 +130,7 @@ async function collectKeyword(
     const ext = resp as SerpResponse & { totalCount?: string; features?: string[] };
     totalCount = ext.totalCount ?? "";
     features = ext.features ?? [];
+    detail = sanitizeDetail(ext.error, creds.password);
 
     const seen = new Set<string>();
     rows = (ext.results ?? [])
@@ -127,9 +144,10 @@ async function collectKeyword(
     });
     status = cls.status;
     problem = cls.problem;
-  } catch {
+  } catch (e) {
     status = "failed";
     problem = "provider_error";
+    detail = sanitizeDetail(e instanceof Error ? e.message : String(e), creds.password);
     rows = [];
   }
 
@@ -140,6 +158,7 @@ async function collectKeyword(
     keywordId: keyword.id,
     status,
     problem,
+    detail,
     depth: project.depth,
     totalCount,
     features,
@@ -147,6 +166,7 @@ async function collectKeyword(
     prev,
     ignore,
   });
+  return { status, problem, detail };
 }
 
 /** The keyword's last stored snapshot, expanded to rows — the comparison base. */
@@ -199,6 +219,31 @@ async function failRemainingNoCreds(runId: string, projectId: string, depth: num
   return failed;
 }
 
+/** Abort a run that never got off the ground: the whole first wave failed with one identical
+ * error, so every later keyword would drown the same way. Keywords keep their previous state
+ * (no 295 identical red rows — nothing is written for them), the schedule is pushed back one
+ * interval so a dead A-Parser is not re-hammered every tick, and the raw error lands in
+ * `SerpRun.error` where the UI and the server log both show it. */
+async function abortRun(runId: string, projectId: string, first: KeywordOutcome): Promise<void> {
+  const finishedAt = new Date();
+  const error = first.detail ?? first.problem ?? "provider_error";
+  await db.serpRun.update({
+    where: { id: runId },
+    data: { status: "aborted", finishedAt, error },
+  });
+  const projectRow = await db.serpProject.findUnique({
+    where: { id: projectId }, select: { intervalHours: true },
+  }) as { intervalHours: number } | null;
+  const nextRunAt = projectRow && projectRow.intervalHours > 0
+    ? new Date(finishedAt.getTime() + projectRow.intervalHours * 3_600_000)
+    : null;
+  await db.serpProject.update({
+    where: { id: projectId },
+    data: { lastRunAt: finishedAt, nextRunAt },
+  });
+  console.warn(`[serpmon-cron] run ${runId} aborted: every keyword of the first wave failed identically — ${error}`);
+}
+
 export async function advanceRun(runId: string, deadline: number): Promise<{ done: boolean; processed: number }> {
   const run = await db.serpRun.findUnique({
     where: { id: runId },
@@ -208,6 +253,9 @@ export async function advanceRun(runId: string, deadline: number): Promise<{ don
   const project = run.project;
   const ignore = ignorePredicate(parseHostList(project.ignoreHosts ?? ""));
   let processed = 0;
+  // The mass-failure gate below only judges the run's genuine first wave — a run resumed by a
+  // later tick already has snapshots and must run to its normal end.
+  const runHasNoSnapshots = (await db.serpSnapshot.count({ where: { runId } })) === 0;
 
   for (;;) {
     const pending = await db.serpKeyword.findMany({
@@ -231,8 +279,18 @@ export async function advanceRun(runId: string, deadline: number): Promise<{ don
       return { done: true, processed };
     }
 
-    await Promise.all(pending.map(kw => collectKeyword(kw, project, runId, creds, ignore)));
+    const outcomes = await Promise.all(pending.map(kw => collectKeyword(kw, project, runId, creds, ignore)));
     processed += pending.length;
+
+    if (runHasNoSnapshots && pending.length === WAVE) {
+      const first = outcomes[0];
+      const identical = first.status === "failed"
+        && outcomes.every(o => o.status === "failed" && o.problem === first.problem && o.detail === first.detail);
+      if (identical) {
+        await abortRun(runId, project.id, first);
+        return { done: true, processed };
+      }
+    }
 
     if (pending.length < WAVE || Date.now() >= deadline) {
       if (pending.length < WAVE) await finalizeRun(runId);
@@ -317,6 +375,20 @@ export async function finalizeRun(runId: string): Promise<RunSummary> {
     partial: snapshots.filter(s => s.status === "partial").length,
     failed: snapshots.filter(s => s.status === "failed").length,
   };
+
+  // One line per run, not per keyword: the raw provider error is only diagnosable here.
+  if (counts.failed > 0) {
+    try {
+      const firstFail = await db.serpSnapshot.findFirst({
+        where: { runId, status: "failed", detail: { not: null } },
+        select: { detail: true, keyword: { select: { keyword: true } } },
+        orderBy: { takenAt: "asc" },
+      }) as { detail: string | null; keyword: { keyword: string } } | null;
+      if (firstFail?.detail) {
+        console.warn(`[serpmon-cron] run ${runId} (${run.project.name}): ${counts.failed}/${snapshots.length} keywords failed — first error on "${firstFail.keyword.keyword}": ${firstFail.detail}`);
+      }
+    } catch { /* the warn is best-effort; the run still finalizes */ }
+  }
   const data = {
     status: "done",
     finishedAt,

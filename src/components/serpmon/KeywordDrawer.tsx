@@ -191,7 +191,15 @@ export default function KeywordDrawer({ keywordId, onClose }: {
                         <td style={{ padding: "4px 6px", whiteSpace: "nowrap", color: "var(--color-text-secondary)" }}>
                           {fmtDateTime(s.takenAt)}
                         </td>
-                        <td style={{ padding: "4px 6px" }}><StatusChip status={s.status} problem={s.problem} tr={tr} /></td>
+                        <td style={{ padding: "4px 6px" }}>
+                          <StatusChip status={s.status} problem={s.problem} tr={tr} />
+                          {s.detail && (
+                            <div title={s.detail} style={{
+                              fontSize: 10.5, color: "var(--color-text-tertiary)", marginTop: 1,
+                              maxWidth: 210, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                            }}>{s.detail}</div>
+                          )}
+                        </td>
                         <td style={{ padding: "4px 6px", whiteSpace: "nowrap", color: "var(--color-text-secondary)", textAlign: "right" }}>
                           {s.got}/{s.depth}
                         </td>
