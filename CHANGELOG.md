@@ -31,6 +31,22 @@ All notable changes to OpenGSC. Dates are release dates; the version shown in
 
 ### Added
 
+- **SERP Monitor: whole-SERP watching per market.** A new `/serp-monitor` module snapshots the
+  entire top-100 for every keyword of a project — one market is engine · country · language ·
+  device plus a keyword set — and diffs snapshots by host: who entered the top-100, who dropped
+  out, who moved, with a noise threshold that grows with position so the tail does not shout.
+  Each run's volatility is scored against the project's **own** baseline, flagging "storms"
+  (robust z ≥ 3 plus ≥ 30% of keywords above their own usual churn; the first 7 runs are
+  calibration, not a clean bill). A storm sends one Telegram/Slack notification — the five most
+  shaken keywords, the five hosts with the most entrances and exits — with a test button in the
+  project settings; a domain catalogue tracks first-seen dates, registration age (RDAP/WHOIS)
+  and DR, with new/young/rising/falling/bounced tags and CSV export. The SERP source is the
+  instance's own A-Parser (`SE::Google`): self-hosted, no per-request cost, which makes
+  A-Parser a SERP provider of the app in its own right — and a provider in the Rank Tracker
+  too, if the T1 commit is taken. Failed snapshots (burned proxy, captcha) are recorded as
+  failures and never enter a comparison, so they cannot fake mass exits. Requires
+  `npx prisma db push` on deploy: the `Serp*` tables do not exist before it, and the UI says so
+  instead of erroring.
 - **A registrar can confirm a free name.** A registry answers "is there a record"; a registrar
   answers "will anyone sell you this", and for reserved and premium names those differ by the
   price. With a Dynadot key (`DYNADOT_API_KEY`, or Settings → the Registrar panel on `/drops`),
