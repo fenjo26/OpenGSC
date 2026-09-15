@@ -81,7 +81,9 @@ export async function GET() {
       local: local.slice(0, 7),
       remote: remote.slice(0, 7),
       behind,
-      updateAvailable: true,
+      // behind, not remote !== local: an install parked on a newer branch (testing ahead of main)
+      // must not see the update bar — its "Update now" would reset it backwards.
+      updateAvailable: behind > 0,
       changelog,
     });
   } catch (e: any) {
