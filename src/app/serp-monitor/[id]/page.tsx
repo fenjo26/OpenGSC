@@ -109,6 +109,7 @@ export default function SerpProjectPage() {
             // Completed (or aborted): repaint the header, refetch the runs, make tabs reload.
             if (runningDone.current === id) return; // this completion already handled
             runningDone.current = id;
+            setNote(""); // e.g. "already running" stops being true the moment the run ends
             const [pj, rr] = await Promise.all([
               getJson(`/api/serp-monitor/projects/${projectId}`),
               getJson(`/api/serp-monitor/projects/${projectId}/runs?limit=60`),
