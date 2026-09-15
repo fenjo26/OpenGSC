@@ -5,6 +5,10 @@
 import { loggedFetch, type CallHandle } from "@/lib/providerLog/log";
 import { goanySerp } from "./goanyapi";
 import { defaultLanguageFor } from "./regions";
+import {
+  APARSER_SERP_OPTION_IDS, APARSER_SERP_PARSERS, aparserSerpOptions, mapAparserSerp,
+} from "./aparserSerp";
+import { aparserOneRequest, resolveBaseUrl, type AparserCreds } from "./aparser";
 
 export type SerpEngine = "google" | "bing" | "yandex";
 
@@ -22,6 +26,8 @@ export interface SerpOptions {
    * about, so the host has to travel with the request the same way the key does.
    */
   baseUrl?: string;
+  /** A-Parser thread config ("default" when absent). Ignored by metered providers. */
+  configPreset?: string;
 }
 
 /**
@@ -34,6 +40,7 @@ export interface SerpOptions {
  * engine that was requested rather than the one that answered. Nothing downstream can tell.
  */
 const PROVIDER_ENGINES: Record<string, SerpEngine[]> = {
+  aparser: ["google"], // SE::Google; SE::Bing / SE::Yandex are phase 2 (needs their option ids)
   serper: ["google"],
   dataforseo: ["google", "bing"],
   scrapingrobot: ["google"],
@@ -81,6 +88,10 @@ export interface SerpResponse {
    * about freshness can now ask instead of assuming.
    */
   lastUpdate?: string;
+  /** Engine-reported total, as text. Present only when the provider says it. */
+  totalCount?: string;
+  /** SERP features the provider reported, normalised ids: "paa" | "related" | "ads" | "video" | "local" | "images" | "news". */
+  features?: string[];
   error?: string;
 }
 
@@ -512,13 +523,75 @@ async function goAnySearch(
 /**
  * Providers whose host the user supplies rather than this module hardcoding it.
  *
- * `aparser` is listed before its search branch exists, because the guard it feeds is about the
- * credential being incomplete, and that is already true today: the connection is configurable in
- * Settings and read by the GEO Audit engine, so the setting can be half-filled long before the
- * SERP branch lands. A guard added after the code that needs it is a guard that was missing for
- * the whole window in between.
+ * The guard it feeds is about the credential being incomplete: a self-hosted provider needs a
+ * host as well as a secret, and a half-filled connection would otherwise fail later with a
+ * network error about an address nobody configured. A-Parser is its only member today.
  */
 const SELF_HOSTED_PROVIDERS = new Set<string>(["aparser"]);
+
+// ─── A-Parser (self-hosted) ─────────────────────────────────────────────────
+// The user's own SE::Google through the shared transport: no per-request cost, their proxies,
+// their thread limits. The mapping layer lives in aparserSerp.ts (pure, fixture-tested); this
+// owns only credential resolution, the call and the error pass-through.
+//
+// Failure codes here are part of the SERP Monitor contract: `classifySnapshot` compares
+// `SerpResponse.error` verbatim against its problem list, so a `parserResultProblem` code
+// reaches the caller EXACTLY as the transport produced it — no prefix, no wrapping.
+
+const APARSER_SERP_TIMEOUT_MS = 180_000; // ten pages outrun two minutes on slow proxies
+
+async function aparserSearch(
+  password: string,
+  keyword: string,
+  opts: SerpOptions,
+): Promise<SerpResponse> {
+  const engine: SerpEngine = "google";
+  const base = resolveBaseUrl(opts.baseUrl);
+  // resolveBaseUrl, not normaliseBaseUrl: the env pair outranks a settings URL for exactly the
+  // SSRF reason the transport documents — this provider must not be the one surface that quietly
+  // opts out of that rule. A malformed URL surfaces as a code, same family as the emptiness ones.
+  if ("problem" in base) {
+    return { engine, provider: "aparser", keyword, results: [], error: `aparser_${base.problem}` };
+  }
+
+  const want = opts.num || 10;
+  const gl = (opts.gl || "us").toLowerCase();
+  const hl = opts.hl || defaultLanguageFor(gl);
+  const creds: AparserCreds = {
+    baseUrl: base.url,
+    password,
+    configPreset: opts.configPreset || undefined,
+  };
+  const options = aparserSerpOptions({ depth: want, gl, hl });
+
+  let r = await aparserOneRequest(creds, APARSER_SERP_PARSERS.google, keyword, options, { timeoutMs: APARSER_SERP_TIMEOUT_MS });
+  if (!r.data && /option|override|unknown/i.test(r.error ?? "")) {
+    // The instance refused an override — an option id this build does not have. A preset that
+    // already carries the right country/language is still a workable setup, so retry with the
+    // depth override alone rather than failing every keyword at once; the same trade the GEO
+    // A-Parser engine makes. (Depth lost too would shorten snapshots silently, which is why it
+    // is retried with, not without.)
+    r = await aparserOneRequest(creds, APARSER_SERP_PARSERS.google, keyword,
+      options.filter((o) => o.id === APARSER_SERP_OPTION_IDS.pagecount), { timeoutMs: APARSER_SERP_TIMEOUT_MS });
+  }
+  if (!r.data) {
+    return { engine, provider: "aparser", keyword, results: [], error: r.error ?? "aparser_failed" };
+  }
+
+  const mapped = mapAparserSerp(Array.isArray(r.data.results) ? r.data.results[0] : null, want);
+  if (mapped.problem) {
+    // Exactly the code — see the contract note above.
+    return { engine, provider: "aparser", keyword, results: [], error: mapped.problem };
+  }
+  return {
+    engine,
+    provider: "aparser",
+    keyword,
+    results: mapped.results,
+    ...(mapped.totalCount !== "" ? { totalCount: mapped.totalCount } : {}),
+    ...(mapped.features.length ? { features: mapped.features } : {}),
+  };
+}
 
 export async function runSerp(
   provider: string,
@@ -540,14 +613,15 @@ export async function runSerp(
     return { engine, provider, keyword, results: [], error: engineProblem };
   }
   try {
+    if (provider === "aparser") return await aparserSearch(apiKey, keyword, opts);
     if (provider === "dataforseo") return await dataForSeoSearch(apiKey, keyword, opts);
     if (provider === "scrapingrobot") return await scrapingRobotSearch(apiKey, keyword, opts);
     if (provider === "goanyapi") return await goAnySearch(apiKey, keyword, opts);
     if (provider === "serper" || !provider) return await serperSearch(apiKey, keyword, opts);
     // An id with no branch used to fall through to Serper, which meant posting another
     // provider's credential to Serper's endpoint and reporting whatever came back as that
-    // provider's answer. Harmless while every id in the picker had a branch; not harmless now
-    // that a provider can be configured (A-Parser) before its branch exists.
+    // provider's answer. The guard stays even though every configured id now has a branch:
+    // the fallback is exactly how a typo'd provider id turns into silently wrong results.
     return { engine, provider, keyword, results: [], error: `unknown SERP provider "${provider}"` };
   } catch (e: any) {
     return { engine, provider, keyword, results: [], error: String(e?.message ?? e) };
