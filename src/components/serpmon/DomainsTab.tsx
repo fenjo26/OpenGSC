@@ -10,20 +10,25 @@ import { Loader2, Search } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { usePersistedState } from "@/lib/usePersistedState";
 import { YOUNG_HOST_MONTHS, type DomainRow, type DomainTag } from "@/lib/serpmon/types";
+import { Pager } from "./Pager";
 import {
-  btnGhost, btnGhostDisabled, ErrorLine, fmtDate, getJson, pagerBtn, sendJson, tdNum, tdStyle,
+  btnGhost, btnGhostDisabled, ErrorLine, fmtDate, getJson, sendJson, tdNum, tdStyle,
   thStyle, trOf,
 } from "./shared";
 
-const PAGE_SIZE = 50;
+const DEFAULT_PAGE_SIZE = 50;
 const PRESETS = ["all", "new", "young", "rising", "falling", "bounced"] as const;
 type Preset = (typeof PRESETS)[number];
 const SORTS = ["keywords", "top10", "bestPos", "firstSeen", "age", "dr"] as const;
 type Sort = (typeof SORTS)[number];
 
+/** Theme-safe row shading: a whisper of the text color works on every palette. */
+const ZEBRA_BG = "color-mix(in srgb, var(--color-text) 4%, transparent)";
+
 const isFlag = (v: unknown): boolean => v === "" || v === "1";
 const isPreset = (v: unknown): boolean => typeof v === "string" && (PRESETS as readonly string[]).includes(v);
 const isSort = (v: unknown): boolean => typeof v === "string" && (SORTS as readonly string[]).includes(v);
+const isNum = (v: unknown): boolean => typeof v === "number";
 
 const PRESET_KEYS: Record<Preset, string> = {
   all: "serpmonPresetAll", new: "serpmonPresetNew", young: "serpmonPresetYoung",
@@ -66,6 +71,7 @@ export default function DomainsTab({ projectId, version, onOpenDomain }: {
   const [platforms, setPlatforms] = usePersistedState<string>("serpmonPlatformsDom", "", isFlag);
   const [sort, setSort] = usePersistedState<Sort>("serpmonSortDom", "keywords", isSort);
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = usePersistedState<number>("serpmonDomPageSize", DEFAULT_PAGE_SIZE, isNum);
 
   // The enrich walkers. Stop flags are refs: the loop reads them between steps, and a state
   // read there would be the value captured when the loop started.
@@ -76,13 +82,13 @@ export default function DomainsTab({ projectId, version, onOpenDomain }: {
   // Query string shared by the table load and the CSV export — the export must be exactly what
   // the user is looking at.
   const queryString = useMemo(() => {
-    const p = new URLSearchParams({ sort, page: String(page + 1), pageSize: String(PAGE_SIZE) });
+    const p = new URLSearchParams({ sort, page: String(page + 1), pageSize: String(pageSize) });
     if (preset !== "all") p.set("preset", preset);
     if (q.trim()) p.set("q", q.trim());
     if (preset === "young" && Number(maxAge) > 0) p.set("maxAgeMonths", String(Number(maxAge)));
     if (platforms === "1") p.set("includePlatforms", "1");
     return p;
-  }, [preset, q, maxAge, platforms, sort, page]);
+  }, [preset, q, maxAge, platforms, sort, page, pageSize]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -153,8 +159,6 @@ export default function DomainsTab({ projectId, version, onOpenDomain }: {
       await load();
     }
   }
-
-  const lastPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
 
   const ageCell = (r: DomainRow) => {
     if (r.ageMonths != null) {
@@ -273,12 +277,13 @@ export default function DomainsTab({ projectId, version, onOpenDomain }: {
               </tr>
             </thead>
             <tbody>
-              {rows.map(r => {
+              {rows.map((r, rowIdx) => {
                 const delta = r.keywords - r.prevKeywords;
                 return (
-                  <tr key={r.hostId} onClick={() => onOpenDomain(r.host)} style={{ cursor: "pointer" }}
+                  <tr key={r.hostId} onClick={() => onOpenDomain(r.host)}
+                    style={{ cursor: "pointer", background: rowIdx % 2 ? ZEBRA_BG : "transparent" }}
                     onMouseEnter={e => { e.currentTarget.style.background = "var(--color-card-hover)"; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
+                    onMouseLeave={e => { e.currentTarget.style.background = rowIdx % 2 ? ZEBRA_BG : "transparent"; }}>
                     <td style={{ ...tdStyle, color: "var(--color-text-primary)", maxWidth: 260, whiteSpace: "normal" }}>
                       <div style={{ overflowWrap: "anywhere" }}>{r.host}</div>
                       {r.tags.length > 0 && (
@@ -320,17 +325,15 @@ export default function DomainsTab({ projectId, version, onOpenDomain }: {
             </tbody>
           </table>
         </div>
-        <div style={{
-          display: "flex", alignItems: "center", gap: 8, padding: "10px 14px",
-          borderTop: "1px solid var(--color-border)", fontSize: 12, color: "var(--color-text-secondary)", flexWrap: "wrap",
-        }}>
-          <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} style={pagerBtn(page === 0)}>
-            ← {tr("serpmonPrev")}
-          </button>
-          <span style={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{total.toLocaleString()}</span>
-          <button onClick={() => setPage(p => p + 1)} disabled={page >= lastPage} style={pagerBtn(page >= lastPage)}>
-            {tr("serpmonNext")} →
-          </button>
+        <div style={{ padding: "10px 14px", borderTop: "1px solid var(--color-border)" }}>
+          <Pager page={page} pageSize={pageSize} total={total}
+            onPage={p => setPage(p)}
+            onPageSize={n => { setPageSize(n); setPage(0); }}
+            extra={
+              <span style={{ fontSize: 12, color: "var(--color-text-secondary)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+                {total.toLocaleString()}
+              </span>
+            } />
         </div>
       </div>
     </div>

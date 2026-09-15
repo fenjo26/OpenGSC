@@ -883,7 +883,7 @@ export async function marketRows(
     const leaders: string[] = [];
     for (const r of serpRows) {
       if (!leaders.includes(r.host)) leaders.push(r.host);
-      if (leaders.length === 3) break;
+      if (leaders.length === 5) break;
     }
 
     const changes = (changesBySnapshot.get(k.lastSnapshotId ?? "") ?? [])

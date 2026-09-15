@@ -60,7 +60,7 @@ export function ChangeChip({ change, dim, onHostClick }: {
 }
 
 /** The chips cell of one keyword row: hidden hosts filtered until "Show platforms" is on,
- *  more than 12 visible chips collapse behind an "ещё N" expander. Failed/partial rows never
+ *  more than 20 visible chips collapse behind an "ещё N" expander. Failed/partial rows never
  *  reach this component — the tab shows their problem line instead. */
 export function ChangeChips({ changes, showPlatforms, onHostClick }: {
   changes: HostChange[];
@@ -71,8 +71,9 @@ export function ChangeChips({ changes, showPlatforms, onHostClick }: {
   const tr = trOf(t);
   const [expanded, setExpanded] = useState(false);
   const visible = changes.filter(c => showPlatforms || !c.hidden);
-  // 12 visible chips already fill a wide row; everything past that is noise until asked for.
-  const LIMIT = 12;
+  // A shake can legitimately bring 10+ hosts in at once — 20 covers a real churn wave without
+  // letting a pathological row run for a hundred chips; everything past that is one click away.
+  const LIMIT = 20;
   const shown = expanded ? visible : visible.slice(0, LIMIT);
   if (!visible.length) return null;
   return (

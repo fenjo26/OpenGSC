@@ -6,24 +6,29 @@
 // page 4 of the old result set is not page 4 of the new one.
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Search } from "lucide-react";
+import { AlertTriangle, Search, Trash2 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { usePersistedState } from "@/lib/usePersistedState";
 import type { MarketRow } from "@/lib/serpmon/types";
 import { ChangeChips } from "./ChangeChip";
+import { Pager } from "./Pager";
 import {
-  ErrorLine, getJson, pagerBtn, problemLabel, tdStyle, tdNum, thStyle, thNum,
+  ErrorLine, getJson, sendJson, problemLabel, tdStyle, tdNum, thStyle, thNum,
   trOf, VolBar,
 } from "./shared";
 
-const PAGE_SIZE = 50;
+const DEFAULT_PAGE_SIZE = 50;
 const SORTS = ["keyword", "volatility", "changes"] as const;
 type Sort = (typeof SORTS)[number];
+
+/** Theme-safe row shading: a whisper of the text color works on every palette. */
+const ZEBRA_BG = "color-mix(in srgb, var(--color-text) 4%, transparent)";
 
 const isStr = (v: unknown): boolean => typeof v === "string";
 const isFlag = (v: unknown): boolean => v === "" || v === "1";
 const isSort = (v: unknown): boolean => typeof v === "string" && (SORTS as readonly string[]).includes(v);
 const isChanged = (v: unknown): boolean => v === "" || v === "1";
+const isNum = (v: unknown): boolean => typeof v === "number";
 
 export default function MarketTab({ projectId, groups, host, setHost, version, onOpenKeyword }: {
   projectId: string;
@@ -58,11 +63,18 @@ export default function MarketTab({ projectId, groups, host, setHost, version, o
   // constrains its values to string|number (the URL path would not round-trip a boolean).
   const [platforms, setPlatforms] = usePersistedState<string>("serpmonPlatforms", "", isFlag);
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = usePersistedState<number>("serpmonPageSize", DEFAULT_PAGE_SIZE, isNum);
+  // Row selection for the bulk delete. Cleared whenever the table's shape changes (filter,
+  // page, size) — checked boxes on page 3 must not silently apply to page 4's rows.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [notice, setNotice] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const p = new URLSearchParams({ page: String(page + 1), pageSize: String(PAGE_SIZE), sort });
+      const p = new URLSearchParams({ page: String(page + 1), pageSize: String(pageSize), sort });
       if (q.trim()) p.set("q", q.trim());
       if (host.trim()) p.set("host", host.trim());
       if (group) p.set("group", group);
@@ -81,7 +93,7 @@ export default function MarketTab({ projectId, groups, host, setHost, version, o
     } finally {
       setLoading(false);
     }
-  }, [projectId, page, sort, q, host, group, changed]);
+  }, [projectId, page, pageSize, sort, q, host, group, changed]);
 
   // Debounced so typing in the filter box does not fire a query per keystroke.
   useEffect(() => {
@@ -89,16 +101,33 @@ export default function MarketTab({ projectId, groups, host, setHost, version, o
     return () => clearTimeout(id);
   }, [load, version]);
 
-  // Any filter change invalidates the current page number, corrected during render so no
-  // request ever goes out for a page that no longer exists.
-  const filterKey = `${q}|${host}|${group}|${changed}|${sort}`;
+  // Any filter (or page/size) change invalidates the current page number and the selection,
+  // corrected during render so no request ever goes out for a page that no longer exists.
+  const filterKey = `${q}|${host}|${group}|${changed}|${sort}|${page}|${pageSize}`;
   const [lastFilterKey, setLastFilterKey] = useState(filterKey);
   if (filterKey !== lastFilterKey) {
     setLastFilterKey(filterKey);
     if (page !== 0) setPage(0);
+    if (selected.size) setSelected(new Set());
+    if (confirmDelete) setConfirmDelete(false);
   }
 
-  const lastPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
+  /** Hard-deletes the selected keywords and every snapshot hanging off them (API cascades). */
+  async function deleteSelected() {
+    setDeleting(true);
+    try {
+      const { status, body } = await sendJson(`/api/serp-monitor/projects/${projectId}/keywords`, "DELETE", { ids: [...selected] });
+      if (status >= 400) { setError(String(body.error ?? status)); return; }
+      setNotice(tr("serpmonDeleted").replace("{n}", String(body.removed ?? selected.size)));
+      setSelected(new Set());
+      setConfirmDelete(false);
+      void load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeleting(false);
+    }
+  }
   const sortOptions = [
     { v: "keyword" as Sort, label: tr("serpmonColKeyword") },
     { v: "volatility" as Sort, label: tr("serpmonColVolatility") },
@@ -155,6 +184,47 @@ export default function MarketTab({ projectId, groups, host, setHost, version, o
         </div>
       )}
       {error && <ErrorLine>{error}</ErrorLine>}
+      {notice && <div className="panel" style={{ fontSize: 12.5, color: "var(--color-accent-blue)", padding: "8px 12px" }}>{notice}</div>}
+      {selected.size > 0 && !confirmDelete && (
+        <div className="panel" style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5, flexWrap: "wrap", padding: "8px 12px" }}>
+          <span style={{ color: "var(--color-text-secondary)" }}>{tr("serpmonSelected").replace("{n}", String(selected.size))}</span>
+          <button onClick={() => setConfirmDelete(true)}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 8,
+              border: "1px solid var(--color-border)", background: "var(--color-card)", cursor: "pointer",
+              fontSize: 12.5, color: "var(--color-danger)",
+            }}>
+            <Trash2 size={13} /> {tr("serpmonDeleteSelected")}
+          </button>
+          <button onClick={() => setSelected(new Set())}
+            style={{
+              padding: "5px 10px", borderRadius: 8, border: "1px solid var(--color-border)",
+              background: "var(--color-card)", cursor: "pointer", fontSize: 12.5, color: "var(--color-text-secondary)",
+            }}>
+            {tr("serpmonCancel")}
+          </button>
+        </div>
+      )}
+      {confirmDelete && (
+        <div className="panel" style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5, flexWrap: "wrap", padding: "8px 12px" }}>
+          <span style={{ color: "var(--color-text-primary)" }}>{tr("serpmonDeleteSelectedConfirm").replace("{n}", String(selected.size))}</span>
+          <button onClick={() => setConfirmDelete(false)}
+            style={{
+              padding: "5px 10px", borderRadius: 8, border: "1px solid var(--color-border)",
+              background: "var(--color-card)", cursor: "pointer", fontSize: 12.5, color: "var(--color-text-secondary)",
+            }}>
+            {tr("serpmonCancel")}
+          </button>
+          <button onClick={() => void deleteSelected()} disabled={deleting}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 8,
+              border: "1px solid var(--color-danger)", background: "var(--color-danger)", cursor: deleting ? "wait" : "pointer",
+              fontSize: 12.5, color: "#fff", opacity: deleting ? 0.6 : 1,
+            }}>
+            <Trash2 size={13} /> {tr("serpmonDeleteSelected")}
+          </button>
+        </div>
+      )}
 
       {/* Table */}
       <div className="panel" style={{ overflow: "hidden" }}>
@@ -162,6 +232,16 @@ export default function MarketTab({ projectId, groups, host, setHost, version, o
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
             <thead>
               <tr>
+                <th style={{ ...thStyle, width: 30 }}>
+                  <input type="checkbox" title={tr("serpmonSelected").replace("{n}", String(rows.length))}
+                    checked={rows.length > 0 && rows.every(r => selected.has(r.keywordId))}
+                    onChange={e => {
+                      const next = new Set(selected);
+                      if (e.target.checked) rows.forEach(r => next.add(r.keywordId));
+                      else rows.forEach(r => next.delete(r.keywordId));
+                      setSelected(next);
+                    }} />
+                </th>
                 <th style={thStyle}>{tr("serpmonColKeyword")}</th>
                 <th style={thStyle}>{tr("serpmonColLeaders")}</th>
                 <th style={thStyle}>{tr("serpmonColChanges")}</th>
@@ -170,11 +250,20 @@ export default function MarketTab({ projectId, groups, host, setHost, version, o
               </tr>
             </thead>
             <tbody>
-              {rows.map(r => (
+              {rows.map((r, rowIdx) => (
                 <tr key={r.keywordId} onClick={() => onOpenKeyword(r.keywordId)}
-                  style={{ cursor: "pointer" }}
+                  style={{ cursor: "pointer", background: rowIdx % 2 ? ZEBRA_BG : "transparent" }}
                   onMouseEnter={e => { e.currentTarget.style.background = "var(--color-card-hover)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
+                  onMouseLeave={e => { e.currentTarget.style.background = rowIdx % 2 ? ZEBRA_BG : "transparent"; }}>
+                  <td style={{ ...tdStyle, width: 30 }} onClick={e => e.stopPropagation()}>
+                    <input type="checkbox" checked={selected.has(r.keywordId)}
+                      onChange={e => {
+                        const next = new Set(selected);
+                        if (e.target.checked) next.add(r.keywordId);
+                        else next.delete(r.keywordId);
+                        setSelected(next);
+                      }} />
+                  </td>
                   <td style={{ ...tdStyle, color: "var(--color-text-primary)", maxWidth: 260 }}>
                     <div style={{ overflowWrap: "anywhere" }}>{r.keyword}</div>
                     {r.group && <div style={{ fontSize: 10.5, color: "var(--color-text-tertiary)" }}>{r.group}</div>}
@@ -226,27 +315,20 @@ export default function MarketTab({ projectId, groups, host, setHost, version, o
                 </tr>
               ))}
               {!loading && rows.length === 0 && !error && (
-                <tr><td colSpan={5} style={{ ...tdStyle, textAlign: "center", padding: 22, color: "var(--color-text-tertiary)" }}>—</td></tr>
+                <tr><td colSpan={6} style={{ ...tdStyle, textAlign: "center", padding: 22, color: "var(--color-text-tertiary)" }}>—</td></tr>
               )}
             </tbody>
           </table>
         </div>
-        <div style={{
-          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
-          padding: "10px 14px", borderTop: "1px solid var(--color-border)", fontSize: 12,
-          color: "var(--color-text-secondary)", flexWrap: "wrap",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} style={pagerBtn(page === 0)}>
-              ← {tr("serpmonPrev")}
-            </button>
-            <span style={{ whiteSpace: "nowrap" }}>
-              {tr("serpmonCountOf").replace("{shown}", total.toLocaleString()).replace("{total}", all.toLocaleString())}
-            </span>
-            <button onClick={() => setPage(p => p + 1)} disabled={page >= lastPage} style={pagerBtn(page >= lastPage)}>
-              {tr("serpmonNext")} →
-            </button>
-          </div>
+        <div style={{ padding: "10px 14px", borderTop: "1px solid var(--color-border)" }}>
+          <Pager page={page} pageSize={pageSize} total={total}
+            onPage={p => setPage(p)}
+            onPageSize={n => { setPageSize(n); setPage(0); }}
+            extra={
+              <span style={{ fontSize: 12, color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>
+                {tr("serpmonCountOf").replace("{shown}", total.toLocaleString()).replace("{total}", all.toLocaleString())}
+              </span>
+            } />
         </div>
       </div>
     </div>

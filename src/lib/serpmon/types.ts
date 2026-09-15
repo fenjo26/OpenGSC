@@ -117,7 +117,7 @@ export interface MarketRow {
   status: SnapshotStatus | ""; problem: string | null;
   detail: string | null;                 // raw provider/transport error behind `problem`, sanitized
   lastOkAt: string | null;
-  leaders: string[];                     // first 3 hosts of the latest ok|partial snapshot, platforms included
+  leaders: string[];                     // first 5 hosts of the latest ok|partial snapshot, platforms included
   changes: HostChange[];                 // from the latest comparison; hidden ones included, UI filters
   volatility: number | null;
   own: { host: string; position: number } | null;
