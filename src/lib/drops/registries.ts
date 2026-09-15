@@ -78,6 +78,17 @@ const TWO_LABEL_SUFFIXES = new Set([
   "com.ua", "net.ua", "org.ua", "in.ua", "kiev.ua",
   "com.mx", "org.mx",
   "co.il", "org.il", "net.il", "ac.il",
+  // LatAm and world second-level zones (SERP Monitor domain age). Every entry below was checked
+  // against the Public Suffix List ICANN section on 2026-09-15 — no guesses.
+  "com.ar", "net.ar", "org.ar", "gob.ar",
+  // bet.ar, tur.ar: doubtless-looking but real — both are listed verbatim in the PSL `// ar`
+  // section (nic.ar normativa), bet.ar for licensed betting operators.
+  "bet.ar", "tur.ar",
+  "com.co", "net.co", "org.co", "gov.co",
+  "com.pe", "net.pe", "org.pe", "gob.pe",
+  "com.ec", "com.uy", "com.py", "com.bo", "com.ve",
+  "com.cy", "com.sg", "com.my", "com.ph", "com.vn",
+  "co.id", "co.th", "com.eg", "com.sa",
 ]);
 
 /**
