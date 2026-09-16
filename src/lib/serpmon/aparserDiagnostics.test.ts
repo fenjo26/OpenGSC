@@ -46,13 +46,23 @@ test("other failures are not retried", async () => {
   }
 });
 
-test("describeAparserRow shows shape and log tail, never content", () => {
-  const d = describeAparserRow(
-    { success: 1, query: "nv casino", serp: [], totalcount: "", info: { a: 1 } },
-    [[1, "Proxy 1.2.3.4 captcha"], "retry 3/3 exhausted"],
+test("describeAparserRow leads with the verdict and the cause", () => {
+  const live = describeAparserRow(
+    { success: 0, serp: [], totalcount: "none", info: { success: 0, stats: { reCaptchaShows: 3, proxiesUsed: 1, retries: 14 } } },
+    [
+      [0, 1789559036, "Ban proxy 185.243.218.108:29760:socks5:: for parser SE::Google for 60 seconds"],
+      [0, 1789559036, "All retries exceed"],
+      [3, 1789559036, 0, '{"success":0,"retries":14}'],
+      [0, 1789559036, "Thread complete work"],
+    ],
   );
-  assert.match(d, /keys: success=1, query, serp\[0\], totalcount=, info\{\}/);
-  assert.match(d, /log: 1 Proxy 1\.2\.3\.4 captcha \| retry 3\/3 exhausted/);
+  assert.equal(live, "captcha 3, proxies 1, retries 14 · log: Ban proxy 185.243.218.108:29760:socks5:: for parser SE::Google for 60 seconds | All retries exceed");
+});
+
+test("describeAparserRow falls back to the key list for an unexpected shape", () => {
+  const d = describeAparserRow({ success: 1, query: "nv casino", serp: [], totalcount: "", other: { a: 1 } }, ["retry 3/3 exhausted"]);
+  assert.match(d, /keys: success=1, query, serp\[0\], totalcount=, other\{\}/);
+  assert.match(d, /log: retry 3\/3 exhausted/);
   assert.equal(describeAparserRow(null, undefined), "results[0]: absent");
   assert.ok(describeAparserRow({ k: 1 }, Array(50).fill("x".repeat(100)), 100).length <= 101);
 });

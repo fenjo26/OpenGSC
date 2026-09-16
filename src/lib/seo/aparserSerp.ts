@@ -176,11 +176,25 @@ export function mapAparserSerp(row: unknown, want: number): {
  * thrown away. Never includes page content — only shapes, counts and log lines, cut to `max`.
  */
 export function describeAparserRow(row: unknown, logs: unknown, max = 280): string {
+  // Ordered by what a person needs first, because the UI shows one truncated line: the parser's
+  // own verdict (captchas, proxies, retries), then the log lines that name the cause, and the raw
+  // key list only when the row has no stats to report — an unexpected shape is the one case
+  // where the keys ARE the finding.
   const parts: string[] = [];
-  if (!row || typeof row !== "object") {
+  const r = row && typeof row === "object" ? row as Record<string, unknown> : null;
+  const info = r && r.info && typeof r.info === "object" ? r.info as Record<string, unknown> : null;
+  const stats = info && info.stats && typeof info.stats === "object" ? info.stats as Record<string, unknown> : null;
+  if (stats) {
+    const stat = (k: string, label: string) => (stats[k] !== undefined ? `${label} ${asString(stats[k])}` : "");
+    const line = [stat("reCaptchaShows", "captcha"), stat("proxiesUsed", "proxies"), stat("retries", "retries")]
+      .filter(Boolean).join(", ");
+    if (line) parts.push(line);
+  }
+  const lines = logLines(logs).slice(-4);
+  if (lines.length) parts.push(`log: ${lines.join(" | ")}`);
+  if (!r) {
     parts.push("results[0]: absent");
-  } else {
-    const r = row as Record<string, unknown>;
+  } else if (!stats) {
     const keys = Object.keys(r).slice(0, 20).map((k) => {
       const v = r[k];
       if (Array.isArray(v)) return `${k}[${v.length}]`;
@@ -190,24 +204,35 @@ export function describeAparserRow(row: unknown, logs: unknown, max = 280): stri
     });
     parts.push(`keys: ${keys.join(", ") || "none"}`);
   }
-  const lines = logLines(logs).slice(-4);
-  if (lines.length) parts.push(`log: ${lines.join(" | ")}`);
   const text = parts.join(" · ");
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
-/** A-Parser log entries arrive as strings or as [level, message, …] tuples depending on build. */
+/**
+ * A-Parser log entries arrive as strings or as [level, timestamp, message, …] tuples depending on
+ * build. Only the text survives — level and epoch numbers are noise in a one-line detail — and
+ * the two lines every run ends with (the stats JSON dump and "Thread complete work") are dropped:
+ * the stats are already summarised above them.
+ */
 function logLines(logs: unknown): string[] {
   if (!Array.isArray(logs)) return [];
   const out: string[] = [];
   for (const entry of logs) {
-    const text = Array.isArray(entry)
-      ? entry.filter((x) => typeof x === "string" || typeof x === "number").map(String).join(" ")
-      : typeof entry === "string" ? entry
-      : entry && typeof entry === "object" ? asString((entry as Record<string, unknown>).message ?? (entry as Record<string, unknown>).msg ?? JSON.stringify(entry))
-      : "";
+    let text: string;
+    if (Array.isArray(entry)) {
+      const strings = entry.filter((x) => typeof x === "string") as string[];
+      text = strings.length ? strings.join(" ") : entry.map(String).join(" ");
+    } else if (typeof entry === "string") {
+      text = entry;
+    } else if (entry && typeof entry === "object") {
+      const o = entry as Record<string, unknown>;
+      text = asString(o.message ?? o.msg ?? JSON.stringify(entry));
+    } else {
+      text = "";
+    }
     const clean = text.replace(/\s+/g, " ").trim();
-    if (clean) out.push(clean.slice(0, 120));
+    if (!clean || /^\{.*\}$/.test(clean) || /^thread complete work$/i.test(clean)) continue;
+    out.push(clean.slice(0, 120));
   }
   return out;
 }
