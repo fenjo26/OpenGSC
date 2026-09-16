@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { deleteProject, getProject, updateProject, type ProjectInput } from "@/lib/serpmon/store";
+import { assertAparserPresetExists } from "@/lib/serpmon/presetCheck";
 import { readJson, serpmonError, unauthorized } from "../../shared";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -40,6 +41,10 @@ export async function PATCH(req: Request, { params }: Ctx) {
     if (body.retentionDays !== undefined) patch.retentionDays = Number(body.retentionDays);
     if (body.alertStorm !== undefined) patch.alertStorm = Boolean(body.alertStorm);
     if (body.paused !== undefined) patch.paused = Boolean(body.paused);
+    if (body.aparserPreset !== undefined) {
+      patch.aparserPreset = String(body.aparserPreset ?? "");
+      await assertAparserPresetExists(userId, patch.aparserPreset);
+    }
 
     const project = await updateProject(userId, id, patch);
     if (!project) return NextResponse.json({ error: "not_found" }, { status: 404 });

@@ -1728,6 +1728,7 @@ model SerpProject {
   country       String                          // gl, 2 letters, lower-case
   lang          String                          // hl
   provider      String    @default("aparser")   // v1: "aparser" only
+  aparserPreset String    @default("default")   // SE::Google preset in A-Parser (captcha solver etc. live there)
   depth         Int       @default(100)         // one of SERPMON_DEPTHS
   intervalHours Int       @default(24)          // one of SERPMON_INTERVALS; 0 = manual only
   ownDomains    String    @default("")          // newline-separated hosts, highlighted in UI

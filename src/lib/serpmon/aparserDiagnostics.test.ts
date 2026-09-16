@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { aparserOneRequest, isMissingConfigPreset } from "../seo/aparser";
+import { aparserOneRequest, isMissingConfigPreset, isMissingParserPreset } from "../seo/aparser";
 import { describeAparserRow } from "../seo/aparserSerp";
 
 test("isMissingConfigPreset recognises A-Parser's message, with or without the transport prefix", () => {
@@ -188,4 +188,31 @@ test("assessSerpIntegrity leaves normal answers alone", async () => {
   assert.equal(assessSerpIntegrity([]), null);
   // one link with two different titles is
   assert.match(String(assessSerpIntegrity([...clean, { link: "https://s1.gr/", anchor: "Something else" }])), /different titles/);
+});
+
+test("a missing parser preset is told apart from a missing thread config", () => {
+  assert.equal(isMissingParserPreset("Preset 'opengcs' not exists"), true);
+  assert.equal(isMissingParserPreset("preset opengcs not found"), true);
+  assert.equal(isMissingParserPreset("configPreset 'my' not exists"), false);
+  assert.equal(isMissingParserPreset("Auth failed"), false);
+  assert.equal(isMissingParserPreset(undefined), false);
+});
+
+test("the SERP call sends the project's parser preset, default when blank", async () => {
+  const sent: Record<string, unknown>[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (_url: unknown, init?: { body?: unknown }) => {
+    sent.push(JSON.parse(String(init?.body ?? "{}")));
+    return new Response(JSON.stringify({ success: 1, data: { results: [] } }), { status: 200 });
+  }) as typeof fetch;
+  try {
+    const { runSerp } = await import("../seo/serp");
+    await runSerp("aparser", "pw", "nv casino", { gl: "gr", hl: "el", num: 10, baseUrl: "http://127.0.0.1:9091", aparserPreset: "opengsc" });
+    await runSerp("aparser", "pw", "nv casino", { gl: "gr", hl: "el", num: 10, baseUrl: "http://127.0.0.1:9091", aparserPreset: "  " });
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  const presets = sent.filter((b) => b.action === "oneRequest").map((b) => (b.data as Record<string, unknown>).preset);
+  assert.deepEqual(presets.slice(0, 1), ["opengsc"]);
+  assert.equal(presets[presets.length - 1], "default");
 });

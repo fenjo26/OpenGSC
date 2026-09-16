@@ -101,6 +101,7 @@ export interface ProjectSummary {
 
 export interface ProjectDetail extends ProjectSummary {
   ownDomains: string[]; ignoreHosts: string[]; retentionDays: number; alertStorm: boolean;
+  aparserPreset: string;                 // SE::Google preset name in A-Parser, "default" when unset
   groups: { name: string; count: number }[];
   firstRunAt: string | null;
 }

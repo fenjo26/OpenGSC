@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { createProject, listProjects, type ProjectInput } from "@/lib/serpmon/store";
+import { assertAparserPresetExists } from "@/lib/serpmon/presetCheck";
 import { MAX_IMPORT_BYTES, readJson, serpmonError, tooLarge, unauthorized } from "../shared";
 
 /** GET /api/serp-monitor/projects — every project of the workspace with its list summary. */
@@ -36,7 +37,9 @@ export async function POST(req: Request) {
       ...(body.retentionDays !== undefined ? { retentionDays: Number(body.retentionDays) } : {}),
       ...(body.alertStorm !== undefined ? { alertStorm: Boolean(body.alertStorm) } : {}),
       ...(body.paused !== undefined ? { paused: Boolean(body.paused) } : {}),
+      ...(body.aparserPreset !== undefined ? { aparserPreset: String(body.aparserPreset ?? "") } : {}),
     };
+    if (input.aparserPreset !== undefined) await assertAparserPresetExists(userId, input.aparserPreset);
 
     return NextResponse.json(await createProject(userId, input));
   } catch (e) {

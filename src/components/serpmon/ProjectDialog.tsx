@@ -42,6 +42,7 @@ export default function ProjectDialog({ project, onClose, onSaved }: {
   const [ownDomains, setOwnDomains] = useState((project?.ownDomains ?? []).join("\n"));
   const [ignoreHosts, setIgnoreHosts] = useState((project?.ignoreHosts ?? []).join("\n"));
   const [retentionDays, setRetentionDays] = useState(String(project?.retentionDays ?? 180));
+  const [aparserPreset, setAparserPreset] = useState(project?.aparserPreset ?? "default");
   const [alertStorm, setAlertStorm] = useState(project?.alertStorm ?? true);
   const [paused, setPaused] = useState(project?.paused ?? false);
   const [busy, setBusy] = useState<"" | "save" | "kw">("");
@@ -78,6 +79,7 @@ export default function ProjectDialog({ project, onClose, onSaved }: {
       const payload: Record<string, unknown> = {
         name: name.trim(), country, lang, depth, intervalHours,
         ownDomains, ignoreHosts, retentionDays: Number(retentionDays) || 180,
+        aparserPreset: aparserPreset.trim() || "default",
         alertStorm, paused,
       };
       if (!editing) payload.keywords = keywords;
@@ -87,7 +89,12 @@ export default function ProjectDialog({ project, onClose, onSaved }: {
         payload,
       );
       if (body.notMigrated) { setError(tr("serpmonNotMigrated")); return; }
-      if (status >= 400) { setError(String(body.error ?? status)); return; }
+      if (status >= 400) {
+        const code = String(body.error ?? status);
+        setError(code === "aparser_preset_missing" ? tr("serpmonAparserPresetMissing").replace("{name}", aparserPreset.trim())
+          : code === "aparser_preset_invalid" ? tr("serpmonAparserPresetInvalid") : code);
+        return;
+      }
       const saved = body.project as ProjectDetail | undefined;
       if (!saved) { setError(String(body.error ?? status)); return; }
       const imp = (body.import ?? null) as ImportInfo | null;
@@ -290,6 +297,14 @@ export default function ProjectDialog({ project, onClose, onSaved }: {
             <span style={hintStyle}>{tr("serpmonIgnoreDefaultsHint")}</span>
           </label>
         </div>
+
+        {/* A-Parser preset */}
+        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={labelStyle}>{tr("serpmonFieldAparserPreset")}</span>
+          <input style={{ ...inputStyle, maxWidth: 260 }} value={aparserPreset} maxLength={100}
+            placeholder="default" onChange={e => setAparserPreset(e.target.value)} />
+          <span style={hintStyle}>{tr("serpmonAparserPresetHint")}</span>
+        </label>
 
         {/* Retention / notifications */}
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end" }}>

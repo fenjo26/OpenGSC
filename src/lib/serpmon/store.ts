@@ -84,9 +84,21 @@ export interface ProjectInput {
   name: string; country: string; lang: string; depth: number; intervalHours: number;
   keywords?: string;          // raw import text
   ownDomains?: string; ignoreHosts?: string; retentionDays?: number; alertStorm?: boolean; paused?: boolean;
+  aparserPreset?: string;
 }
 
 const MAX_LIST_FIELD = 10_000; // textarea fields; hosts are newline/comma separated
+
+/**
+ * An SE::Google preset name as A-Parser stores it: blank means the stock "default". Names are
+ * the user's own, so only length and control characters are policed.
+ */
+export function normalizeAparserPreset(raw: unknown): string {
+  const name = String(raw ?? "").trim();
+  if (!name) return "default";
+  if (name.length > 100 || /[\u0000-\u001f\u007f]/.test(name)) throw new InputError("aparser_preset_invalid");
+  return name;
+}
 
 /**
  * Validate a create (partial=false) or patch (partial=true). Returns the columns ready for
@@ -96,6 +108,7 @@ function validateProjectInput(input: Partial<ProjectInput>, partial: boolean) {
   const out: {
     name?: string; country?: string; lang?: string; depth?: number; intervalHours?: number;
     ownDomains?: string; ignoreHosts?: string; retentionDays?: number; alertStorm?: boolean; paused?: boolean;
+    aparserPreset?: string;
   } = {};
 
   if (input.name !== undefined || !partial) {
@@ -141,6 +154,7 @@ function validateProjectInput(input: Partial<ProjectInput>, partial: boolean) {
   }
   if (input.ownDomains !== undefined) out.ownDomains = String(input.ownDomains).slice(0, MAX_LIST_FIELD);
   if (input.ignoreHosts !== undefined) out.ignoreHosts = String(input.ignoreHosts).slice(0, MAX_LIST_FIELD);
+  if (input.aparserPreset !== undefined) out.aparserPreset = normalizeAparserPreset(input.aparserPreset);
   if (input.alertStorm !== undefined) out.alertStorm = Boolean(input.alertStorm);
   if (input.paused !== undefined) out.paused = Boolean(input.paused);
   return out;
@@ -627,6 +641,7 @@ export async function getProject(userId: string, id: string): Promise<ProjectDet
     ownDomains: parseHostList(p.ownDomains ?? ""),
     ignoreHosts: parseHostList(p.ignoreHosts ?? ""),
     retentionDays: p.retentionDays,
+    aparserPreset: String(p.aparserPreset ?? "") || "default",
     alertStorm: Boolean(p.alertStorm),
     groups: groups
       .map(g => ({ name: g.groupName, count: g._count._all }))

@@ -278,6 +278,16 @@ export function isMissingConfigPreset(error: string | undefined | null): boolean
   return /configPreset\b.*\bnot\s+exists?\b/i.test(String(error ?? ""));
 }
 
+/**
+ * `getParserPreset` / `oneRequest` naming a parser preset the instance does not have. The exact
+ * wording is not documented, so this matches the family ("preset 'x' not exists", "… not
+ * found") and deliberately NOT a thread-config miss, which has its own fallback.
+ */
+export function isMissingParserPreset(error: string | undefined | null): boolean {
+  const s = String(error ?? "");
+  return !isMissingConfigPreset(s) && /preset\b.*\bnot\s+(exists?|found)\b|no\s+such\s+preset/i.test(s);
+}
+
 const warnedConfigPresets = new Set<string>();
 
 async function withConfigPresetFallback<T>(

@@ -17,7 +17,7 @@ import {
   aparserInfo, aparserOneRequest, aparserParserPreset, envPassword, normaliseBaseUrl, type AparserOption,
 } from "@/lib/seo/aparser";
 import { getAparserServerCreds } from "@/lib/seo/aparserServerCreds";
-import { APARSER_SERP_OPTION_IDS, APARSER_SERP_PARSERS, aparserSerpOptions, describeAparserRow, mapAparserSerp } from "@/lib/seo/aparserSerp";
+import { APARSER_SERP_OPTION_IDS, APARSER_SERP_PARSERS, aparserSerpOptions, describeAparserRow, mapAparserSerp, serpItems } from "@/lib/seo/aparserSerp";
 import { prisma } from "@/lib/prisma";
 
 const PROBE_TIMEOUT_MS = 180_000;
@@ -51,10 +51,10 @@ function printRow(r: { anchor: unknown; link: unknown }, i: number): void {
 }
 
 async function main(): Promise<void> {
-  const args = process.argv.slice(2).filter((a, i, all) => !a.startsWith("--") && all[i - 1] !== "--opt");
+  const args = process.argv.slice(2).filter((a, i, all) => !a.startsWith("--") && all[i - 1] !== "--opt" && all[i - 1] !== "--preset");
   const [query, gl = "us", hl = "en", depthArg] = args;
   if (!query) {
-    console.error('Usage: npx tsx scripts/aparser-serp-probe.ts "<query>" <gl> <hl> [depth=100] [--opt id=value ...]');
+    console.error('Usage: npx tsx scripts/aparser-serp-probe.ts "<query>" <gl> <hl> [depth=100] [--preset name] [--opt id=value ...]');
     process.exit(1);
   }
   const depth = Math.max(1, Number(depthArg) || 100);
@@ -62,6 +62,12 @@ async function main(): Promise<void> {
   // --opt proxybannedcleanup=0. The preset in A-Parser is not touched.
   const extra: AparserOption[] = [];
   const argv = process.argv.slice(2);
+  // --preset name: the SE::Google preset to read and query with (the one a project names).
+  let presetArg = "default";
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--preset" && argv[i + 1]) presetArg = argv[i + 1];
+    else if (argv[i].startsWith("--preset=")) presetArg = argv[i].slice(9);
+  }
   for (let i = 0; i < argv.length; i++) {
     const m = argv[i] === "--opt" ? argv[i + 1] : argv[i].startsWith("--opt=") ? argv[i].slice(6) : null;
     if (m == null) continue;
@@ -102,7 +108,7 @@ async function main(): Promise<void> {
   }
 
   // ── 2. The preset dump — the main output, the authority on option ids ─────
-  const presetName = "default";
+  const presetName = presetArg.trim() || "default";
   const preset = await aparserParserPreset(creds, parser, presetName);
   if (!preset.data) {
     console.error(`getParserPreset ${parser} ${presetName} failed: ${preset.error ?? "no answer"}`);
@@ -151,7 +157,14 @@ async function main(): Promise<void> {
   const mapped = mapAparserSerp(row, depth);
   console.log("   first 3 mapped rows:");
   for (const m of mapped.results.slice(0, 3)) printRow({ anchor: m.title, link: m.url }, m.position - 1);
-  console.log(`   mapped: ${mapped.results.length} results, totalCount="${mapped.totalCount}", features=[${mapped.features.join(", ")}], problem=${mapped.problem ?? "null"}`);
+  console.log(`   mapped: ${mapped.results.length} results, totalCount="${mapped.totalCount}", features=[${mapped.features.join(", ")}], problem=${mapped.problem ?? "null"}${mapped.problemDetail ? ` (${mapped.problemDetail})` : ""}`);
+  // App-store rows with their titles: the integrity guard judges these, so show what it saw.
+  const items = serpItems(record.serp);
+  const store = items.filter((it) => /play\.google\.com|apps\.apple\.com/i.test(String(it.link ?? "")));
+  if (store.length) {
+    console.log(`   app-store rows (${store.length} of ${items.length}):`);
+    for (const it of store) printRow({ anchor: it.anchor, link: it.link }, items.indexOf(it));
+  }
   console.log("\nDone. If every id above reads 'present in preset' and serp rows is 90–100, "
     + "the ids in src/lib/seo/aparserSerp.ts match this build.");
 }

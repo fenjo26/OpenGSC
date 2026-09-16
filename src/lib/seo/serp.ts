@@ -28,6 +28,12 @@ export interface SerpOptions {
   baseUrl?: string;
   /** A-Parser thread config ("default" when absent). Ignored by metered providers. */
   configPreset?: string;
+  /**
+   * A-Parser parser preset ("default" when absent). The stock preset cannot be edited in
+   * A-Parser, so a captcha solver (Util::ReCaptcha2 preset) only takes effect through a preset
+   * the user saved under their own name. Ignored by metered providers.
+   */
+  aparserPreset?: string;
 }
 
 /**
@@ -568,8 +574,9 @@ async function aparserSearch(
     configPreset: opts.configPreset || undefined,
   };
   const options = aparserSerpOptions({ depth: want, gl, hl });
+  const parserPreset = (opts.aparserPreset || "").trim() || "default";
 
-  let r = await aparserOneRequest(creds, APARSER_SERP_PARSERS.google, keyword, options, { timeoutMs: APARSER_SERP_TIMEOUT_MS, doLog: true });
+  let r = await aparserOneRequest(creds, APARSER_SERP_PARSERS.google, keyword, options, { preset: parserPreset, timeoutMs: APARSER_SERP_TIMEOUT_MS, doLog: true });
   if (!r.data && /option|override|unknown/i.test(r.error ?? "")) {
     // The instance refused an override — an option id this build does not have. A preset that
     // already carries the right country/language is still a workable setup, so retry with the
@@ -577,7 +584,7 @@ async function aparserSearch(
     // A-Parser engine makes. (Depth lost too would shorten snapshots silently, which is why it
     // is retried with, not without.)
     r = await aparserOneRequest(creds, APARSER_SERP_PARSERS.google, keyword,
-      options.filter((o) => o.id === APARSER_SERP_OPTION_IDS.pagecount), { timeoutMs: APARSER_SERP_TIMEOUT_MS, doLog: true });
+      options.filter((o) => o.id === APARSER_SERP_OPTION_IDS.pagecount), { preset: parserPreset, timeoutMs: APARSER_SERP_TIMEOUT_MS, doLog: true });
   }
   if (!r.data) {
     return { engine, provider: "aparser", keyword, results: [], error: r.error ?? "aparser_failed" };

@@ -35,7 +35,7 @@ type DbRow = any;
 const WAVE = 16;
 
 const PROJECT_SELECT = {
-  id: true, userId: true, country: true, lang: true, depth: true, ignoreHosts: true,
+  id: true, userId: true, country: true, lang: true, depth: true, ignoreHosts: true, aparserPreset: true,
 } as const;
 
 // ─── startRun ────────────────────────────────────────────────────────────────
@@ -84,6 +84,7 @@ export async function startRun(
 
 interface ProjectLite {
   id: string; userId: string; country: string; lang: string; depth: number; ignoreHosts: string;
+  aparserPreset?: string | null;
 }
 
 /** Raw error text worth showing to the user: the provider's own error string or the exception
@@ -132,6 +133,7 @@ async function collectKeyword(
       num: project.depth,
       baseUrl: creds.baseUrl,
       ...(creds.configPreset ? { configPreset: creds.configPreset } : {}),
+      aparserPreset: project.aparserPreset || "default",
     } as SerpOptions;
     const resp: SerpResponse = await runSerp("aparser", creds.password, keyword.keyword, opts);
     const ext = resp as SerpResponse & { totalCount?: string; features?: string[] };
