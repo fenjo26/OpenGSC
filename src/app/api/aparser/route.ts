@@ -3,7 +3,7 @@ import { workspaceUserId } from "@/lib/team/workspace";
 import { getUserSettings } from "@/lib/mcp/shared";
 import {
   aparserAddTask, aparserInfo, aparserOneRequest, aparserParserPreset, aparserPing, aparserProxies,
-  aparserTaskResults, aparserTaskState, aparserCall, isMissingConfigPreset,
+  aparserTaskResultsText, aparserTaskState, aparserCall, isMissingConfigPreset,
   APARSER_DEFAULT_CONFIG, APARSER_PROBE_TIMEOUT_MS,
   envBaseUrl, envPassword, normaliseBaseUrl, resolveBaseUrl, setAparserConcurrency,
   type AparserCreds, type AparserOption,
@@ -228,9 +228,9 @@ export async function POST(req: Request) {
   if (op === "task_results") {
     const taskid = Number(b?.taskid);
     if (!Number.isFinite(taskid)) return NextResponse.json({ error: "no_taskid" }, { status: 400 });
-    const r = await aparserTaskResults(creds, taskid);
+    const r = await aparserTaskResultsText(creds, taskid);
     if (!r.data) return NextResponse.json({ error: (r.error ?? "no_data") + credTag }, { status: 502 });
-    return NextResponse.json({ results: r.data });
+    return NextResponse.json({ text: r.data.text, truncated: r.data.truncated });
   }
 
   // ── preset: what the option ids on THIS build actually are ─────────────────

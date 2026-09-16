@@ -85,3 +85,47 @@ test("a failed row without captchas stays a parser failure; totalcount 'none' is
   assert.equal(ok.totalCount, "");
   assert.equal(ok.results.length, 1);
 });
+
+test("addTask sends the documented task shape (resultsSaveTo is the enum 'file')", async () => {
+  const { aparserAddTask } = await import("../seo/aparser");
+  let body: Record<string, unknown> = {};
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (_u: unknown, init?: { body?: string }) => {
+    body = JSON.parse(String(init?.body ?? "{}")).data;
+    return new Response(JSON.stringify({ success: 1, data: { taskid: 7 } }), { status: 200 });
+  }) as typeof fetch;
+  try {
+    const r = await aparserAddTask({ baseUrl: "http://127.0.0.1:9091", password: "p" }, { parser: "SE::Google", queries: ["nv casino", " "] });
+    assert.equal(r.data, 7);
+    assert.equal(body.resultsSaveTo, "file");
+    assert.match(String(body.resultsFileName), /^OpenGSC-SE-Google-\d+\.txt$/);
+    assert.equal(body.queriesFrom, "text");
+    assert.deepEqual(body.queryFormat, ["$query"]);
+    assert.equal(body.resultsFormat, "$p1.preset");
+    assert.deepEqual(body.queries, ["nv casino"]);
+    assert.deepEqual(body.parsers, [["SE::Google", "default"]]);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("task results are downloaded through the configured base URL, never the link's host", async () => {
+  const { aparserTaskResultsText } = await import("../seo/aparser");
+  const seen: string[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (u: unknown) => {
+    const url = String(u);
+    seen.push(url);
+    if (url.endsWith("/API")) {
+      return new Response(JSON.stringify({ success: 1, data: "http://evil.example:9091/downloadResults?fileName=a.txt&token=t" }), { status: 200 });
+    }
+    return new Response("https://a.gr/\nhttps://b.gr/\n", { status: 200 });
+  }) as typeof fetch;
+  try {
+    const r = await aparserTaskResultsText({ baseUrl: "http://127.0.0.1:9091", password: "p" }, 7);
+    assert.equal(r.data?.text, "https://a.gr/\nhttps://b.gr/\n");
+    assert.equal(seen[1], "http://127.0.0.1:9091/downloadResults?fileName=a.txt&token=t");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
