@@ -12,6 +12,7 @@ const KNOWN_PROBLEMS: readonly SnapshotProblem[] = [
   "provider_error",
   "no_creds",
   "timeout",
+  "suspicious_links",
 ];
 
 /** "1 230 000" / "1,230,000" / "1.230.000" → 1230000. Anything else → null (unknown). */

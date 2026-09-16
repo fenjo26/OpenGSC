@@ -4020,6 +4020,7 @@
   "serpmonProblem_provider_error": "Помилка провайдера",
   "serpmonProblem_no_creds": "A-Parser не налаштований",
   "serpmonProblem_timeout": "Перевищено час очікування",
+  "serpmonProblem_suspicious_links": "Відповідь відхилено — посилання не збігаються з результатами (A-Parser)",
   "serpmonHistoryTitle": "Історія видачі",
   "serpmonSnapshots": "Знімки",
   "serpmonCompare": "Порівняти",

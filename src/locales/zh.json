@@ -4020,6 +4020,7 @@
   "serpmonProblem_provider_error": "服务商错误",
   "serpmonProblem_no_creds": "A-Parser 未配置",
   "serpmonProblem_timeout": "已超时",
+  "serpmonProblem_suspicious_links": "已拒绝该结果——链接与搜索结果不匹配（A-Parser）",
   "serpmonHistoryTitle": "SERP 历史",
   "serpmonSnapshots": "快照",
   "serpmonCompare": "对比",

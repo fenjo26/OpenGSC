@@ -153,3 +153,39 @@ test("flat serp (A-Parser 1.2.3640 live shape, 7 values per result) is mapped", 
   // documented object shape still works
   assert.equal(serpItems([{ link: "https://a.gr/", anchor: "A" }]).length, 1);
 });
+
+test("links that contradict their titles reject the whole answer (1.2.3640 live pattern)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { mapAparserSerp } = await import("../seo/aparserSerp");
+  const { classifySnapshot } = await import("./noise");
+  const row = JSON.parse(readFileSync(new URL("./__fixtures__/aparser-serp-mismatched-links-live-shape.json", import.meta.url), "utf8"));
+  const m = mapAparserSerp(row, 100);
+  assert.equal(m.problem, "suspicious_links");
+  assert.deepEqual(m.results, []);
+  assert.match(String(m.problemDetail), /repeated links 4\/9/);
+  assert.match(String(m.problemDetail), /different titles/);
+  assert.match(String(m.problemDetail), /app-store links under site titles/);
+  // …and the collector files it as failed, i.e. never compared
+  assert.deepEqual(classifySnapshot({ rows: [], depth: 100, totalCount: null, providerError: "suspicious_links" }),
+    { status: "failed", problem: "suspicious_links" });
+});
+
+test("assessSerpIntegrity leaves normal answers alone", async () => {
+  const { assessSerpIntegrity } = await import("../seo/aparserSerp");
+  const clean = Array.from({ length: 10 }, (_, i) => ({ link: `https://s${i}.gr/`, anchor: `Site ${i}` }));
+  assert.equal(assessSerpIntegrity(clean), null);
+  // one repeat with the same title among 10 — Google does that across pages
+  assert.equal(assessSerpIntegrity([...clean.slice(0, 9), { link: "https://s0.gr/", anchor: "Site 0" }]), null);
+  // genuine app listings
+  assert.equal(assessSerpIntegrity([
+    { link: "https://play.google.com/store/apps/details?id=a", anchor: "NV Casino – Apps on Google Play" },
+    { link: "https://apps.apple.com/gr/app/x/id1", anchor: "NV Casino στο App Store" },
+    { link: "https://play.google.com/store/apps/details?id=b", anchor: "Slots - Εφαρμογές στο Google Play" },
+    ...clean.slice(0, 5),
+  ]), null);
+  // a single odd store row is not enough on its own
+  assert.equal(assessSerpIntegrity([{ link: "https://play.google.com/store/apps/details?id=a", anchor: "Casino review" }, ...clean]), null);
+  assert.equal(assessSerpIntegrity([]), null);
+  // one link with two different titles is
+  assert.match(String(assessSerpIntegrity([...clean, { link: "https://s1.gr/", anchor: "Something else" }])), /different titles/);
+});

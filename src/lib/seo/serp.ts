@@ -589,7 +589,7 @@ async function aparserSearch(
     // Exactly the code — see the contract note above. The context rides separately.
     return {
       engine, provider: "aparser", keyword, results: [], error: mapped.problem,
-      errorDetail: `${mapped.problem} · ${describeAparserRow(Array.isArray(r.data.results) ? row : r.data.results, r.data.logs)}`,
+      errorDetail: `${mapped.problem}${mapped.problemDetail ? ` (${mapped.problemDetail})` : ""} · ${describeAparserRow(Array.isArray(r.data.results) ? row : r.data.results, r.data.logs)}`,
     };
   }
   return {

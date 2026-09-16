@@ -4020,6 +4020,7 @@
   "serpmonProblem_provider_error": "Provider error",
   "serpmonProblem_no_creds": "A-Parser is not configured",
   "serpmonProblem_timeout": "Timed out",
+  "serpmonProblem_suspicious_links": "Answer rejected — links do not match the results (A-Parser)",
   "serpmonHistoryTitle": "SERP history",
   "serpmonSnapshots": "Snapshots",
   "serpmonCompare": "Compare",

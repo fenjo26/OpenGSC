@@ -16,7 +16,8 @@ export type SnapshotProblem =
   | "short_result"               // fewer rows than SHORT_RESULT_RATIO × expected, engine did not say why
   | "provider_error"             // runSerp returned `error`
   | "no_creds"
-  | "timeout";
+  | "timeout"
+  | "suspicious_links";          // success reported, but the links contradict the titles (see assessSerpIntegrity)
 
 export interface SerpRow {
   position: number;   // 1-based, organic only, as mapped by the provider

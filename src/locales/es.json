@@ -4020,6 +4020,7 @@
   "serpmonProblem_provider_error": "Error del proveedor",
   "serpmonProblem_no_creds": "A-Parser no está configurado",
   "serpmonProblem_timeout": "Tiempo de espera agotado",
+  "serpmonProblem_suspicious_links": "Respuesta descartada — los enlaces no coinciden con los resultados (A-Parser)",
   "serpmonHistoryTitle": "Historial de la SERP",
   "serpmonSnapshots": "Capturas",
   "serpmonCompare": "Comparar",

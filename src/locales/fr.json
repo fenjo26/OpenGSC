@@ -4020,6 +4020,7 @@
   "serpmonProblem_provider_error": "Erreur du fournisseur",
   "serpmonProblem_no_creds": "A-Parser n'est pas configuré",
   "serpmonProblem_timeout": "Délai dépassé",
+  "serpmonProblem_suspicious_links": "Réponse rejetée — les liens ne correspondent pas aux résultats (A-Parser)",
   "serpmonHistoryTitle": "Historique SERP",
   "serpmonSnapshots": "Instantanés",
   "serpmonCompare": "Comparer",

@@ -158,6 +158,51 @@ export function serpItems(raw: unknown): Record<string, unknown>[] {
 }
 
 /**
+ * Whether a successful-looking answer can be trusted, or null when it can.
+ *
+ * A-Parser 1.2.3640 was seen answering `success: 1` with links that belong to other results:
+ * the same titles and snippets as a correct run, but `play.google.com/store/apps/…` and
+ * YouTube URLs in the link slot, repeated across rows (9 rows → 5 distinct links). Stored as a
+ * snapshot, that is a fake "everyone dropped out, app stores took the top" and a fake storm.
+ * Three signals, any one of which rejects the row — the snapshot is then `failed` and never
+ * compared, exactly like a captcha:
+ *
+ *   - many repeated links: fewer than 80% distinct among ≥ 5 rows (Google does repeat a URL
+ *     across pages now and then, which is why this is a ratio and not "any repeat");
+ *   - one link carrying different titles — a link cannot be two different pages;
+ *   - app-store links under titles that do not read like app-store listings ("… – Apps on
+ *     Google Play", "Εφαρμογές στο Google Play"), at least 2 of them or 30% of the rows.
+ */
+export function assessSerpIntegrity(items: readonly Record<string, unknown>[]): string | null {
+  const rows = items
+    .map((it) => ({ url: asString(it.link ?? it.url).trim(), title: asString(it.anchor ?? it.title).trim() }))
+    .filter((it) => /^https?:\/\//i.test(it.url));
+  if (rows.length === 0) return null;
+  const reasons: string[] = [];
+
+  const titlesByUrl = new Map<string, Set<string>>();
+  for (const { url, title } of rows) {
+    const set = titlesByUrl.get(url) ?? new Set<string>();
+    if (title) set.add(title.toLowerCase().replace(/\s+/g, " "));
+    titlesByUrl.set(url, set);
+  }
+  const distinct = titlesByUrl.size;
+  if (rows.length >= 5 && distinct / rows.length < 0.8) reasons.push(`repeated links ${rows.length - distinct}/${rows.length}`);
+
+  const conflicting = [...titlesByUrl.values()].filter((t) => t.size > 1).length;
+  if (conflicting > 0) reasons.push(`${conflicting} link(s) with different titles`);
+
+  const storeLike = /google\s*play|app\s*store|apps?\s+on|εφαρμογ|приложени|додат/i;
+  const store = rows.filter(({ url, title }) => {
+    const host = domainOf(url).toLowerCase();
+    return (host === "play.google.com" || host === "apps.apple.com") && !storeLike.test(title);
+  }).length;
+  if (store >= 2 || (rows.length >= 3 && store / rows.length >= 0.3)) reasons.push(`app-store links under site titles ${store}`);
+
+  return reasons.length ? reasons.join(", ") : null;
+}
+
+/**
  * One SE::Google structured row (`results[0]` of a `rawResults: 1` response) → our shape.
  *
  * `parserResultProblem` runs first with `["serp"]` as the content key, so a burnt proxy that
@@ -171,7 +216,8 @@ export function mapAparserSerp(row: unknown, want: number): {
   results: SerpResultItem[];   // position = 1-based order after dedupe by exact url, cut to `want`
   totalCount: string;          // "" when absent
   features: string[];
-  problem: string | null;      // parserResultProblem(row, ["serp"])
+  problem: string | null;      // parserResultProblem(row, ["serp"]) or "suspicious_links"
+  problemDetail?: string;      // why a row was judged suspicious, for the stored detail
 } {
   let problem = parserResultProblem(row, ["serp"]);
   // A parser-level failure after captchas is a blocked proxy, not a broken request: SE::Google
@@ -182,6 +228,10 @@ export function mapAparserSerp(row: unknown, want: number): {
 
   const r = (row ?? {}) as Record<string, unknown>;
   const serp = serpItems(r.serp);
+  const integrity = assessSerpIntegrity(serp);
+  if (integrity) {
+    return { results: [], totalCount: "", features: [], problem: "suspicious_links", problemDetail: integrity };
+  }
   const limit = Number.isFinite(want) && want > 0 ? Math.floor(want) : 0;
   const seen = new Set<string>();
   const results: SerpResultItem[] = [];
