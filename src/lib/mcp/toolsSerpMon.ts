@@ -40,7 +40,7 @@ export const SERPMON_TOOLS: McpTool[] = [
     name: "serpmon_market",
     cost: "local",
     description:
-      "The market table of one SERP Monitor project: per keyword the current leaders, the changes since its last comparable snapshot, RBO volatility and the project's own position. Two facts hold everywhere in this module: changes are HOST-level (a host has one best position and one change — `urls` is a side count, not one entry per URL), and a `failed` snapshot never enters a comparison — a burned proxy cannot fake mass exits. Comparison always runs against the previous snapshot with status ok or partial, within their common depth. Filters: q (keyword substring), host, group, changed_only, sort (keyword | volatility | changes), page, limit ≤ 200.",
+      "The market table of one SERP Monitor project: per keyword the current leaders (`leaders` skips platform and ignored hosts, `leadersAll` keeps them), the changes since its last comparable snapshot, RBO volatility and the project's own position. Two facts hold everywhere in this module: changes are HOST-level (a host has one best position and one change — `urls` is a side count, not one entry per URL), and a `failed` snapshot never enters a comparison — a burned proxy cannot fake mass exits. Comparison always runs against the previous snapshot with status ok or partial, within their common depth. Filters: q (keyword substring), host, group, changed_only, sort (keyword | volatility | changes), page, limit ≤ 200.",
     inputSchema: {
       type: "object",
       required: ["project_id"],

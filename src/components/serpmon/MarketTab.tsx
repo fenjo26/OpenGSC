@@ -269,8 +269,8 @@ export default function MarketTab({ projectId, groups, host, setHost, version, o
                     {r.group && <div style={{ fontSize: 10.5, color: "var(--color-text-tertiary)" }}>{r.group}</div>}
                   </td>
                   <td style={{ ...tdStyle, maxWidth: 240, whiteSpace: "normal" }}>
-                    {r.leaders.length
-                      ? r.leaders.map((h, i) => (
+                    {(platforms === "1" ? r.leadersAll ?? r.leaders : r.leaders).length
+                      ? (platforms === "1" ? r.leadersAll ?? r.leaders : r.leaders).map((h, i) => (
                         <span key={`${h}-${i}`} style={{
                           display: "inline-block", maxWidth: 110, overflow: "hidden",
                           textOverflow: "ellipsis", whiteSpace: "nowrap", verticalAlign: "bottom",

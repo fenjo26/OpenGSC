@@ -351,10 +351,14 @@ function parseRowPairs(rowsJson: string): [number, number][] {
   return out.sort((a, b) => a[0] - b[0]);
 }
 
-/** Urls + hosts for a batch of urlIds, in ≤ 400-parameter chunks. */
-export async function loadUrlHostMaps(urlIds: number[]): Promise<UrlHostMaps> {
+/**
+ * Urls + hosts for a batch of urlIds, in ≤ 400-parameter chunks. `extraHostIds` are hosts to
+ * name that no url of the batch points at — an exited host is, by definition, not in the
+ * snapshot whose change list names it.
+ */
+export async function loadUrlHostMaps(urlIds: number[], extraHostIds: readonly number[] = []): Promise<UrlHostMaps> {
   const urlById = new Map<number, { url: string; hostId: number; title: string }>();
-  const hostIds = new Set<number>();
+  const hostIds = new Set<number>(extraHostIds.filter(id => Number.isInteger(id) && id > 0));
   for (const batch of chunk([...new Set(urlIds)])) {
     const urls = await db.serpUrl.findMany({
       where: { id: { in: batch } }, select: { id: true, url: true, hostId: true, title: true },
@@ -934,6 +938,8 @@ export async function marketRows(
   }
 
   const ownList = parseHostList(project.ownDomains ?? "");
+  // Same list the change chips are hidden by: defaults + the project's own ignore list.
+  const isPlatform = ignorePredicate(parseHostList(project.ignoreHosts ?? ""));
   const snapById = new Map<string, { rows: string }>();
   const lastSnapIds = pageKeywords.map(k => k.lastSnapshotId).filter((x: string | null): x is string => Boolean(x));
   for (const batch of chunk(lastSnapIds)) {
@@ -942,10 +948,6 @@ export async function marketRows(
     }) as { id: string; rows: string }[];
     for (const s of snaps) snapById.set(s.id, s);
   }
-
-  const maps = await loadUrlHostMaps(
-    [...snapById.values()].flatMap(s => urlIdsFromRows(s.rows)),
-  );
 
   const changesBySnapshot = new Map<string, { hostId: number; kind: string; fromPos: number | null; toPos: number | null; urls: number; hidden: boolean }[]>();
   if (lastSnapIds.length) {
@@ -959,14 +961,21 @@ export async function marketRows(
     }
   }
 
+  const maps = await loadUrlHostMaps(
+    [...snapById.values()].flatMap(s => urlIdsFromRows(s.rows)),
+    [...changesBySnapshot.values()].flatMap(list => list.map(c => c.hostId)),
+  );
+
   const rows: MarketRow[] = pageKeywords.map(k => {
     const snap = k.lastSnapshotId ? snapById.get(k.lastSnapshotId) : undefined;
     const serpRows = snap ? expandRowsJson(snap.rows, maps) : [];
 
     const leaders: string[] = [];
+    const leadersAll: string[] = [];
     for (const r of serpRows) {
-      if (!leaders.includes(r.host)) leaders.push(r.host);
-      if (leaders.length === 5) break;
+      if (leadersAll.length < 5 && !leadersAll.includes(r.host)) leadersAll.push(r.host);
+      if (leaders.length < 5 && !isPlatform(r.host) && !leaders.includes(r.host)) leaders.push(r.host);
+      if (leaders.length === 5 && leadersAll.length === 5) break;
     }
 
     const changes = (changesBySnapshot.get(k.lastSnapshotId ?? "") ?? [])
@@ -994,6 +1003,7 @@ export async function marketRows(
       detail: k.lastDetail ?? null,
       lastOkAt: k.lastOkAt ? k.lastOkAt.toISOString() : null,
       leaders,
+      leadersAll,
       changes,
       volatility: k.lastVolatility ?? null,
       own,
