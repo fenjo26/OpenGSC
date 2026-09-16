@@ -3987,7 +3987,7 @@
   "serpmonAparserPresetHint": "Название пресета SE::Google, сохранённого в A-Parser. Укажите свой пресет с решателем капчи (Util::ReCaptcha2): стандартный «default» капчу не решает.",
   "serpmonAparserPresetMissing": "В A-Parser нет пресета SE::Google с названием «{name}». Проверьте название в A-Parser → Настройки → Настройки парсеров.",
   "serpmonAparserPresetInvalid": "Название пресета слишком длинное или содержит недопустимые символы.",
-  "serpmonRetryWaiting": "Повтор неудачных запросов: {n} — следующая попытка примерно через {s} с (A-Parser их отклонил, ждём снятия бана прокси)",
+  "serpmonRetryWaiting": "Повтор неудачных запросов: {n} — следующая попытка примерно через {s} с",
   "serpmonRetryRunning": "Повторная попытка в A-Parser для запросов: {n}…",
   "serpmonAlreadyRunning": "Проверка уже идёт",
   "serpmonCooldown": "Проверяли несколько минут назад. Запустить всё равно?",

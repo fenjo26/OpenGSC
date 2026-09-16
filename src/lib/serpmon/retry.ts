@@ -1,12 +1,12 @@
 // SERP Monitor — the end-of-run retry pass (pure policy; the collector does the I/O).
 //
-// Live A-Parser 1.2.3640 + Unlimited proxies answer roughly 3 requests in 8; the rest fail with
-// a captcha or "Process redirect error: mismatch" and succeed when simply asked again a minute
-// later. So once every keyword of a run has had its first try, the ones that failed for such a
-// transient reason are asked again, after a pause long enough for A-Parser's proxy ban (60 s by
-// default) to lapse. A failure that retrying cannot fix — no credentials, a rejected answer
-// whose links contradict their titles, a provider error such as a wrong password — is never
-// retried: repeating it only burns proxy time.
+// Live A-Parser 1.2.3640 answers a share of requests with a captcha it could not pass, a
+// "Process redirect error: mismatch", or a page whose links it mis-resolved — and the same query
+// asked again usually succeeds. So once every keyword of a run has had its first try, the ones
+// that failed for such a reason are asked again. There is no point waiting out a proxy ban
+// between tries: A-Parser takes a different proxy from the pool for every attempt (a banned
+// one is skipped), so the pause is only a short breather. A failure that retrying cannot fix —
+// no credentials, a provider error such as a wrong password — is never retried.
 
 import type { SnapshotProblem } from "./types";
 
@@ -16,13 +16,14 @@ export const RETRYABLE_PROBLEMS: readonly SnapshotProblem[] = [
   "aparser_parser_failed",
   "aparser_no_result",
   "timeout",
+  "suspicious_links", // mis-resolved links are intermittent: the next answer is usually clean
 ];
 
 /** First try plus two retries. */
 export const RETRY_MAX_ATTEMPTS = 3;
 
-/** Longer than A-Parser's default proxy ban (`proxybannedcleanup` = 60 s). */
-export const RETRY_DELAY_MS = 90_000;
+/** A breather, not a ban wait — A-Parser rotates to another proxy on its own. */
+export const RETRY_DELAY_MS = 10_000;
 
 export interface RetryCandidate {
   snapshotId: string;

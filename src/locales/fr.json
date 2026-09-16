@@ -3987,7 +3987,7 @@
   "serpmonAparserPresetHint": "Nom d'un preset SE::Google enregistré dans A-Parser. Choisissez votre propre preset avec un solveur de captcha (Util::ReCaptcha2) : le « default » standard ne résout pas les captchas.",
   "serpmonAparserPresetMissing": "A-Parser n'a aucun preset SE::Google nommé « {name} ». Vérifiez le nom dans A-Parser → Paramètres → Paramètres des parseurs.",
   "serpmonAparserPresetInvalid": "Le nom du preset est trop long ou contient des caractères non valides.",
-  "serpmonRetryWaiting": "Nouvel essai des requêtes échouées : {n} — prochaine tentative dans ~{s} s (A-Parser les a rejetées ; le blocage du proxy doit d'abord expirer)",
+  "serpmonRetryWaiting": "Nouvel essai des requêtes échouées : {n} — prochaine tentative dans ~{s} s",
   "serpmonRetryRunning": "Nouvelle tentative auprès d'A-Parser pour {n} requête(s)…",
   "serpmonAlreadyRunning": "Une vérification est déjà en cours",
   "serpmonCooldown": "Vérifié il y a quelques minutes. Lancer quand même ?",

@@ -8,22 +8,23 @@ test("only transient problems are retried, and only up to the attempt cap", () =
   assert.equal(isRetryable("aparser_blocked_or_empty", 1), true);
   assert.equal(isRetryable("aparser_parser_failed", 2), true);
   assert.equal(isRetryable("timeout", 1), true);
+  assert.equal(isRetryable("suspicious_links", 1), true);
   assert.equal(isRetryable("aparser_blocked_or_empty", RETRY_MAX_ATTEMPTS), false);
-  for (const p of ["suspicious_links", "no_creds", "provider_error", "short_result", null]) {
+  for (const p of ["no_creds", "provider_error", "short_result", null]) {
     assert.equal(isRetryable(p, 1), false, String(p));
   }
 });
 
-test("pickRetryWave waits out the proxy ban, oldest first, capped", () => {
+test("pickRetryWave waits a short pause, oldest first, capped", () => {
   const now = 10_000_000;
   const c = (id: string, msAgo: number, problem: string | null = "aparser_blocked_or_empty", attempts = 1): RetryCandidate =>
     ({ snapshotId: id, keywordId: `k${id}`, problem, attempts, takenAt: at(msAgo, now) });
   const list = [
-    c("fresh", 10_000),
+    c("fresh", RETRY_DELAY_MS / 2),
     c("old", RETRY_DELAY_MS + 50_000),
     c("older", RETRY_DELAY_MS + 90_000),
     c("capped", RETRY_DELAY_MS + 99_000, "timeout", RETRY_MAX_ATTEMPTS),
-    c("rejected", RETRY_DELAY_MS + 99_000, "suspicious_links"),
+    c("rejected", RETRY_DELAY_MS + 99_000, "no_creds"),
   ];
   const r = pickRetryWave(list, now, 16);
   assert.deepEqual(r.due.map((x) => x.snapshotId), ["older", "old"]);
