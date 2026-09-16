@@ -150,7 +150,10 @@ export function serpItems(raw: unknown): Record<string, unknown>[] {
     if (!fits) continue;
     const out: Record<string, unknown>[] = [];
     for (let i = 0; i < raw.length; i += width) {
-      out.push({ link: raw[i], anchor: raw[i + 1], snippet: raw[i + 2] });
+      // The Google redirect this row's link was resolved from (last field on 1.2.3640) — kept for
+      // diagnostics only: it is what tells a mis-resolved link from a real one.
+      const goto = raw.slice(i + 3, i + width).find((v) => typeof v === "string" && /^https?:\/\/[^/]*google\.[^/]+\/(goto|url)\?/i.test(v));
+      out.push({ link: raw[i], anchor: raw[i + 1], snippet: raw[i + 2], ...(goto ? { goto } : {}) });
     }
     return out;
   }

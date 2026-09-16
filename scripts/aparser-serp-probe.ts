@@ -45,6 +45,10 @@ async function loadCreds(): Promise<ProbeCreds | null> {
   return null;
 }
 
+function argvHas(flag: string): boolean {
+  return process.argv.slice(2).includes(flag);
+}
+
 function printRow(r: { anchor: unknown; link: unknown }, i: number): void {
   console.log(`  ${String(i + 1).padStart(3)}. ${String(r.anchor ?? "").slice(0, 80)}`);
   console.log(`      ${String(r.link ?? "")}`);
@@ -54,7 +58,7 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2).filter((a, i, all) => !a.startsWith("--") && all[i - 1] !== "--opt" && all[i - 1] !== "--preset");
   const [query, gl = "us", hl = "en", depthArg] = args;
   if (!query) {
-    console.error('Usage: npx tsx scripts/aparser-serp-probe.ts "<query>" <gl> <hl> [depth=100] [--preset name] [--opt id=value ...]');
+    console.error('Usage: npx tsx scripts/aparser-serp-probe.ts "<query>" <gl> <hl> [depth=100] [--preset name] [--dump] [--opt id=value ...]');
     process.exit(1);
   }
   const depth = Math.max(1, Number(depthArg) || 100);
@@ -160,6 +164,16 @@ async function main(): Promise<void> {
   console.log(`   mapped: ${mapped.results.length} results, totalCount="${mapped.totalCount}", features=[${mapped.features.join(", ")}], problem=${mapped.problem ?? "null"}${mapped.problemDetail ? ` (${mapped.problemDetail})` : ""}`);
   // App-store rows with their titles: the integrity guard judges these, so show what it saw.
   const items = serpItems(record.serp);
+  if (argvHas("--dump")) {
+    // Every row as A-Parser paired it: title, link, and the Google redirect it came from. This is
+    // the evidence for "links do not match their titles" — send it to A-Parser support as is.
+    console.log(`   all rows (${items.length}):`);
+    items.forEach((it, i) => {
+      console.log(`  ${String(i + 1).padStart(3)}. ${String(it.anchor ?? "").slice(0, 90)}`);
+      console.log(`       link: ${String(it.link ?? "")}`);
+      if (it.goto) console.log(`       goto: ${String(it.goto).slice(0, 200)}`);
+    });
+  }
   const store = items.filter((it) => /play\.google\.com|apps\.apple\.com/i.test(String(it.link ?? "")));
   if (store.length) {
     console.log(`   app-store rows (${store.length} of ${items.length}):`);
