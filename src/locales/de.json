@@ -3983,6 +3983,8 @@
   "serpmonExportDomains": "Domains exportieren",
   "serpmonRunNow": "Jetzt prüfen",
   "serpmonRunning": "Prüfe {done} von {planned}",
+  "serpmonRetryWaiting": "Fehlgeschlagene Anfragen werden wiederholt: {n} — nächster Versuch in ca. {s} s (A-Parser hat sie abgelehnt; die Proxy-Sperre muss erst ablaufen)",
+  "serpmonRetryRunning": "Frage A-Parser erneut für {n} fehlgeschlagene Anfrage(n)…",
   "serpmonAlreadyRunning": "Eine Prüfung läuft bereits",
   "serpmonCooldown": "Vor wenigen Minuten geprüft. Trotzdem starten?",
   "serpmonNoKeywords": "Zuerst Keywords hinzufügen",

@@ -21,6 +21,7 @@ import { apexOf } from "@/lib/drops/registries";
 import { COUNTRIES, defaultLanguageFor } from "@/lib/seo/regions";
 import { hostMatches, ignorePredicate, parseHostList } from "./hosts";
 import { comparableDepth } from "./noise";
+import { isRetryable, pickRetryWave, retriesInFlight } from "./retry";
 import { diffKeyword } from "./diff";
 import { parseKeywordImport, type KeywordImport } from "./keywords";
 import {
@@ -789,12 +790,30 @@ export async function listRuns(userId: string, projectId: string, limit: number)
   // Newest first: the done-with-volatility runs already walked past are exactly the ones newer
   // than the current run, so one subtraction gives the baseline each run had beneath it.
   let seenVol = 0;
-  return runs.map(r => {
+  const summaries = runs.map(r => {
     const isVol = r.status === "done" && (r.volatility ?? 0) > 0;
     const baseline = volDoneTotal - seenVol;
     if (isVol) seenVol += 1;
     return toRunSummary(r, baseline - (isVol ? 1 : 0) < STORM_MIN_BASELINE);
   });
+  // A running run in its retry pass sits at "N of N" (or one short, mid-retry) for minutes —
+  // say what it is waiting for, or it reads as a hang.
+  const now = Date.now();
+  for (const s of summaries) {
+    if (s.status !== "running") continue;
+    const inFlight = retriesInFlight(s.id);
+    if (!inFlight && s.ok + s.partial + s.failed < s.planned) continue; // first pass still going
+    const failed = (await failedSnapshotsOfRun(s.id)).filter(f => f.keyword.active);
+    const retryable = failed.filter(f => isRetryable(f.problem, f.attempts));
+    if (!inFlight && !retryable.length) continue;
+    const wave = pickRetryWave(retryable, now, retryable.length);
+    s.retry = {
+      inFlight,
+      waiting: retryable.length,
+      nextInSec: !retryable.length ? null : wave.due.length ? 0 : Math.ceil((wave.nextDueInMs ?? 0) / 1000),
+    };
+  }
+  return summaries;
 }
 
 // ─── Market table ────────────────────────────────────────────────────────────

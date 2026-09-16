@@ -3983,6 +3983,8 @@
   "serpmonExportDomains": "Exporter les domaines",
   "serpmonRunNow": "Vérifier maintenant",
   "serpmonRunning": "Vérification : {done} sur {planned}",
+  "serpmonRetryWaiting": "Nouvel essai des requêtes échouées : {n} — prochaine tentative dans ~{s} s (A-Parser les a rejetées ; le blocage du proxy doit d'abord expirer)",
+  "serpmonRetryRunning": "Nouvelle tentative auprès d'A-Parser pour {n} requête(s)…",
   "serpmonAlreadyRunning": "Une vérification est déjà en cours",
   "serpmonCooldown": "Vérifié il y a quelques minutes. Lancer quand même ?",
   "serpmonNoKeywords": "Ajoutez d'abord des mots-clés",

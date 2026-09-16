@@ -3983,6 +3983,8 @@
   "serpmonExportDomains": "Export domains",
   "serpmonRunNow": "Check now",
   "serpmonRunning": "Checking {done} of {planned}",
+  "serpmonRetryWaiting": "Retrying failed queries: {n} — next try in ~{s} s (A-Parser rejected them; the proxy ban has to wear off first)",
+  "serpmonRetryRunning": "Asking A-Parser again for failed queries: {n}…",
   "serpmonAlreadyRunning": "A check is already running",
   "serpmonCooldown": "Checked a few minutes ago. Run anyway?",
   "serpmonNoKeywords": "Add keywords first",

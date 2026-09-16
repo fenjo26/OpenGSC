@@ -28,6 +28,7 @@ test("pickRetryWave waits out the proxy ban, oldest first, capped", () => {
   const r = pickRetryWave(list, now, 16);
   assert.deepEqual(r.due.map((x) => x.snapshotId), ["older", "old"]);
   assert.equal(r.waiting, 1);
+  assert.ok(r.nextDueInMs !== null && r.nextDueInMs > 0 && r.nextDueInMs <= RETRY_DELAY_MS);
   assert.deepEqual(pickRetryWave(list, now, 1).due.map((x) => x.snapshotId), ["older"]);
-  assert.deepEqual(pickRetryWave([], now, 16), { due: [], waiting: 0 });
+  assert.deepEqual(pickRetryWave([], now, 16), { due: [], waiting: 0, nextDueInMs: null });
 });

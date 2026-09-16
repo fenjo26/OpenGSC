@@ -12,7 +12,7 @@ import { credsTag, getAparserServerCreds, type ServerAparserCreds } from "@/lib/
 
 import { hostOfUrl, ignorePredicate, parseHostList } from "./hosts";
 import { classifySnapshot } from "./noise";
-import { pickRetryWave, RETRY_MAX_ATTEMPTS } from "./retry";
+import { pickRetryWave, RETRY_MAX_ATTEMPTS, trackRetry } from "./retry";
 import { median, shareAboveOwnP90, stormVerdict } from "./volatility";
 import {
   expandRowsJson, failedSnapshotsOfRun, loadUrlHostMaps, pruneProjectSnapshots, releaseFailedSnapshot,
@@ -22,7 +22,7 @@ import {
   KEYWORD_P90_WINDOW, SERPMON_MANUAL_COOLDOWN_MS, STORM_BASELINE_RUNS, STORM_MIN_BASELINE,
   type RunSummary, type SerpRow, type SnapshotProblem, type SnapshotStatus,
 } from "./types";
-import { kickSerpmonScheduler } from "./scheduler";
+import { kickSerpmonScheduler, kickSerpmonSchedulerIn } from "./scheduler";
 import type { RunRowLike } from "./store";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the client predates the schema
@@ -279,7 +279,10 @@ export async function advanceRun(runId: string, deadline: number): Promise<{ don
       const failedRows = await failedSnapshotsOfRun(runId);
       const wave = pickRetryWave(failedRows.filter(r => r.keyword.active), Date.now(), WAVE);
       if (!wave.due.length) {
-        if (wave.waiting > 0) return { done: false, processed };
+        if (wave.waiting > 0) {
+          if (wave.nextDueInMs !== null) kickSerpmonSchedulerIn(wave.nextDueInMs);
+          return { done: false, processed };
+        }
         await finalizeRun(runId);
         return { done: true, processed };
       }
@@ -291,8 +294,10 @@ export async function advanceRun(runId: string, deadline: number): Promise<{ don
       const byId = new Map(failedRows.map(r => [r.snapshotId, r]));
       await Promise.all(wave.due.map(async (c) => {
         const row = byId.get(c.snapshotId)!;
-        if (!(await releaseFailedSnapshot(runId, c.snapshotId))) return;
-        await collectKeyword(row.keyword, project, runId, retryCreds, ignore, c.attempts + 1);
+        await trackRetry(runId, async () => {
+          if (!(await releaseFailedSnapshot(runId, c.snapshotId))) return;
+          await collectKeyword(row.keyword, project, runId, retryCreds, ignore, c.attempts + 1);
+        });
       }));
       processed += wave.due.length;
       if (Date.now() >= deadline) return { done: false, processed };

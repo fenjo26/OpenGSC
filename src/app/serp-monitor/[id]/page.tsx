@@ -195,8 +195,10 @@ export default function SerpProjectPage() {
     );
   }
 
-  const done = running ? running.ok + running.partial + running.failed : 0;
   const planned = running ? running.planned : 0;
+  const retry = running?.retry ?? null;
+  // Mid-retry the failed row is released, so the counters read short by the keywords in flight.
+  const done = running ? Math.min(planned, running.ok + running.partial + running.failed + (retry?.inFlight ?? 0)) : 0;
   const progressPct = planned > 0 ? Math.min(100, Math.round((done / planned) * 100)) : 0;
 
   return (
@@ -278,6 +280,13 @@ export default function SerpProjectPage() {
             <Loader2 size={13} className="spin" />
             {tr("serpmonRunning").replace("{done}", String(done)).replace("{planned}", String(planned))}
           </div>
+          {retry && (retry.inFlight > 0 || retry.waiting > 0) && (
+            <div style={{ color: "var(--color-text-secondary)" }}>
+              {retry.inFlight > 0
+                ? tr("serpmonRetryRunning").replace("{n}", String(retry.inFlight))
+                : tr("serpmonRetryWaiting").replace("{n}", String(retry.waiting)).replace("{s}", String(Math.max(1, retry.nextInSec ?? 0)))}
+            </div>
+          )}
           <div style={{ height: 6, borderRadius: 3, background: "var(--color-border-soft)", overflow: "hidden" }}>
             <div style={{ width: `${progressPct}%`, height: "100%", background: "var(--color-accent-blue)", borderRadius: 3 }} />
           </div>

@@ -3983,6 +3983,8 @@
   "serpmonExportDomains": "导出域名",
   "serpmonRunNow": "立即检查",
   "serpmonRunning": "已检查 {done}/{planned}",
+  "serpmonRetryWaiting": "正在重试失败的查询：{n} 个 — 约 {s} 秒后再次尝试（A-Parser 拒绝了它们，需等待代理封禁解除）",
+  "serpmonRetryRunning": "正在向 A-Parser 重新请求 {n} 个失败的查询…",
   "serpmonAlreadyRunning": "检查已在进行中",
   "serpmonCooldown": "几分钟前刚检查过。仍要运行吗？",
   "serpmonNoKeywords": "请先添加关键词",

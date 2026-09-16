@@ -3983,6 +3983,8 @@
   "serpmonExportDomains": "Вивантажити домени",
   "serpmonRunNow": "Перевірити зараз",
   "serpmonRunning": "Перевірено {done} з {planned}",
+  "serpmonRetryWaiting": "Повтор невдалих запитів: {n} — наступна спроба приблизно за {s} с (A-Parser їх відхилив, чекаємо зняття бану проксі)",
+  "serpmonRetryRunning": "Повторна спроба в A-Parser для запитів: {n}…",
   "serpmonAlreadyRunning": "Перевірка вже триває",
   "serpmonCooldown": "Перевіряли кілька хвилин тому. Запустити все одно?",
   "serpmonNoKeywords": "Спочатку додайте запити",

@@ -136,3 +136,23 @@ export function kickSerpmonScheduler(): void {
     void tick();
   }, 0);
 }
+
+let delayedKick: ReturnType<typeof setTimeout> | null = null;
+let delayedKickAt = 0;
+
+/**
+ * Wake the loop at a known moment (a retry pause running out) instead of up to a whole tick
+ * later. One timer at a time; an earlier request replaces a later one, a later one is dropped.
+ */
+export function kickSerpmonSchedulerIn(ms: number): void {
+  if (!started || disabled) return;
+  const at = Date.now() + Math.max(0, ms);
+  if (delayedKick && delayedKickAt <= at) return;
+  if (delayedKick) clearTimeout(delayedKick);
+  delayedKickAt = at;
+  delayedKick = setTimeout(() => {
+    delayedKick = null;
+    kickSerpmonScheduler();
+  }, Math.max(0, ms) + 500);
+  delayedKick.unref?.();
+}

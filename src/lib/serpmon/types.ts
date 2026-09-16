@@ -111,6 +111,12 @@ export interface RunSummary {
   planned: number; ok: number; partial: number; failed: number; compared: number;
   volatility: number | null; volTop10: number | null; shareHigh: number | null;
   stormScore: number | null; storm: boolean; calibrating: boolean; error: string | null;
+  /**
+   * Running runs in the retry pass only (see retry.ts): `inFlight` keywords being asked again
+   * right now (their failed row is released, so the counters read that many short), `waiting`
+   * failed keywords queued for another try, `nextInSec` until the first of those is due.
+   */
+  retry?: { inFlight: number; waiting: number; nextInSec: number | null } | null;
 }
 
 export interface MarketRow {
