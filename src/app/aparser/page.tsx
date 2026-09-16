@@ -168,8 +168,9 @@ export default function AparserPage() {
     setBulkBusy(true); setBulkErr("");
     try {
       const d = await call({ op: "task_results", taskid: bulkTask.id });
-      const r = d.results;
-      setBulkResults(typeof r === "string" ? r : typeof r?.link === "string" ? r.link : JSON.stringify(r, null, 2));
+      // The server downloads the file itself: A-Parser's link points at 127.0.0.1, which only
+      // the server can open.
+      setBulkResults(String(d.text ?? "") + (d.truncated ? "\n… (truncated — download the full file in A-Parser)" : ""));
     } catch (e: any) { setBulkErr(String(e?.message ?? e)); }
     setBulkBusy(false);
   }

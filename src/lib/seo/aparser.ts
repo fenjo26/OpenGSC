@@ -355,15 +355,26 @@ export interface AparserTaskState {
 export async function aparserAddTask(creds: AparserCreds, task: AparserAddTask): Promise<AparserResult<number>> {
   const queries = task.queries.map(q => q.trim()).filter(Boolean);
   if (!queries.length) return fail<number>("no_queries");
+  // Field set and values as the A-Parser API reference prints them for addTask. `resultsSaveTo`
+  // is an enum whose only value is "file" (the name goes to `resultsFileName`) — passing a path
+  // there fails validation with "must be one of [file]". `$p1.preset` is the task editor's own
+  // default: use parser 1's preset format, so a task returns what the console test shows.
   const data = (configPreset: string): Record<string, unknown> => ({
-    parsers: [[task.parser, task.preset || "default"]],
-    configPreset,
     preset: task.preset || "default",
+    configPreset,
+    parsers: [[task.parser, task.preset || "default"]],
+    resultsFormat: task.resultsFormat || "$p1.preset",
+    resultsSaveTo: "file",
+    resultsFileName: `OpenGSC-${task.parser.replace(/::/g, "-")}-${Date.now()}.txt`,
+    additionalFormats: [],
+    resultsUnique: "no",
+    queriesFrom: "text",
+    queryFormat: ["$query"],
+    uniqueQueries: false,
+    saveFailedQueries: false,
+    doLog: "db", // the reference's value; the task log then shows in A-Parser's own task list
+    removeOnComplete: false,
     queries,
-    resultsSaveTo: `OpenGSC/${Date.now()}-${task.parser.replace(/::/g, "-")}.txt`,
-    doLog: 0,
-    keepLinks: 0,
-    ...(task.resultsFormat ? { resultsFormat: task.resultsFormat } : {}),
   });
   const r = await withConfigPresetFallback(creds, cfg => aparserCall<any>(creds, "addTask", data(cfg)));
   if (!r.data) return fail<number>(r.error ?? "aparser: no task id");
@@ -381,9 +392,51 @@ export async function aparserTaskState(creds: AparserCreds, taskid: number): Pro
 
 export async function aparserTaskResults(creds: AparserCreds, taskid: number): Promise<AparserResult<any>> {
   // Whatever this build produces for a finished task: a download-link object on current
-  // builds, raw file text on some older ones. Passed through unmodified — the console
-  // renders either.
+  // builds, raw file text on some older ones. Passed through unmodified.
   return aparserCall<any>(creds, "getTaskResultsFile", { taskid });
+}
+
+/** Cap on a results file pulled through this server — past it the owner downloads it in A-Parser. */
+export const APARSER_RESULTS_MAX_BYTES = 20 * 1024 * 1024;
+
+/**
+ * The finished task's results as text.
+ *
+ * `getTaskResultsFile` answers with a link like `http://127.0.0.1:9091/downloadResults?…` — an
+ * address that means "this server", which the owner's browser cannot open. The file is fetched
+ * here instead. Only the path and query of that link are used, always against the configured
+ * base URL: the link comes from the instance, but following an arbitrary host from a response
+ * is exactly the redirect this module refuses elsewhere.
+ */
+export async function aparserTaskResultsText(creds: AparserCreds, taskid: number): Promise<AparserResult<{ text: string; truncated: boolean }>> {
+  const r = await aparserTaskResults(creds, taskid);
+  if (r.data == null) return fail(r.error ?? "aparser: no results");
+  const d: unknown = r.data;
+  const obj = d && typeof d === "object" ? d as Record<string, unknown> : {};
+  const link = typeof d === "string" ? d : typeof obj.link === "string" ? obj.link : typeof obj.url === "string" ? obj.url : "";
+  if (!/^https?:\/\//i.test(link)) {
+    // Older builds hand back the file body itself.
+    const text = typeof d === "string" ? d : JSON.stringify(d, null, 2);
+    return { data: { text, truncated: false } };
+  }
+  let target: URL;
+  try {
+    const u = new URL(link);
+    if (!/downloadResults/i.test(u.pathname)) return fail("aparser: unexpected results link");
+    target = new URL(u.pathname + u.search, creds.baseUrl);
+  } catch {
+    return fail("aparser: bad results link");
+  }
+  try {
+    const res = await fetch(target, { redirect: "error", signal: AbortSignal.timeout(APARSER_DEFAULT_TIMEOUT_MS) });
+    if (!res.ok) return fail(`aparser ${redactBaseUrl(creds.baseUrl)} results ${res.status}`);
+    const buf = Buffer.from(await res.arrayBuffer());
+    const truncated = buf.length > APARSER_RESULTS_MAX_BYTES;
+    return { data: { text: buf.subarray(0, APARSER_RESULTS_MAX_BYTES).toString("utf8"), truncated } };
+  } catch (e) {
+    const err = e as { name?: string; message?: string; cause?: { code?: string } };
+    return fail(`сеть A-Parser (${redactBaseUrl(creds.baseUrl)}): ${err.name === "TimeoutError" ? "timeout" : (err.cause?.code || err.message || "fetch failed")}`);
+  }
 }
 
 // ─── Concurrency ─────────────────────────────────────────────────────────────

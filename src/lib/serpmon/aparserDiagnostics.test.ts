@@ -85,3 +85,71 @@ test("a failed row without captchas stays a parser failure; totalcount 'none' is
   assert.equal(ok.totalCount, "");
   assert.equal(ok.results.length, 1);
 });
+
+test("addTask sends the documented task shape (resultsSaveTo is the enum 'file')", async () => {
+  const { aparserAddTask } = await import("../seo/aparser");
+  let body: Record<string, unknown> = {};
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (_u: unknown, init?: { body?: string }) => {
+    body = JSON.parse(String(init?.body ?? "{}")).data;
+    return new Response(JSON.stringify({ success: 1, data: { taskid: 7 } }), { status: 200 });
+  }) as typeof fetch;
+  try {
+    const r = await aparserAddTask({ baseUrl: "http://127.0.0.1:9091", password: "p" }, { parser: "SE::Google", queries: ["nv casino", " "] });
+    assert.equal(r.data, 7);
+    assert.equal(body.resultsSaveTo, "file");
+    assert.match(String(body.resultsFileName), /^OpenGSC-SE-Google-\d+\.txt$/);
+    assert.equal(body.queriesFrom, "text");
+    assert.deepEqual(body.queryFormat, ["$query"]);
+    assert.equal(body.resultsFormat, "$p1.preset");
+    assert.deepEqual(body.queries, ["nv casino"]);
+    assert.deepEqual(body.parsers, [["SE::Google", "default"]]);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("task results are downloaded through the configured base URL, never the link's host", async () => {
+  const { aparserTaskResultsText } = await import("../seo/aparser");
+  const seen: string[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (u: unknown) => {
+    const url = String(u);
+    seen.push(url);
+    if (url.endsWith("/API")) {
+      return new Response(JSON.stringify({ success: 1, data: "http://evil.example:9091/downloadResults?fileName=a.txt&token=t" }), { status: 200 });
+    }
+    return new Response("https://a.gr/\nhttps://b.gr/\n", { status: 200 });
+  }) as typeof fetch;
+  try {
+    const r = await aparserTaskResultsText({ baseUrl: "http://127.0.0.1:9091", password: "p" }, 7);
+    assert.equal(r.data?.text, "https://a.gr/\nhttps://b.gr/\n");
+    assert.equal(seen[1], "http://127.0.0.1:9091/downloadResults?fileName=a.txt&token=t");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("flat serp (A-Parser 1.2.3640 live shape, 7 values per result) is mapped", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { mapAparserSerp, serpItems } = await import("../seo/aparserSerp");
+  const row = JSON.parse(readFileSync(new URL("./__fixtures__/aparser-serp-flat-live-shape.json", import.meta.url), "utf8"));
+  const m = mapAparserSerp(row, 100);
+  assert.equal(m.problem, null);
+  assert.equal(m.totalCount, "21100000");
+  // 9 results, one duplicate URL dropped, positions renumbered without holes
+  assert.equal(m.results.length, 8);
+  assert.deepEqual(m.results.map(r => r.position), [1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.equal(m.results[0].url, "https://site0.gr/page");
+  assert.equal(m.results[0].title, "Τίτλος 0");
+  assert.equal(m.results[0].snippet, "Snippet 0");
+  assert.equal(m.results[3].url, "https://site4.gr/page");
+  assert.ok(m.results.every(r => !r.url.includes("google.com/goto")));
+  assert.ok(m.features.includes("ai_overview"));
+  assert.equal(mapAparserSerp(row, 5).results.length, 5);
+  // a list no width explains yields nothing rather than a guess
+  assert.deepEqual(serpItems(["https://a.gr/", "https://b.gr/", "x", 1]), []);
+  assert.deepEqual(serpItems([]), []);
+  // documented object shape still works
+  assert.equal(serpItems([{ link: "https://a.gr/", anchor: "A" }]).length, 1);
+});
