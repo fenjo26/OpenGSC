@@ -12,9 +12,11 @@ import { credsTag, getAparserServerCreds, type ServerAparserCreds } from "@/lib/
 
 import { hostOfUrl, ignorePredicate, parseHostList } from "./hosts";
 import { classifySnapshot } from "./noise";
+import { pickRetryWave, RETRY_MAX_ATTEMPTS } from "./retry";
 import { median, shareAboveOwnP90, stormVerdict } from "./volatility";
 import {
-  expandRowsJson, loadUrlHostMaps, pruneProjectSnapshots, toRunSummary, urlIdsFromRows, writeSnapshot,
+  expandRowsJson, failedSnapshotsOfRun, loadUrlHostMaps, pruneProjectSnapshots, releaseFailedSnapshot,
+  toRunSummary, urlIdsFromRows, writeSnapshot,
 } from "./store";
 import {
   KEYWORD_P90_WINDOW, SERPMON_MANUAL_COOLDOWN_MS, STORM_BASELINE_RUNS, STORM_MIN_BASELINE,
@@ -93,6 +95,11 @@ function sanitizeDetail(raw: string | null | undefined, password: string): strin
   return safe.length > 500 ? `${safe.slice(0, 500)}…` : safe;
 }
 
+/** "attempt 2/3 · " on retries, nothing on the first try. */
+function attemptTag(attempt: number): string {
+  return attempt > 1 ? `attempt ${attempt}/${RETRY_MAX_ATTEMPTS} · ` : "";
+}
+
 interface KeywordOutcome {
   status: SnapshotStatus;
   problem: SnapshotProblem | null;
@@ -107,6 +114,7 @@ async function collectKeyword(
   runId: string,
   creds: ServerAparserCreds,
   ignore: (host: string) => boolean,
+  attempt = 1,
 ): Promise<KeywordOutcome> {
   let status: SnapshotStatus = "failed";
   let problem: SnapshotProblem | null = "provider_error";
@@ -129,7 +137,7 @@ async function collectKeyword(
     const ext = resp as SerpResponse & { totalCount?: string; features?: string[] };
     totalCount = ext.totalCount ?? "";
     features = ext.features ?? [];
-    detail = ext.error ? sanitizeDetail((ext.errorDetail || ext.error) + credsTag(creds), creds.password) : null;
+    detail = ext.error ? sanitizeDetail(attemptTag(attempt) + (ext.errorDetail || ext.error) + credsTag(creds), creds.password) : null;
 
     const seen = new Set<string>();
     rows = (ext.results ?? [])
@@ -146,7 +154,7 @@ async function collectKeyword(
   } catch (e) {
     status = "failed";
     problem = "provider_error";
-    detail = sanitizeDetail((e instanceof Error ? e.message : String(e)) + credsTag(creds), creds.password);
+    detail = sanitizeDetail(attemptTag(attempt) + (e instanceof Error ? e.message : String(e)) + credsTag(creds), creds.password);
     rows = [];
   }
 
@@ -164,6 +172,7 @@ async function collectKeyword(
     rows,
     prev,
     ignore,
+    attempts: attempt,
   });
   return { status, problem, detail };
 }
@@ -254,7 +263,7 @@ export async function advanceRun(runId: string, deadline: number): Promise<{ don
   let processed = 0;
   // The mass-failure gate below only judges the run's genuine first wave — a run resumed by a
   // later tick already has snapshots and must run to its normal end.
-  const runHasNoSnapshots = (await db.serpSnapshot.count({ where: { runId } })) === 0;
+  let firstWave = (await db.serpSnapshot.count({ where: { runId } })) === 0;
 
   for (;;) {
     const pending = await db.serpKeyword.findMany({
@@ -265,8 +274,29 @@ export async function advanceRun(runId: string, deadline: number): Promise<{ don
     }) as { id: string; keyword: string; lastSnapshotId: string | null }[];
 
     if (!pending.length) {
-      await finalizeRun(runId);
-      return { done: true, processed };
+      // Every keyword has had its first try. Ask the transient failures again (see retry.ts);
+      // the run stays open while any of them is still cooling down.
+      const failedRows = await failedSnapshotsOfRun(runId);
+      const wave = pickRetryWave(failedRows.filter(r => r.keyword.active), Date.now(), WAVE);
+      if (!wave.due.length) {
+        if (wave.waiting > 0) return { done: false, processed };
+        await finalizeRun(runId);
+        return { done: true, processed };
+      }
+      const retryCreds = await getAparserServerCreds(project.userId);
+      if (!retryCreds) {
+        await finalizeRun(runId);
+        return { done: true, processed };
+      }
+      const byId = new Map(failedRows.map(r => [r.snapshotId, r]));
+      await Promise.all(wave.due.map(async (c) => {
+        const row = byId.get(c.snapshotId)!;
+        if (!(await releaseFailedSnapshot(runId, c.snapshotId))) return;
+        await collectKeyword(row.keyword, project, runId, retryCreds, ignore, c.attempts + 1);
+      }));
+      processed += wave.due.length;
+      if (Date.now() >= deadline) return { done: false, processed };
+      continue;
     }
 
     // Credentials re-checked per wave: losing them mid-run must read as no_creds on the remaining
@@ -281,7 +311,9 @@ export async function advanceRun(runId: string, deadline: number): Promise<{ don
     const outcomes = await Promise.all(pending.map(kw => collectKeyword(kw, project, runId, creds, ignore)));
     processed += pending.length;
 
-    if (runHasNoSnapshots && pending.length === WAVE) {
+    const judgeFirstWave = firstWave;
+    firstWave = false;
+    if (judgeFirstWave && pending.length === WAVE) {
       const first = outcomes[0];
       const identical = first.status === "failed"
         && outcomes.every(o => o.status === "failed" && o.problem === first.problem && o.detail === first.detail);
@@ -291,10 +323,9 @@ export async function advanceRun(runId: string, deadline: number): Promise<{ don
       }
     }
 
-    if (pending.length < WAVE || Date.now() >= deadline) {
-      if (pending.length < WAVE) await finalizeRun(runId);
-      return { done: pending.length < WAVE, processed };
-    }
+    // A short wave means the first pass is over; the next iteration runs the retry pass (or
+    // finalizes). Out of budget: the next tick resumes exactly here.
+    if (Date.now() >= deadline) return { done: false, processed };
   }
 }
 

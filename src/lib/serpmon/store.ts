@@ -385,6 +385,7 @@ export interface SnapshotWriteInput {
   rows: SerpRow[];                       // empty for failed
   prev: { id: string; status: SnapshotStatus; got: number; rows: SerpRow[] } | null;
   ignore: (host: string) => boolean;
+  attempts?: number;                     // retry pass: which try this is (1 = first)
 }
 
 export interface SnapshotWriteResult {
@@ -449,6 +450,7 @@ export async function writeSnapshot(input: SnapshotWriteInput): Promise<Snapshot
             volatility: diff ? diff.volatility : null,
             volTop10: diff ? diff.volTop10 : null,
             changeCount: diff ? diff.visibleCount : 0,
+            attempts: input.attempts ?? 1,
           },
           select: { id: true },
         }) as { id: string };
@@ -508,6 +510,43 @@ export async function writeSnapshot(input: SnapshotWriteInput): Promise<Snapshot
     volatility: diff ? diff.volatility : null,
     visibleChanges: diff ? diff.visibleCount : 0,
   };
+}
+
+/**
+ * Retry pass: the run's failed snapshots with their attempt counts, for `pickRetryWave`.
+ * Only failed rows of this run — a keyword that later succeeded has no failed row left.
+ */
+export async function failedSnapshotsOfRun(runId: string): Promise<{
+  snapshotId: string; keywordId: string; problem: string | null; attempts: number; takenAt: Date;
+  keyword: { id: string; keyword: string; lastSnapshotId: string | null; active: boolean };
+}[]> {
+  const rows = await db.serpSnapshot.findMany({
+    where: { runId, status: "failed" },
+    select: {
+      id: true, keywordId: true, problem: true, attempts: true, takenAt: true,
+      keyword: { select: { id: true, keyword: true, lastSnapshotId: true, active: true } },
+    },
+    orderBy: { takenAt: "asc" },
+  }) as { id: string; keywordId: string; problem: string | null; attempts: number | null; takenAt: Date;
+          keyword: { id: string; keyword: string; lastSnapshotId: string | null; active: boolean } }[];
+  return rows.map(r => ({
+    snapshotId: r.id, keywordId: r.keywordId, problem: r.problem, attempts: r.attempts ?? 1, takenAt: r.takenAt, keyword: r.keyword,
+  }));
+}
+
+/**
+ * Retry pass: remove a failed snapshot so the keyword can be asked again under the same
+ * [runId, keywordId], and take it back out of the run's progress counter. Only a `failed` row
+ * is ever released — a successful snapshot carries diffs and must stay. Returns false when the
+ * row was already gone or is no longer failed (another tick got there first).
+ */
+export async function releaseFailedSnapshot(runId: string, snapshotId: string): Promise<boolean> {
+  return db.$transaction(async (tx: DbClient) => {
+    const res = await tx.serpSnapshot.deleteMany({ where: { id: snapshotId, runId, status: "failed" } }) as { count: number };
+    if (!res.count) return false;
+    await tx.serpRun.update({ where: { id: runId }, data: { failed: { decrement: 1 } } });
+    return true;
+  });
 }
 
 // ─── Projects ────────────────────────────────────────────────────────────────

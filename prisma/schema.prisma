@@ -1817,6 +1817,7 @@ model SerpSnapshot {
   volatility   Float?
   volTop10     Float?
   changeCount  Int      @default(0)      // visible (non-ignored) host changes
+  attempts     Int      @default(1)      // how many times this keyword was asked in this run (retry pass)
 
   keyword SerpKeyword  @relation(fields: [keywordId], references: [id], onDelete: Cascade)
   run     SerpRun      @relation(fields: [runId], references: [id], onDelete: Cascade)
