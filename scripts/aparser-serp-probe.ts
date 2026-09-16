@@ -95,7 +95,7 @@ async function main(): Promise<void> {
   }
   const parser = APARSER_SERP_PARSERS.google;
   const hasParser = info.data.availableParsers.includes(parser);
-  console.log(`1. availableParsers: ${info.data.availableParsers.length} parsers, SE::Google ${hasParser ? "PRESENT" : "MISSING"}`);
+  console.log(`1. A-Parser ${info.data.version || "?"} · availableParsers: ${info.data.availableParsers.length} parsers, SE::Google ${hasParser ? "PRESENT" : "MISSING"}`);
   if (!hasParser) {
     console.error(`   → ${parser} is not installed on this build; nothing below will work.`);
     process.exit(1);
@@ -148,13 +148,9 @@ async function main(): Promise<void> {
   console.log(`   serp rows: ${serp.length}${hint}`);
   console.log(`   totalcount: ${JSON.stringify(record.totalcount ?? null)}`);
   console.log(`   other keys in results[0] (candidates for features): ${Object.keys(record).join(", ")}`);
-  console.log("   first 3 rows:");
-  const first3 = serp.slice(0, 3);
-  for (let i = 0; i < first3.length; i++) {
-    const raw = first3[i];
-    if (raw && typeof raw === "object") printRow(raw as { anchor: unknown; link: unknown }, i);
-  }
   const mapped = mapAparserSerp(row, depth);
+  console.log("   first 3 mapped rows:");
+  for (const m of mapped.results.slice(0, 3)) printRow({ anchor: m.title, link: m.url }, m.position - 1);
   console.log(`   mapped: ${mapped.results.length} results, totalCount="${mapped.totalCount}", features=[${mapped.features.join(", ")}], problem=${mapped.problem ?? "null"}`);
   console.log("\nDone. If every id above reads 'present in preset' and serp rows is 90–100, "
     + "the ids in src/lib/seo/aparserSerp.ts match this build.");

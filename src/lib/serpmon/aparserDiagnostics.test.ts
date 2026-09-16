@@ -129,3 +129,27 @@ test("task results are downloaded through the configured base URL, never the lin
     globalThis.fetch = realFetch;
   }
 });
+
+test("flat serp (A-Parser 1.2.3640 live shape, 7 values per result) is mapped", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { mapAparserSerp, serpItems } = await import("../seo/aparserSerp");
+  const row = JSON.parse(readFileSync(new URL("./__fixtures__/aparser-serp-flat-live-shape.json", import.meta.url), "utf8"));
+  const m = mapAparserSerp(row, 100);
+  assert.equal(m.problem, null);
+  assert.equal(m.totalCount, "21100000");
+  // 9 results, one duplicate URL dropped, positions renumbered without holes
+  assert.equal(m.results.length, 8);
+  assert.deepEqual(m.results.map(r => r.position), [1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.equal(m.results[0].url, "https://site0.gr/page");
+  assert.equal(m.results[0].title, "Τίτλος 0");
+  assert.equal(m.results[0].snippet, "Snippet 0");
+  assert.equal(m.results[3].url, "https://site4.gr/page");
+  assert.ok(m.results.every(r => !r.url.includes("google.com/goto")));
+  assert.ok(m.features.includes("ai_overview"));
+  assert.equal(mapAparserSerp(row, 5).results.length, 5);
+  // a list no width explains yields nothing rather than a guess
+  assert.deepEqual(serpItems(["https://a.gr/", "https://b.gr/", "x", 1]), []);
+  assert.deepEqual(serpItems([]), []);
+  // documented object shape still works
+  assert.equal(serpItems([{ link: "https://a.gr/", anchor: "A" }]).length, 1);
+});

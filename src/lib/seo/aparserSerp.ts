@@ -100,6 +100,10 @@ function captchaShows(row: unknown): number {
 
 function featuresOf(row: Record<string, unknown>): string[] {
   const features: string[] = [];
+  // The AI overview arrives as a string plus a type, not as an array: "none" when absent.
+  const aiAnswer = asString(row.ai_answer).trim();
+  const aiType = asString(row.ai_type).trim();
+  if ((aiAnswer && !/^none$/i.test(aiAnswer)) || (aiType && !/^none$/i.test(aiType))) features.push("ai_overview");
   for (const { keys, id } of FEATURE_KEYS) {
     for (const k of keys) {
       const v = row[k];
@@ -107,6 +111,43 @@ function featuresOf(row: Record<string, unknown>): string[] {
     }
   }
   return features;
+}
+
+/**
+ * SE::Google's `serp` as a list of objects, whichever shape the build sends.
+ *
+ * Documented shape: objects with `link`/`anchor`/`snippet`. What A-Parser 1.2.3640 actually
+ * returns with `rawResults: 1` is FLAT — every result's fields one after another:
+ *
+ *   ["https://a.gr/", "Title", "Snippet", 0, "21 Αυγ 2026", "", "https://www.google.com/goto?…",
+ *    "https://b.gr/", "Title", …]
+ *
+ * (63 values for "Total grabbed 9 links" → 7 per result). The width is not in the response and
+ * does not match the documented field list, so it is detected: the smallest width that divides
+ * the list and puts a URL at every row start and a non-URL title right after it. Link, anchor and
+ * snippet are the first three fields in both the documentation and the live answer; nothing past
+ * them is read. A list no width explains yields no rows — never a guess.
+ */
+export function serpItems(raw: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(raw) || raw.length === 0) return [];
+  if (raw.some((v) => v && typeof v === "object")) {
+    return raw.filter((v): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v));
+  }
+  const isUrl = (v: unknown) => typeof v === "string" && /^https?:\/\//i.test(v);
+  for (let width = 3; width <= 16; width++) {
+    if (raw.length % width !== 0) continue;
+    let fits = true;
+    for (let i = 0; i < raw.length; i += width) {
+      if (!isUrl(raw[i]) || isUrl(raw[i + 1]) || typeof raw[i + 1] !== "string") { fits = false; break; }
+    }
+    if (!fits) continue;
+    const out: Record<string, unknown>[] = [];
+    for (let i = 0; i < raw.length; i += width) {
+      out.push({ link: raw[i], anchor: raw[i + 1], snippet: raw[i + 2] });
+    }
+    return out;
+  }
+  return [];
 }
 
 /**
@@ -133,7 +174,7 @@ export function mapAparserSerp(row: unknown, want: number): {
   if (problem) return { results: [], totalCount: "", features: [], problem };
 
   const r = (row ?? {}) as Record<string, unknown>;
-  const serp = Array.isArray(r.serp) ? r.serp : [];
+  const serp = serpItems(r.serp);
   const limit = Number.isFinite(want) && want > 0 ? Math.floor(want) : 0;
   const seen = new Set<string>();
   const results: SerpResultItem[] = [];
