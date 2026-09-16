@@ -93,7 +93,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `aparser_url_${norm.problem}` }, { status: URL_PROBLEM_STATUS });
     }
     if (!password) return NextResponse.json({ error: "no_aparser_password" }, { status: 400 });
-    candidates.push({ creds: { baseUrl: norm.url, password, configPreset: undefined }, source: "form" });
+    // Label the password by where it actually came from: an empty password field falls back to
+    // env/settings, and calling that "form" sent people hunting for a typo that was not there.
+    const passSource = typedPassword ? "form" : envPassword() ? "env" : "settings";
+    candidates.push({ creds: { baseUrl: norm.url, password, configPreset: undefined }, source: passSource });
   } else {
     const envUrl = envBaseUrl(), envPass = envPassword();
     if (envUrl && envPass) {

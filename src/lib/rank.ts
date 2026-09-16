@@ -9,7 +9,8 @@
 
 import { prisma } from "@/lib/prisma";
 import { runSerp } from "@/lib/seo/serp";
-import { envPassword, resolveBaseUrl } from "@/lib/seo/aparser";
+import { resolveBaseUrl } from "@/lib/seo/aparser";
+import { resolveAparserPassword } from "@/lib/seo/aparserServerCreds";
 import { rawQuery } from "@/lib/db/raw";
 
 export const RANK_STALE_MS = 20 * 60 * 60 * 1000; // ~daily, resilient to restarts
@@ -48,18 +49,18 @@ export interface SerpCreds { provider: string; apiKey: string; baseUrl?: string 
  */
 const SELF_HOSTED_PROVIDERS = new Set<string>(["aparser"]);
 
-function configuredIn(s: any, provider: string): SerpCreds | null {
+async function configuredIn(s: any, provider: string): Promise<SerpCreds | null> {
   // A-Parser is deliberately deployable through the env pair alone (OPENGSC_APARSER_BASE_URL /
   // OPENGSC_APARSER_PASSWORD — see the comment on `resolveBaseUrl` for why env outranks a
-  // settings URL). Reading both slots through the same resolvers every other consumer uses is
-  // what makes an env-configured instance visible to the Rank Tracker too; the settings key is
-  // only the fallback for the password, and the settings URL only fills in when env is absent.
+  // settings URL). The password goes through the same probe SERP Monitor and the console use:
+  // env and settings are both tried when they differ, so a rotated password re-tested in
+  // Settings is picked up even while a stale env var is still in place.
   if (provider === "aparser") {
     const resolved = resolveBaseUrl(String(s.seoBaseUrl_aparser ?? ""));
     if ("problem" in resolved) return null;
-    const password = envPassword() || String(s.seoKey_aparser ?? "").trim();
-    if (!password) return null;
-    return { provider, apiKey: password, baseUrl: resolved.url };
+    const picked = await resolveAparserPassword(resolved.url, String(s.seoKey_aparser ?? ""));
+    if (!picked) return null;
+    return { provider, apiKey: picked.password, baseUrl: resolved.url };
   }
   const apiKey = String(s[`seoKey_${provider}`] ?? "");
   if (!apiKey) return null;
@@ -81,7 +82,7 @@ export async function getUserSerpCreds(userId: string): Promise<SerpCreds | null
     // content generation/SERP analysis in SEO Tools) — set in Settings → SEO Tools; falls
     // back to the general active provider when unset.
     const provider = s.seoSerpProvider_rank || s.seoSerpProvider || "serper";
-    const chosen = configuredIn(s, provider);
+    const chosen = await configuredIn(s, provider);
     // An unsupported provider is treated exactly like a missing key: fall through to whatever
     // else is configured. Someone who set GoAnyAPI as their app-wide SERP source and never
     // touched the Rank Tracker override should keep tracking on the key they already have,
@@ -91,7 +92,7 @@ export async function getUserSerpCreds(userId: string): Promise<SerpCreds | null
       // proxies warmed up and in front of it, so it should only carry the tracker when nothing
       // metered is configured.
       for (const p of ["serper", "dataforseo", "scrapingrobot", "aparser"]) {
-        const alt = configuredIn(s, p);
+        const alt = await configuredIn(s, p);
         if (alt) return alt;
       }
       return null;

@@ -8,8 +8,7 @@
 // attributes each A-Parser request to the project owner without threading a userId through runSerp.
 import { prisma } from "@/lib/prisma";
 import { runSerp, type SerpOptions, type SerpResponse } from "@/lib/seo/serp";
-import { getAparserServerCreds } from "@/lib/seo/aparserServerCreds";
-import type { AparserCreds } from "@/lib/seo/aparser";
+import { credsTag, getAparserServerCreds, type ServerAparserCreds } from "@/lib/seo/aparserServerCreds";
 
 import { hostOfUrl, ignorePredicate, parseHostList } from "./hosts";
 import { classifySnapshot } from "./noise";
@@ -106,7 +105,7 @@ async function collectKeyword(
   keyword: { id: string; keyword: string; lastSnapshotId: string | null },
   project: ProjectLite,
   runId: string,
-  creds: AparserCreds,
+  creds: ServerAparserCreds,
   ignore: (host: string) => boolean,
 ): Promise<KeywordOutcome> {
   let status: SnapshotStatus = "failed";
@@ -130,7 +129,7 @@ async function collectKeyword(
     const ext = resp as SerpResponse & { totalCount?: string; features?: string[] };
     totalCount = ext.totalCount ?? "";
     features = ext.features ?? [];
-    detail = sanitizeDetail(ext.error, creds.password);
+    detail = ext.error ? sanitizeDetail(ext.error + credsTag(creds), creds.password) : null;
 
     const seen = new Set<string>();
     rows = (ext.results ?? [])
@@ -147,7 +146,7 @@ async function collectKeyword(
   } catch (e) {
     status = "failed";
     problem = "provider_error";
-    detail = sanitizeDetail(e instanceof Error ? e.message : String(e), creds.password);
+    detail = sanitizeDetail((e instanceof Error ? e.message : String(e)) + credsTag(creds), creds.password);
     rows = [];
   }
 
