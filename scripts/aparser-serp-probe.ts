@@ -14,7 +14,7 @@
 
 import "dotenv/config";
 import {
-  aparserInfo, aparserOneRequest, aparserParserPreset, envPassword, normaliseBaseUrl,
+  aparserInfo, aparserOneRequest, aparserParserPreset, envPassword, normaliseBaseUrl, type AparserOption,
 } from "@/lib/seo/aparser";
 import { getAparserServerCreds } from "@/lib/seo/aparserServerCreds";
 import { APARSER_SERP_OPTION_IDS, APARSER_SERP_PARSERS, aparserSerpOptions, describeAparserRow, mapAparserSerp } from "@/lib/seo/aparserSerp";
@@ -51,13 +51,26 @@ function printRow(r: { anchor: unknown; link: unknown }, i: number): void {
 }
 
 async function main(): Promise<void> {
-  const args = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+  const args = process.argv.slice(2).filter((a, i, all) => !a.startsWith("--") && all[i - 1] !== "--opt");
   const [query, gl = "us", hl = "en", depthArg] = args;
   if (!query) {
-    console.error('Usage: npx tsx scripts/aparser-serp-probe.ts "<query>" <gl> <hl> [depth=100]');
+    console.error('Usage: npx tsx scripts/aparser-serp-probe.ts "<query>" <gl> <hl> [depth=100] [--opt id=value ...]');
     process.exit(1);
   }
   const depth = Math.max(1, Number(depthArg) || 100);
+  // --opt id=value (repeatable): extra overrides for one experiment, e.g. --opt usesessions=0
+  // --opt proxybannedcleanup=0. The preset in A-Parser is not touched.
+  const extra: AparserOption[] = [];
+  const argv = process.argv.slice(2);
+  for (let i = 0; i < argv.length; i++) {
+    const m = argv[i] === "--opt" ? argv[i + 1] : argv[i].startsWith("--opt=") ? argv[i].slice(6) : null;
+    if (m == null) continue;
+    if (argv[i] === "--opt") i++;
+    const eq = m.indexOf("=");
+    if (eq <= 0) { console.error(`--opt expects id=value, got "${m}"`); process.exit(1); }
+    const raw = m.slice(eq + 1);
+    extra.push({ type: "override", id: m.slice(0, eq), value: /^-?\d+$/.test(raw) ? Number(raw) : raw });
+  }
 
   const creds = await loadCreds();
   if (!creds) {
@@ -105,7 +118,8 @@ async function main(): Promise<void> {
   }
 
   // ── 3. The request SERP Monitor itself makes ──────────────────────────────
-  const options = aparserSerpOptions({ depth, gl, hl });
+  const base = aparserSerpOptions({ depth, gl, hl });
+  const options = [...base.filter((o) => !extra.some((e) => e.id === o.id)), ...extra];
   console.log(`\n3. oneRequest with options ${JSON.stringify(options)}`);
   const started = Date.now();
   const r = await aparserOneRequest(creds, parser, query, options, { preset: presetName, timeoutMs: PROBE_TIMEOUT_MS, doLog: true });
