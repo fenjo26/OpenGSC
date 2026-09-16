@@ -127,7 +127,11 @@ async function main(): Promise<void> {
   }
   const record = row as Record<string, unknown>;
   const serp = Array.isArray(record.serp) ? record.serp : [];
-  console.log(`   serp rows: ${serp.length}${serp.length <= 10 ? "  ← too few: depth did not take, check pagecount id above" : ""}`);
+  const failed = Number(record.success) === 0;
+  const hint = failed
+    ? "  ← the parser gave up (see diagnosis: captchas / banned proxy), depth is not the issue"
+    : serp.length <= 10 ? "  ← too few: depth did not take, check pagecount id above" : "";
+  console.log(`   serp rows: ${serp.length}${hint}`);
   console.log(`   totalcount: ${JSON.stringify(record.totalcount ?? null)}`);
   console.log(`   other keys in results[0] (candidates for features): ${Object.keys(record).join(", ")}`);
   console.log("   first 3 rows:");
