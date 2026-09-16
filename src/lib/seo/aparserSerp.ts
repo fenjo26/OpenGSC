@@ -161,6 +161,33 @@ export function serpItems(raw: unknown): Record<string, unknown>[] {
 }
 
 /**
+ * Rows whose link A-Parser mis-resolved, pinned down precisely, so the rest of the answer can
+ * be kept.
+ *
+ * Seen live on 1.2.3640 with a captcha-solving preset: a result that came through a Google
+ * redirect (`goto`) and sits right before a result with a DIRECT link (no goto — app listings,
+ * mostly) gets that next row's link instead of its own:
+ *
+ *   5. "NV Casino Ελλάδα 2026: Αξιολόγηση…"  link play.google.com/…finderr   goto …
+ *   6. "NV Casino - Apps on Google Play"     link play.google.com/…finderr   (direct)
+ *
+ * The real link of row 5 is unknown, so the row is dropped — but its position stays taken
+ * (`skip`), otherwise every result below it would appear to move up. Returns the indexes into
+ * `items` to skip. Rows without goto information (object-shaped builds) are never touched.
+ */
+export function shiftedGotoRows(items: readonly Record<string, unknown>[]): Set<number> {
+  const skip = new Set<number>();
+  for (let i = 0; i + 1 < items.length; i++) {
+    const cur = items[i];
+    const next = items[i + 1];
+    if (!cur.goto || next.goto) continue;
+    const link = asString(cur.link).trim();
+    if (link && link === asString(next.link).trim()) skip.add(i);
+  }
+  return skip;
+}
+
+/**
  * Whether a successful-looking answer can be trusted, or null when it can.
  *
  * A-Parser 1.2.3640 was seen answering `success: 1` with links that belong to other results:
@@ -174,7 +201,10 @@ export function serpItems(raw: unknown): Record<string, unknown>[] {
  *     across pages now and then, which is why this is a ratio and not "any repeat");
  *   - one link carrying different titles — a link cannot be two different pages;
  *   - app-store links under titles that do not read like app-store listings ("… – Apps on
- *     Google Play", "Εφαρμογές στο Google Play"), at least 2 of them or 30% of the rows.
+ *     Google Play", "Εφαρμογές στο Google Play"), at least 3 of them or 30% of the rows.
+ *
+ * Runs AFTER `repairShiftedGotoLinks`, which removes the one mis-resolution pattern that can be
+ * pinned to single rows; what is left here is damage too spread out to repair.
  */
 export function assessSerpIntegrity(items: readonly Record<string, unknown>[]): string | null {
   const rows = items
@@ -195,12 +225,12 @@ export function assessSerpIntegrity(items: readonly Record<string, unknown>[]): 
   const conflicting = [...titlesByUrl.values()].filter((t) => t.size > 1).length;
   if (conflicting > 0) reasons.push(`${conflicting} link(s) with different titles`);
 
-  const storeLike = /google\s*play|app\s*store|apps?\s+on|εφαρμογ|приложени|додат/i;
+  const storeLike = /google\s*play|app\s*store|apps?\s+on|\bapp\b|\bapk\b|εφαρμογ|приложени|додат/i;
   const store = rows.filter(({ url, title }) => {
     const host = domainOf(url).toLowerCase();
     return (host === "play.google.com" || host === "apps.apple.com") && !storeLike.test(title);
   }).length;
-  if (store >= 2 || (rows.length >= 3 && store / rows.length >= 0.3)) reasons.push(`app-store links under site titles ${store}`);
+  if (store >= 3 || (rows.length >= 3 && store / rows.length >= 0.3)) reasons.push(`app-store links under site titles ${store}`);
 
   return reasons.length ? reasons.join(", ") : null;
 }
@@ -213,7 +243,9 @@ export function assessSerpIntegrity(items: readonly Record<string, unknown>[]): 
  * SERP is empty". Only a `totalcount` of 0 the engine itself reported passes as a legitimate
  * empty result. Rows are deduped by exact URL (Google repeats a URL across pages) and
  * positions are renumbered 1..n AFTER the dedupe — a dropped duplicate or a javascript: row
- * must never leave a hole in the positions the diff engine compares.
+ * must never leave a hole in the positions the diff engine compares. The one deliberate hole is
+ * a row whose link A-Parser mis-resolved (`shiftedGotoRows`): a result WAS there, only its link
+ * is unknown, so its position is kept and reported in `repaired`.
  */
 export function mapAparserSerp(row: unknown, want: number): {
   results: SerpResultItem[];   // position = 1-based order after dedupe by exact url, cut to `want`
@@ -221,6 +253,7 @@ export function mapAparserSerp(row: unknown, want: number): {
   features: string[];
   problem: string | null;      // parserResultProblem(row, ["serp"]) or "suspicious_links"
   problemDetail?: string;      // why a row was judged suspicious, for the stored detail
+  repaired?: number[];         // positions left empty because A-Parser mis-resolved their link
 } {
   let problem = parserResultProblem(row, ["serp"]);
   // A parser-level failure after captchas is a blocked proxy, not a broken request: SE::Google
@@ -231,17 +264,30 @@ export function mapAparserSerp(row: unknown, want: number): {
 
   const r = (row ?? {}) as Record<string, unknown>;
   const serp = serpItems(r.serp);
-  const integrity = assessSerpIntegrity(serp);
+  const skip = shiftedGotoRows(serp);
+  // More than a quarter of the page mis-resolved is not a page worth keeping.
+  if (skip.size > 0 && skip.size / serp.length > 0.25) {
+    return { results: [], totalCount: "", features: [], problem: "suspicious_links",
+      problemDetail: `${skip.size}/${serp.length} links mis-resolved from Google redirects` };
+  }
+  const integrity = assessSerpIntegrity(serp.filter((_, i) => !skip.has(i)));
   if (integrity) {
     return { results: [], totalCount: "", features: [], problem: "suspicious_links", problemDetail: integrity };
   }
   const limit = Number.isFinite(want) && want > 0 ? Math.floor(want) : 0;
   const seen = new Set<string>();
   const results: SerpResultItem[] = [];
+  const repaired: number[] = [];
+  let pos = 0; // last position handed out; a repaired row takes one without producing a result
 
-  for (const raw of serp) {
-    if (results.length >= limit) break;
+  for (const [index, raw] of serp.entries()) {
+    if (pos >= limit) break;
     if (!raw || typeof raw !== "object") continue;
+    if (skip.has(index)) {
+      pos += 1;
+      repaired.push(pos);
+      continue;
+    }
     const item = raw as Record<string, unknown>;
     // SE::Google names the fields `$link` / `$anchor` / `$snippet`; `url`/`title`/`description`
     // are tolerated because the probe script — not hope — is what confirms the names on the
@@ -250,8 +296,9 @@ export function mapAparserSerp(row: unknown, want: number): {
     if (!/^https?:\/\//i.test(url)) continue;
     if (seen.has(url)) continue;
     seen.add(url);
+    pos += 1;
     results.push({
-      position: results.length + 1,
+      position: pos,
       url,
       title: asString(item.anchor ?? item.title).trim(),
       snippet: asString(item.snippet ?? item.description).trim(),
@@ -264,6 +311,7 @@ export function mapAparserSerp(row: unknown, want: number): {
     totalCount: /^none$/i.test(asString(r.totalcount).trim()) ? "" : asString(r.totalcount).trim(),
     features: featuresOf(r),
     problem: null,
+    ...(repaired.length ? { repaired } : {}),
   };
 }
 

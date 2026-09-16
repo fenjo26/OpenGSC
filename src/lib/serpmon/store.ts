@@ -418,12 +418,22 @@ export interface SnapshotWriteResult {
  * with empty rows and touches only lastStatus/lastProblem/lastDetail: it must never become the
  * keyword's comparison base.
  */
+/**
+ * How deep a snapshot reaches: the row count, or the last position when a repaired row left a
+ * hole (see shiftedGotoRows) — a hole must not make the take look shallower than it is.
+ */
+export function coveredDepth(rows: readonly { position: number }[]): number {
+  let max = rows.length;
+  for (const r of rows) if (r.position > max) max = r.position;
+  return max;
+}
+
 export async function writeSnapshot(input: SnapshotWriteInput): Promise<SnapshotWriteResult> {
   const notCompared: SnapshotWriteResult = { written: false, compared: false, volatility: null, visibleChanges: 0 };
   const now = new Date();
   const failed = input.status === "failed";
   const depth = input.prev
-    ? comparableDepth({ status: input.prev.status, got: input.prev.got }, { status: input.status, got: input.rows.length })
+    ? comparableDepth({ status: input.prev.status, got: input.prev.got }, { status: input.status, got: coveredDepth(input.rows) })
     : 0;
   const diff = input.prev && depth > 0 && !failed
     ? diffKeyword(input.prev.rows, input.rows, { depth, ignore: input.ignore })
@@ -456,7 +466,7 @@ export async function writeSnapshot(input: SnapshotWriteInput): Promise<Snapshot
             problem: input.problem ?? null,
             detail: input.detail ?? null,
             depth: input.depth,
-            got: input.rows.length,
+            got: coveredDepth(input.rows),
             totalCount: input.totalCount ?? "",
             rows: JSON.stringify(rowPairs),
             features: input.features?.length ? JSON.stringify(input.features) : "",

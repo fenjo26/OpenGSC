@@ -140,6 +140,10 @@ async function collectKeyword(
     totalCount = ext.totalCount ?? "";
     features = ext.features ?? [];
     detail = ext.error ? sanitizeDetail(attemptTag(attempt) + (ext.errorDetail || ext.error) + credsTag(creds), creds.password) : null;
+    if (!ext.error && ext.repairedPositions?.length) {
+      // Kept, with those positions empty — say so in the history rather than silently.
+      detail = `A-Parser mis-resolved the link at position(s) ${ext.repairedPositions.join(", ")}; left empty`;
+    }
 
     const seen = new Set<string>();
     rows = (ext.results ?? [])

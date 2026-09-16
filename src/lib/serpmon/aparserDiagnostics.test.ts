@@ -216,3 +216,41 @@ test("the SERP call sends the project's parser preset, default when blank", asyn
   assert.deepEqual(presets.slice(0, 1), ["opengsc"]);
   assert.equal(presets[presets.length - 1], "default");
 });
+
+test("a link A-Parser shifted onto the row before a direct link is dropped, its position kept", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { mapAparserSerp, shiftedGotoRows, serpItems } = await import("../seo/aparserSerp");
+  const row = JSON.parse(readFileSync(new URL("./__fixtures__/aparser-serp-goto-shift-live.json", import.meta.url), "utf8"));
+  assert.deepEqual([...shiftedGotoRows(serpItems(row.serp))], [4, 8]);
+  const m = mapAparserSerp(row, 30);
+  assert.equal(m.problem, null, m.problemDetail);
+  assert.deepEqual(m.repaired, [5, 9]);
+  assert.equal(m.results.length, 18);
+  const at = (p: number) => m.results.find((r) => r.position === p);
+  assert.equal(at(5), undefined);
+  assert.equal(at(6)?.title, "NV Casino - Apps on Google Play");
+  assert.equal(at(7)?.domain, "sigma.world");
+  assert.equal(at(20)?.domain, "riolasvegas.com");
+  // no review title is left pointing at an app listing
+  assert.ok(!m.results.some((r) => /play\.google/.test(r.url) && !/app/i.test(r.title)));
+});
+
+test("a page with most links shifted is still rejected", async () => {
+  const { mapAparserSerp } = await import("../seo/aparserSerp");
+  const G = "https://www.google.com/goto?url=CAESx";
+  const flat: unknown[] = [];
+  for (let i = 0; i < 4; i++) {
+    flat.push(`https://play.google.com/store/apps/details?id=a${i}`, `Review site ${i}`, "s", 0, "", "", G);
+    flat.push(`https://play.google.com/store/apps/details?id=a${i}`, `App ${i}`, "s", 0, "", "", "");
+  }
+  const m = mapAparserSerp({ success: 1, totalcount: "100", serp: flat }, 30);
+  assert.equal(m.problem, "suspicious_links");
+  assert.match(String(m.problemDetail), /mis-resolved/);
+});
+
+test("the covered depth of a take with a repaired hole is its last position", async () => {
+  const { coveredDepth } = await import("./store");
+  assert.equal(coveredDepth([{ position: 1 }, { position: 2 }, { position: 4 }]), 4);
+  assert.equal(coveredDepth([{ position: 1 }, { position: 2 }]), 2);
+  assert.equal(coveredDepth([]), 0);
+});
