@@ -2,12 +2,13 @@
 
 // One chip per HOST. The server already deduplicated a host's URLs into a single HostChange
 // (the screenshot from the reference post showed "−pba.betsson.bet.ar" nine times in a row
-// because it compared URLs — that bug stays dead here), so the row renders changes verbatim:
-//   enter → green "+host #to" · exit → red "−host" (tooltip: dropped, was #from)
-//   up    → green "↑host from→to" · down → red "↓host from→to", and "×N" when the host holds
-// more than one URL in the snapshot. Platform/ignored hosts are stored server-side with
-// hidden: true — they render only when "Show platforms" is on, dimmed. Clicking a chip puts
-// the host into the Market tab's domain filter.
+// because it compared URLs — that bug stays dead here). Every chip reads the same way —
+// direction, host, then "from → to" — with "—" standing for "outside the compared top":
+//   enter → green "↑ host  — → 14"     up   → green "↑ host  11 → 8"
+//   exit  → red   "↓ host  2 → —"      down → red   "↓ host  8 → 11"
+// plus "×N" when the host holds more than one URL. Platform/ignored hosts are stored
+// server-side with hidden: true — they render only when "Show platforms" is on, dimmed.
+// Clicking a chip puts the host into the Market tab's domain filter.
 
 import { useState } from "react";
 import type { HostChange } from "@/lib/serpmon/types";
@@ -19,10 +20,17 @@ function chipColor(kind: HostChange["kind"]): string {
   return kind === "enter" || kind === "up" ? "var(--color-success)" : "var(--color-danger)";
 }
 
-function chipLabel(c: HostChange): string {
-  if (c.kind === "enter") return `+${c.host} #${c.to}`;
-  if (c.kind === "exit") return `−${c.host}`;
-  return `${c.kind === "up" ? "↑" : "↓"}${c.host} ${c.from}→${c.to}`;
+const OUTSIDE = "—";
+
+/** "from → to" of a change, "—" for the side where the host is outside the compared top. */
+function chipPositions(c: HostChange): string {
+  const from = c.kind === "enter" ? OUTSIDE : String(c.from);
+  const to = c.kind === "exit" ? OUTSIDE : String(c.to);
+  return `${from} → ${to}`;
+}
+
+function chipArrow(kind: HostChange["kind"]): string {
+  return kind === "enter" || kind === "up" ? "↑" : "↓";
 }
 
 function chipTitle(c: HostChange, tr: Tr): string {
@@ -48,12 +56,14 @@ export function ChangeChip({ change, dim, onHostClick }: {
       title={chipTitle(change, tr)}
       style={{
         display: "inline-flex", alignItems: "center", gap: 3,
-        maxWidth: 230, padding: "1px 7px", borderRadius: 6, fontSize: 11, lineHeight: 1.6,
+        maxWidth: 280, padding: "1px 7px", borderRadius: 6, fontSize: 11, lineHeight: 1.6,
         border: `1px solid ${chipColor(change.kind)}`, color: chipColor(change.kind),
         background: "transparent", opacity: dim ? 0.5 : 1, cursor: "pointer",
         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flexShrink: 0,
       }}>
-      <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{chipLabel(change)}</span>
+      <span aria-hidden style={{ flexShrink: 0 }}>{chipArrow(change.kind)}</span>
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{change.host}</span>
+      <span style={{ flexShrink: 0, opacity: 0.8, fontVariantNumeric: "tabular-nums", marginLeft: 2 }}>{chipPositions(change)}</span>
       {change.urls > 1 && <span style={{ opacity: 0.75 }}>×{change.urls}</span>}
     </button>
   );

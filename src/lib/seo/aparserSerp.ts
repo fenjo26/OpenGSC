@@ -253,7 +253,7 @@ export function mapAparserSerp(row: unknown, want: number): {
   features: string[];
   problem: string | null;      // parserResultProblem(row, ["serp"]) or "suspicious_links"
   problemDetail?: string;      // why a row was judged suspicious, for the stored detail
-  repaired?: number[];         // positions left empty because A-Parser mis-resolved their link
+  repaired?: { position: number; title: string }[]; // slots left empty: A-Parser mis-resolved their link
 } {
   let problem = parserResultProblem(row, ["serp"]);
   // A parser-level failure after captchas is a blocked proxy, not a broken request: SE::Google
@@ -277,7 +277,7 @@ export function mapAparserSerp(row: unknown, want: number): {
   const limit = Number.isFinite(want) && want > 0 ? Math.floor(want) : 0;
   const seen = new Set<string>();
   const results: SerpResultItem[] = [];
-  const repaired: number[] = [];
+  const repaired: { position: number; title: string }[] = [];
   let pos = 0; // last position handed out; a repaired row takes one without producing a result
 
   for (const [index, raw] of serp.entries()) {
@@ -285,7 +285,7 @@ export function mapAparserSerp(row: unknown, want: number): {
     if (!raw || typeof raw !== "object") continue;
     if (skip.has(index)) {
       pos += 1;
-      repaired.push(pos);
+      repaired.push({ position: pos, title: asString((raw as Record<string, unknown>).anchor).trim() });
       continue;
     }
     const item = raw as Record<string, unknown>;

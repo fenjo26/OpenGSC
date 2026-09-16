@@ -12,6 +12,7 @@ import { credsTag, getAparserServerCreds, type ServerAparserCreds } from "@/lib/
 
 import { hostOfUrl, ignorePredicate, parseHostList } from "./hosts";
 import { classifySnapshot } from "./noise";
+import { fillHolesFromPrevious } from "./repair";
 import { pickRetryWave, RETRY_MAX_ATTEMPTS, trackRetry } from "./retry";
 import { median, shareAboveOwnP90, stormVerdict } from "./volatility";
 import {
@@ -123,6 +124,7 @@ async function collectKeyword(
   let rows: SerpRow[] = [];
   let totalCount = "";
   let features: string[] = [];
+  let prev: Awaited<ReturnType<typeof loadPrev>> | undefined;
 
   try {
     // T1 extends SerpOptions/SerpResponse with configPreset/totalCount/features; the casts keep
@@ -140,10 +142,6 @@ async function collectKeyword(
     totalCount = ext.totalCount ?? "";
     features = ext.features ?? [];
     detail = ext.error ? sanitizeDetail(attemptTag(attempt) + (ext.errorDetail || ext.error) + credsTag(creds), creds.password) : null;
-    if (!ext.error && ext.repairedPositions?.length) {
-      // Kept, with those positions empty — say so in the history rather than silently.
-      detail = `A-Parser mis-resolved the link at position(s) ${ext.repairedPositions.join(", ")}; left empty`;
-    }
 
     const seen = new Set<string>();
     rows = (ext.results ?? [])
@@ -151,6 +149,18 @@ async function collectKeyword(
       .filter((r): r is { position: number; url: string; host: string; title: string } => Boolean(r.host))
       .filter(r => (seen.has(r.url) ? false : (seen.add(r.url), true)))
       .sort((a, b) => a.position - b.position);
+
+    if (!ext.error && ext.repairedRows?.length) {
+      // Slots A-Parser mis-resolved: refill them from the last take where the title matches, so
+      // the host really sitting there does not show up as a fake exit (see repair.ts).
+      prev = keyword.lastSnapshotId ? await loadPrev(keyword.lastSnapshotId) : null;
+      const fix = fillHolesFromPrevious(rows, ext.repairedRows, prev && prev.status !== "failed" ? prev.rows : []);
+      rows = fix.rows;
+      const parts: string[] = [];
+      if (fix.filled.length) parts.push(`restored from the previous take by title: ${fix.filled.join(", ")}`);
+      if (fix.open.length) parts.push(`left empty: ${fix.open.join(", ")}`);
+      detail = `A-Parser mis-resolved links at position(s) ${ext.repairedRows.map(h => h.position).join(", ")} — ${parts.join("; ")}`;
+    }
 
     const cls = classifySnapshot({
       rows, depth: project.depth, totalCount, providerError: ext.error ?? null,
@@ -164,7 +174,7 @@ async function collectKeyword(
     rows = [];
   }
 
-  const prev = keyword.lastSnapshotId ? await loadPrev(keyword.lastSnapshotId) : null;
+  if (prev === undefined) prev = keyword.lastSnapshotId ? await loadPrev(keyword.lastSnapshotId) : null;
   await writeSnapshot({
     runId,
     projectId: project.id,

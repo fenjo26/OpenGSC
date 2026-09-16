@@ -225,3 +225,14 @@ test("the exit urls count comes from the previous snapshot", () => {
     host: "fresh.test", kind: "enter", from: null, to: 2, urls: 1, hidden: false,
   });
 });
+
+test("a host that crossed the compared depth moved, when the other take still has it", () => {
+  // prev reaches 30, cur only 20 — the compared depth is 20.
+  const prev = listing([[2, "fell.test"], [25, "rose.test"], [5, "gone.test"], [6, "stay.test"]]);
+  const cur = listing([[3, "rose.test"], [24, "fell.test"], [6, "stay.test"]]);
+  const diff = diffKeyword(prev, cur, { depth: 20, ignore: noIgnore });
+  assert.deepEqual(findChange(diff.changes, "fell.test"), { host: "fell.test", kind: "down", from: 2, to: 24, urls: 1, hidden: false });
+  assert.deepEqual(findChange(diff.changes, "rose.test"), { host: "rose.test", kind: "up", from: 25, to: 3, urls: 1, hidden: false });
+  assert.deepEqual(findChange(diff.changes, "gone.test"), { host: "gone.test", kind: "exit", from: 5, to: null, urls: 1, hidden: false });
+  assert.ok(!findChange(diff.changes, "stay.test"));
+});

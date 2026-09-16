@@ -63,11 +63,15 @@ export function diffKeyword(
   const curPos = hostPositions(cur, opts.depth);
   const prevMap = new Map(prevPos.map((h) => [h.host, h]));
   const curMap = new Map(curPos.map((h) => [h.host, h]));
+  // The same hosts past the compared depth. A host that crossed that line is not an enter/exit
+  // when the other take still has it further down — it moved, and we know where to.
+  const prevBeyond = new Map(hostPositions(prev, Number.MAX_SAFE_INTEGER).map((h) => [h.host, h]));
+  const curBeyond = new Map(hostPositions(cur, Number.MAX_SAFE_INTEGER).map((h) => [h.host, h]));
 
   const changes: HostChange[] = [];
 
   for (const [host, to] of curMap) {
-    const from = prevMap.get(host);
+    const from = prevMap.get(host) ?? prevBeyond.get(host);
     if (!from) {
       changes.push({ host, kind: "enter", from: null, to: to.best, urls: to.urls, hidden: opts.ignore(host) });
       continue;
@@ -85,6 +89,14 @@ export function diffKeyword(
   }
   for (const [host, from] of prevMap) {
     if (curMap.has(host)) continue;
+    const below = curBeyond.get(host);
+    if (below) {
+      // Still in the answer, just past the compared depth: a fall, not an exit.
+      if (Math.abs(below.best - from.best) >= moveThreshold(from.best)) {
+        changes.push({ host, kind: "down", from: from.best, to: below.best, urls: below.urls, hidden: opts.ignore(host) });
+      }
+      continue;
+    }
     // Trap 2: nine dropped URLs of one host are ONE exit; `urls` is the reference count.
     changes.push({ host, kind: "exit", from: from.best, to: null, urls: from.urls, hidden: opts.ignore(host) });
   }

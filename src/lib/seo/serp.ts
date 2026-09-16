@@ -98,8 +98,8 @@ export interface SerpResponse {
   totalCount?: string;
   /** SERP features the provider reported, normalised ids: "paa" | "related" | "ads" | "video" | "local" | "images" | "news". */
   features?: string[];
-  /** A-Parser only: positions left empty because the provider mis-resolved their link. */
-  repairedPositions?: number[];
+  /** A-Parser only: positions left empty because the provider mis-resolved their link, with the title Google showed there. */
+  repairedRows?: { position: number; title: string }[];
   error?: string;
   /**
    * Human-readable context for `error`, when the provider has any: what the answer contained and
@@ -608,7 +608,7 @@ async function aparserSearch(
     results: mapped.results,
     ...(mapped.totalCount !== "" ? { totalCount: mapped.totalCount } : {}),
     ...(mapped.features.length ? { features: mapped.features } : {}),
-    ...(mapped.repaired?.length ? { repairedPositions: mapped.repaired } : {}),
+    ...(mapped.repaired?.length ? { repairedRows: mapped.repaired } : {}),
   };
 }
 

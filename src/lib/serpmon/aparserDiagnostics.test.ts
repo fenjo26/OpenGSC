@@ -224,7 +224,8 @@ test("a link A-Parser shifted onto the row before a direct link is dropped, its 
   assert.deepEqual([...shiftedGotoRows(serpItems(row.serp))], [4, 8]);
   const m = mapAparserSerp(row, 30);
   assert.equal(m.problem, null, m.problemDetail);
-  assert.deepEqual(m.repaired, [5, 9]);
+  assert.deepEqual(m.repaired?.map((h) => h.position), [5, 9]);
+  assert.equal(m.repaired?.[0].title, "NV Casino Ελλάδα 2026: Αξιολόγηση, Μπόνους &amp; Παιχνίδια");
   assert.equal(m.results.length, 18);
   const at = (p: number) => m.results.find((r) => r.position === p);
   assert.equal(at(5), undefined);
