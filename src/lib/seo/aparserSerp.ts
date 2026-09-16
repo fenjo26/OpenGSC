@@ -18,6 +18,7 @@ export interface AparserSerpOptionIds {
   pagecount: string;      // pages to fetch
   country?: string;       // search country (gl)
   language?: string;      // results / interface language (hl)
+  redirectBrowserSingle?: string; // share one JS-check browser across the task (we turn it off)
 }
 
 /**
@@ -37,6 +38,7 @@ export const APARSER_SERP_OPTION_IDS: AparserSerpOptionIds = {
   pagecount: "pagecount",
   country: "gl",
   language: "hl",
+  redirectBrowserSingle: "redirectBrowserSingle",
 };
 
 /**
@@ -59,6 +61,11 @@ export function aparserSerpOptions(o: { depth: number; gl: string; hl: string },
   const hl = String(o.hl ?? "").trim().toLowerCase();
   if (ids.country && gl) options.push({ type: "override", id: ids.country, value: gl });
   if (ids.language && hl) options.push({ type: "override", id: ids.language, value: hl });
+  // One JS-check browser per request, not one shared across the task. With the shared browser
+  // (the preset default) live probes on 1.2.3640 failed with "Process redirect error: mismatch"
+  // — the check was passed from one proxy and the SERP fetched from another; with this override
+  // the same query succeeded. The id is the preset's own ("Single redirect browser for task").
+  if (ids.redirectBrowserSingle) options.push({ type: "override", id: ids.redirectBrowserSingle, value: 0 });
   return options;
 }
 

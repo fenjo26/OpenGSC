@@ -90,6 +90,7 @@ test("gl and hl go out as explicit overrides next to the page count", () => {
     { type: "override", id: APARSER_SERP_OPTION_IDS.pagecount, value: 10 },
     { type: "override", id: APARSER_SERP_OPTION_IDS.country, value: "ar" },
     { type: "override", id: APARSER_SERP_OPTION_IDS.language, value: "es" },
+    { type: "override", id: "redirectBrowserSingle", value: 0 },
   ]);
 });
 

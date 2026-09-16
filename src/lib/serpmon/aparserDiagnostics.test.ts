@@ -75,7 +75,7 @@ test("live captcha answer (A-Parser 1.2.3628) is filed as blocked, not as a pars
   assert.equal(m.problem, "aparser_blocked_or_empty");
   assert.deepEqual(m.results, []);
   const ids = aparserSerpOptions({ depth: 100, gl: "gr", hl: "el" }).map(o => `${o.id}=${o.value}`);
-  assert.deepEqual(ids, ["pagecount=10", "gl=gr", "hl=el"]);
+  assert.deepEqual(ids, ["pagecount=10", "gl=gr", "hl=el", "redirectBrowserSingle=0"]);
 });
 
 test("a failed row without captchas stays a parser failure; totalcount 'none' is unknown", async () => {
