@@ -295,8 +295,11 @@ export default function MarketTab({ projectId, groups, host, setHost, version, o
                         </span>
                         {r.detail && (
                           <div title={r.detail} style={{
+                            // Two lines, not one: the cause ("Ban proxy …") follows the verdict and
+                            // was cut off by a single-line ellipsis. Full text stays in the tooltip.
                             fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 2,
-                            maxWidth: 380, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                            maxWidth: 520, overflow: "hidden", overflowWrap: "anywhere",
+                            display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
                           }}>{r.detail}</div>
                         )}
                       </>

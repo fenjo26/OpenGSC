@@ -6,7 +6,7 @@ import { loggedFetch, type CallHandle } from "@/lib/providerLog/log";
 import { goanySerp } from "./goanyapi";
 import { defaultLanguageFor } from "./regions";
 import {
-  APARSER_SERP_OPTION_IDS, APARSER_SERP_PARSERS, aparserSerpOptions, mapAparserSerp,
+  APARSER_SERP_OPTION_IDS, APARSER_SERP_PARSERS, aparserSerpOptions, describeAparserRow, mapAparserSerp,
 } from "./aparserSerp";
 import { aparserOneRequest, resolveBaseUrl, type AparserCreds } from "./aparser";
 
@@ -93,6 +93,11 @@ export interface SerpResponse {
   /** SERP features the provider reported, normalised ids: "paa" | "related" | "ads" | "video" | "local" | "images" | "news". */
   features?: string[];
   error?: string;
+  /**
+   * Human-readable context for `error`, when the provider has any: what the answer contained and
+   * what its own log said. `error` stays a bare code because callers compare it verbatim.
+   */
+  errorDetail?: string;
 }
 
 function domainOf(url: string): string {
@@ -564,7 +569,7 @@ async function aparserSearch(
   };
   const options = aparserSerpOptions({ depth: want, gl, hl });
 
-  let r = await aparserOneRequest(creds, APARSER_SERP_PARSERS.google, keyword, options, { timeoutMs: APARSER_SERP_TIMEOUT_MS });
+  let r = await aparserOneRequest(creds, APARSER_SERP_PARSERS.google, keyword, options, { timeoutMs: APARSER_SERP_TIMEOUT_MS, doLog: true });
   if (!r.data && /option|override|unknown/i.test(r.error ?? "")) {
     // The instance refused an override — an option id this build does not have. A preset that
     // already carries the right country/language is still a workable setup, so retry with the
@@ -572,16 +577,20 @@ async function aparserSearch(
     // A-Parser engine makes. (Depth lost too would shorten snapshots silently, which is why it
     // is retried with, not without.)
     r = await aparserOneRequest(creds, APARSER_SERP_PARSERS.google, keyword,
-      options.filter((o) => o.id === APARSER_SERP_OPTION_IDS.pagecount), { timeoutMs: APARSER_SERP_TIMEOUT_MS });
+      options.filter((o) => o.id === APARSER_SERP_OPTION_IDS.pagecount), { timeoutMs: APARSER_SERP_TIMEOUT_MS, doLog: true });
   }
   if (!r.data) {
     return { engine, provider: "aparser", keyword, results: [], error: r.error ?? "aparser_failed" };
   }
 
-  const mapped = mapAparserSerp(Array.isArray(r.data.results) ? r.data.results[0] : null, want);
+  const row = Array.isArray(r.data.results) ? r.data.results[0] : null;
+  const mapped = mapAparserSerp(row, want);
   if (mapped.problem) {
-    // Exactly the code — see the contract note above.
-    return { engine, provider: "aparser", keyword, results: [], error: mapped.problem };
+    // Exactly the code — see the contract note above. The context rides separately.
+    return {
+      engine, provider: "aparser", keyword, results: [], error: mapped.problem,
+      errorDetail: `${mapped.problem} · ${describeAparserRow(Array.isArray(r.data.results) ? row : r.data.results, r.data.logs)}`,
+    };
   }
   return {
     engine,

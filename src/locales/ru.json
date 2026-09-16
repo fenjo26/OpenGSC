@@ -3658,6 +3658,7 @@
   "aparserUrlPh": "http://192.168.1.50:9091",
   "aparserPassPh": "Пароль API",
   "aparserPresetPh": "Конфиг потоков (default)",
+  "aparserConfigPresetMissing": "Конфига потоков «{name}» нет в A-Parser. Укажите имя из A-Parser → Настройки → Настройки потоков или оставьте поле пустым (default).",
   "aparserTest": "Проверить связь",
   "aparserTestOk": "Подключено",
   "seoLogBodiesTitle": "Журнал вызовов провайдеров",

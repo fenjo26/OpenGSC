@@ -159,7 +159,12 @@ function AparserCard() {
         body: JSON.stringify({ op: "ping", baseUrl: baseUrl.trim(), password: password.trim(), configPreset: configPreset.trim() }),
       });
       const d = await res.json();
-      if (!res.ok) { setStatus({ ok: false, text: String(d?.error || res.status) }); setBusy(false); return; }
+      if (!res.ok) {
+        const text = d?.error === "aparser_config_preset_missing"
+          ? t("aparserConfigPresetMissing").replace("{name}", String(d?.configPreset ?? ""))
+          : String(d?.error || res.status);
+        setStatus({ ok: false, text }); setBusy(false); return;
+      }
       persist();
       const parsers: string[] = Array.isArray(d?.info?.availableParsers) ? d.info.availableParsers : [];
       // Cached so every other surface can ask "is this parser installed" without a round trip,

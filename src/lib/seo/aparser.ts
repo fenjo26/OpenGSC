@@ -247,17 +247,51 @@ export async function aparserOneRequest(
   parser: string,
   query: string,
   options: AparserOption[] = [],
-  opts: { preset?: string; timeoutMs?: number } = {},
+  opts: { preset?: string; timeoutMs?: number; doLog?: boolean } = {},
 ): Promise<AparserResult<AparserOneRequestData>> {
-  return withSlot(() => aparserCall<AparserOneRequestData>(creds, "oneRequest", {
+  const send = (configPreset: string) => withSlot(() => aparserCall<AparserOneRequestData>(creds, "oneRequest", {
     query,
     parser,
-    configPreset: creds.configPreset || "default",
+    configPreset,
     preset: opts.preset || "default",
     rawResults: 1,
-    doLog: 0,
+    // Logs are the only place A-Parser says WHY a parse came back empty (captcha, proxy refused,
+    // retries exhausted); callers that turn an empty result into a stored error ask for them.
+    doLog: opts.doLog ? 1 : 0,
     ...(options.length ? { options } : {}),
   }, opts.timeoutMs ?? APARSER_DEFAULT_TIMEOUT_MS));
+  return withConfigPresetFallback(creds, send);
+}
+
+// ─── Thread config fallback ──────────────────────────────────────────────────
+
+/**
+ * `configPreset` names a thread config ("Settings → Thread settings" in A-Parser), and a name
+ * that does not exist there fails EVERY request with `configPreset 'x' not exists` — while ping
+ * and info, which take no config, stay green. One mistyped settings field therefore used to turn
+ * a whole SERP Monitor run red. A-Parser always ships a config called "default", so a missing
+ * name is retried once with it and the owner is told in the log instead.
+ */
+export const APARSER_DEFAULT_CONFIG = "default";
+
+export function isMissingConfigPreset(error: string | undefined | null): boolean {
+  return /configPreset\b.*\bnot\s+exists?\b/i.test(String(error ?? ""));
+}
+
+const warnedConfigPresets = new Set<string>();
+
+async function withConfigPresetFallback<T>(
+  creds: AparserCreds,
+  send: (configPreset: string) => Promise<AparserResult<T>>,
+): Promise<AparserResult<T>> {
+  const wanted = String(creds.configPreset ?? "").trim() || APARSER_DEFAULT_CONFIG;
+  const first = await send(wanted);
+  if (first.data || wanted === APARSER_DEFAULT_CONFIG || !isMissingConfigPreset(first.error)) return first;
+  if (!warnedConfigPresets.has(wanted)) {
+    warnedConfigPresets.add(wanted);
+    console.warn(`[aparser] thread config "${wanted}" does not exist in A-Parser; using "${APARSER_DEFAULT_CONFIG}". Fix the thread config name in Settings → A-Parser.`);
+  }
+  return send(APARSER_DEFAULT_CONFIG);
 }
 
 /**
@@ -321,17 +355,17 @@ export interface AparserTaskState {
 export async function aparserAddTask(creds: AparserCreds, task: AparserAddTask): Promise<AparserResult<number>> {
   const queries = task.queries.map(q => q.trim()).filter(Boolean);
   if (!queries.length) return fail<number>("no_queries");
-  const data: Record<string, unknown> = {
+  const data = (configPreset: string): Record<string, unknown> => ({
     parsers: [[task.parser, task.preset || "default"]],
-    configPreset: creds.configPreset || "default",
+    configPreset,
     preset: task.preset || "default",
     queries,
     resultsSaveTo: `OpenGSC/${Date.now()}-${task.parser.replace(/::/g, "-")}.txt`,
     doLog: 0,
     keepLinks: 0,
     ...(task.resultsFormat ? { resultsFormat: task.resultsFormat } : {}),
-  };
-  const r = await aparserCall<any>(creds, "addTask", data);
+  });
+  const r = await withConfigPresetFallback(creds, cfg => aparserCall<any>(creds, "addTask", data(cfg)));
   if (!r.data) return fail<number>(r.error ?? "aparser: no task id");
   const d = r.data as any;
   const id = Number(d?.taskid ?? d?.taskId ?? d);

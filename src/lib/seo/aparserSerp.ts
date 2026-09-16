@@ -21,22 +21,22 @@ export interface AparserSerpOptionIds {
 }
 
 /**
- * Option ids for the overrides `aparserSerpOptions` sends. Each id needs one run of
- * scripts/aparser-serp-probe.ts against the live preset; until then the values are the best
- * reading of the A-Parser documentation, marked per line.
+ * Option ids for the overrides `aparserSerpOptions` sends — read off a live SE::Google
+ * `default` preset with scripts/aparser-serp-probe.ts (A-Parser v1.2.3628, 2026-09-16), not
+ * from the documentation. The docs' prose names ("Search from country", "Results language")
+ * suggested `country`/`lang`; the build has neither, and an unknown override id makes the parser
+ * report the whole query as failed (`success: 0` → aparser_parser_failed on every keyword).
+ *
+ *   pagecount  "Pages count" — preset default 5, we send ceil(depth / 10)
+ *   gl         Google's own `gl` (search country). `cr` (country RESTRICT) is deliberately not
+ *              used: it filters results to sites from that country, which is not what a local
+ *              searcher sees.
+ *   hl         interface language. `lr` (results language restrict) is likewise left alone.
  */
 export const APARSER_SERP_OPTION_IDS: AparserSerpOptionIds = {
-  // UNVERIFIED — run scripts/aparser-serp-probe.ts. The only id the official API docs name in a
-  // oneRequest `options` example (alongside `linksperpage` and `useproxy`), but the live build
-  // is the authority, not the docs.
   pagecount: "pagecount",
-  // UNVERIFIED — run scripts/aparser-serp-probe.ts. The docs describe "Search from country"
-  // (Google's `gl` parameter) but never print its internal id; `country` follows the naming
-  // style of the documented ids (`pagecount`, `useproxy`), not the URL parameter's.
-  country: "country",
-  // UNVERIFIED — run scripts/aparser-serp-probe.ts. The docs describe "Interface language"
-  // (`hl`) and a separate "Results language" (`lr`) without printing either id.
-  language: "lang",
+  country: "gl",
+  language: "hl",
 };
 
 /**
@@ -91,6 +91,13 @@ const FEATURE_KEYS: readonly { keys: readonly string[]; id: string }[] = [
   { keys: ["news"], id: "news" },
 ];
 
+function captchaShows(row: unknown): number {
+  const info = row && typeof row === "object" ? (row as Record<string, unknown>).info : null;
+  const stats = info && typeof info === "object" ? (info as Record<string, unknown>).stats : null;
+  const n = stats && typeof stats === "object" ? Number((stats as Record<string, unknown>).reCaptchaShows) : 0;
+  return Number.isFinite(n) ? n : 0;
+}
+
 function featuresOf(row: Record<string, unknown>): string[] {
   const features: string[] = [];
   for (const { keys, id } of FEATURE_KEYS) {
@@ -118,7 +125,11 @@ export function mapAparserSerp(row: unknown, want: number): {
   features: string[];
   problem: string | null;      // parserResultProblem(row, ["serp"])
 } {
-  const problem = parserResultProblem(row, ["serp"]);
+  let problem = parserResultProblem(row, ["serp"]);
+  // A parser-level failure after captchas is a blocked proxy, not a broken request: SE::Google
+  // reports it as `success: 0` with `info.stats.reCaptchaShows > 0` ("Ban proxy … All retries
+  // exceed" in the log). Filing it under the proxy code sends the owner to the right fix.
+  if (problem === "aparser_parser_failed" && captchaShows(row) > 0) problem = "aparser_blocked_or_empty";
   if (problem) return { results: [], totalCount: "", features: [], problem };
 
   const r = (row ?? {}) as Record<string, unknown>;
@@ -149,8 +160,79 @@ export function mapAparserSerp(row: unknown, want: number): {
 
   return {
     results,
-    totalCount: asString(r.totalcount).trim(),
+    totalCount: /^none$/i.test(asString(r.totalcount).trim()) ? "" : asString(r.totalcount).trim(),
     features: featuresOf(r),
     problem: null,
   };
+}
+
+/**
+ * What an unusable row actually contained, for the stored error detail.
+ *
+ * "Empty answer" has several causes that look identical from the outside: a captcha after all
+ * retries, a proxy pool that refused every connection, a result field under a different name on
+ * this A-Parser build, or a country/language override the parser ignored. The row's own keys and
+ * the tail of A-Parser's log tell them apart, so they travel with the error instead of being
+ * thrown away. Never includes page content — only shapes, counts and log lines, cut to `max`.
+ */
+export function describeAparserRow(row: unknown, logs: unknown, max = 280): string {
+  // Ordered by what a person needs first, because the UI shows one truncated line: the parser's
+  // own verdict (captchas, proxies, retries), then the log lines that name the cause, and the raw
+  // key list only when the row has no stats to report — an unexpected shape is the one case
+  // where the keys ARE the finding.
+  const parts: string[] = [];
+  const r = row && typeof row === "object" ? row as Record<string, unknown> : null;
+  const info = r && r.info && typeof r.info === "object" ? r.info as Record<string, unknown> : null;
+  const stats = info && info.stats && typeof info.stats === "object" ? info.stats as Record<string, unknown> : null;
+  if (stats) {
+    const stat = (k: string, label: string) => (stats[k] !== undefined ? `${label} ${asString(stats[k])}` : "");
+    const line = [stat("reCaptchaShows", "captcha"), stat("proxiesUsed", "proxies"), stat("retries", "retries")]
+      .filter(Boolean).join(", ");
+    if (line) parts.push(line);
+  }
+  const lines = logLines(logs).slice(-4);
+  if (lines.length) parts.push(`log: ${lines.join(" | ")}`);
+  if (!r) {
+    parts.push("results[0]: absent");
+  } else if (!stats) {
+    const keys = Object.keys(r).slice(0, 20).map((k) => {
+      const v = r[k];
+      if (Array.isArray(v)) return `${k}[${v.length}]`;
+      if (v && typeof v === "object") return `${k}{}`;
+      if (k === "success" || k === "totalcount" || k === "pagecount") return `${k}=${asString(v).slice(0, 20)}`;
+      return k;
+    });
+    parts.push(`keys: ${keys.join(", ") || "none"}`);
+  }
+  const text = parts.join(" · ");
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
+/**
+ * A-Parser log entries arrive as strings or as [level, timestamp, message, …] tuples depending on
+ * build. Only the text survives — level and epoch numbers are noise in a one-line detail — and
+ * the two lines every run ends with (the stats JSON dump and "Thread complete work") are dropped:
+ * the stats are already summarised above them.
+ */
+function logLines(logs: unknown): string[] {
+  if (!Array.isArray(logs)) return [];
+  const out: string[] = [];
+  for (const entry of logs) {
+    let text: string;
+    if (Array.isArray(entry)) {
+      const strings = entry.filter((x) => typeof x === "string") as string[];
+      text = strings.length ? strings.join(" ") : entry.map(String).join(" ");
+    } else if (typeof entry === "string") {
+      text = entry;
+    } else if (entry && typeof entry === "object") {
+      const o = entry as Record<string, unknown>;
+      text = asString(o.message ?? o.msg ?? JSON.stringify(entry));
+    } else {
+      text = "";
+    }
+    const clean = text.replace(/\s+/g, " ").trim();
+    if (!clean || /^\{.*\}$/.test(clean) || /^thread complete work$/i.test(clean)) continue;
+    out.push(clean.slice(0, 120));
+  }
+  return out;
 }

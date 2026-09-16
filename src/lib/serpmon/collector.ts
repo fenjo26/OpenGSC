@@ -90,7 +90,7 @@ function sanitizeDetail(raw: string | null | undefined, password: string): strin
   const text = (raw ?? "").trim();
   if (!text) return null;
   const safe = password ? text.split(password).join("***") : text;
-  return safe.length > 300 ? `${safe.slice(0, 300)}…` : safe;
+  return safe.length > 500 ? `${safe.slice(0, 500)}…` : safe;
 }
 
 interface KeywordOutcome {
@@ -129,7 +129,7 @@ async function collectKeyword(
     const ext = resp as SerpResponse & { totalCount?: string; features?: string[] };
     totalCount = ext.totalCount ?? "";
     features = ext.features ?? [];
-    detail = ext.error ? sanitizeDetail(ext.error + credsTag(creds), creds.password) : null;
+    detail = ext.error ? sanitizeDetail((ext.errorDetail || ext.error) + credsTag(creds), creds.password) : null;
 
     const seen = new Set<string>();
     rows = (ext.results ?? [])
