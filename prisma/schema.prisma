@@ -1713,3 +1713,183 @@ model DropEvent {
 
   @@index([candidateId, createdAt])
 }
+
+// ─── SERP Monitor (full top-N snapshots per market) ──────────────────────────
+// A project is a market (engine · country · language · device) plus a keyword set. Every run
+// stores the whole top-N per keyword; diffs are host-level and computed once, at write time.
+// See docs/SERP-MONITOR.md.
+
+model SerpProject {
+  id            String    @id @default(cuid())
+  userId        String                          // workspace owner, from workspaceUserId()
+  name          String
+  engine        String    @default("google")    // v1: "google" only
+  device        String    @default("desktop")   // v1: "desktop" only; "mobile" reserved
+  country       String                          // gl, 2 letters, lower-case
+  lang          String                          // hl
+  provider      String    @default("aparser")   // v1: "aparser" only
+  depth         Int       @default(100)         // one of SERPMON_DEPTHS
+  intervalHours Int       @default(24)          // one of SERPMON_INTERVALS; 0 = manual only
+  ownDomains    String    @default("")          // newline-separated hosts, highlighted in UI
+  ignoreHosts   String    @default("")          // newline-separated, added to DEFAULT_PLATFORM_HOSTS
+  retentionDays Int       @default(180)         // full snapshots older than this are thinned to one per ISO week
+  alertStorm    Boolean   @default(true)
+  paused        Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  firstRunAt    DateTime?                       // finishedAt of the first done run — "new domain" starts after it
+  lastRunAt     DateTime?
+  nextRunAt     DateTime?
+
+  keywords SerpKeyword[]
+  runs     SerpRun[]
+
+  @@index([userId])
+  @@index([paused, nextRunAt])
+}
+
+model SerpKeyword {
+  id              String    @id @default(cuid())
+  projectId       String
+  keyword         String                   // normaliseKeyword(); ≤ 191 chars
+  groupName       String    @default("")   // cluster label from the import
+  active          Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  lastOkAt        DateTime?
+  lastSnapshotId  String?                  // last snapshot with status ok|partial
+  lastStatus      String    @default("")   // status of the most recent snapshot, any status
+  lastProblem     String?
+  lastDetail      String?                  // raw provider/transport error, sanitized (no password), ≤ 300 chars
+  lastChangeCount Int       @default(0)    // visible host changes in the last comparison
+  lastVolatility  Float?
+
+  project   SerpProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  snapshots SerpSnapshot[]
+
+  @@unique([projectId, keyword])
+  @@index([projectId, active])
+}
+
+model SerpRun {
+  id         String    @id @default(cuid())
+  projectId  String
+  trigger    String                        // "schedule" | "manual"
+  status     String    @default("running") // running | done | aborted
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  planned    Int       @default(0)
+  ok         Int       @default(0)
+  partial    Int       @default(0)
+  failed     Int       @default(0)
+  compared   Int       @default(0)         // keywords that had a comparable previous snapshot
+  volatility Float?                        // median keyword volatility over compared keywords
+  volTop10   Float?
+  shareHigh  Float?                        // share of compared keywords above their own p90
+  stormScore Float?                        // robust z vs baseline; null while calibrating
+  storm      Boolean   @default(false)
+  error      String?
+
+  project   SerpProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  snapshots SerpSnapshot[]
+
+  @@index([projectId, startedAt])
+  @@index([status])
+}
+
+model SerpSnapshot {
+  id           String   @id @default(cuid())
+  projectId    String
+  keywordId    String
+  runId        String
+  takenAt      DateTime @default(now())
+  status       String                    // ok | partial | failed
+  problem      String?                   // SnapshotProblem
+  detail       String?                   // raw provider/transport error, sanitized (no password), ≤ 300 chars
+  depth        Int                       // requested
+  got          Int      @default(0)      // organic rows returned (after dedupe)
+  totalCount   String   @default("")     // engine-reported count, as text
+  // JSON: [position, urlId][] ordered by position. "[]" for failed.
+  rows         String   @default("[]")
+  // JSON: string[] — SERP features seen (e.g. "paa", "related"), "" when the provider does not say
+  features     String   @default("")
+  prevId       String?                   // the snapshot this one was compared with
+  comparedDepth Int?
+  volatility   Float?
+  volTop10     Float?
+  changeCount  Int      @default(0)      // visible (non-ignored) host changes
+
+  keyword SerpKeyword  @relation(fields: [keywordId], references: [id], onDelete: Cascade)
+  run     SerpRun      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  changes SerpChange[]
+
+  @@unique([runId, keywordId])
+  @@index([keywordId, takenAt])
+}
+
+model SerpUrl {
+  id          Int      @id @default(autoincrement())
+  urlHash     String   @unique            // sha1(url) hex — the dedupe key; url itself can exceed 191
+  url         String
+  hostId      Int
+  title       String   @default("")       // last seen
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+
+  @@index([hostId])
+}
+
+model SerpHost {
+  id                 Int       @id @default(autoincrement())
+  host               String    @unique    // hostOfUrl(): lower-case, no "www.", ≤ 191
+  registrable        String    @default("") // apexOf(host) from lib/drops/registries; "" when unknown
+  firstSeenAt        DateTime  @default(now())
+  registeredAt       DateTime?            // creation date of `registrable` (RDAP/WHOIS)
+  ageCheckedAt       DateTime?
+  ageError           String?
+  dr                 Float?
+  drCheckedAt        DateTime?
+  refdomains         Int?                 // referring domains of `registrable` (paid metrics stats call)
+  refdomainsCheckedAt DateTime?
+
+  @@index([registrable])
+  @@index([ageCheckedAt])
+  @@index([drCheckedAt])
+  @@index([refdomainsCheckedAt])
+}
+
+model SerpChange {
+  id         String   @id @default(cuid())
+  projectId  String
+  keywordId  String
+  snapshotId String
+  hostId     Int
+  kind       String                       // enter | exit | up | down
+  fromPos    Int?
+  toPos      Int?
+  urls       Int      @default(1)
+  hidden     Boolean  @default(false)     // platform/ignored host — stored, not shown by default
+  takenAt    DateTime
+
+  snapshot SerpSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, takenAt])
+  @@index([projectId, hostId, takenAt])
+  @@index([snapshotId])
+}
+
+model SerpProjectHost {
+  projectId    String
+  hostId       Int
+  firstSeenAt  DateTime                   // first snapshot of this project the host appeared in
+  lastSeenAt   DateTime
+  keywords     Int      @default(0)       // active keywords whose latest ok|partial snapshot contains the host
+  prevKeywords Int      @default(0)       // the same number one run earlier — trend arrow
+  top10        Int      @default(0)
+  top30        Int      @default(0)
+  bestPos      Int?
+  avgPos       Float?
+  bounces      Int      @default(0)       // enter→exit on the same keyword within BOUNCE_RUNS runs
+
+  @@id([projectId, hostId])
+  @@index([projectId, keywords])
+}

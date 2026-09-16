@@ -77,6 +77,12 @@ type Tpl = {
   // drops watch: a watched domain became free
   dropsWatchTitle: (n: number) => string;
   dropsWatchRow: (domain: string, dr: string, refs: string) => string;
+  // serp monitor: a run shook the SERP harder than the project's own baseline
+  serpmonStormTitle: (project: string) => string;
+  serpmonStormScore: (score: string, share: string) => string;
+  serpmonStormKeywords: (list: string) => string;
+  serpmonStormHosts: (list: string) => string;
+  serpmonTestPrefix: string;
 };
 
 export const NOTIFY_L: Record<NotifyLang, Tpl> = {
@@ -145,6 +151,11 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     providerDownMsg: (provider, n) => `*${provider}* failed ${n}× in the last hour.`,
     dropsWatchTitle: (n) => `\u{1F3AF} Watched domain${n > 1 ? "s" : ""} freed (${n}):`,
     dropsWatchRow: (d, dr, refs) => `\u{1F7E2} ${d} \u2014 DR ${dr}, refdomains ${refs}`,
+    serpmonStormTitle: p => `\u{1F32A} SERP storm: ${p}`,
+    serpmonStormScore: (score, share) => `Storm score ${score} \u00B7 ${share} of keywords above their usual churn`,
+    serpmonStormKeywords: list => `Most shaken keywords: ${list}`,
+    serpmonStormHosts: list => `Most entries and exits: ${list}`,
+    serpmonTestPrefix: "\u{1F9EA} TEST \u2014 fabricated data, not a real storm:",
   },
   ru: {
     rankDropTitle: kw => `📉 Падение позиции: ${kw}`,
@@ -211,6 +222,11 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     providerDownMsg: (provider, n) => `*${provider}* — ${n} ошибок за последний час.`,
     dropsWatchTitle: (n) => `\u{1F3AF} Домены со списка наблюдения освободились (${n}):`,
     dropsWatchRow: (d, dr, refs) => `\u{1F7E2} ${d} \u2014 DR ${dr}, реферальных доменов ${refs}`,
+    serpmonStormTitle: p => `\u{1F32A} SERP-шторм: ${p}`,
+    serpmonStormScore: (score, share) => `Сила шторма ${score} \u00B7 ${share} запросов выше обычной тряски`,
+    serpmonStormKeywords: list => `Сильнее всего трясло: ${list}`,
+    serpmonStormHosts: list => `Больше всего входов и выходов: ${list}`,
+    serpmonTestPrefix: "\u{1F9EA} ТЕСТ \u2014 выдуманные данные, не настоящий шторм:",
   },
   uk: {
     rankDropTitle: kw => `📉 Падіння позиції: ${kw}`,
@@ -277,6 +293,11 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     providerDownMsg: (provider, n) => `*${provider}* — ${n} помилок за останню годину.`,
     dropsWatchTitle: (n) => `\u{1F3AF} Домени зі списку спостереження звільнилися (${n}):`,
     dropsWatchRow: (d, dr, refs) => `\u{1F7E2} ${d} \u2014 DR ${dr}, реферальних доменів ${refs}`,
+    serpmonStormTitle: p => `\u{1F32A} SERP-шторм: ${p}`,
+    serpmonStormScore: (score, share) => `Сила шторму ${score} \u00B7 ${share} запитів вище звичайної тряски`,
+    serpmonStormKeywords: list => `Найсильніше трусило: ${list}`,
+    serpmonStormHosts: list => `Найбільше входів і виходів: ${list}`,
+    serpmonTestPrefix: "\u{1F9EA} ТЕСТ \u2014 вигадані дані, не справжній шторм:",
   },
   fr: {
     rankDropTitle: kw => `📉 Chute de position : ${kw}`,
@@ -343,6 +364,11 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     providerDownMsg: (provider, n) => `*${provider}* a échoué ${n}× dans la dernière heure.`,
     dropsWatchTitle: (n) => `\u{1F3AF} Domaine${n > 1 ? "s" : ""} surveillé${n > 1 ? "s" : ""} libéré${n > 1 ? "s" : ""} (${n}) :`,
     dropsWatchRow: (d, dr, refs) => `\u{1F7E2} ${d} \u2014 DR ${dr}, domaines référents ${refs}`,
+    serpmonStormTitle: p => `\u{1F32A} Tempête SERP : ${p}`,
+    serpmonStormScore: (score, share) => `Score de tempête ${score} \u00B7 ${share} des mots-clés au-dessus de leur agitation habituelle`,
+    serpmonStormKeywords: list => `Mots-clés les plus secoués : ${list}`,
+    serpmonStormHosts: list => `Plus d'entrées et de sorties : ${list}`,
+    serpmonTestPrefix: "\u{1F9EA} TEST \u2014 données fictives, pas une vraie tempête :",
   },
   es: {
     rankDropTitle: kw => `📉 Caída de posición: ${kw}`,
@@ -409,6 +435,11 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     providerDownMsg: (provider, n) => `*${provider}* falló ${n}× en la última hora.`,
     dropsWatchTitle: (n) => `\u{1F3AF} Dominio${n > 1 ? "s" : ""} vigilado${n > 1 ? "s" : ""} libre${n > 1 ? "s" : ""} (${n}):`,
     dropsWatchRow: (d, dr, refs) => `\u{1F7E2} ${d} \u2014 DR ${dr}, dominios de referencia ${refs}`,
+    serpmonStormTitle: p => `\u{1F32A} Tormenta SERP: ${p}`,
+    serpmonStormScore: (score, share) => `Puntaje de tormenta ${score} \u00B7 ${share} de las consultas por encima de su agitación habitual`,
+    serpmonStormKeywords: list => `Consultas más agitadas: ${list}`,
+    serpmonStormHosts: list => `Más entradas y salidas: ${list}`,
+    serpmonTestPrefix: "\u{1F9EA} PRUEBA \u2014 datos inventados, no es una tormenta real:",
   },
   de: {
     rankDropTitle: kw => `📉 Positionsverlust: ${kw}`,
@@ -475,6 +506,11 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     providerDownMsg: (provider, n) => `*${provider}* ist in der letzten Stunde ${n}× fehlgeschlagen.`,
     dropsWatchTitle: (n) => `\u{1F3AF} \u00DCberwachte Domain${n > 1 ? "s" : ""} freigeworden (${n}):`,
     dropsWatchRow: (d, dr, refs) => `\u{1F7E2} ${d} \u2014 DR ${dr}, verweisende Domains ${refs}`,
+    serpmonStormTitle: p => `\u{1F32A} SERP-Sturm: ${p}`,
+    serpmonStormScore: (score, share) => `Sturm-Score ${score} \u00B7 ${share} der Keywords über ihrer üblichen Unruhe`,
+    serpmonStormKeywords: list => `Stärkst erschütterte Keywords: ${list}`,
+    serpmonStormHosts: list => `Meiste Ein- und Austritte: ${list}`,
+    serpmonTestPrefix: "\u{1F9EA} TEST \u2014 erfundene Daten, kein echter Sturm:",
   },
   zh: {
     rankDropTitle: kw => `📉 排名下降：${kw}`,
@@ -541,5 +577,10 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     providerDownMsg: (provider, n) => `*${provider}* 最近一小时失败 ${n} 次。`,
     dropsWatchTitle: (n) => `\u{1F3AF} \u76D1\u63A7\u7684\u57DF\u540D\u5DF2\u91CA\u653E\uFF08${n}\uFF09\uFF1A`,
     dropsWatchRow: (d, dr, refs) => `\u{1F7E2} ${d} \u2014 DR ${dr}\uFF0C\u53C2\u8003\u57DF ${refs}`,
+    serpmonStormTitle: p => `\u{1F32A} SERP 风暴：${p}`,
+    serpmonStormScore: (score, share) => `风暴强度 ${score} \u00B7 ${share} 的关键词波动高于平常`,
+    serpmonStormKeywords: list => `波动最大的关键词：${list}`,
+    serpmonStormHosts: list => `进入和退出最多：${list}`,
+    serpmonTestPrefix: "\u{1F9EA} 测试 \u2014 模拟数据，并非真实风暴：",
   },
 };

@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import PasswordChangeGate from "@/components/PasswordChangeGate";
 import { useSession, signOut } from "next-auth/react";
 import { useState, useEffect, Suspense } from "react";
-import { Settings, LogOut, Sparkles, Globe, Newspaper, LayoutDashboard, TrendingUp, Anchor, BarChart2, Users, Compass, Radar, Server, ClipboardCheck, Menu, Boxes } from "lucide-react";
+import { Settings, LogOut, Sparkles, Globe, Newspaper, LayoutDashboard, TrendingUp, Anchor, BarChart2, Users, Compass, Radar, Server, ClipboardCheck, Menu, Boxes, Waves } from "lucide-react";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { useTheme } from "@/lib/ThemeContext";
 import { useLayout } from "@/lib/LayoutContext";
@@ -613,6 +613,9 @@ function useNavItems(): NavItem[] {
     // it looks outward at domains this instance does not own. Unlike the crawler it looks at
     // ones nobody owns yet.
     { href: "/drops", label: t("dropsNavTitle"), key: "drops", icon: <Boxes size={14} /> },
+    // Visible always, unlike /aparser: the page itself explains what is missing (A-Parser
+    // credentials) instead of the entry hiding and the feature looking absent.
+    { href: "/serp-monitor", label: t("serpmonNavTitle"), key: "serpmon", icon: <Waves size={14} /> },
     { href: "/digest", label: t("digestNavTitle"), key: "digest", icon: <Newspaper size={14} /> },
     // Points inward at the user's own machine rather than at this instance's data or at
     // somebody else's site — hence last, and hidden until that machine exists.
@@ -629,6 +632,7 @@ function navAccent(key: string): { color: string; bg: string } {
   if (key === "indexer") return { color: "var(--color-accent-blue)", bg: "rgba(41,151,255,0.12)" };
   if (key === "digest") return { color: "var(--color-accent-green, #34c759)", bg: "rgba(52,199,89,0.12)" };
   if (key === "drops") return { color: "var(--color-accent-orange, #ff9f0a)", bg: "rgba(255,159,10,0.12)" };
+  if (key === "serpmon") return { color: "var(--color-accent-teal, #30b0c7)", bg: "rgba(48,176,199,0.12)" };
   return { color: "var(--color-accent-blue)", bg: "rgba(59,130,246,0.12)" };
 }
 

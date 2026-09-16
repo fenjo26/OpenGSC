@@ -668,7 +668,7 @@ export async function dataModuleCounts(userId: string): Promise<Json> {
       return Number(rows?.[0]?.c ?? 0);
     } catch { return 0; }
   };
-  const [geoAudits, generations, digests, alerts, indexerDomains, clarity, groups] = await Promise.all([
+  const [geoAudits, generations, digests, alerts, indexerDomains, clarity, groups, serpmonProjects] = await Promise.all([
     safeCount(`SELECT COUNT(*) as c FROM "GeoAudit" WHERE userId = ?`, userId),
     safeCount(`SELECT COUNT(*) as c FROM "SeoHistory" WHERE userId = ?`, userId),
     safeCount(`SELECT COUNT(*) as c FROM "Digest" WHERE userId = ?`, userId),
@@ -676,12 +676,14 @@ export async function dataModuleCounts(userId: string): Promise<Json> {
     prisma.indexerDomain.count({ where: { userId } }).catch(() => 0),
     prisma.claritySnapshot.count({ where: { site: { userId } } }).catch(() => 0),
     prisma.contentGroup.count({ where: { site: { userId } } }).catch(() => 0),
+    prisma.serpProject.count({ where: { userId } }).catch(() => 0),
   ]);
   const settings = await getUserSettings(userId);
   return {
     geoAudits, generations, digests, alerts, indexerDomains,
     claritySnapshots: clarity,
     contentGroups: groups,
+    serpmonProjects,
     ga4LinkedSites: await prisma.site.count({ where: { userId, ga4PropertyId: { not: null } } }).catch(() => 0),
     engineCredentials: {
       bing: !!(settings.seoKey_bing || settings.seoKey_bing_accounts_list),
