@@ -8,7 +8,7 @@
 
 Self-hosted on your own VPS. No subscriptions, no seat limits, no third party touching your data.
 
-[![Version 1.6.2](https://img.shields.io/badge/version-1.6.2-brightgreen)](https://github.com/fenjo26/opengsc/releases)
+[![Version 1.6.3](https://img.shields.io/badge/version-1.6.3-brightgreen)](https://github.com/fenjo26/opengsc/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Next.js 16](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue?logo=typescript)](https://www.typescriptlang.org/)
@@ -103,6 +103,7 @@ experimental porting guide with no promise of feature parity — see [`docs/TEST
   - [Site Health Checks](#site-health-checks)
   - [Indexing Status Tools](#indexing-status-tools)
   - [Drops Catalogue — Expired Domain Funnel](#drops-catalogue--expired-domain-funnel-drops)
+  - [SERP Monitor — Whole-SERP Watching (`/serp-monitor`)](#serp-monitor--whole-serp-watching-serp-monitor)
 - [🧠 AI SEO Content Suite (`/seo-tools`)](#-ai-seo-content-suite-seo-tools)
   - Keyword Clustering · Outline Generator · Text Generator · Content Rewriter · **AI-Fingerprint Lab** · Googlebot View · Content Gap · Landing Builder · GEO Audit · Citations · Link Monitor · Editorial Policy · History
 - [🕸️ Private Indexer Network](#-private-indexer-network)
@@ -235,7 +236,7 @@ Share a site's dashboard with a client without giving them an account: **site �
 
 ### MCP Server — Connect AI Agents
 
-OpenGSC ships a built-in **MCP (Model Context Protocol) server** at `/api/mcp` with **45 tools**, so Claude Code, Claude Desktop, Cursor, Codex, or any MCP client can work with your SEO data directly: sites, search performance, striking-distance keywords, cannibalization, content decay, CTR benchmarks, content groups, rank tracking and history, AEO visibility, GEO audits, backlinks, Link Monitor mentions and the manual Outreach Workspace, stored Source Audit findings, keyword demand and difficulty, competitor gaps, site health, indexing status, audit results, GA4, Clarity, Bing/Yandex portfolios, the indexer network, fired alerts, digests, generation history, and arbitrary read-only SQL. Generate a token under **Settings → API & MCP**, then:
+OpenGSC ships a built-in **MCP (Model Context Protocol) server** at `/api/mcp` with **65 tools**, so Claude Code, Claude Desktop, Cursor, Codex, or any MCP client can work with your SEO data directly: sites, search performance, striking-distance keywords, cannibalization, content decay, CTR benchmarks, content groups, rank tracking and history, AEO visibility, GEO audits, backlinks, Link Monitor mentions and the manual Outreach Workspace, stored Source Audit findings, keyword demand and difficulty, competitor gaps, site health, indexing status, audit results, GA4, Clarity, Bing/Yandex portfolios, the indexer network, SERP Monitor projects, markets, storms and domain catalogues, fired alerts, digests, generation history, and arbitrary read-only SQL. Generate a token under **Settings → API & MCP**, then:
 
 ```bash
 claude mcp add --transport http opengsc https://your-domain.com/api/mcp \
@@ -244,7 +245,7 @@ claude mcp add --transport http opengsc https://your-domain.com/api/mcp \
 
 Agents can also **optimize pages**, not just read about them. `get_optimization_brief` returns everything known about one URL in a single call — its queries, striking-distance keywords, CTR gaps, decay trend, cannibalization conflicts, audit issues and current content — the agent writes the new version itself, and `analyze_text` verifies it deterministically: uniqueness, heading-structure drift, and any number or brand that appears in the draft but not the source. No model is called for that check, so it costs nothing and always returns the same answer.
 
-Every tool declares what calling it costs, and `get_capabilities` reports the grouping: **local** (free and instant, 37 of the 45; four Outreach actions are explicitly marked as local writes), **quota** (calls Google on your own OAuth), **net** (fetches a page), and **paid** (spends your own credits). The three paid tools — the app's own Content Rewriter, the full article pipeline, and keyword discovery — refuse to run without an explicit `confirm: true`, so an agent exploring the registry can never bill you by accident. The two AI ones are asynchronous: they return a job id and save each finished page as it completes, so a client timeout or a server restart can never discard work you have already paid for. Keyword discovery is synchronous because it does not need to be — it writes its result to the cache before returning, so an abandoned call still leaves a search that replays for free.
+Every tool declares what calling it costs, and `get_capabilities` reports the grouping: **local** (free and instant, 48 of the 65; four Outreach actions are explicitly marked as local writes), **quota** (calls Google on your own OAuth), **net** (fetches a page), and **paid** (spends your own credits). The seven paid tools — the app's own Content Rewriter, the full article pipeline, keyword discovery, and the drops enrichments and AI history pass that spend Ahrefs/Majestic/AI units — refuse to run without an explicit `confirm: true`, so an agent exploring the registry can never bill you by accident. The two AI ones are asynchronous: they return a job id and save each finished page as it completes, so a client timeout or a server restart can never discard work you have already paid for. Keyword discovery is synchronous because it does not need to be — it writes its result to the cache before returning, so an abandoned call still leaves a search that replays for free.
 
 The repo also ships ready-made **agent skills** in [`.agents/skills/`](.agents/skills/) (performance review, page optimization, article production, link prospecting, AEO review, site triage) — copy them into your agent's skills folder for guided SEO workflows. Details: [`docs/MCP-SETUP.md`](docs/MCP-SETUP.md).
 
@@ -269,6 +270,19 @@ A working bench for expired domains: import, vet, watch — and buy only what is
 - **Cheap enrichment before anyone spends.** Free DR with the panel's own monthly series (a fall of 5+ points is a penalty flag, not lost links), Wayback snapshots, Majestic TF/CF in one batched call (~$0.000002 per domain), and paid refdomains behind a confirm. An AI history pass reads the archived life of a domain and returns clean / topic-shift / spam-period verdicts.
 - **Work the list like a spreadsheet.** Free-range filters (DR, referring domains, Trust Flow), collapsible groups ("buy in October", "defer"), bulk actions over the whole filter rather than the visible page, a watch loop that re-checks taken domains and alerts once when one frees, and export to CSV under the current filter or as a plain domain list.
 - **Agent surface:** the same flows are exposed as MCP tools (`drops_list`, `drops_ingest`, `drops_check`, `drops_enrich_*`, `drops_groups`, `drops_watch`, …).
+
+<br/>
+
+
+### SERP Monitor — Whole-SERP Watching (`/serp-monitor`)
+
+A rank tracker tells you where *you* stand; the SERP Monitor tells you what the *whole market* did. Every check snapshots the **entire top-100** for each keyword of a project — one market = engine · country · language · device plus a keyword set — and diffs snapshots **by host**: who entered the top-100, who dropped out, who moved, with a noise threshold that grows with position so the tail does not shout.
+
+- **Storms, scored against your own baseline.** Each run's volatility is a robust z-score against the project's *own* history — flagging "storms" (z ≥ 3 plus ≥ 30% of keywords above their usual churn; the first 7 runs are calibration, not a clean bill). A storm sends one Telegram/Slack notification: the five most shaken keywords, the five hosts with the most entrances and exits — with a test button in project settings.
+- **Three tabs.** *Market* — leaders, host-level changes with positions, volatility, your own domains highlighted; click a keyword for its full SERP history and a side-by-side diff of any two snapshots. *Storms* — per-run volatility and the verdict. *Domains* — the newcomer catalogue: who holds how many keywords, new / young (RDAP/WHOIS registration age) / rising / falling / bounced tags, DR and referring-domain counts, CSV export.
+- **Honest failures.** Every snapshot is `ok` / `partial` / `failed`; a failed one (burned proxy, captcha) is recorded **as a failure with its reason and never enters a comparison** — one dead proxy cannot manufacture a fake mass exit. Partial answers are compared only down to the depth they actually returned.
+- **Runs on your own A-Parser.** The SERP source in v1 is your A-Parser (`SE::Google`, Google desktop), self-hosted and billed only in proxy traffic — a 944-keyword check costs the same as a 9-keyword one. A-Parser thereby becomes a SERP provider of the app in its own right, and a fallback SERP source for the Rank Tracker. Runs resume where a restart interrupted them.
+- **Agent surface:** `serpmon_projects`, `serpmon_market`, `serpmon_domains`, `serpmon_keyword_history`, `serpmon_run`, `serpmon_storms` MCP tools mirror the UI. See [docs/SERP-MONITOR.md](docs/SERP-MONITOR.md) for load sizing, snapshot statuses and retention. Requires `npx prisma db push` on deploy (the `Serp*` tables).
 
 <br/>
 

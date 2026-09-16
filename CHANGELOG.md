@@ -3,7 +3,7 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
-## [Unreleased]
+## [1.6.3] — 2026-09-16
 
 ### Fixed
 
@@ -39,11 +39,12 @@ All notable changes to OpenGSC. Dates are release dates; the version shown in
   (robust z ≥ 3 plus ≥ 30% of keywords above their own usual churn; the first 7 runs are
   calibration, not a clean bill). A storm sends one Telegram/Slack notification — the five most
   shaken keywords, the five hosts with the most entrances and exits — with a test button in the
-  project settings; a domain catalogue tracks first-seen dates, registration age (RDAP/WHOIS)
-  and DR, with new/young/rising/falling/bounced tags and CSV export. The SERP source is the
+  project settings; a domain catalogue tracks first-seen dates, registration age (RDAP/WHOIS),
+  DR and referring-domain counts (through the instance's own SEO-metrics key), with
+  new/young/rising/falling/bounced tags and CSV export. The SERP source is the
   instance's own A-Parser (`SE::Google`): self-hosted, no per-request cost, which makes
-  A-Parser a SERP provider of the app in its own right — and a provider in the Rank Tracker
-  too, if the T1 commit is taken. Failed snapshots (burned proxy, captcha) are recorded as
+  A-Parser a SERP provider of the app in its own right — and a fallback SERP source for the
+  Rank Tracker as well. Failed snapshots (burned proxy, captcha) are recorded as
   failures and never enter a comparison, so they cannot fake mass exits. Requires
   `npx prisma db push` on deploy: the `Serp*` tables do not exist before it, and the UI says so
   instead of erroring.
