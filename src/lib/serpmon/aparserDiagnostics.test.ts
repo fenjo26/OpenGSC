@@ -56,3 +56,22 @@ test("describeAparserRow shows shape and log tail, never content", () => {
   assert.equal(describeAparserRow(null, undefined), "results[0]: absent");
   assert.ok(describeAparserRow({ k: 1 }, Array(50).fill("x".repeat(100)), 100).length <= 101);
 });
+
+test("live captcha answer (A-Parser 1.2.3628) is filed as blocked, not as a parser failure", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { mapAparserSerp, aparserSerpOptions } = await import("../seo/aparserSerp");
+  const row = JSON.parse(readFileSync(new URL("./__fixtures__/aparser-serp-captcha-live.json", import.meta.url), "utf8"));
+  const m = mapAparserSerp(row, 100);
+  assert.equal(m.problem, "aparser_blocked_or_empty");
+  assert.deepEqual(m.results, []);
+  const ids = aparserSerpOptions({ depth: 100, gl: "gr", hl: "el" }).map(o => `${o.id}=${o.value}`);
+  assert.deepEqual(ids, ["pagecount=10", "gl=gr", "hl=el"]);
+});
+
+test("a failed row without captchas stays a parser failure; totalcount 'none' is unknown", async () => {
+  const { mapAparserSerp } = await import("../seo/aparserSerp");
+  assert.equal(mapAparserSerp({ success: 0, serp: [] }, 10).problem, "aparser_parser_failed");
+  const ok = mapAparserSerp({ success: 1, totalcount: "none", serp: [{ link: "https://a.gr/", anchor: "A" }] }, 10);
+  assert.equal(ok.totalCount, "");
+  assert.equal(ok.results.length, 1);
+});

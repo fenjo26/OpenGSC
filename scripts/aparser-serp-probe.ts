@@ -2,7 +2,7 @@
 // snapshot docs/tasks/serp-monitor/T1-aparser-serp.md asks for. It exists for ONE decision:
 // the internal option ids of SE::Google are not in the documentation (the docs name settings in
 // prose, `options` overrides address them by id), and step 2 below is the ground truth that
-// lets APARSER_SERP_OPTION_IDS in src/lib/seo/aparserSerp.ts drop its UNVERIFIED marks.
+// is what APARSER_SERP_OPTION_IDS in src/lib/seo/aparserSerp.ts was verified against.
 //
 //   OPENGSC_APARSER_BASE_URL=… OPENGSC_APARSER_PASSWORD=… \
 //     npx tsx scripts/aparser-serp-probe.ts "casino online" ar es 100
@@ -139,7 +139,7 @@ async function main(): Promise<void> {
   const mapped = mapAparserSerp(row, depth);
   console.log(`   mapped: ${mapped.results.length} results, totalCount="${mapped.totalCount}", features=[${mapped.features.join(", ")}], problem=${mapped.problem ?? "null"}`);
   console.log("\nDone. If every id above reads 'present in preset' and serp rows is 90–100, "
-    + "drop the UNVERIFIED marks in src/lib/seo/aparserSerp.ts.");
+    + "the ids in src/lib/seo/aparserSerp.ts match this build.");
 }
 
 void main().catch((e) => {
