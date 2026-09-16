@@ -22,23 +22,27 @@ import { prisma } from "@/lib/prisma";
 
 const PROBE_TIMEOUT_MS = 180_000;
 
-interface ProbeCreds { baseUrl: string; password: string; configPreset?: string }
+interface ProbeCreds { baseUrl: string; password: string; configPreset?: string; source?: string }
 
 async function loadCreds(): Promise<ProbeCreds | null> {
-  // The env pair alone is enough on its own — no database needs to be reachable for it.
+  // The same resolution the app uses (env and settings passwords probed, first accepted wins),
+  // so this script cannot disagree with the SERP Monitor about which password is live. It used
+  // to take the env pair blindly, which reproduced exactly the stale-env "Auth failed" it was
+  // meant to diagnose. User has no createdAt, so "the owner" is the first id — single-user
+  // deployment is the norm.
+  const owner = await prisma.user.findFirst({ orderBy: { id: "asc" }, select: { id: true } }).catch(() => null);
+  if (owner) {
+    const creds = await getAparserServerCreds(owner.id);
+    if (creds) return creds;
+  }
+  // No database reachable: the env pair alone.
   const envUrl = (process.env.OPENGSC_APARSER_BASE_URL || "").trim();
   const envPass = envPassword();
   if (envUrl && envPass) {
     const norm = normaliseBaseUrl(envUrl);
-    if (!("problem" in norm)) return { baseUrl: norm.url, password: envPass };
+    if (!("problem" in norm)) return { baseUrl: norm.url, password: envPass, source: "env" };
   }
-  // Otherwise the same resolution the app uses: settings of the owner (env still outranks the
-  // settings URL inside it, and a settings password can complete an env URL). User has no
-  // createdAt, so "the owner" is the first id — single-user deployment is the norm; on a
-  // multi-user one the env vars are the unambiguous way to run this.
-  const owner = await prisma.user.findFirst({ orderBy: { id: "asc" }, select: { id: true } });
-  if (!owner) return null;
-  return getAparserServerCreds(owner.id);
+  return null;
 }
 
 function printRow(r: { anchor: unknown; link: unknown }, i: number): void {
@@ -64,7 +68,10 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   const host = normaliseBaseUrl(creds.baseUrl);
-  console.log(`A-Parser: ${"url" in host ? host.url : creds.baseUrl}`);
+  console.log(`A-Parser: ${"url" in host ? host.url : creds.baseUrl}  [creds: ${creds.source ?? "?"}]`);
+  if (process.env.OPENGSC_APARSER_PASSWORD && creds.source === "settings") {
+    console.warn("   ! OPENGSC_APARSER_PASSWORD in .env is rejected by A-Parser — the password saved in Settings works. Fix or remove the env var.");
+  }
   console.log(`Query: "${query}"  gl=${gl}  hl=${hl}  depth=${depth}\n`);
 
   // ── 1. Does this instance even have the parser? ───────────────────────────
