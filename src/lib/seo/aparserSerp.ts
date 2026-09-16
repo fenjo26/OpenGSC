@@ -154,3 +154,49 @@ export function mapAparserSerp(row: unknown, want: number): {
     problem: null,
   };
 }
+
+/**
+ * What an unusable row actually contained, for the stored error detail.
+ *
+ * "Empty answer" has several causes that look identical from the outside: a captcha after all
+ * retries, a proxy pool that refused every connection, a result field under a different name on
+ * this A-Parser build, or a country/language override the parser ignored. The row's own keys and
+ * the tail of A-Parser's log tell them apart, so they travel with the error instead of being
+ * thrown away. Never includes page content — only shapes, counts and log lines, cut to `max`.
+ */
+export function describeAparserRow(row: unknown, logs: unknown, max = 280): string {
+  const parts: string[] = [];
+  if (!row || typeof row !== "object") {
+    parts.push("results[0]: absent");
+  } else {
+    const r = row as Record<string, unknown>;
+    const keys = Object.keys(r).slice(0, 20).map((k) => {
+      const v = r[k];
+      if (Array.isArray(v)) return `${k}[${v.length}]`;
+      if (v && typeof v === "object") return `${k}{}`;
+      if (k === "success" || k === "totalcount" || k === "pagecount") return `${k}=${asString(v).slice(0, 20)}`;
+      return k;
+    });
+    parts.push(`keys: ${keys.join(", ") || "none"}`);
+  }
+  const lines = logLines(logs).slice(-4);
+  if (lines.length) parts.push(`log: ${lines.join(" | ")}`);
+  const text = parts.join(" · ");
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
+/** A-Parser log entries arrive as strings or as [level, message, …] tuples depending on build. */
+function logLines(logs: unknown): string[] {
+  if (!Array.isArray(logs)) return [];
+  const out: string[] = [];
+  for (const entry of logs) {
+    const text = Array.isArray(entry)
+      ? entry.filter((x) => typeof x === "string" || typeof x === "number").map(String).join(" ")
+      : typeof entry === "string" ? entry
+      : entry && typeof entry === "object" ? asString((entry as Record<string, unknown>).message ?? (entry as Record<string, unknown>).msg ?? JSON.stringify(entry))
+      : "";
+    const clean = text.replace(/\s+/g, " ").trim();
+    if (clean) out.push(clean.slice(0, 120));
+  }
+  return out;
+}

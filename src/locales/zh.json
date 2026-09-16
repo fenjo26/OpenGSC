@@ -3658,6 +3658,7 @@
   "aparserUrlPh": "http://192.168.1.50:9091",
   "aparserPassPh": "API 密码",
   "aparserPresetPh": "线程配置（default）",
+  "aparserConfigPresetMissing": "A-Parser 中不存在线程配置“{name}”。请使用 A-Parser → 设置 → 线程设置 中的名称，或留空以使用 default。",
   "aparserTest": "检查连接",
   "aparserTestOk": "已连接",
   "seoLogBodiesTitle": "服务商调用日志",

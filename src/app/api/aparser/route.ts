@@ -3,7 +3,8 @@ import { workspaceUserId } from "@/lib/team/workspace";
 import { getUserSettings } from "@/lib/mcp/shared";
 import {
   aparserAddTask, aparserInfo, aparserOneRequest, aparserParserPreset, aparserPing, aparserProxies,
-  aparserTaskResults, aparserTaskState,
+  aparserTaskResults, aparserTaskState, aparserCall, isMissingConfigPreset,
+  APARSER_DEFAULT_CONFIG, APARSER_PROBE_TIMEOUT_MS,
   envBaseUrl, envPassword, normaliseBaseUrl, resolveBaseUrl, setAparserConcurrency,
   type AparserCreds, type AparserOption,
 } from "@/lib/seo/aparser";
@@ -155,6 +156,21 @@ export async function POST(req: Request) {
     const pong = await aparserPing(creds);
     if (!pong.data) return NextResponse.json({ error: (pong.error ?? "aparser_no_answer") + credTag, fromEnv: resolved.fromEnv }, { status: 502 });
     const info = await aparserInfo(creds);
+    // ping/info take no thread config, so a name that A-Parser does not have used to pass this
+    // check and then fail every real request with "configPreset 'x' not exists". Ask A-Parser
+    // about the name with a request for a parser that cannot exist: only a config error is
+    // treated as an answer — if this build checks the parser name first, the probe says nothing
+    // and the runtime fallback to "default" (lib/seo/aparser.ts) still covers the run.
+    const cfg = String(creds.configPreset ?? "").trim();
+    if (cfg && cfg !== APARSER_DEFAULT_CONFIG) {
+      const probe = await aparserCall(creds, "oneRequest", {
+        query: "opengsc-config-check", parser: "OpenGSC::ConfigCheck", configPreset: cfg,
+        preset: "default", rawResults: 1, doLog: 0,
+      }, APARSER_PROBE_TIMEOUT_MS);
+      if (!probe.data && isMissingConfigPreset(probe.error)) {
+        return NextResponse.json({ error: "aparser_config_preset_missing", configPreset: cfg }, { status: 400 });
+      }
+    }
     return NextResponse.json({
       ok: true,
       fromEnv: resolved.fromEnv,

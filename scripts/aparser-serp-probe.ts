@@ -17,7 +17,7 @@ import {
   aparserInfo, aparserOneRequest, aparserParserPreset, envPassword, normaliseBaseUrl,
 } from "@/lib/seo/aparser";
 import { getAparserServerCreds } from "@/lib/seo/aparserServerCreds";
-import { APARSER_SERP_OPTION_IDS, APARSER_SERP_PARSERS, aparserSerpOptions, mapAparserSerp } from "@/lib/seo/aparserSerp";
+import { APARSER_SERP_OPTION_IDS, APARSER_SERP_PARSERS, aparserSerpOptions, describeAparserRow, mapAparserSerp } from "@/lib/seo/aparserSerp";
 import { prisma } from "@/lib/prisma";
 
 const PROBE_TIMEOUT_MS = 180_000;
@@ -101,7 +101,7 @@ async function main(): Promise<void> {
   const options = aparserSerpOptions({ depth, gl, hl });
   console.log(`\n3. oneRequest with options ${JSON.stringify(options)}`);
   const started = Date.now();
-  const r = await aparserOneRequest(creds, parser, query, options, { preset: presetName, timeoutMs: PROBE_TIMEOUT_MS });
+  const r = await aparserOneRequest(creds, parser, query, options, { preset: presetName, timeoutMs: PROBE_TIMEOUT_MS, doLog: true });
   const ms = Date.now() - started;
   if (!r.data) {
     console.error(`oneRequest failed after ${ms} ms: ${r.error ?? "no answer"}`);
@@ -109,6 +109,10 @@ async function main(): Promise<void> {
   }
   const rows = Array.isArray(r.data.results) ? r.data.results : [];
   const row = rows[0] ?? null;
+  // The raw shape, trimmed: when the mapping disagrees with this build, this is the evidence.
+  console.log(`   results is ${Array.isArray(r.data.results) ? `an array of ${rows.length}` : typeof r.data.results}`);
+  console.log(`   raw (first 1500 chars): ${JSON.stringify(Array.isArray(r.data.results) ? row : r.data.results)?.slice(0, 1500)}`);
+  console.log(`   diagnosis: ${describeAparserRow(Array.isArray(r.data.results) ? row : r.data.results, r.data.logs, 2000)}`);
   console.log(`   request took ${(ms / 1000).toFixed(1)} s, results[0]: ${row ? "present" : "ABSENT"}`);
   if (!row || typeof row !== "object") {
     console.error("   → no structured row. rawResults was 1; a missing results[0] means the call failed.");

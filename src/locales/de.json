@@ -3658,6 +3658,7 @@
   "aparserUrlPh": "http://192.168.1.50:9091",
   "aparserPassPh": "API-Passwort",
   "aparserPresetPh": "Thread-Konfiguration (default)",
+  "aparserConfigPresetMissing": "Die Thread-Konfiguration „{name}“ existiert in A-Parser nicht. Nimm einen Namen aus A-Parser → Einstellungen → Thread-Einstellungen oder lass das Feld leer (default).",
   "aparserTest": "Verbindung prüfen",
   "aparserTestOk": "Verbunden",
   "seoLogBodiesTitle": "Protokoll der Anbieteraufrufe",

@@ -3658,6 +3658,7 @@
   "aparserUrlPh": "http://192.168.1.50:9091",
   "aparserPassPh": "Contraseña de la API",
   "aparserPresetPh": "Configuración de hilos (default)",
+  "aparserConfigPresetMissing": "La configuración de hilos «{name}» no existe en A-Parser. Usa un nombre de A-Parser → Ajustes → Ajustes de hilos o deja el campo vacío (default).",
   "aparserTest": "Comprobar conexión",
   "aparserTestOk": "Conectado",
   "seoLogBodiesTitle": "Registro de llamadas a proveedores",
