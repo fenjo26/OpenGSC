@@ -17,7 +17,6 @@
 //   matchtype  "domain" (default, exact host) | "tld" (registrable domain) | "url"
 // scripts/aparser-position-probe.ts prints the live preset and raw rows for everything else.
 
-import { apexOf } from "@/lib/drops/registries";
 import type { AparserOption } from "./aparser";
 import { captchaShows, describeAparserRow, logLines } from "./aparserSerp";
 
@@ -63,20 +62,22 @@ function cleanHost(host: string): string {
 }
 
 /**
- * How to ask A-Parser so that its answer means what `matchesSite` means: the host itself or any
- * subdomain of it, `www.` ignored.
+ * How to ask A-Parser so that its answer means "this host (www. ignored)": exact `domain` mode
+ * over the host and its `www.` twin, in one bulk query — for every tracked host.
  *
- * - The tracked host IS a registrable name (`site.gr`): `tld` mode matches every host under that
- *   name — exactly `matchesSite`.
- * - It is a subdomain (`blog.site.gr`), or a name our suffix table does not know as registrable
- *   (`x.eu.com` resolves to the apex `eu.com`): `tld` would also count the parent site, so exact
- *   `domain` mode is used, asking for the host and its `www.` twin in one bulk query. Deeper
- *   subdomains of such a host are not matched — the one known difference, and a miss rather than
- *   a false hit.
+ * The documented `tld` mode ("every host under a registrable name" — what `matchesSite` means
+ * for an apex) is what the plan used for registrable names until the live probe of 2026-09-17
+ * disproved it on 1.2.3643: with the site sitting at #2 of a page the parser itself grabbed
+ * (Trustpilot #1 right above it, AI overview included), `tld` answered 0 while the same keyword
+ * asked as `domain` over the same pages answered 2. A matcher that misses its own needle is not
+ * a mode to bet the tracker on.
+ *
+ * The cost of exact mode: hosts UNDER the tracked one (a tracked apex ranking on `blog.site.gr`)
+ * are not counted — a miss, never a false hit, and `hostMatches` still rejects anything the
+ * parser credits to the wrong host.
  */
 export function positionMatchPlan(siteHost: string): PositionMatchPlan {
   const host = cleanHost(siteHost);
-  if (host && apexOf(host) === host) return { domains: [host], matchType: "tld" };
   return { domains: [host, `www.${host}`], matchType: "domain" };
 }
 

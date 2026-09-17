@@ -26,15 +26,19 @@ costs all ten.
 
 ## What counts as your site
 
-| Tracked site          | Query sent                        | `matchtype` |
-|-----------------------|-----------------------------------|-------------|
-| `site.gr` (registrable) | `site.gr <keyword>`             | `tld`: any host under site.gr |
-| `blog.site.gr`, `x.eu.com` | `blog.site.gr,www.blog.site.gr <keyword>` | `domain`: exact hosts, best of the two |
+Every tracked host is asked as exact domains — itself plus its `www.` twin, best position wins:
 
-This matches the tracker's own rule (the host or any subdomain, `www.` ignored), with one
-difference: deeper subdomains of a tracked *subdomain* are not counted. If A-Parser reports a
-position whose link is on another host, the check is stored as an error
-(`aparser_position_mismatch`), not as a position.
+| Tracked site | Query sent | `matchtype` |
+|--------------|------------|-------------|
+| `site.gr`    | `site.gr,www.site.gr <keyword>` | `domain` |
+| `blog.site.gr` | `blog.site.gr,www.blog.site.gr <keyword>` | `domain` |
+
+The documented `tld` mode (any host under a registrable name) is deliberately not used: on
+A-Parser 1.2.3643 it was probed missing a site that sat at #2 of a page the parser itself
+grabbed, while the same keyword in `domain` mode answered 2. The cost of exact mode: hosts
+UNDER the tracked name are not counted (a tracked apex ranking on `blog.site.gr` reads as
+"not found" — a miss, never a false hit). If A-Parser reports a position whose link is on
+another host, the check is stored as an error (`aparser_position_mismatch`), not as a position.
 
 ## Errors, retries, fallback
 

@@ -9,11 +9,12 @@ const site = { siteHost: "transfer-thessaloniki.gr", depth: 100 };
 const stats = (captcha = 0) => ({ info: { stats: { reCaptchaShows: captcha, proxiesUsed: 1, retries: 0 } } });
 
 test("match plan: a registrable name uses tld mode, a subdomain uses exact domain + www twin", () => {
-  assert.deepEqual(positionMatchPlan("https://www.transfer-thessaloniki.gr/"), { domains: ["transfer-thessaloniki.gr"], matchType: "tld" });
-  assert.deepEqual(positionMatchPlan("sc-domain:example.co.uk"), { domains: ["example.co.uk"], matchType: "tld" });
+  // Every tracked host asks as exact domains: itself + the www twin. The documented tld mode
+  // proved broken on 1.2.3643 (missed its own needle at #2 of a page the parser grabbed).
+  assert.deepEqual(positionMatchPlan("https://www.transfer-thessaloniki.gr/"), { domains: ["transfer-thessaloniki.gr", "www.transfer-thessaloniki.gr"], matchType: "domain" });
+  assert.deepEqual(positionMatchPlan("sc-domain:example.co.uk"), { domains: ["example.co.uk", "www.example.co.uk"], matchType: "domain" });
   assert.deepEqual(positionMatchPlan("blog.example.com"), { domains: ["blog.example.com", "www.blog.example.com"], matchType: "domain" });
-  // eu.com is not in the suffix table: apexOf says "eu.com", so tld mode would match every *.eu.com.
-  assert.equal(positionMatchPlan("turbowins.eu.com").matchType, "domain");
+  assert.deepEqual(positionMatchPlan("turbowins.eu.com").matchType, "domain");
 });
 
 test("query puts the domain list first and normalises the keyword", () => {

@@ -9,7 +9,7 @@ import {
 } from "./aparserPosition";
 import { APARSER_SERP_PARSERS } from "./aparserSerp";
 
-const POSITION_TIMEOUT_MS = 180_000; // ten pages on slow proxies, same budget as SE::Google
+const POSITION_TIMEOUT_MS = 240_000; // ten pages, plus the time a captcha solution can add
 const PRESET_TTL_MS = 10 * 60_000;
 const PRESET = "default";
 
