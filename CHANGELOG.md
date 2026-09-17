@@ -3,6 +3,47 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
+## [1.7.0] — 2026-09-17
+
+### Added
+
+- **Rank Tracker can run on your own A-Parser.** Positions are checked with `SE::Google::Position`,
+  which stops at the results page where the site is found — a keyword in the top 10 costs one page,
+  only a keyword below the requested depth costs all ten. The tracker picks the query so that the
+  parser's idea of "your site" equals its own: a registrable domain is asked in `tld` mode (the
+  host and every subdomain, `www.` ignored), a tracked subdomain is asked together with its `www.`
+  twin in exact mode. A link the parser credits you with but that sits on another host is stored as
+  an error, never as a position, and a "not found" is trusted only when the parse really went the
+  full depth. Pick it in Settings → SEO Tools → Rank Tracker provider; `docs/RANK-TRACKER-APARSER.md`
+  and `scripts/aparser-position-probe.ts` let you verify your instance's preset and raw answers
+  before switching. The schema gains a nullable `RankCheck.provider` column — the updater's
+  `prisma db push` adds it.
+- **One retry and a fallback provider for every position check.** A transient failure (a captcha'd
+  proxy, a 503, a timeout, ScrapingRobot's "try again later") is retried once after 10 seconds on
+  the same provider, and anything still failing goes to an optional fallback provider of your
+  choice. This applies to every provider, not just A-Parser — on one instance the last month held
+  ~250 ScrapingRobot failures that nobody ever retried. Each stored check records which provider
+  answered it; hover a position to see. Rank Tracker's provider chip shows the fallback, and the
+  batch size drops to 5 on A-Parser, whose checks take longer.
+- **SERP Monitor: per-project A-Parser preset and a retry pass.** Each project can name the
+  SE::Google preset to run under, and transient A-Parser failures get a second pass whose progress
+  is visible while the run is going.
+
+### Fixed
+
+- **"Check all" no longer multiplies paid checks.** The server counted every keyword as unchecked
+  on every call, so a forced check-all ran the client's full 30 rounds — on 79 keywords up to 600
+  paid checks instead of 79. A forced run now pins the keyword set to the moment the loop started,
+  and each keyword is checked once.
+- **SERP Monitor reads A-Parser's answers more defensively.** An answer whose link contradicts its
+  title is rejected instead of stored, each SE::Google request gets its own JS-check browser (a
+  shared one caused "redirect error: mismatch"), the flat result list A-Parser 1.2.3640 actually
+  returns is mapped correctly, mis-resolved pages are retried, and batch tasks from the console use
+  the documented `addTask` shape with server-side result download.
+- **The SERP Monitor market table tells the truth about exits.** Hosts that left the compared depth
+  are named rather than folded into the crowd, platform domains stay out of the leaders, and one
+  chip format carries real moves across the whole compared depth.
+
 ## [1.6.3] — 2026-09-16
 
 ### Fixed
