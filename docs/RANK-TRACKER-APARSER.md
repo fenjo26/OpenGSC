@@ -38,6 +38,14 @@ position whose link is on another host, the check is stored as an error
 
 ## Errors, retries, fallback
 
+- **Captcha solving is inherited from SE::Google.** The solvers a deployment configures live in
+  util-parser presets SE::Google names (here: `Util::ReCaptcha2` preset `captcha`), while the
+  Position preset usually points at the bare `default`, which solves nothing — every cold-session
+  parse then exhausts its retries and reads as a burnt proxy. The tracker reads SE::Google's own
+  presets (`my`, then `default`), keeps the names whose util preset really exists on the instance,
+  and sends them along with every Position request. No Position-specific setup is needed; if you
+  change the solving service for SE::Google, the tracker follows within ten minutes.
+
 - `0` from the parser means "not found": it is stored as not found only if the parse went
   through all ten pages. If A-Parser logged `No more pages` and Google's total does not explain it,
   the check is `aparser_partial_serp` (an error), because a "not in the top 100" from one page

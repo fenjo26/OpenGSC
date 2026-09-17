@@ -99,6 +99,7 @@ test("addTask sends the documented task shape (resultsSaveTo is the enum 'file')
     assert.equal(r.data, 7);
     assert.equal(body.resultsSaveTo, "file");
     assert.match(String(body.resultsFileName), /^OpenGSC-SE-Google-\d+\.txt$/);
+    assert.equal(body.keepUnique, 1);
     assert.equal(body.queriesFrom, "text");
     assert.deepEqual(body.queryFormat, ["$query"]);
     assert.equal(body.resultsFormat, "$p1.preset");

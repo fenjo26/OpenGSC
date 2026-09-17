@@ -121,6 +121,33 @@ export function filterOptionsByPreset(
   return { options: kept, dropped };
 }
 
+/** The util-preset options where a deployment's captcha solvers live, shared with SE::Google. */
+export const APARSER_POSITION_CAPTCHA_IDS: readonly { id: string; parser: string }[] = [
+  { id: "Util_ReCaptcha2_preset", parser: "Util::ReCaptcha2" },
+  { id: "Util_AntiGate_preset", parser: "Util::AntiGate" },
+];
+
+/**
+ * Which solving presets SE::Google itself names, as Position override candidates. The solvers
+ * live in util-parser presets SE::Google points at (one deployment configures its service in
+ * Util::ReCaptcha2 preset "captcha", another in something else), while Position's own preset
+ * usually points at the bare "default", which solves nothing — every cold-session parse then
+ * dies in "All retries exceed" and reads as a burnt proxy. "default" is skipped: re-sending
+ * what the preset already says changes nothing. The caller must keep only candidates whose
+ * util preset really exists on the instance — an override naming nothing would swap a working
+ * solver for a void.
+ */
+export function captchaPresetCandidates(
+  seGoogle: Record<string, unknown>,
+): { id: string; parser: string; preset: string }[] {
+  const out: { id: string; parser: string; preset: string }[] = [];
+  for (const { id, parser } of APARSER_POSITION_CAPTCHA_IDS) {
+    const preset = str(seGoogle[id]).trim();
+    if (preset && preset !== "default") out.push({ id, parser, preset });
+  }
+  return out;
+}
+
 export interface PositionMapped {
   /** null = not found within the parsed depth (only when `problem` is null). */
   position: number | null;

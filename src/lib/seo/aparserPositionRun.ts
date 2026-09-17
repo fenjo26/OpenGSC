@@ -2,17 +2,19 @@
 // Mapping rules live in aparserPosition.ts (pure, tested); this owns the call, the preset
 // introspection that keeps unknown override ids out of the request, and nothing else.
 
-import { aparserOneRequest, aparserParserPreset, type AparserCreds } from "./aparser";
+import { aparserOneRequest, aparserParserPreset, type AparserCreds, type AparserOption } from "./aparser";
 import {
   APARSER_POSITION_MAX_DEPTH, APARSER_POSITION_PARSER, aparserPositionOptions, aparserPositionQuery,
-  filterOptionsByPreset, mapAparserPosition, positionMatchPlan, type PositionMapped,
+  captchaPresetCandidates, filterOptionsByPreset, mapAparserPosition, positionMatchPlan, type PositionMapped,
 } from "./aparserPosition";
+import { APARSER_SERP_PARSERS } from "./aparserSerp";
 
 const POSITION_TIMEOUT_MS = 180_000; // ten pages on slow proxies, same budget as SE::Google
 const PRESET_TTL_MS = 10 * 60_000;
 const PRESET = "default";
 
 let presetCache: { key: string; at: number; keys: Set<string> | null } | null = null;
+let captchaCache: { key: string; at: number; options: AparserOption[] } | null = null;
 const warnedDropped = new Set<string>();
 
 /** Option ids of the live `default` Position preset; null when it cannot be read. */
@@ -27,6 +29,37 @@ async function presetKeys(creds: AparserCreds): Promise<Set<string> | null> {
   return keys;
 }
 
+/**
+ * SE::Google's own captcha-solving presets, sent as Position overrides.
+ *
+ * The solvers a deployment configures live in util presets SE::Google names — on the instance
+ * this was built against, Util::ReCaptcha2 preset "captcha" holds the solving service and the
+ * working SE::Google preset ("my") points at it, while Position's preset points at the bare
+ * "default", which solves nothing: every cold-session parse exhausted its retries on captchas
+ * and read as a burnt proxy (live-probed 2026-09-17). Inheriting the recipe costs a few cached
+ * introspection calls per ten minutes and needs no Position-specific setup. Candidates naming
+ * a util preset the instance does not have are dropped — that check runs per candidate, then
+ * the whole recipe is cached.
+ */
+async function captchaRecipe(creds: AparserCreds): Promise<AparserOption[]> {
+  const key = creds.baseUrl;
+  if (captchaCache && captchaCache.key === key && Date.now() - captchaCache.at < PRESET_TTL_MS) return captchaCache.options;
+  let se: Record<string, any> | null = null;
+  for (const preset of ["my", "default"]) {
+    const r = await aparserParserPreset(creds, APARSER_SERP_PARSERS.google, preset).catch(() => null);
+    if (r?.data && typeof r.data === "object") { se = r.data; break; }
+  }
+  const options: AparserOption[] = [];
+  if (se) {
+    for (const c of captchaPresetCandidates(se)) {
+      const u = await aparserParserPreset(creds, c.parser, c.preset).catch(() => null);
+      if (u?.data) options.push({ type: "override", id: c.id, value: c.preset });
+    }
+  }
+  captchaCache = { key, at: Date.now(), options };
+  return options;
+}
+
 export interface PositionCheck extends PositionMapped { depth: number }
 
 export async function aparserRankPosition(
@@ -35,8 +68,9 @@ export async function aparserRankPosition(
 ): Promise<PositionCheck> {
   const depth = Math.min(APARSER_POSITION_MAX_DEPTH, Math.max(10, q.depth ?? APARSER_POSITION_MAX_DEPTH));
   const plan = positionMatchPlan(q.siteHost);
-  const all = aparserPositionOptions({ depth, gl: q.gl, hl: q.hl, matchType: plan.matchType });
-  const { options, dropped } = filterOptionsByPreset(all, await presetKeys(creds));
+  const base = aparserPositionOptions({ depth, gl: q.gl, hl: q.hl, matchType: plan.matchType });
+  const [recipe, keys] = await Promise.all([captchaRecipe(creds), presetKeys(creds)]);
+  const { options, dropped } = filterOptionsByPreset([...base, ...recipe], keys);
   if (dropped.length) {
     const k = dropped.join(",");
     if (!warnedDropped.has(k)) {

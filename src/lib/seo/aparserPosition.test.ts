@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  APARSER_POSITION_OPTION_IDS, aparserPositionOptions, aparserPositionQuery, filterOptionsByPreset,
-  mapAparserPosition, positionMatchPlan,
+  APARSER_POSITION_OPTION_IDS, aparserPositionOptions, aparserPositionQuery, captchaPresetCandidates,
+  filterOptionsByPreset, mapAparserPosition, positionMatchPlan,
 } from "./aparserPosition";
 
 const site = { siteHost: "transfer-thessaloniki.gr", depth: 100 };
@@ -112,4 +112,20 @@ test("flat-triplet bulkcheck — the shape 1.2.3643 really returns (live probe 2
   // whose "none" top-level position fails the check rather than inventing an answer.
   const junk = mapAparserPosition({ success: 1, position: "none", bulkcheck: ["orbitra.link", 0] }, [], site);
   assert.equal(junk.problem, "aparser_blocked_or_empty");
+});
+
+test("captcha presets are inherited from SE::Google's own recipe — non-default only, existence checked by the caller", () => {
+  // The live shape: SE::Google "my" points ReCaptcha2 at the solver preset "captcha",
+  // AntiGate at the bare default → only ReCaptcha2 becomes a candidate.
+  const se = { Util_ReCaptcha2_preset: "captcha", Util_AntiGate_preset: "default" };
+  assert.deepEqual(captchaPresetCandidates(se), [
+    { id: "Util_ReCaptcha2_preset", parser: "Util::ReCaptcha2", preset: "captcha" },
+  ]);
+  assert.deepEqual(captchaPresetCandidates({}), []);
+  assert.deepEqual(captchaPresetCandidates({ Util_ReCaptcha2_preset: "  " }), []);
+  // Both solvers named → both candidates, in the stable id order.
+  assert.deepEqual(
+    captchaPresetCandidates({ Util_ReCaptcha2_preset: "svc", Util_AntiGate_preset: "ag" }).map(c => c.preset),
+    ["svc", "ag"],
+  );
 });

@@ -367,8 +367,11 @@ export async function aparserAddTask(creds: AparserCreds, task: AparserAddTask):
   if (!queries.length) return fail<number>("no_queries");
   // Field set and values as the A-Parser API reference prints them for addTask. `resultsSaveTo`
   // is an enum whose only value is "file" (the name goes to `resultsFileName`) — passing a path
-  // there fails validation with "must be one of [file]". `$p1.preset` is the task editor's own
-  // default: use parser 1's preset format, so a task returns what the console test shows.
+  // there fails validation with "must be one of [file]". `keepUnique` is required since
+  // 1.2.364x ("Task Conf Error: Required field \"keepUnique\" not set") even though the docs
+  // list it as optional; 1 deduplicates the query list, matching `uniqueQueries`. `$p1.preset`
+  // is the task editor's own default: use parser 1's preset format, so a task returns what the
+  // console test shows.
   const data = (configPreset: string): Record<string, unknown> => ({
     preset: task.preset || "default",
     configPreset,
@@ -377,6 +380,7 @@ export async function aparserAddTask(creds: AparserCreds, task: AparserAddTask):
     resultsSaveTo: "file",
     resultsFileName: `OpenGSC-${task.parser.replace(/::/g, "-")}-${Date.now()}.txt`,
     additionalFormats: [],
+    keepUnique: 1,
     resultsUnique: "no",
     queriesFrom: "text",
     queryFormat: ["$query"],
