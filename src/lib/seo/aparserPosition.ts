@@ -153,6 +153,22 @@ function readPosition(v: unknown): number | null {
 
 interface Hit { position: number | null; link: string }
 
+/**
+ * The flat-triplet shape `bulkcheck` really has on 1.2.3643: [domain, position, link] repeated —
+ * `["orbitra.link",0,"none","www.orbitra.link",0,"none"]`, confirmed by the live probe, not the
+ * array-of-objects the documentation implies. "none" is the parser's spelling of "no value".
+ */
+function hitsOfFlatTriplets(bulk: unknown[]): Hit[] | null {
+  if (!bulk.length || bulk.length % 3 !== 0) return null;
+  const hits: Hit[] = [];
+  for (let i = 0; i < bulk.length; i += 3) {
+    const [domain, position, link] = bulk.slice(i, i + 3);
+    if (typeof domain !== "string" || !domain.trim()) return null;
+    hits.push({ position: readPosition(position), link: str(link).trim() });
+  }
+  return hits;
+}
+
 /** Every domain's answer: `bulkcheck[]` when present, else the row itself. */
 function hitsOf(row: Record<string, unknown>): Hit[] {
   const bulk = row.bulkcheck;
@@ -161,6 +177,10 @@ function hitsOf(row: Record<string, unknown>): Hit[] {
       const o = b as Record<string, unknown>;
       return { position: readPosition(o.position), link: str(o.link ?? o.url).trim() };
     });
+  }
+  if (Array.isArray(bulk) && bulk.length) {
+    const flat = hitsOfFlatTriplets(bulk);
+    if (flat) return flat;
   }
   return [{ position: readPosition(row.position), link: str(row.link ?? row.url).trim() }];
 }

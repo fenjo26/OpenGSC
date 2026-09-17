@@ -87,3 +87,29 @@ test("bulk answer: best positive position wins; one unreadable domain fails the 
   const none = mapAparserPosition({ success: 1, bulkcheck: [{ position: 0 }, { position: "0" }] }, [], sub);
   assert.deepEqual(none, { position: null, url: null, problem: null });
 });
+
+test("flat-triplet bulkcheck — the shape 1.2.3643 really returns (live probe 2026-09-17)", () => {
+  const site = { siteHost: "orbitra.link", depth: 100 };
+  // Found: ["domain", position, link] per domain; best position wins, link host must match.
+  const found = mapAparserPosition({
+    success: 1,
+    bulkcheck: ["orbitra.link", 0, "none", "www.orbitra.link", 1, "https://orbitra.link/?p=1"],
+  }, [], site);
+  assert.deepEqual(found, { position: 1, url: "https://orbitra.link/?p=1", problem: null });
+  // All-zero after full depth = clean "not found", same as the objects shape.
+  const absent = mapAparserPosition({
+    success: 1, totalcount: "847",
+    bulkcheck: ["orbitra.link", 0, "none"],
+  }, [], site);
+  assert.deepEqual(absent, { position: null, url: null, problem: null });
+  // A "none" position cell in a triplet is unreadable → the check fails, nothing stored.
+  const none = mapAparserPosition({
+    success: 1,
+    bulkcheck: ["orbitra.link", "none", "none"],
+  }, [], site);
+  assert.equal(none.problem, "aparser_blocked_or_empty");
+  // Not a triplet array (wrong length / non-string domain) → falls back to the row itself,
+  // whose "none" top-level position fails the check rather than inventing an answer.
+  const junk = mapAparserPosition({ success: 1, position: "none", bulkcheck: ["orbitra.link", 0] }, [], site);
+  assert.equal(junk.problem, "aparser_blocked_or_empty");
+});
