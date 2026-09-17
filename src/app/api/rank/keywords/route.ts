@@ -50,7 +50,7 @@ export async function GET(req: Request) {
       checks: {
         orderBy: { checkedAt: "desc" },
         take: 30,
-        select: { checkedAt: true, position: true, error: true },
+        select: { checkedAt: true, position: true, error: true, provider: true },
       },
     },
   });
@@ -79,6 +79,7 @@ export async function GET(req: Request) {
 
   return NextResponse.json({
     provider: creds?.provider ?? null,
+    fallbackProvider: creds?.fallback?.provider ?? null,
     hasSerpKey: !!creds,
     keywords: keywords.map(k => ({
       id: k.id,
@@ -93,6 +94,7 @@ export async function GET(req: Request) {
       bestPosition: k.bestPosition,
       url: k.lastUrl,
       lastError: k.checks[0]?.error ?? null,
+      lastProvider: k.checks[0]?.provider ?? null,
       // sparkline: oldest → newest
       history: [...k.checks].reverse().map(c => ({ date: c.checkedAt, position: c.position })),
       gsc: gscMap[k.keyword.toLowerCase()] ?? null,

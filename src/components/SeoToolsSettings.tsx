@@ -608,6 +608,16 @@ const SERP_PROVIDER_LIST: [string, string][] = [["serper", "Serper.dev"], ["data
  */
 const RANK_UNSUPPORTED_PROVIDERS = new Set(["goanyapi"]);
 
+/**
+ * What Rank Tracker can run on: the SERP providers above minus the unsupported ones, plus the
+ * user's own A-Parser (SE::Google::Position). A-Parser is not in SERP_PROVIDER_LIST because the
+ * app-wide SERP choice feeds content tools that expect a metered provider's shape and speed.
+ */
+const RANK_PROVIDER_LIST: [string, string][] = [
+  ...SERP_PROVIDER_LIST.filter(([id]) => !RANK_UNSUPPORTED_PROVIDERS.has(id)),
+  ["aparser", "A-Parser"],
+];
+
 function providerPillStyle(isActive: boolean): React.CSSProperties {
   return {
     padding: "7px 14px", borderRadius: "8px", fontSize: "12px", fontWeight: 600, cursor: "pointer",
@@ -665,10 +675,18 @@ export default function SeoToolsSettings() {
   // generation/analysis (e.g. a free-tier provider for frequent daily position checks, a
   // pricier one for occasional content research). Empty string = inherit the active provider.
   const [rankActive, setRankActive] = useState("");
+  // Second provider for checks the first could not answer (captcha, 503, "try again later").
+  const [rankFallback, setRankFallback] = useState("");
   useEffect(() => {
     setActive(localStorage.getItem("seoSerpProvider") || "serper");
     setRankActive(localStorage.getItem("seoSerpProvider_rank") || "");
+    setRankFallback(localStorage.getItem("seoSerpProvider_rankFallback") || "");
   }, []);
+  const setRankFallbackProvider = (id: string) => {
+    setRankFallback(id);
+    if (id) localStorage.setItem("seoSerpProvider_rankFallback", id);
+    else localStorage.removeItem("seoSerpProvider_rankFallback");
+  };
   const setProvider = (id: string) => { setActive(id); localStorage.setItem("seoSerpProvider", id); };
   const setRankProvider = (id: string) => {
     setRankActive(id);
@@ -707,8 +725,21 @@ export default function SeoToolsSettings() {
           <button onClick={() => setRankProvider("")} style={providerPillStyle(rankActive === "")}>
             {t("seoSetRankProviderInherit")} ({activeName})
           </button>
-          {SERP_PROVIDER_LIST.filter(([id]) => !RANK_UNSUPPORTED_PROVIDERS.has(id)).map(([id, name]) => (
+          {RANK_PROVIDER_LIST.map(([id, name]) => (
             <button key={id} onClick={() => setRankProvider(id)} style={providerPillStyle(rankActive === id)}>{name}</button>
+          ))}
+        </div>
+        {rankActive === "aparser" && (
+          <p style={{ fontSize: "12px", color: "var(--color-text-secondary)", margin: "8px 0 0" }}>{t("seoSetRankAparserNote")}</p>
+        )}
+        <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.04em", margin: "14px 0 4px" }}>{t("seoSetRankFallback")}</div>
+        <p style={{ fontSize: "12px", color: "var(--color-text-secondary)", margin: "0 0 8px" }}>{t("seoSetRankFallbackDesc")}</p>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+          <button onClick={() => setRankFallbackProvider("")} style={providerPillStyle(rankFallback === "")}>
+            {t("seoSetRankFallbackNone")}
+          </button>
+          {RANK_PROVIDER_LIST.filter(([id]) => id !== (rankActive || active)).map(([id, name]) => (
+            <button key={id} onClick={() => setRankFallbackProvider(id)} style={providerPillStyle(rankFallback === id)}>{name}</button>
           ))}
         </div>
         {RANK_UNSUPPORTED_PROVIDERS.has(active) && (

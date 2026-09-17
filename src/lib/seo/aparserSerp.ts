@@ -98,7 +98,7 @@ const FEATURE_KEYS: readonly { keys: readonly string[]; id: string }[] = [
   { keys: ["news"], id: "news" },
 ];
 
-function captchaShows(row: unknown): number {
+export function captchaShows(row: unknown): number {
   const info = row && typeof row === "object" ? (row as Record<string, unknown>).info : null;
   const stats = info && typeof info === "object" ? (info as Record<string, unknown>).stats : null;
   const n = stats && typeof stats === "object" ? Number((stats as Record<string, unknown>).reCaptchaShows) : 0;
@@ -363,7 +363,7 @@ export function describeAparserRow(row: unknown, logs: unknown, max = 280): stri
  * the two lines every run ends with (the stats JSON dump and "Thread complete work") are dropped:
  * the stats are already summarised above them.
  */
-function logLines(logs: unknown): string[] {
+export function logLines(logs: unknown): string[] {
   if (!Array.isArray(logs)) return [];
   const out: string[] = [];
   for (const entry of logs) {

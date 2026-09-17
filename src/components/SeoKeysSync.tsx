@@ -13,7 +13,7 @@ import { useSession } from "next-auth/react";
 import { syncHistoryFromServer } from "@/lib/seo/history";
 
 const EXACT_KEYS = [
-  "aiProvider", "aiApiKey", "seoProvider", "seoModel", "seoSerpProvider", "seoSerpProvider_rank",
+  "aiProvider", "aiApiKey", "seoProvider", "seoModel", "seoSerpProvider", "seoSerpProvider_rank", "seoSerpProvider_rankFallback",
   "seoActivePolicy", "seoPolicies",
   "seoAutoFactcheck", "seoAutoImages", "seoHardRedact", "seoFactSources",
   "seoFactBearingOnly", "seoFactReuseCorpus", "seoMechanics", "seoMechanicsRepair",

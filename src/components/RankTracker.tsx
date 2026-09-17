@@ -22,7 +22,7 @@ type KwRow = {
   id: string; keyword: string; country: string; lang: string; device: string;
   createdAt: string; lastCheckedAt: string | null;
   position: number | null; prevPosition: number | null; bestPosition: number | null;
-  url: string | null; lastError: string | null;
+  url: string | null; lastError: string | null; lastProvider?: string | null;
   history: { date: string; position: number | null }[];
   gsc: { pos: number; clicks: number; impressions: number } | null;
 };
@@ -143,6 +143,7 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
 
   const [rows, setRows] = useState<KwRow[]>([]);
   const [provider, setProvider] = useState<string | null>(null);
+  const [fallbackProvider, setFallbackProvider] = useState<string | null>(null);
   const [hasKey, setHasKey] = useState(true);
   const [loading, setLoading] = useState(true);
   const [kwText, setKwText] = useState("");
@@ -183,6 +184,7 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
       if (Array.isArray(d.keywords)) {
         setRows(d.keywords);
         setProvider(d.provider ?? null);
+        setFallbackProvider(d.fallbackProvider ?? null);
         setHasKey(!!d.hasSerpKey);
       }
     } catch { /* ignore */ }
@@ -195,10 +197,13 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
 
   // Run /api/rank/check in a loop until nothing remains (20 keywords per call).
   const runChecks = useCallback(async (body: Record<string, unknown>) => {
+    // `before` pins a forced run to the keywords not yet checked since it started; without it the
+    // server counted every keyword as remaining on every call and the loop ran all 30 rounds.
+    const before = Date.now();
     for (let i = 0; i < 30; i++) {
       const r = await fetch("/api/rank/check", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ siteId: siteDbId, ...body }),
+        body: JSON.stringify({ siteId: siteDbId, before, ...body }),
       });
       const d = await r.json();
       if (!r.ok) { setProgress(d?.error === "no_serp_key" ? t("rankNoKey") : (d?.error || "error")); return; }
@@ -354,7 +359,8 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
               onMouseOver={e => { e.currentTarget.style.borderColor = "#3B82F6"; e.currentTarget.style.color = "#3B82F6"; }}
               onMouseOut={e => { e.currentTarget.style.borderColor = "var(--color-border)"; e.currentTarget.style.color = "var(--color-text-secondary)"; }}
             >
-              <Globe size={11} /> {provider}
+              <Globe size={11} /> {provider === "aparser" ? "A-Parser" : provider}
+              {fallbackProvider && <span style={{ opacity: 0.7 }}>→ {fallbackProvider === "aparser" ? "A-Parser" : fallbackProvider}</span>}
             </a>
           )}
           {!guest && <button onClick={checkAll} disabled={!!busy || !rows.length}
@@ -498,7 +504,7 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
                         <span style={{ color: "var(--color-text-secondary)", fontSize: "11px", padding: "2px 8px", borderRadius: "20px", background: "rgba(128,128,128,0.08)" }}>{t("rankNotFound")}</span>
                       ) : (
                         <>
-                          <span style={{ fontWeight: 700, fontSize: "15px", color: r.position <= 3 ? "#10B981" : r.position <= 10 ? "#3B82F6" : "var(--color-text-primary)" }}>{r.position}</span>
+                          <span title={r.lastProvider ? `${t("rankCheckedVia")} ${r.lastProvider === "aparser" ? "A-Parser" : r.lastProvider}` : undefined} style={{ fontWeight: 700, fontSize: "15px", color: r.position <= 3 ? "#10B981" : r.position <= 10 ? "#3B82F6" : "var(--color-text-primary)" }}>{r.position}</span>
                           <PosDelta position={r.position} prev={r.prevPosition} />
                         </>
                       )}

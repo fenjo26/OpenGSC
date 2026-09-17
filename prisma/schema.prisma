@@ -679,6 +679,7 @@ model RankCheck {
   url       String?
   depth     Int?     // how many results were scanned
   error     String?
+  provider  String?  // SERP provider whose answer was stored (fallback id when it stepped in)
 
   keyword TrackedKeyword @relation(fields: [keywordId], references: [id], onDelete: Cascade)
 
