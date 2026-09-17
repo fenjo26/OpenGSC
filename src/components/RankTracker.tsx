@@ -6,15 +6,16 @@
 // or on demand with "Check positions". Each keyword expands into a history chart
 // that overlays the scraped SERP position with the GSC average position.
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ResponsiveContainer, ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
-import { Plus, RefreshCw, Trash2, ChevronDown, ChevronUp, ChevronsUpDown, ExternalLink, Search, MapPin, Globe } from "lucide-react";
+import { Plus, RefreshCw, Trash2, Check, ChevronDown, ChevronUp, ChevronsUpDown, ExternalLink, Search, MapPin, Globe } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { withShare, isGuestView } from "@/lib/shareParam";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { COUNTRIES, LANGUAGES, defaultLanguageFor } from "@/lib/seo/regions";
+import { RANK_PROVIDER_LIST, rankProviderName } from "@/lib/seo/rankProviders";
 import KeywordWeightsBar from "@/components/KeywordWeightsBar";
 import { useKeywordWeights } from "@/lib/seo/useKeywordWeights";
 
@@ -144,6 +145,12 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
   const [rows, setRows] = useState<KwRow[]>([]);
   const [provider, setProvider] = useState<string | null>(null);
   const [fallbackProvider, setFallbackProvider] = useState<string | null>(null);
+  // The quick provider switch: localStorage holds the choice (SeoKeysSync's patched setItem
+  // mirrors it to the server ~600 ms later); `rankOverride` is re-read each time the menu opens
+  // so the checkmarks describe what is actually stored, not what the SSR pass guessed.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [rankOverride, setRankOverride] = useState<string>("");
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const [hasKey, setHasKey] = useState(true);
   const [loading, setLoading] = useState(true);
   const [kwText, setKwText] = useState("");
@@ -194,6 +201,42 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
     setLoading(true);
     load().finally(() => setLoading(false));
   }, [load]);
+
+  // Close the quick-switch menu on any click outside it or on Escape — but never on clicks
+  // inside (the SimpleDropdown lesson: its outside handler swallowed option clicks).
+  useEffect(() => {
+    if (!menuOpen) return;
+    setRankOverride(localStorage.getItem("seoSerpProvider_rank") ?? "");
+    const onDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMenuOpen(false); };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
+
+  // Write the same localStorage keys the settings card writes; the mirror push and the delayed
+  // reload (after the ~600 ms debounced push) make the server-resolved pair the chip's truth.
+  const pickRankProvider = (id: string) => {
+    if (id) localStorage.setItem("seoSerpProvider_rank", id);
+    else localStorage.removeItem("seoSerpProvider_rank");
+    setMenuOpen(false);
+    setRankOverride(id);
+    if (id) setProvider(id);
+    setTimeout(() => { load().catch(() => {}); }, 900);
+  };
+
+  const pickRankFallback = (id: string) => {
+    if (id) localStorage.setItem("seoSerpProvider_rankFallback", id);
+    else localStorage.removeItem("seoSerpProvider_rankFallback");
+    setMenuOpen(false);
+    setFallbackProvider(id || null);
+    setTimeout(() => { load().catch(() => {}); }, 900);
+  };
 
   // Run /api/rank/check in a loop until nothing remains (20 keywords per call).
   const runChecks = useCallback(async (body: Record<string, unknown>) => {
@@ -351,17 +394,52 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
           <p style={{ fontSize: "13px", color: "var(--color-text-secondary)", margin: 0 }}>{t("rankSubtitle")}</p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          {provider && (
-            <a
-              href="/settings?tab=seo-tools"
-              title={t("rankProviderSwitchHint")}
-              style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)", padding: "6px 12px", borderRadius: "999px", border: "1px solid var(--color-border)", background: "var(--color-card)", textDecoration: "none", cursor: "pointer" }}
-              onMouseOver={e => { e.currentTarget.style.borderColor = "#3B82F6"; e.currentTarget.style.color = "#3B82F6"; }}
-              onMouseOut={e => { e.currentTarget.style.borderColor = "var(--color-border)"; e.currentTarget.style.color = "var(--color-text-secondary)"; }}
-            >
-              <Globe size={11} /> {provider === "aparser" ? "A-Parser" : provider}
-              {fallbackProvider && <span style={{ opacity: 0.7 }}>→ {fallbackProvider === "aparser" ? "A-Parser" : fallbackProvider}</span>}
-            </a>
+          {provider && !guest && (
+            <div ref={menuRef} style={{ position: "relative" }}>
+              <button type="button" onClick={() => setMenuOpen(o => !o)} title={t("rankProviderSwitchHint")}
+                style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)", padding: "6px 12px", borderRadius: "999px", border: "1px solid var(--color-border)", background: "var(--color-card)", cursor: "pointer" }}>
+                <Globe size={11} /> {rankProviderName(provider)}
+                {fallbackProvider && <span style={{ opacity: 0.7 }}>→ {rankProviderName(fallbackProvider)}</span>}
+                <ChevronDown size={11} style={{ transform: menuOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+              </button>
+              {menuOpen && (
+                <div style={{ position: "absolute", right: 0, top: "calc(100% + 6px)", zIndex: 60, minWidth: 230, background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: "10px", boxShadow: "0 8px 24px rgba(0,0,0,0.14)", padding: "10px" }}>
+                  <div style={{ fontSize: "10px", fontWeight: 700, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.04em", margin: "0 0 6px" }}>{t("rankProviderMenu")}</div>
+                  {[["", t("rankProviderMenuInherit")], ...RANK_PROVIDER_LIST].map(([id, name]) => {
+                    const active = id ? rankOverride === id : rankOverride === "";
+                    return (
+                      <button key={id || "inherit"} type="button" onClick={() => pickRankProvider(id)}
+                        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", padding: "7px 9px", borderRadius: "7px", border: "none", background: active ? "rgba(59,130,246,0.1)" : "transparent", color: active ? "#3B82F6" : "var(--color-text-primary)", fontSize: "12px", fontWeight: active ? 700 : 500, cursor: "pointer", textAlign: "left" }}>
+                        <span>{name}</span>
+                        {active && <Check size={12} />}
+                      </button>
+                    );
+                  })}
+                  <div style={{ fontSize: "10px", fontWeight: 700, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.04em", margin: "10px 0 6px" }}>{t("seoSetRankFallback")}</div>
+                  {[["", t("seoSetRankFallbackNone")], ...RANK_PROVIDER_LIST.filter(([id]) => id !== provider)].map(([id, name]) => {
+                    const active = id ? fallbackProvider === id : !fallbackProvider;
+                    return (
+                      <button key={id || "none"} type="button" onClick={() => pickRankFallback(id)}
+                        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", padding: "7px 9px", borderRadius: "7px", border: "none", background: active ? "rgba(59,130,246,0.1)" : "transparent", color: active ? "#3B82F6" : "var(--color-text-primary)", fontSize: "12px", fontWeight: active ? 700 : 500, cursor: "pointer", textAlign: "left" }}>
+                        <span>{name}</span>
+                        {active && <Check size={12} />}
+                      </button>
+                    );
+                  })}
+                  <a href="/settings?tab=seo-tools" onClick={() => setMenuOpen(false)}
+                    style={{ display: "block", marginTop: "8px", fontSize: "11px", color: "#3B82F6", textDecoration: "none" }}>
+                    {t("rankProviderMenuSettings")}
+                  </a>
+                </div>
+              )}
+            </div>
+          )}
+          {provider && guest && (
+            <span title={t("rankProviderSwitchHint")}
+              style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)", padding: "6px 12px", borderRadius: "999px", border: "1px solid var(--color-border)", background: "var(--color-card)", cursor: "default" }}>
+              <Globe size={11} /> {rankProviderName(provider)}
+              {fallbackProvider && <span style={{ opacity: 0.7 }}>→ {rankProviderName(fallbackProvider)}</span>}
+            </span>
           )}
           {!guest && <button onClick={checkAll} disabled={!!busy || !rows.length}
             style={{ ...(rows.length ? primaryBtn : ghostBtn), cursor: busy || !rows.length ? "not-allowed" : "pointer", opacity: busy || !rows.length ? 0.6 : 1 }}>

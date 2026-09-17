@@ -11,6 +11,7 @@ import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { getConfiguredProviders, AI_PROVIDER_NAMES } from "@/lib/seo/keys";
 import { rankModels, type ModelOpt } from "@/lib/seo/models";
 import { AI_TASKS, pathsForTask } from "@/lib/seo/aiTasks";
+import { RANK_PROVIDER_LIST } from "@/lib/seo/rankProviders";
 
 interface KeyCardProvider {
   id: string; storageKey: string; name: string; roleKey: string; placeholder: string;
@@ -608,15 +609,10 @@ const SERP_PROVIDER_LIST: [string, string][] = [["serper", "Serper.dev"], ["data
  */
 const RANK_UNSUPPORTED_PROVIDERS = new Set(["goanyapi"]);
 
-/**
- * What Rank Tracker can run on: the SERP providers above minus the unsupported ones, plus the
- * user's own A-Parser (SE::Google::Position). A-Parser is not in SERP_PROVIDER_LIST because the
- * app-wide SERP choice feeds content tools that expect a metered provider's shape and speed.
- */
-const RANK_PROVIDER_LIST: [string, string][] = [
-  ...SERP_PROVIDER_LIST.filter(([id]) => !RANK_UNSUPPORTED_PROVIDERS.has(id)),
-  ["aparser", "A-Parser"],
-];
+// What Rank Tracker can run on — shared with the quick switch on the Positions tab. The
+// RANK_UNSUPPORTED_PROVIDERS set above stays as the message carrier: the server refuses
+// GoAnyAPI regardless of what any list offers, and this copy exists so the dropdown can say so
+// before the user picks.
 
 function providerPillStyle(isActive: boolean): React.CSSProperties {
   return {
