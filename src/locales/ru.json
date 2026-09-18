@@ -949,6 +949,8 @@
   "indexerQueueProcessing": "Обработка...",
   "indexerQueueAddBtn": "Добавить в очередь",
   "indexerQueueEnterUrl": "Введите хотя бы один URL или ссылку на sitemap.",
+  "indexerQueuePageJump": "Перейти к странице",
+  "indexerQueuePerPage": "На странице",
   "indexerHelpTitle": "Инструкция: Развертывание ботофермы и бесконечная индексация",
   "indexerHelpIntro": "Следуйте этой пошаговой инструкции, чтобы запустить сеть бесконечных поддоменов-догвеев, направляющих живой трафик на ваши проекты и собирающих поисковых роботов.",
   "indexerStep1Title": "1. Настройка Wildcard DNS (А-запись)",

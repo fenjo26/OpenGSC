@@ -949,6 +949,8 @@
   "indexerQueueProcessing": "Procesando...",
   "indexerQueueAddBtn": "Añadir a la cola del Indexer",
   "indexerQueueEnterUrl": "Introduce al menos una URL o enlace de sitemap.",
+  "indexerQueuePageJump": "Ir a la página",
+  "indexerQueuePerPage": "Por página",
   "indexerHelpTitle": "Guía de configuración: despliegue de granjas doorway y rastreo infinito",
   "indexerHelpIntro": "Sigue esta guía de configuración estructural para configurar doorways de subdominio infinitos que redirigen a los visitantes reales mientras registran los rastreos de los buscadores de vuelta a OpenGSC.",
   "indexerStep1Title": "1. Mapeo DNS Wildcard (registro A)",

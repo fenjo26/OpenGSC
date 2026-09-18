@@ -949,6 +949,8 @@
   "indexerQueueProcessing": "Verarbeite…",
   "indexerQueueAddBtn": "Zur Indexer-Warteschlange hinzufügen",
   "indexerQueueEnterUrl": "Bitte gib mindestens eine URL oder einen Sitemap-Link ein.",
+  "indexerQueuePageJump": "Zur Seite springen",
+  "indexerQueuePerPage": "Pro Seite",
   "indexerHelpTitle": "Setup-Leitfaden: Deployment von Doorway-Farmen & endless Crawling",
   "indexerHelpIntro": "Folge diesem strukturellen Konfigurationsleitfaden, um endlose Subdomain-Doorways einzurichten, die echte Besucher weiterleiten und gleichzeitig Suchmaschinen-Crawls an OpenGSC melden.",
   "indexerStep1Title": "1. Wildcard-DNS-Mapping (A-Record)",

@@ -949,6 +949,8 @@
   "indexerQueueProcessing": "处理中...",
   "indexerQueueAddBtn": "添加到 Indexer 队列",
   "indexerQueueEnterUrl": "请至少输入一个 URL 或 sitemap 链接。",
+  "indexerQueuePageJump": "跳转到页面",
+  "indexerQueuePerPage": "每页",
   "indexerHelpTitle": "设置指南：部署门页农场与无限抓取",
   "indexerHelpIntro": "按照此结构配置指南，搭建无限子域名门页，将真实访客重定向，同时将搜索引擎抓取记录回传到 OpenGSC。",
   "indexerStep1Title": "1. 通配符 DNS 映射（A 记录）",

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Plus, ListChecks, Trash2, Globe, AlertCircle, RefreshCw, Search, CheckCheck } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import { usePersistedState } from "@/lib/usePersistedState";
 
 interface QueueItem {
   id: string;
@@ -19,14 +20,21 @@ interface DomainOpt {
   domain: string;
 }
 
+// The API clamps pageSize to 5..100, so 100 is the ceiling here.
+const PAGE_SIZE_OPTIONS = [15, 30, 50, 100];
+
 export default function IndexerQueuePage() {
   const { t } = useLanguage();
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [crawledCount, setCrawledCount] = useState(0);
-  const PAGE_SIZE = 15;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const [pageSize, setPageSize] = usePersistedState<number>(
+    "indexerQueuePageSize",
+    15,
+    v => typeof v === "number" && PAGE_SIZE_OPTIONS.includes(v),
+  );
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const [domains, setDomains] = useState<DomainOpt[]>([]);
   const [domainId, setDomainId] = useState("all");
   const [urlsInput, setUrlsInput] = useState("");
@@ -51,7 +59,7 @@ export default function IndexerQueuePage() {
 
   const fetchQueue = async (p = page) => {
     try {
-      const res = await fetch(`/api/indexer/queue?page=${p}&pageSize=${PAGE_SIZE}`);
+      const res = await fetch(`/api/indexer/queue?page=${p}&pageSize=${pageSize}`);
       if (res.ok) {
         const d = await res.json();
         // Support both the paginated shape and (defensively) a raw array
@@ -73,11 +81,16 @@ export default function IndexerQueuePage() {
     try { setIndexNowKey(localStorage.getItem("seoKey_indexnow") || ""); } catch {}
   }, []);
 
-  // Refetch whenever the page changes (and on first mount)
+  // Refetch whenever the page or page size changes (and on first mount)
   useEffect(() => {
     fetchQueue(page);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
+  }, [page, pageSize]);
+
+  const jumpToPage = (el: HTMLInputElement) => {
+    const n = parseInt(el.value, 10);
+    if (Number.isFinite(n)) setPage(Math.min(Math.max(n, 1), totalPages));
+  };
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -449,7 +462,7 @@ export default function IndexerQueuePage() {
             <span style={{ fontSize: "11px" }}>Newly added doorway URLs waiting to be fetched by Googlebot will appear here.</span>
           </div>
         ) : (
-          // Height is bounded by PAGE_SIZE rows + the pagination footer, so no fixed maxHeight
+          // Height is bounded by one page of rows + the pagination footer, so no fixed maxHeight
           // and no infinite growth — the card is exactly as tall as one page of results.
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px", textAlign: "left" }}>
@@ -550,20 +563,22 @@ export default function IndexerQueuePage() {
         )}
 
         {/* Pagination */}
-        {total > PAGE_SIZE && (
+        {total > pageSize && (
           <div style={{
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
+            gap: "10px",
+            flexWrap: "wrap",
             paddingTop: "12px",
             borderTop: "1px solid var(--color-border)",
             fontSize: "12px",
             color: "var(--color-text-secondary)"
           }}>
-            <span>
-              {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} из {total}
+            <span style={{ fontVariantNumeric: "tabular-nums" }}>
+              {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} / {total}
             </span>
-            <div style={{ display: "flex", gap: "6px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
               <button
                 onClick={() => setPage(p => Math.max(1, p - 1))}
                 disabled={page <= 1}
@@ -573,10 +588,26 @@ export default function IndexerQueuePage() {
                   cursor: page <= 1 ? "not-allowed" : "pointer", opacity: page <= 1 ? 0.5 : 1
                 }}
               >
-                ← Назад
+                ←
               </button>
-              <span style={{ padding: "4px 6px", color: "var(--color-text-tertiary)" }}>
-                {page} / {totalPages}
+              {/* The jump input remounts on page change (key={page}) so its value is always the
+                  real page; typing a number + Enter/blur lands on it, clamped (serpmon Pager). */}
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+                <input
+                  key={page}
+                  defaultValue={String(page)}
+                  aria-label={t("indexerQueuePageJump")}
+                  title={t("indexerQueuePageJump")}
+                  inputMode="numeric"
+                  onBlur={e => jumpToPage(e.currentTarget)}
+                  onKeyDown={e => { if (e.key === "Enter") jumpToPage(e.currentTarget); }}
+                  style={{
+                    width: 46, textAlign: "center", padding: "3px 4px", borderRadius: 6,
+                    border: "1px solid var(--color-border)", background: "var(--color-bg)",
+                    color: "var(--color-text-primary)", fontSize: 12,
+                  }}
+                />
+                / {totalPages}
               </span>
               <button
                 onClick={() => setPage(p => Math.min(totalPages, p + 1))}
@@ -587,8 +618,24 @@ export default function IndexerQueuePage() {
                   cursor: page >= totalPages ? "not-allowed" : "pointer", opacity: page >= totalPages ? 0.5 : 1
                 }}
               >
-                Вперёд →
+                →
               </button>
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 5, marginLeft: "8px", whiteSpace: "nowrap" }}>
+                {t("indexerQueuePerPage")}
+                <select
+                  value={pageSize}
+                  onChange={e => {
+                    setPageSize(Number(e.target.value));
+                    setPage(1);
+                  }}
+                  style={{
+                    padding: "3px 6px", borderRadius: 6, border: "1px solid var(--color-border)",
+                    background: "var(--color-bg)", color: "var(--color-text-secondary)", fontSize: 12, cursor: "pointer",
+                  }}
+                >
+                  {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </label>
             </div>
           </div>
         )}

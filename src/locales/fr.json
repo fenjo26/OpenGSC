@@ -949,6 +949,8 @@
   "indexerQueueProcessing": "Traitement…",
   "indexerQueueAddBtn": "Ajouter à la file d’attente de l’Indexer",
   "indexerQueueEnterUrl": "Veuillez saisir au moins une URL ou un lien sitemap.",
+  "indexerQueuePageJump": "Aller à la page",
+  "indexerQueuePerPage": "Par page",
   "indexerHelpTitle": "Guide de configuration : déployer des doorway farms et du crawl infini",
   "indexerHelpIntro": "Suivez ce guide de configuration structurelle pour mettre en place des doorways sous-domaines infinis qui redirigent les visiteurs réels tout en journalisant les crawls des moteurs de recherche vers OpenGSC.",
   "indexerStep1Title": "1. Mappage DNS Wildcard (enregistrement A)",
