@@ -4,6 +4,27 @@ Literal models and signatures. T0 implements this file verbatim; T2–T6 consume
 If reality disagrees with this file, the task stops and asks — it does not improvise
 a parallel contract.
 
+## As-built deviations (merged 2026-09-18, all seven tasks shipped)
+
+- **7d crawl window is bounded, not half-open**: T6 specified
+  `utcMidnightDaysBetween(now, lineTime) <= 7`, which lets *older* lines through with
+  negative values; the implementation is `utcMidnightDaysBetween(lineTime, now) ∈ [0, 7]`.
+- **GSC sitemap submit is a PUT** (Google's webmasters v3 `sitemaps.submit`), not the
+  POST this contract sketched.
+- **Wayback CDX gate is mirrored, not imported**: `cdxGate` is module-private in
+  `wayback.ts` (outside T2's ownership), so `legacyUrls.ts` carries a self-contained
+  mirror with the same discipline (1500 ms chained gate, same throttle statuses, same
+  single spaced retry). Unify by exporting `cdxGate` if wayback.ts is ever touched.
+- **GSC pages harvest** rides `queryGsc` (`src/lib/gscQuery.ts`, the `query_gsc_live`
+  surface), `rowLimit` 25 000 / 480-day lookback; per-account errors are swallowed by
+  that helper, so an unverified property harvests as "0 pages" rather than an error.
+- **IndexNow statuses** additionally include `"network_error"` (a chunk whose fetch
+  threw — the count stays cumulative) and the route answers `400 no_key` defensively
+  for rows created outside `ensureAsset`.
+- **Donor runner** resolves `assetId → domain` via `listAssets` (no by-id reader in
+  the store) and reports empty results as machine codes (`no_donors`, `no_doorways`)
+  for localized rendering.
+
 ## Models (T0 → `prisma/schema.prisma`, block after `DropEvent`)
 
 ```prisma
