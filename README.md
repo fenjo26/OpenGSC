@@ -8,7 +8,7 @@
 
 Self-hosted on your own VPS. No subscriptions, no seat limits, no third party touching your data.
 
-[![Version 1.7.0](https://img.shields.io/badge/version-1.7.0-brightgreen)](https://github.com/fenjo26/opengsc/releases)
+[![Version 1.7.1](https://img.shields.io/badge/version-1.7.1-brightgreen)](https://github.com/fenjo26/opengsc/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Next.js 16](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue?logo=typescript)](https://www.typescriptlang.org/)
@@ -269,6 +269,7 @@ A working bench for expired domains: import, vet, watch — and buy only what is
 - **Proxy pool for the registry stage** (optional): SOCKS5 carries WHOIS (port 43 is raw TCP), HTTP proxies carry RDAP, and politeness is held per (zone, proxy) pair — several proxies may query one zone at once, a single proxy still may not.
 - **Registrar APIs for dead zones.** `.gr` answers through easy.gr (`EASY_GR_USERNAME` / `EASY_GR_PASSWORD` — IP-allowlisted, never proxied), and the registry's own table turns a taken domain's expiry date into a future drop date that feeds the watch loop. Manual verdicts close the rest: export a zone, check it in any registrar panel, paste the answers back.
 - **Cheap enrichment before anyone spends.** Free DR with the panel's own monthly series (a fall of 5+ points is a penalty flag, not lost links), Wayback snapshots, Majestic TF/CF in one batched call (~$0.000002 per domain), and paid refdomains behind a confirm. An AI history pass reads the archived life of a domain and returns clean / topic-shift / spam-period verdicts.
+- **Hard vetoes — the buyable cut.** Four conditions mean "do not buy regardless of score": a spam period in the archived history, dead for over two years, a ≥5-point fall across the monthly DR series, or Trust Flow 20+ points below a DR of 20+ (a bought profile). A veto caps the score at 0, is stored on the row and shown as a red chip naming its own evidence — the «Без вето» filter (and `noVeto` on `drops_list`) is the "what can I actually buy" view.
 - **Work the list like a spreadsheet.** Free-range filters (DR, referring domains, Trust Flow), collapsible groups ("buy in October", "defer"), bulk actions over the whole filter rather than the visible page, a watch loop that re-checks taken domains and alerts once when one frees, and export to CSV under the current filter or as a plain domain list.
 - **Agent surface:** the same flows are exposed as MCP tools (`drops_list`, `drops_ingest`, `drops_check`, `drops_enrich_*`, `drops_groups`, `drops_watch`, …).
 
