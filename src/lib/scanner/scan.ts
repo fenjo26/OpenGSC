@@ -141,6 +141,7 @@ const SEVERITY: Record<string, ScanFinding["severity"]> = {
   http_error: "critical", fetch_failed: "critical", redirect_loop: "critical", noindex: "critical",
   mixed_content: "critical", canonical_invalid: "critical", robots_conflict: "critical",
   title_missing: "warning", description_missing: "warning", h1_missing: "warning",
+  title_too_short: "warning", title_too_long: "warning", description_too_short: "warning", description_too_long: "warning",
   redirect_chain: "warning", canonical_missing: "warning", canonical_mismatch: "warning",
   security_headers_missing: "warning", viewport_missing: "warning", thin_content: "warning",
   jsonld_invalid: "warning", slow_response: "warning",

@@ -69,9 +69,11 @@ function detailFor(code: string, p: AuditPage): string {
     case "redirect": return `→ ${p.redirectTo || "?"}`;
     case "title_missing": return "no title";
     case "title_too_long": return `${(p.title || "").length} chars`;
+    case "title_too_short": return `${(p.title || "").length} chars`;
     case "title_duplicate": return p.title || "";
     case "description_missing": return "no description";
     case "description_too_long": return `${(p.metaDescription || "").length} chars`;
+    case "description_too_short": return `${(p.metaDescription || "").length} chars`;
     case "h1_missing": return "0 H1";
     case "h1_multiple": return `${p.h1Count ?? 0} H1`;
     case "noindex": return "noindex";
@@ -104,9 +106,11 @@ const FIXES: Record<string, string> = {
   redirect_loop: "Two rules are fighting each other; keep one and delete the other.",
   title_missing: "Add a unique <title> describing the page's specific intent.",
   title_too_long: "Trim to roughly 60 characters so it is not truncated in search results.",
+  title_too_short: "Expand to roughly 50–60 characters: lead with the main keyword, then a USP, geo or commercial marker.",
   title_duplicate: "Two pages claim the same title; differentiate them or consolidate the pages.",
   description_missing: "Add a meta description; without one Google writes its own from the page.",
   description_too_long: "Trim to roughly 155 characters.",
+  description_too_short: "Expand to roughly 150–160 characters: state the page's benefit, add geo or commercial markers, and end with a call to action.",
   h1_missing: "Add a single H1 stating what the page is about.",
   h1_multiple: "Keep one H1 and demote the rest to H2.",
   noindex: "If this page should rank, remove the noindex directive from the meta robots tag or X-Robots-Tag header.",

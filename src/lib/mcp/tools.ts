@@ -406,7 +406,7 @@ const CORE_TOOLS: McpTool[] = [
       type: "object",
       properties: {
         site: siteArg,
-        issue: { type: "string", description: "Optional issue code to list affected pages for (e.g. broken_links, title_missing, thin_content)" },
+        issue: { type: "string", description: "Optional issue code to list affected pages for (e.g. broken_links, title_missing, description_too_short, thin_content)" },
         limit: { type: "number", description: "Max affected pages to return (default 30, max 200)" },
       },
       required: ["site"],

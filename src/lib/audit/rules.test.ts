@@ -11,9 +11,9 @@ const healthyFacts = (overrides: Partial<AuditPageFacts> = {}): AuditPageFacts =
   loadMs: 120,
   redirectHops: 0,
   redirectLoop: false,
-  title: "A useful page title",
+  title: "A useful page title long enough to pass every metadata check",
   titleDuplicate: false,
-  metaDescription: "A concise description of this useful page.",
+  metaDescription: "A concise description of this useful page, long enough to sit inside the healthy 150 to 165 character band without ever triggering a metadata length rule.",
   robots: "index, follow",
   robotsConflict: false,
   canonical: "https://example.com/page",
@@ -39,6 +39,20 @@ const healthyFacts = (overrides: Partial<AuditPageFacts> = {}): AuditPageFacts =
 
 test("a complete HTML page has no Site Audit findings", () => {
   assert.deepEqual(evaluateAuditPageRules(healthyFacts()), []);
+});
+
+test("too-short title and description are flagged, and empty tags stay a missing-tag problem alone", () => {
+  // Boundaries mirror the too-long rules (65 / 165): the healthy bands are 50–65 and 150–165.
+  assert.equal(evaluateAuditPageRules(healthyFacts({ title: "x".repeat(49) })).includes("title_too_short"), true);
+  assert.equal(evaluateAuditPageRules(healthyFacts({ title: "x".repeat(50) })).includes("title_too_short"), false);
+  assert.equal(evaluateAuditPageRules(healthyFacts({ metaDescription: "x".repeat(149) })).includes("description_too_short"), true);
+  assert.equal(evaluateAuditPageRules(healthyFacts({ metaDescription: "x".repeat(150) })).includes("description_too_short"), false);
+  const noTitle = evaluateAuditPageRules(healthyFacts({ title: "" }));
+  assert.equal(noTitle.includes("title_missing"), true);
+  assert.equal(noTitle.includes("title_too_short"), false);
+  const noDescription = evaluateAuditPageRules(healthyFacts({ metaDescription: "" }));
+  assert.equal(noDescription.includes("description_missing"), true);
+  assert.equal(noDescription.includes("description_too_short"), false);
 });
 
 test("JS shell remains informational and suppresses raw-DOM content claims", () => {
