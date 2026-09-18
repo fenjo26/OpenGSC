@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import {
   deleteCandidates, listCandidates, setStarred, setWatched, stageCounts, schemaMissing,
-  setCandidateGroup, dropGroupExists, parseCandidateFilter, EXCLUDE_MAX, type CandidateSortField,
+  setCandidateGroup, dropGroupExists, parseCandidateFilter, markAcquired, EXCLUDE_MAX, type CandidateSortField,
 } from "@/lib/drops/store";
+import { ensureAsset } from "@/lib/drops/activationStore";
 
 const SORT_FIELDS: CandidateSortField[] = ["score", "createdAt", "domain", "dr", "refdomains", "snapshots", "checkedAt", "tf"];
 
@@ -103,6 +104,16 @@ async function bulk(req: Request): Promise<NextResponse> {
       }
       const updated = await setCandidateGroup(userId, scope, groupId);
       return NextResponse.json({ updated });
+    }
+    // The funnel's terminal stage: stop watching, start activation. One asset row per
+    // domain is ensured here so the activation tab picks the domains up immediately —
+    // ensureAsset is idempotent and never resets progress on re-acquire.
+    if (action === "acquire") {
+      const flipped = await markAcquired(userId, scope);
+      for (const row of flipped) {
+        await ensureAsset(userId, row.domain, { candidateId: row.id });
+      }
+      return NextResponse.json({ updated: flipped.length, assets: flipped.length });
     }
     return NextResponse.json({ error: "unknown_action" }, { status: 400 });
   } catch (e) {

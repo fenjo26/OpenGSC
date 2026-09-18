@@ -41,7 +41,7 @@ export function schemaMissing(error: unknown): boolean {
   const value = error as { code?: string; message?: string } | undefined;
   return (
     value?.code === "P2021" ||
-    /Drop(?:Run|Candidate|Event|Group).*(?:does not exist|no such table)/i.test(String(value?.message ?? ""))
+    /Drop(?:Run|Candidate|Event|Group|Asset|LegacyUrl|Donor|DonorPlacement).*(?:does not exist|no such table)/i.test(String(value?.message ?? ""))
   );
 }
 
@@ -927,6 +927,39 @@ export async function setStarred(
     return res.count;
   }
   return 0;
+}
+
+/**
+ * Flip the funnel's terminal stage. Returns the rows flipped (id + domain) so the
+ * caller can start activation tracking for exactly those — the asset rows themselves
+ * live in activationStore, this file stays catalogue-only.
+ */
+export async function markAcquired(
+  userId: string,
+  scope: CandidateScope,
+): Promise<{ id: string; domain: string }[]> {
+  const where = scope.ids?.length
+    ? { userId, id: { in: scope.ids } }
+    : scope.filter
+      ? applyExclusions(buildCandidateWhere(userId, scope.filter), scope.exclude)
+      : null;
+  if (!where) return [];
+
+  const rows = (await db.dropCandidate.findMany({
+    where, select: { id: true, domain: true },
+  })) as { id: string; domain: string }[];
+  if (!rows.length) return [];
+
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    await db.dropCandidate.updateMany({
+      where: { userId, id: { in: rows.slice(i, i + CHUNK).map(r => r.id) } },
+      data: { stage: "acquired" satisfies DropStage, nextCheckAt: null, watched: false },
+    });
+  }
+  for (const r of rows) {
+    await addEvent(r.id, "bought", `${r.domain} marked acquired — activation tracking started`);
+  }
+  return rows;
 }
 
 export interface MetricsUpdate {

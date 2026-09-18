@@ -1715,6 +1715,95 @@ model DropEvent {
   @@index([candidateId, createdAt])
 }
 
+// ─── Drops — activation of acquired domains ─────────────────────────────────
+// The funnel ends at `acquired`; these rows pick up there. See
+// docs/tasks/drops-activation/CONTRACT.md and docs/DROPS-ACTIVATION.md.
+
+/// One acquired domain being (re-)activated. `candidateId` is a plain string, not an
+/// FK: activation must survive catalogue tidy-ups, and DropCandidate stays untouched.
+model DropAsset {
+  id          String   @id @default(cuid())
+  userId      String
+  domain      String
+  candidateId String?
+  stage       String   @default("new")
+  // new | harvesting | ready | live | paused
+
+  gscSiteUrl             String?
+  gscSitemapPath         String?
+  gscSitemapSubmittedAt  DateTime?
+
+  sitemapUrl     String?
+  sitemapBuiltAt DateTime?
+
+  indexnowKey        String?
+  indexnowPushedAt   DateTime?
+  indexnowCount      Int       @default(0)
+  indexnowLastStatus String?
+
+  lastGoogleHitAt DateTime?
+  googleHits7d    Int      @default(0)
+
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  urls       DropLegacyUrl[]
+  donors     DropDonor[]
+  placements DropDonorPlacement[]
+
+  @@unique([userId, domain])
+  @@index([userId, stage])
+}
+
+/// One legacy URL of an asset, harvested from Wayback CDX and/or seen in GSC.
+/// The sitemap is built from these rows.
+model DropLegacyUrl {
+  id         String    @id @default(cuid())
+  assetId    String
+  url        String
+  source     String    @default("wayback") // wayback | gsc | manual
+  inGsc      Boolean   @default(false)
+  lastSeenAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  asset DropAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([assetId, url])
+  @@index([assetId, inGsc])
+}
+
+/// A donor page — a third-party page that (already) links to the asset. Doorways
+/// link to these; nothing ever links from a doorway to the asset itself.
+model DropDonor {
+  id        String   @id @default(cuid())
+  assetId   String
+  url       String
+  createdAt DateTime @default(now())
+
+  asset DropAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([assetId, url])
+}
+
+/// One (doorway, donor) pair actually enqueued into the indexer network. The queue
+/// row in `IndexerQueue` is the live injection; this row is the activation-view trail.
+model DropDonorPlacement {
+  id             String    @id @default(cuid())
+  assetId        String
+  doorway        String
+  donorUrl       String
+  placedAt       DateTime  @default(now())
+  active         Boolean   @default(true)
+  lastVerifiedAt DateTime?
+  verifyOk       Boolean?
+
+  asset DropAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([assetId, doorway, donorUrl])
+  @@index([assetId, active])
+}
+
 // ─── SERP Monitor (full top-N snapshots per market) ──────────────────────────
 // A project is a market (engine · country · language · device) plus a keyword set. Every run
 // stores the whole top-N per keyword; diffs are host-level and computed once, at write time.
