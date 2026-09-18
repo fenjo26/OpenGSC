@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import {
   AlertTriangle, Check, ChevronDown, ChevronRight, Copy, FileCode2, Globe2,
-  Link2, Loader2, Radar, RefreshCw, Satellite,
+  Link2, Loader2, Plus, Radar, RefreshCw, Satellite,
 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 // Pure day math, explicitly client-safe (see the file header): the sitemap age the panel
@@ -162,6 +162,12 @@ export default function ActivationPanel() {
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [notMigrated, setNotMigrated] = useState(false);
+  // Manual entry — a bought domain that never sat in the catalogue. Creating it rides the
+  // Wayback harvest (the route ensureAsset-creates on demand), so "add" is also the first
+  // pipeline step, not a separate dead-end form.
+  const [addDomain, setAddDomain] = useState("");
+  const [addBusy, setAddBusy] = useState(false);
+  const [addErr, setAddErr] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -194,6 +200,24 @@ export default function ActivationPanel() {
 
   useEffect(() => { void load(); }, [load]);
 
+  /** Add + first Wayback harvest in one step; the harvest route creates the asset. */
+  const addAsset = useCallback(async () => {
+    const domain = addDomain.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+    if (!domain || addBusy) return;
+    setAddBusy(true);
+    setAddErr(null);
+    const { status, body } = await sendJson(
+      `/api/drops/activation/${encodeURIComponent(domain)}/harvest`, "POST", { source: "wayback" },
+    );
+    setAddBusy(false);
+    if (status !== 200) {
+      setAddErr(`${body.error ?? `HTTP ${status}`}${typeof body.hint === "string" ? ` — ${body.hint}` : ""}`);
+      return;
+    }
+    setAddDomain("");
+    await load();
+  }, [addDomain, addBusy, load]);
+
   return <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
     {notMigrated && <div className="panel" style={{ color: "var(--color-accent-orange, #ff9f0a)", fontSize: 13 }}>
       <AlertTriangle size={15} style={{ verticalAlign: -2, marginRight: 6 }} />{t("drops_activation_not_migrated")}
@@ -210,6 +234,24 @@ export default function ActivationPanel() {
     {!loading && assets !== null && assets.length === 0 && <div className="panel" style={{ fontSize: 12.5, lineHeight: 1.65, color: "var(--color-text-secondary)" }}>
       <div>{t("drops_activation_empty_pipeline")}</div>
       <div style={{ marginTop: 6, color: "var(--color-accent-orange, #ff9f0a)" }}>{t("drops_activation_empty_nginx")}</div>
+      {/* The two doors in: buy-tracking from the catalogue, or a manual paste here. Without
+          them the panel below is a description of a pipeline nobody can start. */}
+      <div style={{ marginTop: 10, color: "var(--color-text-tertiary)" }}>{t("drops_activation_add_hint")}</div>
+      <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+        <input
+          className="tool-input" style={{ width: 240 }}
+          placeholder={t("drops_activation_add_ph")}
+          value={addDomain}
+          onChange={e => { setAddDomain(e.target.value); setAddErr(null); }}
+          onKeyDown={e => { if (e.key === "Enter") void addAsset(); }}
+          disabled={addBusy}
+        />
+        <button onClick={() => void addAsset()} disabled={addBusy || !addDomain.trim()} style={ghostBtn(addBusy || !addDomain.trim())}>
+          {addBusy ? <Loader2 size={13} className="spin" /> : <Plus size={13} />}
+          {t("drops_activation_add_btn")}
+        </button>
+      </div>
+      {addErr && <div style={{ marginTop: 6, color: "#ff6b62" }}>{addErr}</div>}
     </div>}
 
     {!loading && assets !== null && assets.length > 0 && <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>

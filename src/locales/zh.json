@@ -4170,5 +4170,11 @@
   "dropsVetoSpamHistory": "历史中有垃圾期",
   "dropsVetoIdle": "失效超2年",
   "dropsVetoDrDrop": "DR 下跌≥5",
-  "dropsVetoPbn": "TF ≪ DR"
+  "dropsVetoPbn": "TF ≪ DR",
+  "dropsBulkAcquire": "已购买",
+  "dropsBulkAcquireHint": "标记为已购买：停止监控，把行移入“已购买”阶段，并为其创建激活卡片（“激活”标签页）。",
+  "dropsAcquiredNotice": "已购买 {n} —— 激活卡片已创建（“激活”标签页）",
+  "drops_activation_add_hint": "当目录中的行被标记为已购买（批量操作）时，域名会出现在这里；也可以手动添加：",
+  "drops_activation_add_ph": "example.com",
+  "drops_activation_add_btn": "添加 + 采集 Wayback"
 }

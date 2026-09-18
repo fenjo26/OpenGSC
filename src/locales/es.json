@@ -4170,5 +4170,11 @@
   "dropsVetoSpamHistory": "spam en el historial",
   "dropsVetoIdle": "muerto > 2 años",
   "dropsVetoDrDrop": "DR cayó ≥5",
-  "dropsVetoPbn": "TF ≪ DR"
+  "dropsVetoPbn": "TF ≪ DR",
+  "dropsBulkAcquire": "Comprado(s)",
+  "dropsBulkAcquireHint": "Marcar como adquiridos: detiene el seguimiento, mueve las filas a la etapa «comprado» y crea sus fichas de activación (pestaña Activación).",
+  "dropsAcquiredNotice": "Adquiridos: {n} — fichas de activación creadas (pestaña Activación)",
+  "drops_activation_add_hint": "Los dominios aparecen aquí cuando se marcan filas del catálogo como Comprado (acción masiva), o añade uno manualmente:",
+  "drops_activation_add_ph": "example.es",
+  "drops_activation_add_btn": "Añadir + recolectar Wayback"
 }

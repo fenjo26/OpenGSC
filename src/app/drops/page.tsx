@@ -1068,8 +1068,8 @@ export default function DropsPage() {
     });
   };
 
-  /** Bulk delete / star / watch / group over the flat selection, or the whole filter. */
-  async function bulk(action: "delete" | "star" | "unstar" | "watch" | "unwatch" | "group" | "ungroup", targetGroupId?: string) {
+  /** Bulk delete / star / watch / group / acquire over the flat selection, or the whole filter. */
+  async function bulk(action: "delete" | "star" | "unstar" | "watch" | "unwatch" | "group" | "ungroup" | "acquire", targetGroupId?: string) {
     if (action === "delete" && !window.confirm(tr("dropsConfirmDelete").replace("{n}", String(selectedCount)))) return;
     const payload: Record<string, unknown> = selectAllFilter
       ? { matchAll: true, action, filter: filterPayload(), ...(excludedIds.size ? { exclude: [...excludedIds] } : {}) }
@@ -1093,11 +1093,13 @@ export default function DropsPage() {
       const touched = action === "delete" ? (body.deleted ?? 0) : (body.updated ?? 0);
       setNotice(action === "delete"
         ? tr("dropsDeleted").replace("{n}", String(touched))
-        : action === "watch" || action === "unwatch"
-          ? tr("dropsWatchUpdated").replace("{n}", String(touched))
-          : action === "group" || action === "ungroup"
-            ? tr("dropsGroupUpdated").replace("{n}", String(touched))
-            : tr("dropsStarred").replace("{n}", String(touched)));
+        : action === "acquire"
+          ? tr("dropsAcquiredNotice").replace("{n}", String(touched))
+          : action === "watch" || action === "unwatch"
+            ? tr("dropsWatchUpdated").replace("{n}", String(touched))
+            : action === "group" || action === "ungroup"
+              ? tr("dropsGroupUpdated").replace("{n}", String(touched))
+              : tr("dropsStarred").replace("{n}", String(touched)));
       clearSelection();
       if (action === "group" || action === "ungroup") await loadGroups();
       await Promise.all([loadRows(), loadRuns()]);
@@ -1798,6 +1800,13 @@ export default function DropsPage() {
           <button onClick={() => void bulk("star")} style={pagerBtn(false)}>{tr("dropsBulkStar")}</button>
           <button onClick={() => void bulk("watch")} style={pagerBtn(false)}>{tr("dropsBulkWatch")}</button>
           <button onClick={() => void bulk("unwatch")} style={pagerBtn(false)}>{tr("dropsBulkUnwatch")}</button>
+          {/* The funnel's terminal transition and the Activation tab's front door: acquired
+              rows stop being watched here and get their DropAsset created server-side. */}
+          <button onClick={() => void bulk("acquire")}
+            title={tr("dropsBulkAcquireHint")}
+            style={{ ...pagerBtn(false), color: "var(--color-accent-purple)", borderColor: "var(--color-accent-purple)" }}>
+            {tr("dropsBulkAcquire")}
+          </button>
           <select value="" onChange={e => { const v = e.target.value; if (v) void assignGroup(v); }}
             aria-label={tr("dropsAssignGroup")} style={{ ...pagerSelect }}>
             <option value="">{tr("dropsAssignGroup")}</option>

@@ -4170,5 +4170,11 @@
   "dropsVetoSpamHistory": "spam in history",
   "dropsVetoIdle": "dead > 2y",
   "dropsVetoDrDrop": "DR fell ≥5",
-  "dropsVetoPbn": "TF ≪ DR"
+  "dropsVetoPbn": "TF ≪ DR",
+  "dropsBulkAcquire": "Bought",
+  "dropsBulkAcquireHint": "Mark as acquired: stops the watch, moves the rows to the “bought” stage, and creates their activation cards (Активация tab).",
+  "dropsAcquiredNotice": "Acquired {n} — activation cards created (Activation tab)",
+  "drops_activation_add_hint": "Domains appear here when catalogue rows are marked Bought (bulk action), or add one manually:",
+  "drops_activation_add_ph": "example.gr",
+  "drops_activation_add_btn": "Add + harvest Wayback"
 }

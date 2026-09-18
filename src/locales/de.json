@@ -4170,5 +4170,11 @@
   "dropsVetoSpamHistory": "Spam in der Historie",
   "dropsVetoIdle": "tot > 2 J.",
   "dropsVetoDrDrop": "DR fiel ≥5",
-  "dropsVetoPbn": "TF ≪ DR"
+  "dropsVetoPbn": "TF ≪ DR",
+  "dropsBulkAcquire": "Gekauft",
+  "dropsBulkAcquireHint": "Als gekauft markieren: beendet die Beobachtung, verschiebt die Zeilen in die Stufe „gekauft“ und legt ihre Aktivierungskarten an (Tab Aktivierung).",
+  "dropsAcquiredNotice": "Gekauft: {n} — Aktivierungskarten angelegt (Tab Aktivierung)",
+  "drops_activation_add_hint": "Domänen landen hier, wenn Katalogzeilen als Gekauft markiert werden (Massenaktion), oder füge eine manuell hinzu:",
+  "drops_activation_add_ph": "example.de",
+  "drops_activation_add_btn": "Hinzufügen + Wayback sammeln"
 }

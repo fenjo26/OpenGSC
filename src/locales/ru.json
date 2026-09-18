@@ -4170,5 +4170,11 @@
   "dropsVetoSpamHistory": "спам в истории",
   "dropsVetoIdle": "мёртв > 2 лет",
   "dropsVetoDrDrop": "DR упал ≥5",
-  "dropsVetoPbn": "TF ≪ DR"
+  "dropsVetoPbn": "TF ≪ DR",
+  "dropsBulkAcquire": "Куплено",
+  "dropsBulkAcquireHint": "Пометить как купленные: остановить наблюдение, перевести строки в этап «куплен» и завести карточки активации (вкладка «Активация»).",
+  "dropsAcquiredNotice": "Куплено: {n} — карточки активации созданы (вкладка «Активация»)",
+  "drops_activation_add_hint": "Домены попадают сюда, когда строки каталога помечают «Куплено» (массовое действие), — или добавь вручную:",
+  "drops_activation_add_ph": "example.gr",
+  "drops_activation_add_btn": "Добавить + собрать Wayback"
 }

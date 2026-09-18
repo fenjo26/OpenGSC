@@ -3,6 +3,12 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
+## [Unreleased]
+
+### Fixed
+
+- **The Activation tab had no door.** Assets are created when catalogue rows are marked bought — the API action existed since the module landed, but no UI exposed it, and the panel had no manual entry: the tab showed its pipeline description to everyone, forever. The catalogue's bulk actions now include **«Куплено»** (stops the watch, moves the rows to the acquired stage, creates the activation cards), and the empty Activation tab has an add-domain field that creates the asset and runs the first Wayback harvest in one step.
+
 ## [1.7.1] — 2026-09-18
 
 ### Added
