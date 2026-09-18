@@ -3,6 +3,16 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
+## [Unreleased]
+
+### Added
+
+- **Drops Activation — reviving acquired drop domains.** The drops funnel's `acquired` stage now has a continuation in `/drops`: harvest the domain's legacy URLs from Wayback CDX and GSC, build the deploy bundle (sitemap.xml, robots.txt, the IndexNow key file, and an nginx snippet whose location order is the difference between working and silently doing nothing), submit the sitemap to Search Console through your own OAuth, push IndexNow in 10,000-URL batches, and accelerate re-crawl through the indexer network — which enqueues **donor** URLs only, never the asset (the «дорвей → домен» edge must not exist). A doorway qualifies by confirmed Google crawl — at least 1,000 hits over 30 days, recomputed from live indexer stats on every run, never a stored list. Crawl is measured by pasting the asset host's nginx access log: the parser counts Googlebot hits (total, 7-day window via UTC midnights, last seen) onto the asset and skips garbage lines instead of erroring. Four new models (`DropAsset`, `DropLegacyUrl`, `DropDonor`, `DropDonorPlacement`) plus an Activation tab and its API routes; runbook in `docs/DROPS-ACTIVATION.md`. Deploy requires `prisma db push` and `npx prisma generate`.
+
+### Fixed
+
+- **The drops panel counted verdicts for domains that were never in the catalogue.** The availability counters summed verdicts received instead of rows written, so a stray line in a manual paste — a domain nobody was tracking — still moved the panel's stage counters. The counters now reflect rows actually written, which are scoped by owner and domain.
+
 ## [1.7.0] — 2026-09-17
 
 ### Added

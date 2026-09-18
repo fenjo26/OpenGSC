@@ -104,6 +104,7 @@ experimental porting guide with no promise of feature parity — see [`docs/TEST
   - [Indexing Status Tools](#indexing-status-tools)
   - [Drops Catalogue — Expired Domain Funnel](#drops-catalogue--expired-domain-funnel-drops)
   - [SERP Monitor — Whole-SERP Watching (`/serp-monitor`)](#serp-monitor--whole-serp-watching-serp-monitor)
+  - [Drops Activation — Reviving Acquired Domains](#drops-activation--reviving-acquired-domains-drops)
 - [🧠 AI SEO Content Suite (`/seo-tools`)](#-ai-seo-content-suite-seo-tools)
   - Keyword Clustering · Outline Generator · Text Generator · Content Rewriter · **AI-Fingerprint Lab** · Googlebot View · Content Gap · Landing Builder · GEO Audit · Citations · Link Monitor · Editorial Policy · History
 - [🕸️ Private Indexer Network](#-private-indexer-network)
@@ -283,6 +284,22 @@ A rank tracker tells you where *you* stand; the SERP Monitor tells you what the 
 - **Honest failures.** Every snapshot is `ok` / `partial` / `failed`; a failed one (burned proxy, captcha) is recorded **as a failure with its reason and never enters a comparison** — one dead proxy cannot manufacture a fake mass exit. Partial answers are compared only down to the depth they actually returned.
 - **Runs on your own A-Parser.** The SERP source in v1 is your A-Parser (`SE::Google`, Google desktop), self-hosted and billed only in proxy traffic — a 944-keyword check costs the same as a 9-keyword one. A-Parser thereby becomes a SERP provider of the app in its own right, and a fallback SERP source for the Rank Tracker. Runs resume where a restart interrupted them.
 - **Agent surface:** `serpmon_projects`, `serpmon_market`, `serpmon_domains`, `serpmon_keyword_history`, `serpmon_run`, `serpmon_storms` MCP tools mirror the UI. See [docs/SERP-MONITOR.md](docs/SERP-MONITOR.md) for load sizing, snapshot statuses and retention. Requires `npx prisma db push` on deploy (the `Serp*` tables).
+
+<br/>
+
+
+
+### Drops Activation — Reviving Acquired Domains (`/drops`)
+
+The drops funnel ends at *acquired*; this tab is what happens next — from a freshly bought domain to one Google crawls and indexes again, with the one rule that matters burned in: **the indexer network links to donor pages, never to the asset**.
+
+- **Harvest → bundle → host.** The domain's legacy URL space comes from Wayback CDX (and GSC once the property exists); the bundle is `sitemap.xml`, `robots.txt`, the IndexNow key file, and an nginx snippet whose location order is the difference between "works" and "silently does nothing" (three files must sit **before** the catch-all 301, or IndexNow rejects the key without a word).
+- **Sitemap + GSC is the main channel.** Google reads sitemaps and Search Console, not IndexNow — add the property in GSC yourself (verification cannot be automated), then submit the sitemap from the tab through your own OAuth.
+- **IndexNow, honestly scoped** to Bing/Yandex, pushed in 10,000-URL batches.
+- **Donor accelerator:** doorways from the indexer network enqueue **donor** URLs only. A doorway qualifies by confirmed Google crawl — at least 1,000 hits over 30 days, recomputed from live stats on every run, never a stored list.
+- **Measure by uploading the access log:** paste the nginx log of the asset host and the parser counts Googlebot hits (total, 7-day window, last seen) onto the asset — garbage lines are skipped, never an error.
+
+Runbook with the nginx ordering trap, doorway numbers and the footprint rule: [docs/DROPS-ACTIVATION.md](docs/DROPS-ACTIVATION.md). Requires `npx prisma db push` on deploy (the `Drop*` activation tables).
 
 <br/>
 
