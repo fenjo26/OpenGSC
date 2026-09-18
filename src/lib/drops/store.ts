@@ -520,6 +520,11 @@ const REFUSAL_BACKOFF_MIN = [6 * 60, 12 * 60, 24 * 60, 24 * 60];
  * A rate-limited or errored row keeps its stage and gets `nextCheckAt` pushed out. It is
  * deliberately NOT recorded as "taken": the registry declined to answer, and a decision the
  * registry did not make must never end up in the catalogue as one.
+ *
+ * The returned counters are ROWS WRITTEN, not verdicts received. A domain that is not in
+ * this catalogue (manual paste, stale export) matches nothing, persists nothing, and must
+ * not be counted — the progress panels read these numbers, and counting phantom verdicts
+ * is exactly how the panel and the table diverged (8/19 vs 2/25).
  */
 export async function recordAvailabilityResults(
   userId: string,
@@ -530,8 +535,7 @@ export async function recordAvailabilityResults(
   for (const [domain, res] of results) {
     const now = new Date();
     if (res.ok && res.status === "registered") {
-      taken++;
-      await db.dropCandidate.updateMany({
+      const written = await db.dropCandidate.updateMany({
         where: { userId, domain },
         data: {
           stage: "taken" satisfies DropStage,
@@ -543,9 +547,9 @@ export async function recordAvailabilityResults(
           nameServers: res.nameServers?.length ? JSON.stringify(res.nameServers) : null,
         },
       });
+      taken += written.count;
     } else if (res.ok && res.status === "available") {
-      available++;
-      await db.dropCandidate.updateMany({
+      const written = await db.dropCandidate.updateMany({
         where: { userId, domain },
         data: {
           stage: "available" satisfies DropStage,
@@ -559,21 +563,23 @@ export async function recordAvailabilityResults(
             : null,
         },
       });
-      await addEventByDomain(userId, domain, "available",
-        res.registrarNote
-          ? `${domain} is free at the registry, but ${res.registrarNote}`
-          : res.corroborated
-            ? `${domain} is free (confirmed by two sources)`
-            : `${domain} looks free via ${res.via} only — not corroborated`);
+      available += written.count;
+      if (written.count > 0) {
+        await addEventByDomain(userId, domain, "available",
+          res.registrarNote
+            ? `${domain} is free at the registry, but ${res.registrarNote}`
+            : res.corroborated
+              ? `${domain} is free (confirmed by two sources)`
+              : `${domain} looks free via ${res.via} only — not corroborated`);
+      }
     } else {
-      deferred++;
       const existing = (await db.dropCandidate.findFirst({
         where: { userId, domain },
         select: { id: true, consecutiveErrors: true },
       })) as { id: string; consecutiveErrors: number } | null;
       const step = Math.min((existing?.consecutiveErrors ?? 0) + 1, REFUSAL_BACKOFF_MIN.length);
       const waitMin = REFUSAL_BACKOFF_MIN[step - 1];
-      await db.dropCandidate.updateMany({
+      const written = await db.dropCandidate.updateMany({
         where: { userId, domain },
         data: {
           stage: "dns_checked" satisfies DropStage,
@@ -585,6 +591,7 @@ export async function recordAvailabilityResults(
           nextCheckAt: new Date(Date.now() + waitMin * 60_000),
         },
       });
+      deferred += written.count;
     }
   }
 
