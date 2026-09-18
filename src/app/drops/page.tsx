@@ -14,6 +14,7 @@ import { usePersistedState } from "@/lib/usePersistedState";
 import { getMetricsCreds } from "@/lib/seo/metricsClient";
 import { DrSparkline, drSeriesText, type DrPoint } from "@/components/DrSparkline";
 import BacklinkProfile from "@/components/BacklinkProfile";
+import ActivationPanel from "@/components/drops/ActivationPanel";
 
 type Run = {
   id: string; label: string | null; source: string; sourceRef: string | null;
@@ -134,6 +135,15 @@ const EXCLUDE_MAX = 500;
 export default function DropsPage() {
   const { t } = useLanguage();
   const tr = (k: string) => t(k as never) as string;
+
+  // Top-level tab: the catalogue vs the activation of what it produced. URL-addressable
+  // (`?tab=activation` is a share link — the same pattern as the site pages) and persisted
+  // per browser, so a refresh lands where the user left off. The catalogue's own filters
+  // live in this component's state and in usePersistedState, so switching tabs and back
+  // leaves every one of them exactly as it was.
+  const [tab, setTab] = usePersistedState<string>(
+    "dropsTab", "catalogue", v => v === "catalogue" || v === "activation", "tab",
+  );
 
   const [runs, setRuns] = useState<Run[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -1245,7 +1255,7 @@ export default function DropsPage() {
         </h1>
         <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginTop: 6, maxWidth: 820 }}>{tr("dropsSubtitle")}</p>
       </div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      {tab === "catalogue" && <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button onClick={() => setShowProxies(v => !v)} style={pagerBtn(false)}>
           {tr("dropsProxies")}{proxies.length > 0 ? ` · ${proxies.filter(p => p.enabled).length}` : ""}
         </button>
@@ -1258,8 +1268,32 @@ export default function DropsPage() {
         <button onClick={() => setShowImport(v => !v)} style={primaryBtn}>
           <Plus size={14} /> {tr("dropsImport")}
         </button>
-      </div>
+      </div>}
     </div>
+
+    {/* Top-level tabs. Everything catalogue-related — buttons above, panels below — renders
+        only on the catalogue tab, so no catalogue control can fire invisibly from Activation. */}
+    <div style={{ display: "flex", gap: 4, flexWrap: "wrap", borderBottom: "1px solid var(--color-border)" }}>
+      {([
+        { v: "catalogue", key: "drops_activation_tab_catalogue" },
+        { v: "activation", key: "drops_activation_tab_activation" },
+      ] as const).map(tb => (
+        <button key={tb.v} onClick={() => setTab(tb.v)}
+          style={{
+            padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer",
+            background: "transparent", border: "none",
+            borderBottom: `2px solid ${tab === tb.v ? "var(--color-accent-blue)" : "transparent"}`,
+            color: tab === tb.v ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+            marginBottom: -1,
+          }}>
+          {tr(tb.key)}
+        </button>
+      ))}
+    </div>
+
+    {tab === "activation" && <ActivationPanel />}
+
+    {tab === "catalogue" && <>
 
     {notMigrated && <div className="panel" style={{ color: "var(--color-accent-orange, #ff9f0a)", fontSize: 13 }}>
       <AlertTriangle size={15} style={{ verticalAlign: -2, marginRight: 6 }} />{tr("dropsNotMigrated")}
@@ -1986,6 +2020,7 @@ export default function DropsPage() {
         </label>
       </div>
     </div>
+    </>}
   </div>;
 }
 
