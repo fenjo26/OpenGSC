@@ -4101,7 +4101,6 @@
   "serpmonNoDrKey": "Ключ Ahrefs DR не налаштовано — додайте його в Налаштуваннях → API-ключі",
   "serpmonNoMetricsKey": "Ключ SEO-метрик не налаштовано — додайте його в Налаштуваннях → API-ключі",
   "serpmonEnrichDone": "Оновлено {n}",
-
   "drops_activation_tab_catalogue": "Каталог",
   "drops_activation_tab_activation": "Активація",
   "drops_activation_loading": "Завантаження…",
@@ -4165,5 +4164,11 @@
   "drops_activation_details_placements": "Розставки ({n})",
   "drops_activation_placement_active": "активна",
   "drops_activation_placement_inactive": "неактивна",
-  "drops_activation_err": "Помилка: {err}"
+  "drops_activation_err": "Помилка: {err}",
+  "dropsVetoNone": "Без вето",
+  "dropsVetoHint": "Жорстке вето — не купувати незалежно від скору. Кожна умова називає свій доказ: спам-період в історії Wayback, домен мертвий понад два роки, DR впав ≥5 пунктів у місячному ряді або Trust Flow значно нижче DR (накручений профіль).",
+  "dropsVetoSpamHistory": "спам в історії",
+  "dropsVetoIdle": "мертвий > 2 р.",
+  "dropsVetoDrDrop": "DR впав ≥5",
+  "dropsVetoPbn": "TF ≪ DR"
 }

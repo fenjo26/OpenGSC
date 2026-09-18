@@ -1676,6 +1676,10 @@ model DropCandidate {
   historyAt        DateTime?
 
   score     Float?
+  /// The veto that fired when the score was computed (spam_history | idle_over_2y |
+  /// dr_drop | pbn_profile), or null. Stored beside the score so the list can filter
+  /// "no vetoes" and render the chip without recomputing anything.
+  veto      String?
   starred   Boolean  @default(false)
   /// Watched rows are re-checked by the drops scheduler until the registry says they are free,
   /// then alert once (corroborated verdicts only) and stop watching. See lib/drops/scheduler.ts.

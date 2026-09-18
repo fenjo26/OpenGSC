@@ -4101,7 +4101,6 @@
   "serpmonNoDrKey": "Aucune clé Ahrefs DR configurée — ajoutez-en une dans Paramètres → Clés API",
   "serpmonNoMetricsKey": "Aucune clé SEO-métriques configurée — ajoutez-en une dans Paramètres → Clés API",
   "serpmonEnrichDone": "{n} mis à jour",
-
   "drops_activation_tab_catalogue": "Catalogue",
   "drops_activation_tab_activation": "Activation",
   "drops_activation_loading": "Chargement…",
@@ -4165,5 +4164,11 @@
   "drops_activation_details_placements": "Placements ({n})",
   "drops_activation_placement_active": "actif",
   "drops_activation_placement_inactive": "inactif",
-  "drops_activation_err": "Erreur : {err}"
+  "drops_activation_err": "Erreur : {err}",
+  "dropsVetoNone": "Sans veto",
+  "dropsVetoHint": "Veto strict — ne pas acheter quel que soit le score. Chaque condition nomme sa propre preuve : période de spam dans l’historique Wayback, mort depuis plus de deux ans, DR en baisse de ≥5 points dans la série mensuelle, ou Trust Flow très inférieur au DR (profil acheté).",
+  "dropsVetoSpamHistory": "spam dans l’historique",
+  "dropsVetoIdle": "mort > 2 ans",
+  "dropsVetoDrDrop": "DR −5 ou plus",
+  "dropsVetoPbn": "TF ≪ DR"
 }

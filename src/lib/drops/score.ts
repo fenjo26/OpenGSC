@@ -24,7 +24,7 @@ const HISTORY_WEIGHT: Record<HistoryVerdict, number> = {
 };
 
 /**
- * Hard vetoes (dropops report, \u00a7consensus). A veto is not a low score \u2014 it is "do not buy",
+ * Hard vetoes (drops report, §consensus). A veto is not a low score — it is "do not buy",
  * because each of these conditions has sunk every domain that carried it regardless of what the
  * metrics said: a spam interlude poisons the link neighbourhood, and a name dead for over two
  * years has usually been re-registered and burned at least once since.
@@ -35,10 +35,25 @@ const HISTORY_WEIGHT: Record<HistoryVerdict, number> = {
  */
 const VETO_IDLE_DAYS = 730;
 
+/**
+ * The DR-history fall that reads as a penalty signature — the same −5 first→last rule
+ * `flagDrSeries` (src/lib/seo/drHistory.ts) applies to the self-accumulated DrSnapshot series
+ * behind drops_dr_history. Duplicated as a number rather than imported so this module stays
+ * import-free and unit-testable without a database anywhere in its chain.
+ */
+export const VETO_DR_FALL = 5;
+
+/**
+ * A bought profile: DR says one vendor's authority, Trust Flow says nobody trusts the links.
+ * Below DR 20 the scale noise dominates — a weak domain is weak, not necessarily gamed.
+ */
+export const VETO_PBN_DR_MIN = 20;
+export const VETO_PBN_TF_GAP = 20;
+
 export interface ScoreBreakdown {
   score: number;
   /** Set when a hard veto fired; the score is then capped at 0 so vetoes sort last. */
-  veto: "spam_history" | "idle_over_2y" | null;
+  veto: "spam_history" | "idle_over_2y" | "dr_drop" | "pbn_profile" | null;
   parts: { label: string; value: number }[];
 }
 
@@ -74,9 +89,15 @@ export function scoreCandidateDetailed(c: ScoreInput): ScoreBreakdown {
 
   // Vetoes read from the same fields the weights just used, so they are decided after the sum.
   // A domain with a spam interlude scores below every non-vetoed row no matter how good its DR.
+  // Order is display priority too — only the first fire is stored/shown.
+  const series = c.drSeries ?? null;
+  const drFall = series && series.length >= 2 ? series[0] - series[series.length - 1] : null;
+  const tf = num(c.majesticTf);
   const veto: ScoreBreakdown["veto"] =
     verdict === "spam_period" ? "spam_history"
+    : drFall !== null && drFall >= VETO_DR_FALL ? "dr_drop"
     : gap !== null && gap > VETO_IDLE_DAYS ? "idle_over_2y"
+    : c.dr != null && c.dr >= VETO_PBN_DR_MIN && tf !== null && c.dr - tf >= VETO_PBN_TF_GAP ? "pbn_profile"
     : null;
 
   return { score: veto ? Math.min(raw, 0) : raw, veto, parts };

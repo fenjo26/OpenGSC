@@ -115,6 +115,14 @@ export interface ScoreInput {
   /** Days between the last Wayback capture and now — how long the site has been dead. */
   waybackGapDays?: number | null;
   historyVerdict?: HistoryVerdict | null;
+  /**
+   * The self-accumulated monthly DR series (DrSnapshot), oldest first, DR values only. A
+   * first→last fall of VETO_DR_FALL points is a penalty signature, not lost links. Fewer than
+   * two points is an absence, not a pass — the veto simply cannot fire.
+   */
+  drSeries?: number[] | null;
+  /** Majestic Trust Flow — against a high DR, a large gap flags a bought/PBN profile. */
+  majesticTf?: number | null;
 }
 
 export type HistoryVerdict = "clean" | "topic_shift" | "spam_period" | "unknown";

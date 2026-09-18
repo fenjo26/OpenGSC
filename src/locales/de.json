@@ -4101,7 +4101,6 @@
   "serpmonNoDrKey": "Kein Ahrefs-DR-Schlüssel konfiguriert — bitte unter Einstellungen → API-Schlüssel hinzufügen",
   "serpmonNoMetricsKey": "Kein SEO-Metrik-Schlüssel konfiguriert — bitte unter Einstellungen → API-Schlüssel hinzufügen",
   "serpmonEnrichDone": "{n} aktualisiert",
-
   "drops_activation_tab_catalogue": "Katalog",
   "drops_activation_tab_activation": "Aktivierung",
   "drops_activation_loading": "Lädt…",
@@ -4165,5 +4164,11 @@
   "drops_activation_details_placements": "Platzierungen ({n})",
   "drops_activation_placement_active": "aktiv",
   "drops_activation_placement_inactive": "inaktiv",
-  "drops_activation_err": "Fehler: {err}"
+  "drops_activation_err": "Fehler: {err}",
+  "dropsVetoNone": "Ohne Veto",
+  "dropsVetoHint": "Hartes Veto — unabhängig vom Score nicht kaufen. Jede Bedingung nennt ihren eigenen Beweis: Spam-Phase in der Wayback-Historie, seit über zwei Jahren tot, DR in der Monatsreihe um ≥5 Punkte gefallen oder Trust Flow weit unter DR (gekauftes Profil).",
+  "dropsVetoSpamHistory": "Spam in der Historie",
+  "dropsVetoIdle": "tot > 2 J.",
+  "dropsVetoDrDrop": "DR fiel ≥5",
+  "dropsVetoPbn": "TF ≪ DR"
 }

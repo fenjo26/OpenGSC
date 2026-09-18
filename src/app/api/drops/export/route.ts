@@ -34,6 +34,7 @@ const COLUMNS: [header: string, pick: (r: Record<string, unknown>) => unknown][]
   ["wayback_snapshots", r => r.waybackSnapshots],
   ["wayback_gap_days", r => r.waybackGapDays],
   ["score", r => r.score],
+  ["veto", r => r.veto],
   ["group", r => r.groupName],
   ["tld", r => r.tld],
   ["checked_at", r => r.lastCheckedAt],

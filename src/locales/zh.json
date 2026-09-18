@@ -4101,7 +4101,6 @@
   "serpmonNoDrKey": "未配置 Ahrefs DR 密钥 — 请在设置 → API 密钥中添加",
   "serpmonNoMetricsKey": "未配置 SEO 指标密钥 — 请在设置 → API 密钥中添加",
   "serpmonEnrichDone": "已更新 {n} 个",
-
   "drops_activation_tab_catalogue": "目录",
   "drops_activation_tab_activation": "激活",
   "drops_activation_loading": "加载中…",
@@ -4165,5 +4164,11 @@
   "drops_activation_details_placements": "布设（{n}）",
   "drops_activation_placement_active": "活跃",
   "drops_activation_placement_inactive": "停用",
-  "drops_activation_err": "错误：{err}"
+  "drops_activation_err": "错误：{err}",
+  "dropsVetoNone": "无否决",
+  "dropsVetoHint": "硬性否决——无论评分多少都不要买。每条规则都给出自己的证据：Wayback 历史中有垃圾期、失效超过两年、DR 在月度序列中下跌 ≥5 点，或 Trust Flow 远低于 DR（购买的外链画像）。",
+  "dropsVetoSpamHistory": "历史中有垃圾期",
+  "dropsVetoIdle": "失效超2年",
+  "dropsVetoDrDrop": "DR 下跌≥5",
+  "dropsVetoPbn": "TF ≪ DR"
 }

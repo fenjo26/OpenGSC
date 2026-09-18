@@ -97,3 +97,45 @@ test("a topic shift warns but does not veto — donor glue survives a changed to
   assert.equal(detailed.veto, null);
   assert.ok(detailed.score > 0);
 });
+
+// ── dr_drop: the self-accumulated DR series as a penalty signature ────────────
+// The same −5 first→last rule flagDrSeries applies to the stored series behind
+// drops_dr_history: a fall that size is a Google filter, not lost links.
+
+test("a ≥5-point fall across the DR series vetoes regardless of current metrics", () => {
+  const detailed = scoreCandidateDetailed({ dr: 40, refdomainsDofollow: 25, drSeries: [22, 24, 12, 11, 8] });
+  assert.equal(detailed.veto, "dr_drop");
+  assert.ok(detailed.score <= 0);
+});
+
+test("a single DR point is an absence, not a pass — and not a veto", () => {
+  assert.equal(scoreCandidateDetailed({ dr: 40, drSeries: [40] }).veto, null);
+  assert.equal(scoreCandidateDetailed({ dr: 40, drSeries: null }).veto, null);
+});
+
+test("a fall under the threshold does not veto, even mid-series dips", () => {
+  // 22 → 18 is −4 first→last; the dip to 10 recovered, and the rule reads the ends.
+  assert.equal(scoreCandidateDetailed({ dr: 18, drSeries: [22, 10, 18] }).veto, null);
+});
+
+// ── pbn_profile: DR says authority, Trust Flow says nobody trusts the links ──
+
+test("TF twenty-plus points below a ≥20 DR vetoes as a bought profile", () => {
+  const detailed = scoreCandidateDetailed({ dr: 40, refdomainsDofollow: 30, majesticTf: 15 });
+  assert.equal(detailed.veto, "pbn_profile");
+  assert.ok(detailed.score <= 0);
+  // TF 0 with a high DR is the same verdict, not an exception.
+  assert.equal(scoreCandidateDetailed({ dr: 35, majesticTf: 0 }).veto, "pbn_profile");
+});
+
+test("a proportional TF does not veto, and below DR 20 the guard holds", () => {
+  assert.equal(scoreCandidateDetailed({ dr: 40, majesticTf: 25 }).veto, null);
+  assert.equal(scoreCandidateDetailed({ dr: 18, majesticTf: 0 }).veto, null);
+  // TF unknown (never enriched) can never fire the veto.
+  assert.equal(scoreCandidateDetailed({ dr: 40, majesticTf: null }).veto, null);
+});
+
+test("a spam period outranks the DR fall when both are present", () => {
+  const detailed = scoreCandidateDetailed({ dr: 40, historyVerdict: "spam_period", drSeries: [30, 10] });
+  assert.equal(detailed.veto, "spam_history");
+});

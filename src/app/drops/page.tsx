@@ -26,6 +26,8 @@ type Candidate = {
   dr: number | null; refdomains: number | null; refdomainsDofollow: number | null;
   majesticTf: number | null; majesticCf: number | null;
   waybackSnapshots: number | null; score: number | null; lastCheckedAt: string | null;
+  /** The hard veto that fired at scoring (spam_history | idle_over_2y | dr_drop | pbn_profile). */
+  veto?: string | null;
   corroborated: boolean; watched: boolean; lastError?: string | null;
   /** EPP/RDAP lifecycle statuses, comma-joined. What tells a dying domain from a healthy one. */
   registryStatus?: string | null;
@@ -49,6 +51,17 @@ type StoredProxy = {
 
 type SortField = "score" | "domain" | "createdAt" | "dr" | "refdomains" | "snapshots" | "checkedAt" | "tf";
 const PAGE_SIZES = [25, 50, 100, 200];
+
+/**
+ * Hard vetoes, as the score cell shows them. A veto is not a low score — it is "do not buy
+ * because X", and every label names its own evidence.
+ */
+const VETO_META: Record<string, string> = {
+  spam_history: "dropsVetoSpamHistory",
+  idle_over_2y: "dropsVetoIdle",
+  dr_drop: "dropsVetoDrDrop",
+  pbn_profile: "dropsVetoPbn",
+};
 
 /**
  * The AI history verdict, as the row badge shows it. The note travels in the tooltip: a verdict
@@ -168,6 +181,7 @@ export default function DropsPage() {
   const [refMin, setRefMin] = useState("");
   const [refMax, setRefMax] = useState("");
   const [tfMin, setTfMin] = useState("");
+  const [noVetoOnly, setNoVetoOnly] = useState(false);
   const [tfMax, setTfMax] = useState("");
   const [groupId, setGroupId] = useState("");
   const [orderBy, setOrderBy] = useState<SortField>("score");
@@ -469,9 +483,10 @@ export default function DropsPage() {
     ...(refMax.trim() !== "" ? { refMax: refMax.trim() } : {}),
     ...(tfMin.trim() !== "" ? { tfMin: tfMin.trim() } : {}),
     ...(tfMax.trim() !== "" ? { tfMax: tfMax.trim() } : {}),
+    ...(noVetoOnly ? { noVeto: "1" } : {}),
     ...(groupId && groupId !== "none" ? { groupId } : {}),
     ...(groupId === "none" ? { ungrouped: "1" } : {}),
-  }), [drMin, drMax, drNullOnly, refMin, refMax, tfMin, tfMax, groupId]);
+  }), [drMin, drMax, drNullOnly, refMin, refMax, tfMin, tfMax, noVetoOnly, groupId]);
 
   const loadRows = useCallback(async () => {
     setLoading(true);
@@ -1697,8 +1712,13 @@ export default function DropsPage() {
         <input className="tool-input" style={{ width: 64 }} type="number" inputMode="numeric" placeholder={tr("dropsRangeTo")}
           value={tfMax} onChange={e => setTfMax(e.target.value)} />
       </span>
-      {(drMin || drMax || drNullOnly || refMin || refMax || tfMin || tfMax) && <button
-        onClick={() => { setDrMin(""); setDrMax(""); setDrNullOnly(false); setRefMin(""); setRefMax(""); setTfMin(""); setTfMax(""); }}
+      <label style={{ display: "flex", alignItems: "center", gap: 5, color: "var(--color-text-secondary)", cursor: "pointer" }}
+        title={tr("dropsVetoHint")}>
+        <input type="checkbox" checked={noVetoOnly} onChange={e => setNoVetoOnly(e.target.checked)} />
+        {tr("dropsVetoNone")}
+      </label>
+      {(drMin || drMax || drNullOnly || refMin || refMax || tfMin || tfMax || noVetoOnly) && <button
+        onClick={() => { setDrMin(""); setDrMax(""); setDrNullOnly(false); setRefMin(""); setRefMax(""); setTfMin(""); setTfMax(""); setNoVetoOnly(false); }}
         style={pagerBtn(false)}>
         {tr("dropsRangeClear")}
       </button>}
@@ -1980,6 +2000,15 @@ export default function DropsPage() {
                   </td>
                   <td style={{ ...tdNum, fontWeight: 800, color: r.score != null ? "var(--color-text-primary)" : "var(--color-text-tertiary)" }}>
                     {r.score != null ? Math.round(r.score) : "—"}
+                    {r.veto && <span
+                      title={tr("dropsVetoHint")}
+                      style={{
+                        display: "inline-block", marginLeft: 6, padding: "1px 6px", borderRadius: 8,
+                        fontSize: 10.5, fontWeight: 600, color: "var(--color-danger)",
+                        border: "1px solid var(--color-danger)", verticalAlign: "baseline",
+                      }}>
+                      {tr(VETO_META[r.veto] ?? r.veto)}
+                    </span>}
                   </td>
                   <td style={{ ...td, color: "var(--color-text-tertiary)" }}>
                     {r.lastCheckedAt ? new Date(r.lastCheckedAt).toLocaleDateString() : tr("dropsNever")}

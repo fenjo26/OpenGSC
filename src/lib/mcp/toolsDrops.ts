@@ -91,7 +91,7 @@ export const DROPS_TOOLS: McpTool[] = [
     name: "drops_list",
     cost: "local",
     description:
-      "List the expired-domain catalogue (/drops): candidates with stage, DR, refdomains, Majestic TF/CF, group, Wayback snapshots, score and AI history verdict. Filters: runId, stage, tld, q (domain substring), starred, watched, groupId / ungrouped, minScore, and inclusive numeric ranges — drMin/drMax (drNull=true for rows never rated — a different thing from DR 0), refMin/refMax on the displayed refdomain count, tfMin/tfMax on Majestic Trust Flow; sorted page. Returns the funnel stage counts alongside, so one call answers 'what does the catalogue look like'.",
+      "List the expired-domain catalogue (/drops): candidates with stage, DR, refdomains, Majestic TF/CF, group, Wayback snapshots, score, hard veto (spam_history | idle_over_2y | dr_drop | pbn_profile — a veto caps the score at 0 and means 'do not buy') and AI history verdict. Filters: runId, stage, tld, q (domain substring), starred, watched, groupId / ungrouped, minScore, noVeto (the buyable cut — only rows where nothing fired), and inclusive numeric ranges — drMin/drMax (drNull=true for rows never rated — a different thing from DR 0), refMin/refMax on the displayed refdomain count, tfMin/tfMax on Majestic Trust Flow; sorted page. Returns the funnel stage counts alongside, so one call answers 'what does the catalogue look like'.",
     inputSchema: {
       type: "object",
       properties: {
@@ -109,6 +109,7 @@ export const DROPS_TOOLS: McpTool[] = [
         refMax: { type: "number", description: "maximum referring domains, inclusive" },
         tfMin: { type: "number", description: "minimum Majestic Trust Flow, inclusive" },
         tfMax: { type: "number", description: "maximum Majestic Trust Flow, inclusive" },
+        noVeto: { type: "boolean", description: "true = only rows with no hard veto (the buyable cut); veto values: spam_history, idle_over_2y, dr_drop (DR fell ≥5 in the monthly series), pbn_profile (TF far below DR)" },
         groupId: { type: "string", description: "only rows in this curated group (see drops_groups)" },
         ungrouped: { type: "boolean", description: "true = only rows in no group" },
         limit: { type: "number", description: "rows per page, default 50, max 200" },
@@ -138,6 +139,7 @@ export const DROPS_TOOLS: McpTool[] = [
         refMax: typeof args.refMax === "number" ? args.refMax : undefined,
         tfMin: typeof args.tfMin === "number" ? args.tfMin : undefined,
         tfMax: typeof args.tfMax === "number" ? args.tfMax : undefined,
+        noVeto: args.noVeto === true ? true : undefined,
         groupId: typeof args.groupId === "string" && args.groupId ? args.groupId : undefined,
         ungrouped: args.ungrouped === true ? true : undefined,
         limit: lim(args.limit, 50, 200),

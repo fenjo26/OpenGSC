@@ -92,3 +92,14 @@ test("every stage the filter accepts survives parseCandidateFilter", () => {
   assert.equal(parseCandidateFilter({ stage: "no_registry" }).stage, "no_registry");
   assert.equal(parseCandidateFilter({ stage: "not_a_stage" }).stage, undefined);
 });
+
+// noVeto is the "buyable cut": only rows whose stored veto is null. It parses on every
+// surface like the other booleans — "1" from query strings, true from JSON bodies.
+
+test("noVeto parses as a boolean and junk stays undefined", () => {
+  assert.equal(parseCandidateFilter({ noVeto: "1" }).noVeto, true);
+  assert.equal(parseCandidateFilter({ noVeto: 1 }).noVeto, true);
+  assert.equal(parseCandidateFilter({ noVeto: true }).noVeto, true);
+  assert.equal(parseCandidateFilter({ noVeto: "0" }).noVeto, undefined);
+  assert.equal(parseCandidateFilter({}).noVeto, undefined);
+});

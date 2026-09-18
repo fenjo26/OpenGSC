@@ -3,7 +3,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { rawQuery } from "@/lib/db/raw";
-import { monthKey } from "@/lib/seo/drHistory";
+import { monthKey, readDrHistory } from "@/lib/seo/drHistory";
 import { parseDomainRows, summariseSkips, type ColumnMap } from "./ingest";
 import { createProxyPool, proxyKey, redactProxy, type ProxyEndpoint, type ProxyPool } from "./proxies";
 import { tldOf } from "./registries";
@@ -224,6 +224,8 @@ export interface CandidateFilter {
   /** Majestic Trust Flow range, inclusive. Never-enriched rows fall outside any range. */
   tfMin?: number;
   tfMax?: number;
+  /** Only rows with no hard veto — the "buyable" cut. Null veto means nothing fired. */
+  noVeto?: boolean;
   /** One curated group; `ungrouped` is its complement, for the working pile. */
   groupId?: string;
   ungrouped?: boolean;
@@ -268,6 +270,7 @@ export function parseCandidateFilter(raw: Record<string, unknown>): CandidateFil
     refMax: filterNum(o.refMax),
     tfMin: filterNum(o.tfMin),
     tfMax: filterNum(o.tfMax),
+    noVeto: o.noVeto === "1" || o.noVeto === 1 || o.noVeto === true ? true : undefined,
     groupId: str("groupId"),
     ungrouped: o.ungrouped === "1" || o.ungrouped === 1 || o.ungrouped === true ? true : undefined,
     starred: o.starred === "1" || o.starred === 1 || o.starred === true ? true : undefined,
@@ -315,6 +318,9 @@ function buildCandidateWhere(userId: string, f: CandidateFilter = {}): Record<st
   if (typeof f.tfMin === "number") tf.gte = f.tfMin;
   if (typeof f.tfMax === "number") tf.lte = f.tfMax;
   if (Object.keys(tf).length) where.majesticTf = tf;
+  // The "buyable" cut. Rows scored before a veto fired keep their stored null until the next
+  // recompute — the filter is honest about what is stored, it does not re-derive per row.
+  if (f.noVeto) where.veto = null;
   // `contains` without `mode: "insensitive"`: that option is Postgres-only, and domains are
   // stored lower-cased on the way in, so folding the needle is enough and works on both engines.
   if (f.q?.trim()) where.domain = { contains: f.q.trim().toLowerCase() };
@@ -1064,31 +1070,37 @@ export async function writeWaybackResults(userId: string, results: WaybackUpdate
  *
  * Called after every write that can change the inputs (metrics, wayback, history verdict), so
  * the "Скор" column comes alive progressively instead of waiting for a phase that computes
- * everything at once. The detailed breakdown is not persisted — the number is, and the pure
- * module behind it can always explain any row.
+ * everything at once. The detailed breakdown is not persisted — the number and the veto are,
+ * and the pure module behind it can always explain any row.
  */
 export async function recomputeScore(userId: string, domain: string): Promise<void> {
   const row = (await db.dropCandidate.findFirst({
     where: { userId, domain },
     select: {
       dr: true, refdomains: true, refdomainsDofollow: true,
-      waybackSnapshots: true, waybackGapDays: true, historyVerdict: true,
+      waybackSnapshots: true, waybackGapDays: true, historyVerdict: true, majesticTf: true,
     },
   })) as {
     dr: number | null; refdomains: number | null; refdomainsDofollow: number | null;
     waybackSnapshots: number | null; waybackGapDays: number | null; historyVerdict: string | null;
+    majesticTf: number | null;
   } | null;
   if (!row) return;
-  const { scoreCandidate } = await import("./score");
-  const score = scoreCandidate({
+  // The DR series lives in DrSnapshot, written by the free-DR sweep and the watch loop's
+  // monthly refresh — the penalty veto reads it live, so a fresh point can fire on its own.
+  const series = (await readDrHistory([domain]))[domain]?.map(p => p.dr) ?? null;
+  const { scoreCandidateDetailed } = await import("./score");
+  const { score, veto } = scoreCandidateDetailed({
     dr: row.dr,
     refdomains: row.refdomains,
     refdomainsDofollow: row.refdomainsDofollow,
     waybackSnapshots: row.waybackSnapshots,
     waybackGapDays: row.waybackGapDays,
     historyVerdict: (row.historyVerdict as import("./types").HistoryVerdict | null) ?? undefined,
+    drSeries: series,
+    majesticTf: row.majesticTf,
   });
-  await db.dropCandidate.updateMany({ where: { userId, domain }, data: { score } });
+  await db.dropCandidate.updateMany({ where: { userId, domain }, data: { score, veto } });
 }
 
 /** Persist the AI history pass. The note is human-readable, the verdict drives score and veto. */
