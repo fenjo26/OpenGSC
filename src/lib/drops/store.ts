@@ -188,7 +188,7 @@ export async function listRuns(userId: string, limit = 50) {
  * reach the query.
  */
 export type CandidateSortField =
-  | "score" | "createdAt" | "domain" | "dr" | "refdomains" | "snapshots" | "checkedAt" | "tf";
+  | "score" | "createdAt" | "domain" | "dr" | "refdomains" | "snapshots" | "checkedAt" | "tf" | "history";
 
 /** The column behind a sort field. `refdomains` sorts by the dofollow count the score uses. */
 const SORT_COLUMNS: Record<CandidateSortField, string> = {
@@ -200,6 +200,7 @@ const SORT_COLUMNS: Record<CandidateSortField, string> = {
   snapshots: "waybackSnapshots",
   checkedAt: "lastCheckedAt",
   tf: "majesticTf",
+  history: "historyVerdict",
 };
 
 export interface CandidateFilter {
@@ -226,6 +227,8 @@ export interface CandidateFilter {
   tfMax?: number;
   /** Only rows with no hard veto — the "buyable" cut. Null veto means nothing fired. */
   noVeto?: boolean;
+  /** History verdict: the free classifier's vocabulary plus `none` for "never classified". */
+  history?: "clean" | "empty" | "suspicious" | "toxic" | "none";
   /** One curated group; `ungrouped` is its complement, for the working pile. */
   groupId?: string;
   ungrouped?: boolean;
@@ -245,6 +248,9 @@ const filterNum = (v: unknown): number | undefined => {
   const n = Number(s);
   return s !== "" && s != null && Number.isFinite(n) ? n : undefined;
 };
+
+/** The free classifier's verdict vocabulary as a filter value, plus `none` = never classified. */
+const HISTORY_FILTER_VALUES = ["clean", "empty", "suspicious", "toxic", "none"] as const;
 
 /**
  * HTTP-shaped filter object → {@link CandidateFilter}. The one parser for every surface that
@@ -271,6 +277,9 @@ export function parseCandidateFilter(raw: Record<string, unknown>): CandidateFil
     tfMin: filterNum(o.tfMin),
     tfMax: filterNum(o.tfMax),
     noVeto: o.noVeto === "1" || o.noVeto === 1 || o.noVeto === true ? true : undefined,
+    history: (HISTORY_FILTER_VALUES as readonly string[]).includes(String(o.history))
+      ? (o.history as CandidateFilter["history"])
+      : undefined,
     groupId: str("groupId"),
     ungrouped: o.ungrouped === "1" || o.ungrouped === 1 || o.ungrouped === true ? true : undefined,
     starred: o.starred === "1" || o.starred === 1 || o.starred === true ? true : undefined,
@@ -290,6 +299,7 @@ function buildCandidateWhere(userId: string, f: CandidateFilter = {}): Record<st
   if (f.tld) where.tld = f.tld;
   if (f.starred !== undefined) where.starred = f.starred;
   if (f.watched !== undefined) where.watched = f.watched;
+  if (f.history) where.historyVerdict = f.history === "none" ? null : f.history;
   if (f.groupId) where.groupId = f.groupId;
   if (f.ungrouped) where.groupId = null;
   if (typeof f.minScore === "number") where.score = { gte: f.minScore };
@@ -1090,13 +1100,21 @@ export async function recomputeScore(userId: string, domain: string): Promise<vo
   // monthly refresh — the penalty veto reads it live, so a fresh point can fire on its own.
   const series = (await readDrHistory([domain]))[domain]?.map(p => p.dr) ?? null;
   const { scoreCandidateDetailed } = await import("./score");
+  // The free classifier writes clean/empty/suspicious/toxic — values the AI vocabulary
+  // behind HISTORY_WEIGHT does not know, and unknown values already score 0 with no veto,
+  // which is exactly what shadow mode needs. `toxic` reaches the spam veto only through the
+  // arm flag (see toxVetoArmed): mapped here, in the one place the AI pass maps it too.
+  const armedWithToxic = row.historyVerdict === "toxic" ? await toxVetoArmed(userId) : false;
+  const historyForScore: import("./types").HistoryVerdict | undefined = armedWithToxic
+    ? "spam_period"
+    : (row.historyVerdict as import("./types").HistoryVerdict | null) ?? undefined;
   const { score, veto } = scoreCandidateDetailed({
     dr: row.dr,
     refdomains: row.refdomains,
     refdomainsDofollow: row.refdomainsDofollow,
     waybackSnapshots: row.waybackSnapshots,
     waybackGapDays: row.waybackGapDays,
-    historyVerdict: (row.historyVerdict as import("./types").HistoryVerdict | null) ?? undefined,
+    historyVerdict: historyForScore,
     drSeries: series,
     majesticTf: row.majesticTf,
   });
@@ -1115,6 +1133,139 @@ export async function setHistoryVerdict(
     data: { historyVerdict: verdict, historyNote: note.slice(0, 1000), historyAt: new Date() },
   });
   await recomputeScore(userId, domain);
+}
+
+// ─── Toxicity: the free history classifier (shadow mode) ─────────────────────────
+//
+// Writes the SAME columns the paid AI pass writes (historyVerdict/historyNote/historyAt)
+// with its own vocabulary (clean|empty|suspicious|toxic) — no new schema, and the note is
+// the source marker: the free pass always starts it with `score N ·`, the AI pass writes
+// prose. Deliberately no recomputeScore here: until the module's arm flag is on, a verdict
+// must be visible in the table without touching score or veto (a false positive that
+// silently drops a good domain from the buyable cut is the failure this prevents).
+
+/**
+ * Rows the classifier has not seen yet. `historyVerdict IS NULL` — not historyAt, which the
+ * plain Wayback enrichment also stamps. Rows throttled by the archive in the last 6 hours
+ * sit out the slice instead of being retried into a deeper penalty box.
+ */
+export async function pendingToxCandidates(
+  userId: string,
+  opts: { runId?: string; limit?: number; domains?: string[]; filter?: CandidateFilter } = {},
+): Promise<{ id: string; domain: string; topAnchors: string | null }[]> {
+  const base: Record<string, unknown> = opts.filter
+    ? buildCandidateWhere(userId, opts.filter)
+    : { userId };
+  if (opts.runId) base.runId = opts.runId;
+  base.historyVerdict = null;
+  if (opts.domains?.length) base.domain = { in: opts.domains.map(d => d.toLowerCase()) };
+  const cooling = await throttledToxIds();
+  if (cooling.length) base.NOT = { id: { in: cooling } };
+  const rows = (await db.dropCandidate.findMany({
+    where: base,
+    orderBy: { createdAt: "asc" },
+    take: Math.min(Math.max(opts.limit ?? 20, 1), 200),
+    select: { id: true, domain: true, topAnchors: true },
+  })) as { id: string; domain: string; topAnchors: string | null }[];
+  return rows;
+}
+
+export async function countPendingTox(
+  userId: string,
+  runId?: string,
+  filter?: CandidateFilter,
+): Promise<number> {
+  const base: Record<string, unknown> = filter ? buildCandidateWhere(userId, filter) : { userId };
+  if (runId) base.runId = runId;
+  base.historyVerdict = null;
+  const cooling = await throttledToxIds();
+  if (cooling.length) base.NOT = { id: { in: cooling } };
+  return db.dropCandidate.count({ where: base });
+}
+
+/** Candidate ids the archive refused recently — the backoff the spec demands for 429/503. */
+async function throttledToxIds(): Promise<string[]> {
+  const cutoff = new Date(Date.now() - 6 * 3600_000);
+  const rows = (await db.dropEvent.findMany({
+    where: { type: "tox_throttled", createdAt: { gt: cutoff } },
+    select: { candidateId: true },
+  })) as { candidateId: string }[];
+  return [...new Set(rows.map(r => r.candidateId))];
+}
+
+/** The shadow write: verdict visible, score and veto untouched. */
+export async function setToxVerdict(
+  userId: string,
+  domain: string,
+  verdict: import("./toxicity/types").ToxVerdict,
+  note: string,
+): Promise<void> {
+  await db.dropCandidate.updateMany({
+    where: { userId, domain },
+    data: { historyVerdict: verdict, historyNote: note.slice(0, 1000), historyAt: new Date() },
+  });
+}
+
+/**
+ * What the classifier saw, as events — the card shows exactly this, and a verdict can be
+ * re-read later without another archive round-trip. One event per snapshot, title plus the
+ * signals that fired in it (a verdict without its reasons hides every calibration error).
+ */
+export async function recordToxSnapshots(
+  candidateId: string,
+  snapshots: import("./toxicity/types").Snapshot[],
+  perSnapshot: import("./toxicity/types").SnapshotVerdict[],
+): Promise<void> {
+  const byTs = new Map(perSnapshot.map(v => [v.timestamp, v]));
+  for (const snap of snapshots.slice(0, 5)) {
+    const verdict = byTs.get(snap.timestamp);
+    await db.dropEvent.create({
+      data: {
+        candidateId,
+        type: "tox_snapshot",
+        message: JSON.stringify({
+          ts: snap.timestamp,
+          status: snap.status ?? null,
+          title: (snap.title ?? "").slice(0, 200),
+          signals: (verdict?.signals ?? []).map(s => ({ code: s.code, detail: s.detail.slice(0, 120) })),
+        }).slice(0, 1000),
+      },
+    });
+  }
+}
+
+export async function recordToxThrottled(candidateId: string): Promise<void> {
+  await db.dropEvent.create({ data: { candidateId, type: "tox_throttled", message: new Date().toISOString() } });
+}
+
+/**
+ * The arm flag (phase 2): when on, a `toxic` verdict drives the spam_history veto exactly
+ * where the AI pass does. Lives in User.seoSettings — the same JSON blob every other
+ * per-user setting rides — under `dropsToxVetoArmed`.
+ */
+export async function toxVetoArmed(userId: string): Promise<boolean> {
+  const row = (await db.user.findFirst({
+    where: { id: userId },
+    select: { seoSettings: true },
+  })) as { seoSettings: string | null } | null;
+  if (!row?.seoSettings) return false;
+  try {
+    return JSON.parse(row.seoSettings).dropsToxVetoArmed === true;
+  } catch {
+    return false;
+  }
+}
+
+export async function setToxVetoArmed(userId: string, armed: boolean): Promise<void> {
+  const row = (await db.user.findFirst({
+    where: { id: userId },
+    select: { seoSettings: true },
+  })) as { seoSettings: string | null } | null;
+  let parsed: Record<string, unknown> = {};
+  try { parsed = row?.seoSettings ? JSON.parse(row.seoSettings) : {}; } catch { /* unreadable blob: start fresh */ }
+  if (armed) parsed.dropsToxVetoArmed = true;
+  else delete parsed.dropsToxVetoArmed;
+  await db.user.update({ where: { id: userId }, data: { seoSettings: JSON.stringify(parsed) } });
 }
 
 /**

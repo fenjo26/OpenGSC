@@ -50,15 +50,16 @@ export type WaybackFetch =
 
 /**
  * One shared gate for every CDX call in this process — the history pass, the Wayback slices,
- * the MCP tools all queue through it. The archive rate-limits per IP, and the app is its own
- * worst neighbor: two workers in one request, or two features running at once, used to fire
- * concurrent identical queries. A chain that pins each call at least CDX_MIN_INTERVAL_MS after
- * the previous one settles turns all of those loops into one polite client.
+ * the MCP tools, the toxicity stage all queue through it. The archive rate-limits per IP, and
+ * the app is its own worst neighbor: two workers in one request, or two features running at
+ * once, used to fire concurrent identical queries. A chain that pins each call at least
+ * CDX_MIN_INTERVAL_MS after the previous one settles turns all of those loops into one
+ * polite client.
  */
 const CDX_MIN_INTERVAL_MS = 1500;
 let cdxChain: Promise<unknown> = Promise.resolve();
 
-function cdxGate<T>(task: () => Promise<T>): Promise<T> {
+export function cdxGate<T>(task: () => Promise<T>): Promise<T> {
   const run = cdxChain.then(task, task);
   cdxChain = run.then(
     () => new Promise(resolve => setTimeout(resolve, CDX_MIN_INTERVAL_MS)),

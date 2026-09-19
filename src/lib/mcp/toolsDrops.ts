@@ -27,13 +27,20 @@ import { goanyDrHistory } from "@/lib/seo/goanyapi";
 import { fetchDomainMetrics, fetchMajesticItemStats, domainUnits, parseMetricsProvider } from "@/lib/seo/metrics";
 import { MAJESTIC_STATS_UNITS } from "@/lib/seo/metricsPricing";
 import type { DropSource, DropStage } from "@/lib/drops/types";
+import { runToxSlice } from "@/lib/drops/toxicity/stage";
+import { prisma } from "@/lib/prisma";
+import { buildGluePlan } from "@/lib/drops/glue/generate";
+import { parsePage } from "@/lib/drops/glue/parse";
+import { validateCluster } from "@/lib/drops/glue/validate";
+import { detectCloaking, fetchClusterPages, withFindings } from "@/lib/drops/glue/fetchPages";
+import type { GlueMode, GluePlan, GlueSpec } from "@/lib/drops/glue/types";
 
 const STAGES: DropStage[] = [
   "ingested", "dns_checked", "no_registry", "resolved_taken", "checking",
   "available", "taken", "confirmed", "rejected", "acquired",
 ];
 const SOURCES: DropSource[] = ["csv", "ahrefs_refdomains", "ahrefs_broken", "crawler", "zone_diff"];
-const SORT_FIELDS: CandidateSortField[] = ["score", "createdAt", "domain", "dr", "refdomains", "snapshots", "checkedAt", "tf"];
+const SORT_FIELDS: CandidateSortField[] = ["score", "createdAt", "domain", "dr", "refdomains", "snapshots", "checkedAt", "tf", "history"];
 
 const CHECK_DEADLINE_MS = 35_000;
 
@@ -82,6 +89,8 @@ const row = (r: Record<string, unknown>) => ({
   groupId: r.groupId ?? null, group: (r.group as { name?: string } | null)?.name ?? null,
   waybackSnapshots: r.waybackSnapshots ?? null, waybackGapDays: r.waybackGapDays ?? null,
   score: r.score ?? null, historyVerdict: r.historyVerdict ?? null, historyNote: r.historyNote ?? null,
+  /** Parsed back out of the free classifier's note — no dedicated column until one is earned. */
+  historyScore: Number(/^score (\d+)/.exec(String(r.historyNote ?? ""))?.[1] ?? "") || null,
   corroborated: r.corroborated === true, watched: r.watched === true, lastError: r.lastError ?? null,
   lastCheckedAt: r.lastCheckedAt ?? null,
 });
@@ -110,6 +119,7 @@ export const DROPS_TOOLS: McpTool[] = [
         tfMin: { type: "number", description: "minimum Majestic Trust Flow, inclusive" },
         tfMax: { type: "number", description: "maximum Majestic Trust Flow, inclusive" },
         noVeto: { type: "boolean", description: "true = only rows with no hard veto (the buyable cut); veto values: spam_history, idle_over_2y, dr_drop (DR fell ≥5 in the monthly series), pbn_profile (TF far below DR)" },
+        history: { type: "string", description: "history verdict filter: clean | empty | suspicious | toxic (the free classifier) or none (never classified). historyScore in the row is parsed from the note" },
         groupId: { type: "string", description: "only rows in this curated group (see drops_groups)" },
         ungrouped: { type: "boolean", description: "true = only rows in no group" },
         limit: { type: "number", description: "rows per page, default 50, max 200" },
@@ -140,6 +150,9 @@ export const DROPS_TOOLS: McpTool[] = [
         tfMin: typeof args.tfMin === "number" ? args.tfMin : undefined,
         tfMax: typeof args.tfMax === "number" ? args.tfMax : undefined,
         noVeto: args.noVeto === true ? true : undefined,
+        history: ["clean", "empty", "suspicious", "toxic", "none"].includes(String(args.history))
+          ? (String(args.history) as "clean" | "empty" | "suspicious" | "toxic" | "none")
+          : undefined,
         groupId: typeof args.groupId === "string" && args.groupId ? args.groupId : undefined,
         ungrouped: args.ungrouped === true ? true : undefined,
         limit: lim(args.limit, 50, 200),
@@ -580,6 +593,20 @@ export const DROPS_TOOLS: McpTool[] = [
       assertConfirmed(args, "drops_history_ai spends LLM credits");
       const domains = domainsArg(args).slice(0, 5);
       if (!domains.length) throw new Error("domains required");
+      // The free classifier first: most verdicts are decided deterministically by
+      // drops_toxicity at zero cost, and burning LLM credits on an obvious Chinese casino
+      // the dictionary already catches is the exact waste this gate exists to prevent.
+      const rowsFor = (await prisma.dropCandidate.findMany({
+        where: { userId, domain: { in: domains } },
+        select: { domain: true, historyNote: true },
+      })) as { domain: string; historyNote: string | null }[];
+      const freeChecked = new Set(
+        rowsFor.filter(r => /^score \d+/.test(r.historyNote ?? "")).map(r => r.domain),
+      );
+      const unchecked = domains.filter(d => !freeChecked.has(d));
+      if (unchecked.length) {
+        throw new Error(`free_check_first: run drops_toxicity on these first (anchorsOnly needs no network): ${unchecked.join(", ")}`);
+      }
       const creds = await resolveAiCreds(userId, args, "dropsHistory");
       if (!creds.aiApiKey) throw new Error("no_ai_creds: configure an AI provider in settings");
       const results: { domain: string; verdict?: string; note?: string; error?: string }[] = [];
@@ -602,6 +629,115 @@ export const DROPS_TOOLS: McpTool[] = [
         results.push({ domain, verdict: verdict.verdict, note: verdict.note });
       }
       return { results };
+    },
+  },
+
+  {
+    name: "drops_toxicity",
+    cost: "net",
+    idempotent: false,
+    description:
+      "Run one bounded slice of the FREE toxicity classifier over the catalogue — the same slice the /drops button runs (historyVerdict: clean | empty | suspicious | toxic written in shadow mode; score and veto untouched unless the arm flag is on). Sources in order: topAnchors already on the row (anchorsOnly: true = the whole catalogue with ZERO network requests), then a Wayback walk (CDX + up to N snapshots per domain through the proxy pool's web.archive.org zone). 429/503 from the archive is never a verdict — the row sits out 6h and is listed in skipped. Returns { checked, toxic, suspicious, clean, empty, remaining, done, skipped } — call repeatedly while remaining > 0.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        domains: { type: "array", items: { type: "string" }, description: "up to 25 explicit domains" },
+        filter: { type: "object", description: "drops_list-shaped filter, alternative to domains" },
+        snapshots: { type: "number", description: "snapshots per domain, 1..5, default 3" },
+        anchorsOnly: { type: "boolean", description: "true = classify by topAnchors + name scan only, no network at all" },
+        runId: { type: "string" },
+        batch: { type: "number", description: "rows this slice, default 8 (25 with anchorsOnly)" },
+      },
+    },
+    handler: async (userId, args) => {
+      const domains = domainsArg(args).slice(0, 25);
+      const filter = !domains.length && args.filter && typeof args.filter === "object"
+        ? parseCandidateFilter(args.filter as Record<string, unknown>)
+        : undefined;
+      return runToxSlice(userId, {
+        domains: domains.length ? domains : undefined,
+        filter,
+        anchorsOnly: args.anchorsOnly === true,
+        runId: typeof args.runId === "string" && args.runId ? args.runId : undefined,
+        batch: args.batch !== undefined ? lim(args.batch, 1, args.anchorsOnly === true ? 200 : 25) : undefined,
+        snapshots: lim(args.snapshots, 3, 5),
+      });
+    },
+  },
+
+  {
+    name: "glue_plan",
+    cost: "local",
+    description:
+      "Build the hreflang/canonical annotation blocks that glue a dropped domain to a money site — the generator behind the «Склейка» card on /drops?tab=activation. One cluster, one mode: 'cluster' (mutual, each page canonical to itself — nothing merges, nothing falls off) or 'funnel' (every canonical points at the drop — signals merge into it, and the drop's owner controls your rankings; that trade-off is the scheme's whole point). Returns per-page <html lang>, canonical, the shared alternate set (self-reference included — without it Google drops the group) and a ready-to-paste <head> block. Notes (locale_fixed, locale_duplicate, url_not_absolute, …) come back verbatim: they say exactly what was corrected in the input.",
+    inputSchema: {
+      type: "object",
+      required: ["mode", "dropUrl", "alternates"],
+      properties: {
+        mode: { type: "string", description: "cluster | funnel" },
+        dropUrl: { type: "string", description: "the drop, absolute URL" },
+        alternates: { type: "array", items: { type: "object" }, description: "[{ hreflang, url }] — locales and their money-page URLs" },
+        xDefault: { type: "string", description: "x-default target, defaults to the drop" },
+        dropHtmlLang: { type: "string", description: "<html lang> for the drop page, defaults to the first locale's language" },
+      },
+    },
+    handler: async (_userId, args) => {
+      const mode = args.mode === "funnel" ? "funnel" : "cluster" as GlueMode;
+      const alternates = (Array.isArray(args.alternates) ? args.alternates : [])
+        .filter((a): a is { hreflang: string; url: string } =>
+          !!a && typeof a === "object" && typeof (a as { hreflang?: unknown }).hreflang === "string" && typeof (a as { url?: unknown }).url === "string")
+        .slice(0, 12)
+        .map(a => ({ hreflang: a.hreflang, url: a.url }));
+      const spec: GlueSpec = {
+        mode,
+        dropUrl: typeof args.dropUrl === "string" ? args.dropUrl : "",
+        alternates,
+      };
+      if (typeof args.xDefault === "string" && args.xDefault) spec.xDefault = args.xDefault;
+      if (typeof args.dropHtmlLang === "string" && args.dropHtmlLang) spec.dropHtmlLang = args.dropHtmlLang;
+      return buildGluePlan(spec);
+    },
+  },
+
+  {
+    name: "glue_check",
+    cost: "net",
+    description:
+      "Check a LIVE glue cluster: fetches every page (safeFetch, manual redirects, ≤5 hops), parses canonical/alternate/noindex from the final response and runs the validator — reciprocity, self-reference, x-default, dead or noindex targets, and with a plan also a live-vs-plan diff (a swapped canonical on your money page). ua: 'both' adds the Googlebot pass and flags cloaked_annotations when browser and bot see different annotations. LIMITATION you must carry into any conclusion: the UA diff only catches User-Agent-based cloaking. Serious setups cloak by IP with reverse-DNS verification — a Googlebot-UA request from a foreign address gets the plain page, so an EMPTY cloaked_annotations finding does NOT prove the absence of cloaking.",
+    inputSchema: {
+      type: "object",
+      required: ["mode", "urls"],
+      properties: {
+        mode: { type: "string", description: "cluster | funnel (in funnel, hreflang→non-canonical is info, not a blocker — that IS the mechanism)" },
+        urls: { type: "array", items: { type: "string" }, description: "up to 10 absolute URLs, both sides of the cluster" },
+        plan: { type: "object", description: "the glue_plan output — when present, live pages are also diffed against it" },
+        ua: { type: "string", description: "browser (default) | googlebot | both" },
+      },
+    },
+    handler: async (_userId, args) => {
+      const mode: GlueMode = args.mode === "funnel" ? "funnel" : "cluster";
+      const urls = (Array.isArray(args.urls) ? args.urls : [])
+        .filter((u): u is string => typeof u === "string" && /^https?:\/\//i.test(u.trim()))
+        .slice(0, 10);
+      if (!urls.length) throw new Error("urls required (absolute http(s), up to 10)");
+      const ua = args.ua === "googlebot" || args.ua === "both" ? args.ua : "browser";
+      const plan = args.plan && typeof args.plan === "object" && Array.isArray((args.plan as GluePlan).pages)
+        ? (args.plan as GluePlan)
+        : undefined;
+
+      const pages = await fetchClusterPages(urls, { ua: "browser" });
+      const facts = pages.map(parsePage);
+      let report = validateCluster(facts, { mode, plan });
+
+      let botFacts;
+      if (ua === "googlebot" || ua === "both") {
+        const botPages = await fetchClusterPages(urls, { ua: "googlebot" });
+        botFacts = botPages.map(parsePage);
+        report = ua === "googlebot"
+          ? validateCluster(botFacts, { mode, plan })
+          : withFindings(report, detectCloaking(facts, botFacts));
+      }
+      return { report, facts, botFacts };
     },
   },
 

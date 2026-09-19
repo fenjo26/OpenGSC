@@ -1,5 +1,23 @@
 import type { DomainEvidence, ScriptName, Snapshot, SnapshotVerdict, ToxOptions, ToxReport, ToxSignal } from "./types";
-import { isNativeScriptForZone, isParked, matchMarkers, normaliseText, scriptsOf } from "./markers";
+import { isNativeScriptForZone, isParked, MARKERS, matchMarkers, normaliseText, scriptsOf } from "./markers";
+
+/**
+ * Every signal code the classifier can emit — marker groups over titles/texts and their
+ * `anchor_` twins from classifyAnchors, plus the structural codes. The UI translates these
+ * 1:1 as `dropsToxSignal_<code>` keys; tox-codes.test.ts pins the key set to this list in
+ * both directions, the same contract KNOWN_GLUE_FINDINGS holds for the glue findings.
+ */
+export const KNOWN_TOX_SIGNALS: readonly string[] = [
+  ...MARKERS.map(g => g.code),
+  ...MARKERS.map(g => `anchor_${g.code}`),
+  "alien_script",
+  "anchor_alien_script",
+  "redirect_offsite",
+  "snapshot_error",
+  "language_flip",
+  "never_used",
+  "no_snapshots",
+];
 
 const DEFAULT_TOXIC_AT = 60;
 const DEFAULT_SUSPICIOUS_AT = 25;

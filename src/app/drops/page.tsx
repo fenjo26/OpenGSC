@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, BadgeCheck, Boxes, ChevronDown, ChevronRight, CircleHelp, Combine, Database, Globe2, History, Link2, Loader2, Pencil, Plus, Radar, RefreshCw, Search, ShieldAlert, Sparkles, Square, Star, Upload, X } from "lucide-react";
+import { AlertTriangle, BadgeCheck, Boxes, ChevronDown, ChevronRight, CircleHelp, Combine, Database, Globe2, History, Link2, Loader2, Pencil, Plus, Radar, RefreshCw, Search, ShieldAlert, ShieldCheck, Sparkles, Square, Star, Upload, X } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { writeUrlParam } from "@/lib/urlParam";
 import type { DropSource, DropStage } from "@/lib/drops/types";
@@ -11,11 +11,15 @@ import { parseDomainRows } from "@/lib/drops/ingest";
 // Also pure, and the same classifier the watch scheduler uses to decide a row's interval — so the
 // badge below and the polling cadence can never disagree about what "dying" means.
 import { watchAcceleration } from "@/lib/drops/watch";
+// The name scan is the pipeline's zero-request stage: it runs right in the import preview,
+// because "even the name wasn't changed under the flip" is visible before anything is stored.
+import { scanDomainName } from "@/lib/drops/toxicity/markers";
 import { usePersistedState } from "@/lib/usePersistedState";
 import { getMetricsCreds } from "@/lib/seo/metricsClient";
 import { DrSparkline, drSeriesText, type DrPoint } from "@/components/DrSparkline";
 import BacklinkProfile from "@/components/BacklinkProfile";
 import ActivationPanel from "@/components/drops/ActivationPanel";
+import ToxCard from "@/components/drops/ToxCard";
 
 type Run = {
   id: string; label: string | null; source: string; sourceRef: string | null;
@@ -50,7 +54,7 @@ type StoredProxy = {
   lastOkAt: string | null; lastCheckedAt: string | null; lastError: string | null; failures: number;
 };
 
-type SortField = "score" | "domain" | "createdAt" | "dr" | "refdomains" | "snapshots" | "checkedAt" | "tf";
+type SortField = "score" | "domain" | "createdAt" | "dr" | "refdomains" | "snapshots" | "checkedAt" | "tf" | "history";
 const PAGE_SIZES = [25, 50, 100, 200];
 
 /**
@@ -129,13 +133,27 @@ const COLUMNS: { field: SortField | null; key: string; num?: boolean }[] = [
   { field: "refdomains", key: "dropsColRefdomains", num: true },
   { field: "tf", key: "dropsColTf", num: true },
   { field: "snapshots", key: "dropsColSnapshots", num: true },
+  { field: "history", key: "dropsToxCol" },
   { field: "score", key: "dropsColScore", num: true },
   { field: "checkedAt", key: "dropsColChecked" },
 ];
 
 const DEFAULT_DIR: Record<SortField, "asc" | "desc"> = {
   score: "desc", domain: "asc", createdAt: "desc", dr: "desc",
-  refdomains: "desc", snapshots: "desc", checkedAt: "desc", tf: "desc",
+  refdomains: "desc", snapshots: "desc", checkedAt: "desc", tf: "desc", history: "desc",
+};
+
+/** The history column's four verdicts, colour-matched to how the funnel chips speak. */
+const TOX_META: Record<string, { key: string; color: string }> = {
+  toxic: { key: "dropsToxVerdictToxic", color: "var(--color-danger, #ff6b62)" },
+  suspicious: { key: "dropsToxVerdictSuspicious", color: "var(--color-accent-orange, #ff9f0a)" },
+  clean: { key: "dropsToxVerdictClean", color: "var(--color-accent-green, #34c759)" },
+  empty: { key: "dropsToxVerdictEmpty", color: "var(--color-text-tertiary)" },
+  // The AI pass's vocabulary renders in the same column, quieter: it is one of four answers
+  // to the same question, not a fifth kind of answer.
+  topic_shift: { key: "dropsToxVerdictTopicShift", color: "var(--color-accent-orange, #ff9f0a)" },
+  spam_period: { key: "dropsToxVerdictSpamPeriod", color: "var(--color-danger, #ff6b62)" },
+  unknown: { key: "dropsToxVerdictUnknown", color: "var(--color-text-tertiary)" },
 };
 
 const isPageSize = (v: unknown): boolean => typeof v === "number" && PAGE_SIZES.includes(v);
@@ -177,6 +195,13 @@ export default function DropsPage() {
     try { window.localStorage.setItem("dropsTab", JSON.stringify(v)); } catch { /* private mode */ }
     writeUrlParam("tab", v);
   };
+  // The shadow-mode flag, read once — the plate below must state the truth, not the hope.
+  useEffect(() => {
+    fetch("/api/drops/toxicity", { cache: "no-store" })
+      .then(r => (r.ok ? r.json() : null))
+      .then(b => { if (b && typeof b.armed === "boolean") setToxArmed(b.armed); })
+      .catch(() => {});
+  }, []);
 
   const [runs, setRuns] = useState<Run[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -280,6 +305,17 @@ export default function DropsPage() {
   const [dnsBusy, setDnsBusy] = useState(false);
   const [dnsProgress, setDnsProgress] = useState<{ checked: number; retired: number; advanced: number; remaining: number } | null>(null);
   const dnsStop = useRef(false);
+
+  // The free toxicity stage. Same loop shape as DNS; `anchorsOnly` slices classify the whole
+  // catalogue by stored anchors with zero network, the full walk hits the Wayback archive.
+  const [toxBusy, setToxBusy] = useState<"" | "anchors" | "wayback">("");
+  const [toxProgress, setToxProgress] = useState<{ checked: number; toxic: number; suspicious: number; clean: number; empty: number; remaining: number } | null>(null);
+  const toxStop = useRef(false);
+  // Shadow mode's arm flag — fetched, not assumed: the plate must tell the truth about
+  // whether verdicts currently influence the buyable cut.
+  const [toxArmed, setToxArmed] = useState<boolean | null>(null);
+  // Which row's toxicity card is expanded under the table.
+  const [openTox, setOpenTox] = useState<string | null>(null);
 
   // The registry stage. Same shape as the DNS loop and, deliberately, a separate control: it is
   // orders of magnitude slower and it is the one that talks to somebody else's servers.
@@ -826,6 +862,49 @@ export default function DropsPage() {
     } finally {
       setDnsBusy(false);
     }
+  }
+
+  /** The toxicity stage's slice loop — the DNS loop's shape, over /api/drops/toxicity. */
+  async function runToxicity(mode: "anchors" | "wayback") {
+    if (toxBusy) return;
+    toxStop.current = false;
+    setToxBusy(mode); setError("");
+    setToxProgress(null);
+    const totals = { checked: 0, toxic: 0, suspicious: 0, clean: 0, empty: 0, remaining: 0 };
+    try {
+      for (;;) {
+        const res = await fetch("/api/drops/toxicity", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ runId: runId || undefined, anchorsOnly: mode === "anchors" }),
+        });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body?.error || "toxicity_failed");
+        totals.checked += body.checked ?? 0;
+        totals.toxic += body.toxic ?? 0;
+        totals.suspicious += body.suspicious ?? 0;
+        totals.clean += body.clean ?? 0;
+        totals.empty += body.empty ?? 0;
+        totals.remaining = body.remaining ?? 0;
+        setToxProgress({ ...totals });
+        if (body.done || body.checked === 0 || toxStop.current) break;
+      }
+      await loadRows();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setToxBusy("");
+    }
+  }
+
+  /** Flip the shadow-mode arm flag; the plate restates the truth right after. */
+  async function armTox(armed: boolean) {
+    const res = await fetch("/api/drops/toxicity", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "arm", armed }),
+    });
+    if (res.ok) setToxArmed(armed);
   }
 
   async function runRegistryCheck(domains?: string[], filter?: Record<string, string>, exclude?: string[]) {
@@ -1465,6 +1544,19 @@ export default function DropsPage() {
                 .replace("{dr}", preview.withDr.toLocaleString())
             : tr("dropsColUndetected")}
         </div>
+        {/* Name scan, zero requests: flags the flipped-but-not-renamed (situs…togel…) right
+            in the preview — a "look at these first" label, not an exclusion. */}
+        {(() => {
+          const flagged = preview.rows
+            .map(r => (r as { domain?: unknown }).domain)
+            .filter((d): d is string => typeof d === "string")
+            .flatMap(d => scanDomainName(d).map(h => `${d} (${h.code})`));
+          if (!flagged.length) return null;
+          return <div style={{ color: "var(--color-accent-orange, #ff9f0a)" }}>
+            {tr("dropsToxNameScan").replace("{n}", String(flagged.length))} — {flagged.slice(0, 8).join(", ")}
+            {flagged.length > 8 ? ` +${flagged.length - 8}` : ""}
+          </div>;
+        })()}
       </div>}
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <button onClick={runImport} disabled={importing || !raw.trim()} style={primaryBtn}>
@@ -1657,6 +1749,44 @@ export default function DropsPage() {
       </span>}
       <span style={{ flex: 1, minWidth: 200, fontSize: 12, color: "var(--color-text-tertiary)" }}>{tr("dropsCheckHint")}</span>
     </div>}
+
+    {/* The free toxicity stage. Always visible — it costs nothing to start with anchors. */}
+    <div className="panel" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+      <button onClick={() => void runToxicity("anchors")} disabled={toxBusy !== ""} style={primaryBtn}>
+        {toxBusy === "anchors" ? <Loader2 className="spin" size={13} /> : <ShieldCheck size={14} />}
+        {tr("dropsToxRunAnchors")}
+      </button>
+      {toxBusy === "wayback"
+        ? <button onClick={() => { toxStop.current = true; }} style={primaryBtn}>
+            <Square size={13} />{tr("dropsDnsStop")}
+          </button>
+        : <button onClick={() => void runToxicity("wayback")} disabled={toxBusy !== ""} style={primaryBtn}>
+            <Radar size={14} />{tr("dropsToxRunWayback")}
+          </button>}
+      {toxBusy !== "" && <Loader2 className="spin" size={14} color="var(--color-text-tertiary)" />}
+      {toxProgress && <span style={{ fontSize: 12.5, color: "var(--color-text-secondary)" }}>
+        {toxProgress.checked.toLocaleString()} → <b style={{ color: "var(--color-danger, #ff6b62)" }}>{toxProgress.toxic.toLocaleString()}</b> {tr("dropsToxVerdictToxic")}
+        {" · "}<b style={{ color: "var(--color-accent-orange, #ff9f0a)" }}>{toxProgress.suspicious.toLocaleString()}</b> {tr("dropsToxVerdictSuspicious")}
+        {" · "}<b style={{ color: "var(--color-accent-green, #34c759)" }}>{toxProgress.clean.toLocaleString()}</b> {tr("dropsToxVerdictClean")}
+        {toxProgress.remaining > 0 && <> · {tr("dropsToxRemaining").replace("{n}", toxProgress.remaining.toLocaleString())}</>}
+      </span>}
+      {/* Shadow mode's honest label: what the verdicts currently do and do not affect. Arming
+          is a deliberate act, not a default — a false positive that silently pulls a good
+          domain out of the buyable cut is the failure this paragraph exists to prevent. */}
+      {toxArmed === false && <span style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 240, fontSize: 12, color: "var(--color-accent-orange, #ff9f0a)" }}>
+        {tr("dropsToxShadow")}
+        <button onClick={() => void armTox(true)} disabled={toxBusy !== ""} style={{ ...pagerBtn(false), flex: "none" }}>
+          {tr("dropsToxArm")}
+        </button>
+      </span>}
+      {toxArmed === true && <span style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 240, fontSize: 12, color: "var(--color-danger, #ff6b62)" }}>
+        {tr("dropsToxArmed")}
+        <button onClick={() => void armTox(false)} disabled={toxBusy !== ""} style={{ ...pagerBtn(false), flex: "none" }}>
+          {tr("dropsToxDisarm")}
+        </button>
+      </span>}
+      <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>{tr("dropsToxHint")}</span>
+    </div>
 
     {/* The funnel. Each chip is also the filter for its stage, because "show me those 1 910"
         is the only thing anyone wants to do after reading the number. */}
@@ -2037,6 +2167,32 @@ export default function DropsPage() {
                         </a>
                       : "—"}
                   </td>
+                  <td style={td}>
+                    {/* The history verdict — free classifier or AI pass — with its score and its
+                        source. The chip opens the card: a verdict without its reasons hides
+                        exactly the calibration errors this column exists to expose. */}
+                    {(() => {
+                      if (!r.historyVerdict) {
+                        return <span style={{ color: "var(--color-text-tertiary)" }}>—</span>;
+                      }
+                      const meta = TOX_META[r.historyVerdict];
+                      const score = Number(/^score (\d+)/.exec(r.historyNote ?? "")?.[1] ?? "") || null;
+                      return <button
+                        onClick={() => setOpenTox(cur => (cur === r.domain ? null : r.domain))}
+                        title={r.historyNote ?? undefined}
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: 5, cursor: "pointer",
+                          background: "none", border: "none", padding: 0, fontSize: 12,
+                          color: meta?.color ?? "var(--color-text-secondary)",
+                          fontWeight: 600,
+                        }}>
+                        {openTox === r.domain ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                        {meta ? tr(meta.key) : r.historyVerdict}
+                        {score !== null && <b>{score}</b>}
+                        {score === null && <span style={{ fontWeight: 400, color: "var(--color-text-tertiary)" }}>AI</span>}
+                      </button>;
+                    })()}
+                  </td>
                   <td style={{ ...tdNum, fontWeight: 800, color: r.score != null ? "var(--color-text-primary)" : "var(--color-text-tertiary)" }}>
                     {r.score != null ? Math.round(r.score) : "—"}
                     {r.veto && <span
@@ -2061,6 +2217,16 @@ export default function DropsPage() {
                       </button>
                     </div>
                     <BacklinkProfile dropDomain={r.domain} />
+                  </td>
+                </tr>}
+                {openTox === r.domain && <tr style={{ borderTop: "1px solid var(--color-border)", background: "var(--color-bg)" }}>
+                  <td colSpan={COLUMNS.length + 1} style={{ padding: 14 }}>
+                    <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                      <button onClick={() => setOpenTox(null)} style={pagerBtn(false)}>
+                        {tr("dropsBacklinksHide")}
+                      </button>
+                    </div>
+                    <ToxCard domain={r.domain} />
                   </td>
                 </tr>}
               </Fragment>;
