@@ -6,6 +6,7 @@ import {
   Link2, Loader2, Plus, Radar, RefreshCw, Satellite,
 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import GlueCard from "@/components/drops/GlueCard";
 // Pure day math, explicitly client-safe (see the file header): the sitemap age the panel
 // shows must be the same UTC-midnight count the server records, not a local-calendar
 // re-derivation — that drift is exactly why this helper exists.
@@ -257,6 +258,10 @@ export default function ActivationPanel() {
     {!loading && assets !== null && assets.length > 0 && <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {assets.map(a => <AssetCard key={a.id} a={a} refresh={() => void load()} />)}
     </div>}
+
+    {/* The glue card is not tied to an asset: a cluster is planned before anything is
+        harvested, so it renders whether the pipeline is empty or full. */}
+    <GlueCard />
 
     <div style={{ display: "flex", justifyContent: "flex-end" }}>
       <button onClick={() => void load()} disabled={loading} style={ghostBtn(loading)}>

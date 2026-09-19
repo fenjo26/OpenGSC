@@ -1,8 +1,9 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, BadgeCheck, Boxes, ChevronDown, ChevronRight, CircleHelp, Database, Globe2, History, Link2, Loader2, Pencil, Plus, Radar, RefreshCw, Search, ShieldAlert, Sparkles, Square, Star, Upload, X } from "lucide-react";
+import { AlertTriangle, BadgeCheck, Boxes, ChevronDown, ChevronRight, CircleHelp, Combine, Database, Globe2, History, Link2, Loader2, Pencil, Plus, Radar, RefreshCw, Search, ShieldAlert, Sparkles, Square, Star, Upload, X } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import { writeUrlParam } from "@/lib/urlParam";
 import type { DropSource, DropStage } from "@/lib/drops/types";
 // Pure parsing, no server imports — the same function the route uses, so the columns the preview
 // promises are the columns the import reads. Two implementations would drift within a week.
@@ -1921,6 +1922,16 @@ export default function DropsPage() {
                         color: openLinks === r.domain ? "var(--color-accent-blue)" : "var(--color-text-tertiary)",
                       }}>
                       <Link2 size={12} />
+                    </button>
+                    {/* The glue card's front door: switch to Activation with this domain
+                        preloaded (?glue=), where the hreflang/canonical blocks get built. */}
+                    <button onClick={() => { writeUrlParam("glue", r.domain); setTab("activation"); }}
+                      title={`${tr("dropsGlueOpenFromRow")} ${r.domain}`} aria-label={tr("dropsGlueOpenFromRow")}
+                      style={{
+                        marginLeft: 4, display: "inline-flex", verticalAlign: "-2px", cursor: "pointer",
+                        background: "none", border: "none", padding: 0, color: "var(--color-text-tertiary)",
+                      }}>
+                      <Combine size={12} />
                     </button>
                     {/* The AI history verdict next to the name it is about — the pass is no use
                         if its answer only exists in the database. The note rides in the tooltip. */}
