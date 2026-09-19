@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { Check, Copy, Link2, Loader2, Plus, ShieldCheck, X } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { readUrlParam } from "@/lib/urlParam";
@@ -59,7 +59,11 @@ export default function GlueCard() {
 
   // A row of the catalogue sends its domain over as ?glue= — the card keeps it as a
   // one-click prefill rather than silently editing the form behind the user's back.
-  const [candidate] = useState(() => readUrlParam("glue"));
+  // Read after mount, never during render: the server renders without the param, and a
+  // cold load with ?glue= present would mismatch the SSR HTML (React #418) — the same
+  // reason the site page reads its deep-link tab in an effect.
+  const [candidate, setCandidate] = useState<string | null>(null);
+  useEffect(() => { setCandidate(readUrlParam("glue")); }, []);
 
   const [dropUrl, setDropUrl] = useState("");
   const [dropLang, setDropLang] = useState("");

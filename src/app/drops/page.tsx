@@ -155,9 +155,28 @@ export default function DropsPage() {
   // per browser, so a refresh lands where the user left off. The catalogue's own filters
   // live in this component's state and in usePersistedState, so switching tabs and back
   // leaves every one of them exactly as it was.
-  const [tab, setTab] = usePersistedState<string>(
-    "dropsTab", "catalogue", v => v === "catalogue" || v === "activation", "tab",
-  );
+  //
+  // The read is deliberately NOT usePersistedState's render-time initializer: it reads the
+  // URL and localStorage during the first client render, the server rendered the fallback,
+  // and once "activation" is in the URL or stored, every cold load of /drops diverged from
+  // its own SSR HTML and React threw #418. Same deferral the site page applies to its
+  // deep-link tab: URL wins on mount, then the stored value, then the default.
+  const [tab, setTabState] = useState<"catalogue" | "activation">("catalogue");
+  useEffect(() => {
+    const ok = (v: unknown): v is "catalogue" | "activation" =>
+      v === "catalogue" || v === "activation";
+    const fromUrl = new URLSearchParams(window.location.search).get("tab");
+    if (ok(fromUrl)) { setTabState(fromUrl); return; }
+    try {
+      const stored = JSON.parse(window.localStorage.getItem("dropsTab") ?? "null");
+      if (ok(stored)) setTabState(stored);
+    } catch { /* a corrupted preference is no preference */ }
+  }, []);
+  const setTab = (v: "catalogue" | "activation") => {
+    setTabState(v);
+    try { window.localStorage.setItem("dropsTab", JSON.stringify(v)); } catch { /* private mode */ }
+    writeUrlParam("tab", v);
+  };
 
   const [runs, setRuns] = useState<Run[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
