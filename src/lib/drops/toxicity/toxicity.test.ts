@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { classifyDomain, classifySnapshot, needsDeepCheck, parseCdxTimestamp, recencyFactor } from "./classify";
+import { classifyAnchors, classifyDomain, classifySnapshot, needsDeepCheck, parseCdxTimestamp, recencyFactor } from "./classify";
 import { isParked, matchMarkers, scanDomainName, scriptsOf } from "./markers";
 import { buildCdxUrl, extractMetaRefresh, extractTextSample, extractTitle, parseCdxJson, rawSnapshotUrl, usableRows } from "./cdx";
 
@@ -255,4 +255,47 @@ test("скан по имени не ловит легальные имена с 
   assert.deepEqual(scanDomainName("judith-meyer-design.de"), []);
   assert.deepEqual(scanDomainName("reliabledeposits.org"), []);
   assert.deepEqual(scanDomainName("keswickpharmacy.com"), []);
+});
+
+/* ------------------------------------------------------------------ */
+/* анкоры — бесплатный сигнал из уже загруженных метрик                */
+/* ------------------------------------------------------------------ */
+
+test("гембл-анкоры дают вердикт даже когда вебархив пуст", () => {
+  const report = classifyDomain(
+    {
+      domain: "quietplumber.de",
+      snapshots: [],
+      anchors: ["situs togel online", "slot gacor hari ini", "Klempner Berlin"],
+    },
+    { now: NOW },
+  );
+  assert.equal(report.verdict, "toxic");
+  assert.ok(report.signals.some((s) => s.code === "anchor_gambling_id"));
+});
+
+test("иероглифы в анкорах на европейской зоне — сигнал", () => {
+  const signals = classifyAnchors(["利来国际", "Möbelhaus Bremen"], "moebel.de");
+  assert.ok(signals.some((s) => s.code === "anchor_alien_script"));
+});
+
+test("анкоры не портят чистый домен", () => {
+  const report = classifyDomain(
+    {
+      domain: "edslamprecycling.com",
+      snapshots: [{ timestamp: "20251102", title: "Ed's Lamp Recycling - Contact" }],
+      anchors: ["lamp recycling", "ballast disposal services", "ed's lamp recycling"],
+    },
+    { now: NOW },
+  );
+  assert.equal(report.verdict, "clean");
+  assert.equal(report.score, 0);
+});
+
+test("анкоры не подчиняются множителю свежести", () => {
+  const report = classifyDomain(
+    { domain: "x.de", snapshots: [], anchors: ["judi bola sbobet"] },
+    { now: NOW },
+  );
+  assert.equal(report.signals.find((s) => s.code === "anchor_gambling_id")?.weight, 50);
 });

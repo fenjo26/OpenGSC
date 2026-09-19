@@ -74,6 +74,37 @@ export function classifySnapshot(snap: Snapshot, domain: string): SnapshotVerdic
   return { timestamp: snap.timestamp, scripts, parked, signals };
 }
 
+/**
+ * Анкоры входящих ссылок. Свежести у них нет (это сегодняшний профиль),
+ * поэтому множитель не применяется. Вес выше снапшотного: анкор пишет
+ * донор, а не владелец домена, подделать его в свою пользу нельзя.
+ */
+export function classifyAnchors(anchors: string[], domain: string): ToxSignal[] {
+  const signals: ToxSignal[] = [];
+  const text = anchors.join(" \n ");
+  if (!normaliseText(text)) return signals;
+
+  for (const { group, hits } of matchMarkers(text)) {
+    signals.push({
+      code: `anchor_${group.code}`,
+      weight: group.code === "gambling_generic" ? 20 : 50,
+      detail: hits.slice(0, 4).join(", "),
+    });
+  }
+
+  for (const script of scriptsOf(text)) {
+    if (script === "latin") continue;
+    if (isNativeScriptForZone(script, domain)) continue;
+    signals.push({
+      code: "anchor_alien_script",
+      weight: 30,
+      detail: `${script} в анкорах, зона ${zoneOf(domain)}`,
+    });
+  }
+
+  return signals;
+}
+
 export function classifyDomain(evidence: DomainEvidence, opts: ToxOptions = {}): ToxReport {
   const now = opts.now ?? evidence.now ?? new Date();
   const toxicAt = opts.toxicAt ?? DEFAULT_TOXIC_AT;
@@ -96,6 +127,11 @@ export function classifyDomain(evidence: DomainEvidence, opts: ToxOptions = {}):
     }
   }
 
+  for (const signal of classifyAnchors(evidence.anchors ?? [], evidence.domain)) {
+    score += signal.weight;
+    signals.push(signal);
+  }
+
   // Смена письменности между снимками: домен переходил из рук в руки.
   const contentful = perSnapshot.filter((s) => !s.parked && s.scripts.length);
   const profiles = new Set(contentful.map((s) => nonLatin(s.scripts).join("+") || "latin"));
@@ -115,8 +151,10 @@ export function classifyDomain(evidence: DomainEvidence, opts: ToxOptions = {}):
   }
 
   let verdict: ToxReport["verdict"];
-  if (!perSnapshot.length) {
-    verdict = "empty";
+  if (score >= toxicAt) {
+    verdict = "toxic";
+  } else if (!perSnapshot.length) {
+    verdict = score >= suspiciousAt ? "suspicious" : "empty";
     signals.push({ code: "no_snapshots", weight: 0, detail: "вебархив не дал ни одного снимка" });
   } else if (score >= toxicAt) {
     verdict = "toxic";

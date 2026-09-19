@@ -36,6 +36,12 @@ export interface Snapshot {
 export interface DomainEvidence {
   domain: string;
   snapshots: Snapshot[];
+  /**
+   * Анкоры входящих ссылок, если уже загружены (DropCandidate.topAnchors).
+   * Бесплатный и сильный сигнал: вебархив мог не заснять момент флипа,
+   * а анкоры доноров переживают смену контента на самом домене.
+   */
+  anchors?: string[];
   /** сегодняшняя дата для оценки свежести; по умолчанию Date.now() */
   now?: Date;
 }
