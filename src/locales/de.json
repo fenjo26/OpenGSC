@@ -4183,7 +4183,7 @@
   "dropsGlue_drop_lang_ph": "<html lang> des Drops (optional)",
   "dropsGlue_locale_ph": "Locale (en-GB)",
   "dropsGlue_url_ph": "URL der Money-Seite",
-  "dropsGlue_add_alt": "+ Locale",
+  "dropsGlue_add_alt": "Locale",
   "dropsGlue_mode": "Modus",
   "dropsGlue_mode_cluster": "Cluster (gegenseitig)",
   "dropsGlue_mode_funnel": "Funnel (Canonical → Drop)",

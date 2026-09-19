@@ -4183,7 +4183,7 @@
   "dropsGlue_drop_lang_ph": "<html lang> дропа (необов'язково)",
   "dropsGlue_locale_ph": "локаль (en-GB)",
   "dropsGlue_url_ph": "URL мани-сторінки",
-  "dropsGlue_add_alt": "+ локаль",
+  "dropsGlue_add_alt": "Локаль",
   "dropsGlue_mode": "Режим",
   "dropsGlue_mode_cluster": "Кластер (взаємний)",
   "dropsGlue_mode_funnel": "Funnel (канонікал на дроп)",

@@ -4183,7 +4183,7 @@
   "dropsGlue_drop_lang_ph": "废弃域名的 <html lang>（可选）",
   "dropsGlue_locale_ph": "语言区域（en-GB）",
   "dropsGlue_url_ph": "主站页面 URL",
-  "dropsGlue_add_alt": "+ 语言区域",
+  "dropsGlue_add_alt": "语言区域",
   "dropsGlue_mode": "模式",
   "dropsGlue_mode_cluster": "集群（互指）",
   "dropsGlue_mode_funnel": "漏斗（canonical 指向废弃域名）",
