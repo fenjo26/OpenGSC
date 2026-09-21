@@ -97,14 +97,16 @@ const USDT_ADDRESS = "TN7v2NArTXd5J2eMuGFpXmgzAFsoZpWcZu";
 
 // Partner wall in the "Support Developer" modal. To add a partner: drop the
 // logo into public/partners/ and add a `partners<Id>` description key to every
-// src/locales/*.json. Logos sit on a fixed dark tile — some (Pay2.House) use
-// light fills and vanish on light theme otherwise.
+// src/locales/*.json. tileBg must contrast with the logo fills: light-filled
+// logos (Pay2.House) need the dark tile, dark logos on white (Cloaking.House)
+// need "#ffffff" — otherwise they vanish on light theme / dark tile.
 const SUPPORT_PARTNERS = [
   {
     id: "Pay2house",
     name: "Pay2.House",
     href: "https://pay2.house/p/kc9oevv0?utm_source=opengsc",
     logo: "/partners/pay2house-logo.svg",
+    tileBg: "#0b0e16",
     imgStyle: { maxWidth: "78px", maxHeight: "18px" } as React.CSSProperties,
   },
   {
@@ -112,6 +114,15 @@ const SUPPORT_PARTNERS = [
     name: "GroupBuySEO",
     href: "https://my.groupbuyseo.org/register?affiliate_key=8ino4XJTwJ7EJooF67JUOt2tmbcFk1",
     logo: "/partners/groupbuyseo-logo.svg",
+    tileBg: "#0b0e16",
+    imgStyle: { maxHeight: "30px" } as React.CSSProperties,
+  },
+  {
+    id: "Cloakinghouse",
+    name: "Cloaking.House",
+    href: "https://cloaking.house/?utm_source=opengsc",
+    logo: "/partners/cloakinghouse-logo.png",
+    tileBg: "#ffffff",
     imgStyle: { maxHeight: "30px" } as React.CSSProperties,
   },
 ] as const;
@@ -355,7 +366,7 @@ function FeedbackModal({ mode, onClose }: { mode: "feedback" | "thanks"; onClose
                   >
                     <span style={{
                       width: "92px", height: "44px", borderRadius: "8px",
-                      background: "#0b0e16",
+                      background: p.tileBg,
                       border: "1px solid var(--color-border)",
                       display: "flex", alignItems: "center", justifyContent: "center",
                       flexShrink: 0,
