@@ -111,7 +111,7 @@ export interface AuditOptions {
 const activeAudits = new Set<string>();
 const AUDIT_STALE_MS = 5 * 60_000;
 
-function storedOptions(value?: string | null): AuditOptions | undefined {
+export function storedOptions(value?: string | null): AuditOptions | undefined {
   if (!value) return undefined;
   try {
     const parsed = JSON.parse(value);

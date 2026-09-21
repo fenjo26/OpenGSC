@@ -5,7 +5,7 @@
 // page table. Same fire-and-forget/poll UX as the SEO Tools background jobs.
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Play, Trash2, AlertTriangle, CheckCircle, ExternalLink, Filter, Download, RefreshCw } from "lucide-react";
+import { Loader2, Play, Trash2, AlertTriangle, CheckCircle, ExternalLink, Filter, Download, RefreshCw, Clock } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { withShare, isGuestView } from "@/lib/shareParam";
 import { buildAuditMarkdown } from "@/lib/audit/exportMd";
@@ -145,20 +145,22 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
     })();
   }, [loadList, openAudit]);
 
-  // poll while an audit is running
+  // poll while an audit is running or waiting for a queue slot
   const running = audits.find(a => a.status === "running");
+  const queued = audits.find(a => a.status === "queued");
+  const active = running ?? queued;
   useEffect(() => {
-    if (!running) return;
+    if (!active) return;
     const iv = setInterval(async () => {
       const list = await loadList();
-      const r = list.find((a: any) => a.id === running.id);
-      if (r && r.status !== "running") {
+      const r = list.find((a: any) => a.id === active.id);
+      if (r && r.status !== "running" && r.status !== "queued") {
         clearInterval(iv);
         if (r.status === "completed") openAudit(r.id);
       }
     }, 4000);
     return () => clearInterval(iv);
-  }, [running?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [active?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const start = async (baselineAuditId?: string) => {
     setStarting(true); setErr("");
@@ -259,14 +261,18 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
             </button>
           )}
           {!guest && summary && current?.audit?.status === "completed" && (
-            <button onClick={() => start(current.audit.id)} disabled={starting || !!running} title={t("auditVerifyHint")}
-              style={{ display: "inline-flex", alignItems: "center", gap: "7px", padding: "10px 14px", borderRadius: "9px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-secondary)", fontSize: "13px", fontWeight: 600, cursor: starting || running ? "default" : "pointer" }}>
-              {starting || running ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />} {t("auditVerifyRun")}
+            <button onClick={() => start(current.audit.id)} disabled={starting || !!active} title={t("auditVerifyHint")}
+              style={{ display: "inline-flex", alignItems: "center", gap: "7px", padding: "10px 14px", borderRadius: "9px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-secondary)", fontSize: "13px", fontWeight: 600, cursor: starting || active ? "default" : "pointer" }}>
+              {starting || active ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />} {t("auditVerifyRun")}
             </button>
           )}
-          {!guest && <button onClick={() => start()} disabled={starting || !!running}
-            style={{ display: "inline-flex", alignItems: "center", gap: "7px", padding: "10px 16px", borderRadius: "9px", border: "none", background: running ? "rgba(255,255,255,0.08)" : "var(--color-accent-blue)", color: running ? "var(--color-text-secondary)" : "#fff", fontSize: "13px", fontWeight: 600, cursor: running ? "default" : "pointer" }}>
-            {running ? <><Loader2 size={14} className="spin" /> {t("auditRunning")} ({running.pagesCrawled})</> : <><Play size={14} /> {t("auditStart")}</>}
+          {!guest && <button onClick={() => start()} disabled={starting || !!active}
+            style={{ display: "inline-flex", alignItems: "center", gap: "7px", padding: "10px 16px", borderRadius: "9px", border: "none", background: active ? "rgba(255,255,255,0.08)" : "var(--color-accent-blue)", color: active ? "var(--color-text-secondary)" : "#fff", fontSize: "13px", fontWeight: 600, cursor: active ? "default" : "pointer" }}>
+            {running
+              ? <><Loader2 size={14} className="spin" /> {t("auditRunning")} ({running.pagesCrawled})</>
+              : queued
+                ? <><Clock size={14} /> {t("auditQueued")}</>
+                : <><Play size={14} /> {t("auditStart")}</>}
           </button>}
         </div>
 
@@ -450,8 +456,8 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
               <div key={a.id} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 10px", borderRadius: "8px", background: current?.audit?.id === a.id ? "rgba(59,130,246,0.08)" : "transparent", cursor: a.status === "completed" ? "pointer" : "default" }}
                 onClick={() => a.status === "completed" && (setIssueFilter(""), openAudit(a.id))}>
                 <span style={{ fontSize: "12px", color: "var(--color-text-secondary)", minWidth: "140px" }}>{new Date(a.startedAt).toLocaleString()}</span>
-                <span style={{ fontSize: "11px", fontWeight: 700, color: a.status === "completed" ? "#34c759" : a.status === "running" ? "#ff9f0a" : "#ff375f" }}>
-                  {a.status === "completed" ? `✓ ${a.pagesCrawled} ${t("auditPagesUnit")}` : a.status === "running" ? t("auditRunning") : `✗ ${a.error ?? "error"}`}
+                <span style={{ fontSize: "11px", fontWeight: 700, color: a.status === "completed" ? "#34c759" : a.status === "running" ? "#ff9f0a" : a.status === "queued" ? "var(--color-text-secondary)" : "#ff375f" }}>
+                  {a.status === "completed" ? `✓ ${a.pagesCrawled} ${t("auditPagesUnit")}` : a.status === "running" ? t("auditRunning") : a.status === "queued" ? t("auditQueued") : `✗ ${a.error ?? "error"}`}
                 </span>
                 {a.summary && <span style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>{t("auditHealthScore")}: {a.summary.healthScore}</span>}
                 <span style={{ flex: 1 }} />

@@ -2,11 +2,14 @@ import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
-import { recoverStaleAudits, runAudit } from "@/lib/audit/crawler";
+import { recoverStaleAudits } from "@/lib/audit/crawler";
+import { kickAuditQueue } from "@/lib/audit/queue";
 import { toAuditHistoryRow } from "@/lib/audit/historyRows";
 
 // Site Audit — built-in crawler, no external APIs.
-// POST /api/audit { siteId, maxPages? }  → start an audit (fire-and-forget), returns { id }
+// POST /api/audit { siteId, maxPages? }  → queue an audit (the pump starts it as soon as
+//                                          a concurrency slot is free — with the queue idle
+//                                          that is within a fraction of a second), returns { id }
 // GET  /api/audit?siteId=                → list audits for a site (latest first)
 // GET  /api/audit                        → workspace-wide history across every site (thin
 //                                          rows) plus the sites that have never been audited
@@ -24,8 +27,9 @@ export async function POST(req: Request) {
   const site = await prisma.site.findFirst({ where: { id: siteId, userId } });
   if (!site) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  // One running audit per site at a time.
-  const running = await prisma.siteAudit.findFirst({ where: { siteId, status: "running" } });
+  // One active audit per site at a time — a queued order holds the site just as firmly
+  // as a running crawl.
+  const running = await prisma.siteAudit.findFirst({ where: { siteId, status: { in: ["running", "queued"] } } });
   if (running) return NextResponse.json({ error: "already_running", id: running.id }, { status: 409 });
 
   const baselineAuditId = String(b.baselineAuditId ?? "").trim() || null;
@@ -54,18 +58,19 @@ export async function POST(req: Request) {
   const audit = await prisma.siteAudit.create({
     data: {
       siteId,
+      status: "queued",
       maxPages,
       stage: "crawl",
       progress: 0,
+      trigger: "manual",
       heartbeatAt: new Date(),
       options: JSON.stringify(options),
       baselineAuditId,
     },
   });
-  // Fire-and-forget: the promise keeps running in-process after the response is sent
-  // (same pattern as /api/seo/jobs — see docs/ARCHITECTURE.md §1).
-  runAudit(audit.id, options)
-    .catch(err => console.error("[audit] run failed:", err));
+  // The queue owns execution now: it claims the row into a concurrency slot (essentially
+  // immediately when the queue is idle) and applies the retry policy if the run fails.
+  kickAuditQueue(0);
   return NextResponse.json({ id: audit.id });
 }
 
@@ -90,14 +95,14 @@ export async function GET(req: Request) {
         where: { site: { userId, archivedAt: null, hidden: false } },
         orderBy: { startedAt: "desc" },
         select: {
-          id: true, status: true, startedAt: true, finishedAt: true,
+          id: true, status: true, trigger: true, startedAt: true, finishedAt: true,
           pagesCrawled: true, baselineAuditId: true, error: true, summary: true, verification: true,
-          site: { select: { id: true, url: true } },
+          site: { select: { id: true, url: true, auditSettings: true } },
         },
       }),
       prisma.site.findMany({
         where: { userId, archivedAt: null, hidden: false },
-        select: { id: true, url: true },
+        select: { id: true, url: true, auditSettings: true },
       }),
     ]);
     const auditedSiteIds = new Set(rows.map(row => row.site.id));

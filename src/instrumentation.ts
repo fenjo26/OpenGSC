@@ -28,5 +28,9 @@ export async function register() {
     // until a user turns it on and gives it a budget of its own.
     const { startWarmupScheduler } = await import('@/lib/warmupScheduler');
     startWarmupScheduler();
+    // Site Audit queue + scheduler: recovers orphaned runs, drains queued orders under
+    // the concurrency setting, and creates scheduled orders inside each workspace's hour.
+    const { startAuditScheduler } = await import('@/lib/audit/auditScheduler');
+    startAuditScheduler();
   }
 }

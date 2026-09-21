@@ -21,7 +21,9 @@ export interface AuditHistoryRow {
   id: string;
   siteId: string;
   siteUrl: string;
+  siteAuditSettings: string | null;
   status: string;
+  trigger: string;
   startedAt: string; // ISO
   finishedAt: string | null;
   pagesCrawled: number;
@@ -45,8 +47,9 @@ export function toAuditHistoryRow(
     error: string | null;
     summary: string | null;
     verification: string | null;
+    trigger?: string;
   },
-  site: { id: string; url: string },
+  site: { id: string; url: string; auditSettings?: string | null },
 ): AuditHistoryRow {
   let summary: any = null;
   try { summary = audit.summary ? JSON.parse(audit.summary) : null; } catch { /* legacy row */ }
@@ -78,7 +81,9 @@ export function toAuditHistoryRow(
     id: audit.id,
     siteId: site.id,
     siteUrl: site.url,
+    siteAuditSettings: site.auditSettings ?? null,
     status: audit.status,
+    trigger: audit.trigger ?? "manual",
     startedAt: new Date(audit.startedAt).toISOString(),
     finishedAt: audit.finishedAt ? new Date(audit.finishedAt).toISOString() : null,
     pagesCrawled: audit.pagesCrawled,

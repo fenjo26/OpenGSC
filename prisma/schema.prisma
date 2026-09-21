@@ -91,6 +91,7 @@ model User {
   alertSettings    String? // JSON: { rankDrop: {on,threshold}, trafficDrop: {on,percent}, ssl: {on,days}, audit: {on,minScore} }
   digestSettings   String? // JSON: { enabled, frequency: "daily"|"weekly", hourUtc, tag, days, ai, lastSentAt }
   syncSettings     String? // JSON: { enabled, hour, timeZone, lastRunAt } — automatic GSC sync, see src/lib/syncSchedule.ts
+  auditQueueSettings String? // JSON: { concurrency, defaultIntervalDays, scheduleHourUtc, retryAttempts, retryDelayMin, paused } — audit queue + scheduler knobs, see src/lib/audit/queue.ts
 
   // Third-party API integrations
   neuralIndexerToken String?
@@ -195,6 +196,11 @@ model Site {
   aeoCity          String?
   aeoLanguage      String?   // ISO-639-1, lowercase
   aeoAuto          Boolean   @default(false)
+
+  // Site Audit scheduling: per-site override for the workspace audit scheduler.
+  // JSON { mode: "inherit" | "custom" | "off", intervalDays? } — inherit takes the
+  // workspace default interval, off stops automatic audits (manual runs always work).
+  auditSettings    String?
 
   // Sitemap indexing
   sitemapUrl       String?   // custom sitemap URL (defaults to url + /sitemap.xml)
@@ -624,6 +630,8 @@ model SiteAudit {
   options      String?   // JSON: ignore patterns and per-run crawler options
   baselineAuditId String? // explicit audit this run verifies; no relation so old rows stay portable
   verification String?   // JSON: resolved / stillPresent / regressions / inconclusive
+  trigger      String    @default("manual") // how this run was started: manual | bulk | scheduled | retry
+  nextAttemptAt DateTime? // queue retry gate — a row becomes eligible for a slot when this passes (null = now)
   startedAt    DateTime  @default(now())
   finishedAt   DateTime?
   maxPages     Int       @default(5000) // safety ceiling, not a target — see crawler.ts

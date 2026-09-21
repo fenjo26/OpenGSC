@@ -7,7 +7,17 @@
 уже живых в проекте (`alertScheduler`, `digestScheduler` и др., старт из
 `src/instrumentation.ts`).
 
-**Статус на 2026-09-21: не начато.**
+**Статус на 2026-09-21: реализовано целиком (фазы 1–4).** Ядро: `src/lib/audit/queue.ts`
+(помпа, retry, cancel/retry-failed/pause) + чистый словарь `src/lib/audit/schedule.ts`
+(настройки, интервалы, due-логика — 4 юнит-теста) + `src/lib/audit/auditScheduler.ts`
+(бут-recovery, тик 15 мин, час-окно). API: POST через очередь, `POST /api/audit/bulk`,
+`POST /api/audit/queue/action`, `GET|POST /api/audit/settings`. UI: вкладка Sites с
+чекбоксами и select-filtered, панель очереди, per-site интервалы, Last/Next колонки,
+колонка триггера в истории, чип «queued» в панели сайта. Схема: `SiteAudit.trigger` +
+`SiteAudit.nextAttemptAt` + `Site.auditSettings` + `User.auditQueueSettings` — деплой
+требует `db push` + отдельный `prisma generate`. Развёрнуто поверх плана ниже без
+отклонений; чистые функции Due/интервалов вынесены в `schedule.ts` (общий для клиента
+и сервера) — этого пункта в исходном плане не было.
 
 ## Что уже есть и на что опираемся
 
