@@ -20,6 +20,11 @@ const PAGE = 50;
 
 const hostOf = (url: string) => { try { return new URL(url).host; } catch { return url; } };
 
+// /site/[id] decodes its param as a domain, not the internal Prisma id — build the route
+// key the same way the dashboard's site cards do (getDomain + encodeURIComponent).
+const siteRouteKey = (url: string) =>
+  encodeURIComponent(url.replace("sc-domain:", "").replace(/^https?:\/\//, "").replace(/\/$/, ""));
+
 // Compact page list: first, last, and a window around the current page, with ellipses.
 function pageWindow(cur: number, total: number): (number | "…")[] {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i);
@@ -108,7 +113,7 @@ export default function AuditsPage() {
   const safePage = Math.min(page, pages - 1);
   const visible = useMemo(() => filtered.slice(safePage * PAGE, safePage * PAGE + PAGE), [filtered, safePage]);
 
-  const openSite = (id: string) => router.push(`/site/${id}?tab=audit`);
+  const openSite = (url: string) => router.push(`/site/${siteRouteKey(url)}?tab=audit`);
 
   const healthColor = (score: number | null) =>
     score == null ? "var(--color-text-tertiary)" : score >= 80 ? "#34c759" : score >= 50 ? "#ff9f0a" : "#ff375f";
@@ -181,7 +186,7 @@ export default function AuditsPage() {
             <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginBottom: "10px" }}>{t("auditsGNeverSub")}</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
               {neverAudited.map(s => (
-                <button key={s.id} onClick={() => openSite(s.id)} title={t("auditsGOpen")} style={{
+                <button key={s.id} onClick={() => openSite(s.url)} title={t("auditsGOpen")} style={{
                   display: "inline-flex", alignItems: "center", gap: "6px", padding: "6px 11px", borderRadius: "8px",
                   border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-primary)",
                   fontSize: "12px", cursor: "pointer",
@@ -225,7 +230,7 @@ export default function AuditsPage() {
                   {visible.map(r => {
                     const regressions = r.verification?.regressions ?? null;
                     return (
-                      <tr key={r.id} onClick={() => openSite(r.siteId)} title={t("auditsGOpen")}
+                      <tr key={r.id} onClick={() => openSite(r.siteUrl)} title={t("auditsGOpen")}
                         style={{ borderBottom: "1px solid var(--color-border)", cursor: "pointer" }}>
                         <td style={{ padding: "8px 14px", maxWidth: "220px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--color-text-primary)", fontWeight: 600 }}>
                           {hostOf(r.siteUrl)}
