@@ -20,8 +20,9 @@ export {
   parseSiteAuditSettings,
   siteIntervalDays,
   isSiteDue,
+  effectiveAuditSchedule,
 } from "./schedule";
-export type { AuditQueueSettings, SiteAuditScheduleSettings } from "./schedule";
+export type { AuditQueueSettings, SiteAuditScheduleSettings, EffectiveAuditSchedule } from "./schedule";
 
 export async function getAuditQueueSettings(userId: string): Promise<AuditQueueSettings> {
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { auditQueueSettings: true } }).catch(() => null);

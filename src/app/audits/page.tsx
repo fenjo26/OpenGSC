@@ -17,7 +17,8 @@ import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, ClipboardCheck, Clock, ExternalLink, Loader2, Pause, Play, RefreshCw, Settings2, X } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import type { AuditHistoryRow } from "@/lib/audit/historyRows";
-import { DEFAULT_AUDIT_QUEUE_SETTINGS, parseSiteAuditSettings, siteIntervalDays, type AuditQueueSettings } from "@/lib/audit/schedule";
+import { DEFAULT_AUDIT_QUEUE_SETTINGS, effectiveAuditSchedule, parseSiteAuditSettings, type AuditQueueSettings } from "@/lib/audit/schedule";
+import { validateCron } from "@/lib/cron";
 
 type NeverAudited = { id: string; url: string; auditSettings?: string | null };
 type SortKey = "newest" | "issues" | "regressions" | "health";
@@ -78,6 +79,9 @@ export default function AuditsPage() {
   const [settingsDraft, setSettingsDraft] = useState<AuditQueueSettings>(DEFAULT_AUDIT_QUEUE_SETTINGS);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  // siteId → draft cron expression. Presence switches that row's interval cell into
+  // "entering a cron" mode; the row is saved only when a valid expression is committed.
+  const [cronEditing, setCronEditing] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     try {
@@ -260,8 +264,16 @@ export default function AuditsPage() {
     }
   };
 
-  // Per-site interval select: "inherit" | "off" | a preset day count (sent as custom).
+  // Per-site schedule cell: presets are sent as custom intervals; "cron" only opens the
+  // inline expression input — nothing is saved until a valid expression is committed.
   const saveSiteInterval = async (siteId: string, value: string) => {
+    if (value === "cron") {
+      const current = rows.find(r => r.siteId === siteId)?.siteAuditSettings
+        ?? neverAudited.find(s => s.id === siteId)?.auditSettings ?? null;
+      setCronEditing(prev => ({ ...prev, [siteId]: parseSiteAuditSettings(current).cron ?? "" }));
+      return;
+    }
+    setCronEditing(prev => { const n = { ...prev }; delete n[siteId]; return n; });
     const site = value === "inherit" || value === "off"
       ? { mode: value }
       : { mode: "custom", intervalDays: Number(value) };
@@ -275,22 +287,45 @@ export default function AuditsPage() {
     if (!res || !res.ok) await load(); // revert the optimistic row on failure
   };
 
+  const saveSiteCron = async (siteId: string, text: string) => {
+    const expr = text.trim();
+    if (!expr) { // empty commit leaves cron mode — back to the workspace default
+      setCronEditing(prev => { const n = { ...prev }; delete n[siteId]; return n; });
+      await saveSiteInterval(siteId, "inherit");
+      return;
+    }
+    const err = validateCron(expr);
+    if (err) { showNotice(t("auditsCronInvalid").replace("{err}", err)); return; }
+    setCronEditing(prev => { const n = { ...prev }; delete n[siteId]; return n; });
+    const site = { mode: "cron", cron: expr };
+    setRows(prev => prev.map(r => r.siteId === siteId
+      ? { ...r, siteAuditSettings: JSON.stringify(site) } : r));
+    setNeverAudited(prev => prev.map(s => s.id === siteId ? { ...s, auditSettings: JSON.stringify(site) } : s));
+    const res = await fetch("/api/audit/settings", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ siteId, site }),
+    }).catch(() => null);
+    if (!res || !res.ok) await load();
+  };
+
   const intervalValueOf = (auditSettings: string | null): string => {
     const s = parseSiteAuditSettings(auditSettings);
     if (s.mode === "off") return "off";
+    if (s.mode === "cron") return "cron";
     if (s.mode === "custom") return String(s.intervalDays);
     return "inherit";
   };
 
-  // Next audit: last finished + interval. Overdue dates render accented — that site runs
-  // at the next schedule-hour window, and showing a stale silent date would read as
-  // "scheduler forgot".
+  // Next audit. Interval schedules: last finished + interval, overdue accented (that site
+  // runs at the next window, and a silently stale date would read as "scheduler forgot").
+  // Cron schedules: the expression itself is the honest answer to "when next".
   const nextRunOf = (f: FleetRow): { text: string; overdue: boolean } | null => {
-    const interval = siteIntervalDays(f.auditSettings, queueSettings);
-    if (!interval) return null;
+    const sched = effectiveAuditSchedule(f.auditSettings, queueSettings);
+    if (sched.kind === "off") return null;
+    if (sched.kind === "cron") return { text: sched.expr, overdue: false };
     const anchor = f.last?.finishedAt ?? f.last?.startedAt;
     if (!anchor) return { text: "—", overdue: true };
-    const next = new Date(new Date(anchor).getTime() + interval * 86_400_000);
+    const next = new Date(new Date(anchor).getTime() + sched.days * 86_400_000);
     const overdue = next.getTime() <= Date.now();
     return { text: next.toLocaleDateString(), overdue };
   };
@@ -507,6 +542,16 @@ export default function AuditsPage() {
               {numInput(t("auditsSettingsHour"), "scheduleHourUtc", 0, 23)}
               {numInput(t("auditsSettingsRetries"), "retryAttempts", 0, 5)}
               {numInput(t("auditsSettingsRetryDelay"), "retryDelayMin", 1, 1440)}
+              <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "var(--color-text-secondary)" }}>
+                {t("auditsSettingsCron")}
+                <input
+                  value={settingsDraft.defaultCron ?? ""}
+                  onChange={e => setSettingsDraft(d => ({ ...d, defaultCron: e.target.value.trim() || null }))}
+                  placeholder={t("auditsCronPlaceholder")}
+                  title="0 3 */2 * *"
+                  className="tool-input" style={{ ...inputStyle, width: "150px", fontFamily: "var(--font-mono, monospace)" }}
+                />
+              </label>
               <button onClick={saveQueueSettings} disabled={busy} style={primaryBtn(false)}>{t("auditsSettingsSave")}</button>
             </div>
           </div>
@@ -579,11 +624,25 @@ export default function AuditsPage() {
                           {next ? next.text : "—"}
                         </td>
                         <td style={{ padding: "8px 8px" }} onClick={e => e.stopPropagation()}>
-                          <select value={intervalValue} onChange={e => saveSiteInterval(f.id, e.target.value)} className="tool-input" style={{ ...inputStyle, padding: "4px 8px" }}>
-                            <option value="inherit">{t("auditsIntervalInherit").replace("{n}", String(queueSettings.defaultIntervalDays))}</option>
-                            <option value="off">{t("auditsIntervalOff")}</option>
-                            {INTERVAL_CHOICES.map(d => <option key={d} value={String(d)}>{t("auditsIntervalDays").replace("{n}", String(d))}</option>)}
-                          </select>
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                            <select value={intervalValue} onChange={e => saveSiteInterval(f.id, e.target.value)} className="tool-input" style={{ ...inputStyle, padding: "4px 8px" }}>
+                              <option value="inherit">{queueSettings.defaultCron ? t("auditsIntervalInheritCron") : t("auditsIntervalInherit").replace("{n}", String(queueSettings.defaultIntervalDays))}</option>
+                              <option value="off">{t("auditsIntervalOff")}</option>
+                              {INTERVAL_CHOICES.map(d => <option key={d} value={String(d)}>{t("auditsIntervalDays").replace("{n}", String(d))}</option>)}
+                              <option value="cron">{t("auditsIntervalCron")}</option>
+                            </select>
+                            {(intervalValue === "cron" || cronEditing[f.id] !== undefined) && (
+                              <input
+                                value={cronEditing[f.id] ?? parseSiteAuditSettings(f.auditSettings).cron ?? ""}
+                                onChange={e => setCronEditing(prev => ({ ...prev, [f.id]: e.target.value }))}
+                                onBlur={e => saveSiteCron(f.id, e.target.value)}
+                                onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                                placeholder={t("auditsCronPlaceholder")}
+                                className="tool-input"
+                                style={{ ...inputStyle, padding: "4px 8px", width: "130px", fontFamily: "var(--font-mono, monospace)" }}
+                              />
+                            )}
+                          </div>
                         </td>
                         <td style={{ padding: "8px 8px", whiteSpace: "nowrap" }}>
                           {f.last?.status === "running"

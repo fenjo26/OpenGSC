@@ -6,6 +6,7 @@ import {
   parseSiteAuditSettings,
   siteIntervalDays,
   isSiteDue,
+  effectiveAuditSchedule,
 } from "./schedule";
 
 const DAY = 86_400_000;
@@ -49,4 +50,28 @@ test("due: never-audited is due; in-flight is never due; finished gates the inte
   assert.equal(isSiteDue({ status: "completed", finishedAt: new Date(now - 8 * DAY).toISOString() }, 7, now), true);
   // interval off → never due
   assert.equal(isSiteDue(null, 0, now), false);
+});
+
+test("effective schedule precedence: site cron > site interval > workspace cron > workspace interval", () => {
+  const q = { ...DEFAULT_AUDIT_QUEUE_SETTINGS, defaultIntervalDays: 7, scheduleHourUtc: 3, defaultCron: "0 4 * * *" };
+  // site cron wins over everything, including the workspace cron
+  assert.deepEqual(
+    effectiveAuditSchedule(JSON.stringify({ mode: "cron", cron: "30 2 * * *" }), q),
+    { kind: "cron", expr: "30 2 * * *" });
+  // site interval beats the workspace cron
+  assert.deepEqual(
+    effectiveAuditSchedule(JSON.stringify({ mode: "custom", intervalDays: 3 }), q),
+    { kind: "interval", days: 3, hourUtc: 3 });
+  // inherit follows the workspace cron when one is set
+  assert.deepEqual(effectiveAuditSchedule(null, q), { kind: "cron", expr: "0 4 * * *" });
+  // ...and the interval + hour when it isn't
+  assert.deepEqual(
+    effectiveAuditSchedule(null, { ...q, defaultCron: null }),
+    { kind: "interval", days: 7, hourUtc: 3 });
+  // off is off regardless of the workspace
+  assert.deepEqual(effectiveAuditSchedule(JSON.stringify({ mode: "off" }), q), { kind: "off" });
+  // an invalid stored cron is treated as absent — the site falls back to the workspace schedule
+  assert.deepEqual(
+    effectiveAuditSchedule(JSON.stringify({ mode: "cron", cron: "99 * * * *" }), q),
+    { kind: "cron", expr: "0 4 * * *" });
 });
