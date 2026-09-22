@@ -20,8 +20,8 @@ import {
   algoChartLabel, algoImpact, withNeighbours, type AlgoImpactResult,
   type AlgoUpdate, type AlgoUpdateType,
 } from "@/lib/algoUpdates";
-import { readChartTypePref, buildCandleRows } from "@/lib/chartCandles";
-import { CandleBar, CandleTooltip, candleWickDataKey, candlePrevDataKey } from "@/components/CandleChartParts";
+import { buildCandleRows } from "@/lib/chartCandles";
+import { CandlePanes, useChartTypePref } from "@/components/CandleChartParts";
 import { useParams, useRouter } from "next/navigation";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
@@ -4006,7 +4006,7 @@ type AlgoMarker = AlgoUpdate & { x: string; x2: string | null; impact: AlgoImpac
  * Shared by the dashboard chart and the Annotations one so the two cannot drift into drawing the
  * same fact differently.
  */
-function renderAlgoMarkers(updates: AlgoMarker[], t: (k: never) => string) {
+function renderAlgoMarkers(updates: AlgoMarker[], t: (k: never) => string, labels = true) {
   return updates.map(u => (
     <Fragment key={`${u.name}-${u.date}`}>
       {/* Shaded rollout window first so the start line draws on top of it. */}
@@ -4016,7 +4016,7 @@ function renderAlgoMarkers(updates: AlgoMarker[], t: (k: never) => string) {
       )}
       <ReferenceLine x={u.x} yAxisId="left"
         stroke={ALGO_UPDATE_COLORS[u.type]} strokeWidth={1.5} strokeDasharray="3 3"
-        label={
+        label={!labels ? undefined :
           <AlgoMarkerLabel
             text={algoChartLabel(u)}
             impact={u.impact}
@@ -5229,11 +5229,11 @@ export default function SitePage({
 
   // ── Candlestick view (Settings → Preferences). Read once per mount: the setting lives in a
   // different route and navigating back here remounts the page, which re-reads it.
-  const [chartTypePref] = useState(readChartTypePref);
+  const chartTypePref = useChartTypePref();
 
-  // Daily rows compressed into shared candle buckets (~40 candles, ≥2 days each — see
+  // Daily rows → candles: one per day up to ~6 weeks, calendar weeks/months beyond (see
   // src/lib/chartCandles.ts). *C === 0 means "no comparison row" in this dataset, not a real zero.
-  const candleData = useMemo(() => buildCandleRows(
+  const candleData = useMemo(() => buildCandleRows<(typeof chartData)[number]>(
     chartData,
     [
       { key: "clicks",      value: r => r.clicks,                                prev: r => (r.clicksC > 0 ? r.clicksC : null) },
@@ -5724,13 +5724,32 @@ export default function SitePage({
           <EngineView engine={engine} domain={domain} siteDbId={siteDbId} refreshKey={engineRefresh} metrics={activeMetrics} days={period === "custom" && customDays ? customDays : periodToDays(period)} onSummary={setEngineSummary} />
         ) : (
         <div style={{ background: "var(--color-card)", borderRadius: "12px", padding: "16px", border: "1px solid var(--color-border)" }}>
+          {candleMode ? (
+            // Candles: one pane per enabled metric on a shared date axis, previous period as a
+            // ghost candle beside each one. See src/components/CandleChartParts.tsx.
+            <CandlePanes
+              rows={candleData}
+              metrics={(["clicks", "impressions", "ctr", "position"] as const)
+                .filter(m => activeMetrics.has(m))
+                .map(m => ({
+                  key: m,
+                  color: C[m],
+                  kind: m === "ctr" ? "pct" as const : m === "position" ? "pos" as const : "count" as const,
+                  label: m === "ctr" ? "CTR" : m === "position" ? t("avgPosition") : m === "clicks" ? t("clicks") : t("impressions"),
+                }))}
+              showPrev={candleData.some(r => ["clicks", "impressions", "ctr", "position"].some(k => (r[k] as any)?.prev))}
+              height={activeMetrics.size > 2 ? 360 : 300}
+              topMargin={googleUpdates && algoMarkersForMode.length > 0 ? 26 : 6}
+              renderMarkers={top => (googleUpdates ? renderAlgoMarkers(algoMarkersForMode, t as never, top) : null)}
+            />
+          ) : (
           <ResponsiveContainer width="100%" height={300}>
             {/* Extra headroom when update markers are on: their labels sit above the plot area,
                 and at the default 8px they were clipped by the top of the chart — the text was
                 half-drawn and unreadable. Only reserved when something needs it, so the plot
                 keeps its full height the rest of the time. */}
             <ComposedChart
-              data={candleMode ? candleData : aioMode ? aioChartData : chartData}
+              data={aioMode ? aioChartData : chartData}
               margin={{ top: googleUpdates && visibleAlgoUpdates.length > 0 ? 26 : 8, right: 0, left: 0, bottom: 0 }}
             >
               <defs>
@@ -5750,16 +5769,7 @@ export default function SitePage({
                   be flipped without dragging clicks and CTR with it. */}
               {!aioMode && <YAxis yAxisId="pos" reversed hide domain={[1, "dataMax"]} />}
               <Tooltip
-                content={aioMode ? <AioTooltip /> : candleMode ? (
-                  <CandleTooltip
-                    colors={{ clicks: C.clicks, impressions: C.impressions, ctr: C.ctr, position: C.position }}
-                    metricLabel={(k: string) => (k === "ctr" ? "CTR" : k === "position" ? t("avgPosition") : k === "clicks" ? t("clicks") : t("impressions"))}
-                    format={(k: string, v: number) => (k === "ctr" ? `${v}%` : k === "position" ? String(v) : Number(v).toLocaleString())}
-                    fields={["clicks", "impressions", "ctr", "position"]}
-                    invertedField="position"
-                    prevLabel={t("prev")}
-                  />
-                ) : <SiteTooltip />}
+                content={aioMode ? <AioTooltip /> : <SiteTooltip />}
                 cursor={{ stroke: "var(--color-border)", strokeWidth: 1 }}
               />
               {aioMode ? (
@@ -5769,22 +5779,6 @@ export default function SitePage({
                   <ReferenceLine yAxisId="left" y={100} stroke="var(--color-text-secondary)" strokeDasharray="4 4" strokeOpacity={0.5} />
                   <Line yAxisId="left" type="monotone" dataKey="imprIdx" stroke={C.impressions} strokeWidth={2} dot={false} />
                   <Line yAxisId="left" type="monotone" dataKey="clicksIdx" stroke={C.clicks} strokeWidth={2} dot={false} />
-                </>
-              ) : candleMode ? (
-                <>
-                  {/* Candles: body = open→close, wick = the bucket's min–max. Green closes better
-                      than it opened — for position that means a SMALLER number, the same inversion
-                      the reversed axis applies in line mode. */}
-                  {activeMetrics.has("clicks")      && <Bar yAxisId="left"  dataKey={candleWickDataKey("clicks")}      shape={(p: any) => <CandleBar {...p} field="clicks" />}      isAnimationActive={false} legendType="none" />}
-                  {activeMetrics.has("impressions") && <Bar yAxisId="right" dataKey={candleWickDataKey("impressions")} shape={(p: any) => <CandleBar {...p} field="impressions" />} isAnimationActive={false} legendType="none" />}
-                  {activeMetrics.has("ctr")         && <Bar yAxisId="left"  dataKey={candleWickDataKey("ctr")}         shape={(p: any) => <CandleBar {...p} field="ctr" />}         isAnimationActive={false} legendType="none" />}
-                  {activeMetrics.has("position")    && <Bar yAxisId="pos"   dataKey={candleWickDataKey("position")}    shape={(p: any) => <CandleBar {...p} field="position" invert flipAxis />} isAnimationActive={false} legendType="none" />}
-                  {/* The previous period stays comparable in candle mode: a dashed line through
-                      the prev-period values at each bucket's close. */}
-                  {activeMetrics.has("clicks")      && <Line yAxisId="left"  type="monotone" dataKey={candlePrevDataKey("clicks")}      stroke={C.clicks}     strokeWidth={1} strokeDasharray="4 3" dot={false} legendType="none" connectNulls />}
-                  {activeMetrics.has("impressions") && <Line yAxisId="right" type="monotone" dataKey={candlePrevDataKey("impressions")} stroke={C.impressions} strokeWidth={1} strokeDasharray="4 3" dot={false} legendType="none" connectNulls />}
-                  {activeMetrics.has("ctr")         && <Line yAxisId="left"  type="monotone" dataKey={candlePrevDataKey("ctr")}         stroke={C.ctr}        strokeWidth={1} strokeDasharray="4 3" dot={false} legendType="none" connectNulls />}
-                  {activeMetrics.has("position")    && <Line yAxisId="pos"   type="monotone" dataKey={candlePrevDataKey("position")}    stroke={C.position}   strokeWidth={1} strokeDasharray="4 3" dot={false} legendType="none" connectNulls />}
                 </>
               ) : (
                 <>
@@ -5802,6 +5796,7 @@ export default function SitePage({
               {googleUpdates && renderAlgoMarkers(algoMarkersForMode, t as never)}
             </ComposedChart>
           </ResponsiveContainer>
+          )}
         </div>
         )}
 

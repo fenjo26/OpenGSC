@@ -11,6 +11,8 @@ import {
   Download, Tag, X, Loader2, RefreshCw,
 } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer, Tooltip } from "recharts";
+import { buildCandleRows } from "@/lib/chartCandles";
+import { CandlePanes, useChartTypePref } from "@/components/CandleChartParts";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { useHealthStatus } from "@/components/SiteHealthPanel";
@@ -320,7 +322,40 @@ function ChartTooltip({ active, payload }: any) {
 }
 
 // ─── Multi-metric chart ───────────────────────────────────────────────────────
-function MultiMetricChart({ data, activeMetrics, prevTrend = true }: { data: Pt[]; activeMetrics: Set<Metric>; prevTrend?: boolean }) {
+function MultiMetricChart({ data, activeMetrics, prevTrend = true, candles = false }: { data: Pt[]; activeMetrics: Set<Metric>; prevTrend?: boolean; candles?: boolean }) {
+  const { t } = useLanguage();
+  // Candle sparkline (Settings → Preferences → Charts): raw values, one tiny pane per metric —
+  // the normalised cN/iN keys exist only to overlay four curves on one scale, which candles don't do.
+  // *C === 0 means "no comparison row" in the portfolio API, not a real zero.
+  const candleRows = useMemo(() => (candles ? buildCandleRows(
+    data,
+    [
+      { key: "clicks",      value: r => r.clicks,                              prev: r => (r.clicksC > 0 ? r.clicksC : null) },
+      { key: "impressions", value: r => r.impressions,                         prev: r => (r.impressionsC > 0 ? r.impressionsC : null) },
+      { key: "ctr",         value: r => r.ctr,                                 prev: r => (r.ctrC > 0 ? r.ctrC : null) },
+      { key: "position",    value: r => (r.position > 0 ? r.position : null),  prev: r => (r.positionC > 0 ? r.positionC : null) },
+    ],
+    r => r.date,
+    r => r.date,
+  ) : []), [candles, data]);
+  if (candles) {
+    return (
+      <CandlePanes
+        rows={candleRows}
+        compact
+        height={90}
+        showPrev={prevTrend}
+        metrics={(["clicks", "impressions", "ctr", "position"] as Metric[])
+          .filter(m => activeMetrics.has(m))
+          .map(m => ({
+            key: m,
+            color: MC[m].color,
+            kind: m === "ctr" ? "pct" as const : m === "position" ? "pos" as const : "count" as const,
+            label: m === "ctr" ? "CTR" : m === "position" ? t("avgPosition") : m === "clicks" ? t("clicks") : t("impressions"),
+          }))}
+      />
+    );
+  }
   const metrics: { m: Metric; nKey: string; cKey: string }[] = [
     { m: "clicks",      nKey: "cN",  cKey: "cCN" },
     { m: "impressions", nKey: "iN",  cKey: "iCN" },
@@ -603,6 +638,8 @@ function PortfolioPageContent() {
   const [exportSite, setExportSite] = useState<string | null>(null);
 
   const [activeMetrics, setActiveMetrics] = useState<Set<Metric>>(new Set(["clicks", "impressions", "ctr", "position"]));
+  // Line vs candles (Settings → Preferences → Charts), hydration-safe.
+  const chartTypePref = useChartTypePref();
   const [sortBy, setSortBy] = useState<SortBy>(() => {
     if (typeof window !== "undefined") return (localStorage.getItem("gsc_sort") as SortBy) ?? "az";
     return "az";
@@ -1582,7 +1619,7 @@ function PortfolioPageContent() {
         </div>
 
         {/* Chart */}
-        <MultiMetricChart data={site.data} activeMetrics={activeMetrics} prevTrend={prevTrend && comparison !== "disabled"} />
+        <MultiMetricChart data={site.data} activeMetrics={activeMetrics} prevTrend={prevTrend && comparison !== "disabled"} candles={chartTypePref === "candle"} />
 
         {/* Footer: tags and 4 action icons */}
         <div style={{display:"flex",flexDirection:"column",gap:"6px",paddingTop:"2px"}} onClick={e=>e.stopPropagation()}>

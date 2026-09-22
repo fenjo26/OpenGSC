@@ -2,13 +2,20 @@
  * Candlestick aggregation for daily performance series.
  *
  * GSC/Bing/Yandex give one number per metric per day, and a candle needs four (open, high, low,
- * close). So candles are always an aggregation: consecutive days are grouped into buckets and the
- * bucket's first valid day is the open, the last is the close, min/max are the wick — exactly how
- * weekly candles compress daily stock prices. A single-day candle has no range and renders as a
- * flat dash, which is why the bucket size never drops below 2.
+ * close). The candles here follow the convention of markets that trade continuously: a candle
+ * OPENS where the previous one CLOSED. So:
  *
- * Pure by design: no React, no recharts, so the arithmetic is unit-testable and both the site
- * chart and the engine views share one definition of what a candle is.
+ *  - Short periods (≤ 45 days) get one candle per day. Its body runs from the previous day's value
+ *    to this day's value: green = the day beat the day before, red = it fell, a flat day is a
+ *    doji (a thick horizontal bar). There is no wick — a single daily number has no intraday range.
+ *  - Longer periods get calendar weeks (Monday-start) or calendar months. Body = previous bucket's
+ *    close → this bucket's last day; the wick is the best and worst day inside the bucket.
+ *
+ * The first candle has nothing before it, so it opens at its own first value (`chained: false`)
+ * and draws as a doji; the tooltip then shows just the value, not a fake change.
+ *
+ * Pure by design: no React, no recharts, so the arithmetic is unit-testable and every chart that
+ * draws candles (site page, Bing/Yandex views, dashboard cards) shares one definition.
  */
 
 export type ChartTypePref = "line" | "candle";
@@ -32,24 +39,61 @@ export function writeChartTypePref(v: ChartTypePref): void {
   }
 }
 
-/** Days per candle bucket: ~40 candles on screen, never 1 (a 1-day candle is a dash, not a range). */
-export function candleBucketSize(n: number): number {
-  if (n <= 0) return 1;
-  return Math.max(2, Math.ceil(n / 40));
+export type CandleGranularity = "day" | "week" | "month";
+
+/** Daily up to ~6 weeks (≤ 45 candles), weekly up to ~6.5 months (≤ 29), monthly beyond. */
+export function candleGranularity(n: number): CandleGranularity {
+  if (n <= 45) return "day";
+  if (n <= 200) return "week";
+  return "month";
 }
 
-/** Bucket boundaries as [start, end) index pairs over `n` daily rows. */
-export function candleRanges(n: number): Array<[number, number]> {
-  const size = candleBucketSize(n);
+const ISO_RE = /^(\d{4})-(\d{2})-(\d{2})/;
+
+/** Calendar bucket key of an ISO date, or null when the date is not ISO (demo/fallback rows). */
+function bucketKey(iso: string | null | undefined, gran: CandleGranularity): string | null {
+  const m = iso ? ISO_RE.exec(iso) : null;
+  if (!m) return null;
+  if (gran === "day") return m[0];
+  if (gran === "month") return `${m[1]}-${m[2]}`;
+  // Monday of the ISO week, in UTC so the server's and the viewer's timezone agree.
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  const dow = (d.getUTCDay() + 6) % 7; // Mon=0 … Sun=6
+  d.setUTCDate(d.getUTCDate() - dow);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Bucket boundaries as [start, end) index pairs. Calendar-aligned when every row has an ISO date;
+ * otherwise fixed-size groups (7 for weeks, 30 for months) so demo rows still render.
+ */
+export function candleRanges(isoDates: ReadonlyArray<string | null | undefined>, gran: CandleGranularity): Array<[number, number]> {
+  const n = isoDates.length;
   const out: Array<[number, number]> = [];
-  for (let start = 0; start < n; start += size) out.push([start, Math.min(start + size, n)]);
+  if (n === 0) return out;
+  if (gran === "day") {
+    for (let i = 0; i < n; i++) out.push([i, i + 1]);
+    return out;
+  }
+  const keys = isoDates.map(d => bucketKey(d, gran));
+  if (keys.some(k => k === null)) {
+    const size = gran === "week" ? 7 : 30;
+    for (let s = 0; s < n; s += size) out.push([s, Math.min(s + size, n)]);
+    return out;
+  }
+  let start = 0;
+  for (let i = 1; i <= n; i++) {
+    if (i === n || keys[i] !== keys[start]) {
+      out.push([start, i]);
+      start = i;
+    }
+  }
   return out;
 }
 
 /**
  * Whether a candle closed better than it opened. Every metric except position reads "bigger is
- * better"; position is inverted (a smaller number is a better rank), which is the same inversion
- * the line charts apply by giving position its own reversed axis.
+ * better"; position is inverted (a smaller number is a better rank).
  */
 export function candleImproved(invert: boolean, open: number, close: number): boolean {
   return invert ? close < open : close > open;
@@ -60,28 +104,40 @@ export interface Ohlc {
   high: number;
   low: number;
   close: number;
+  /** open came from the previous candle's close (false for the very first candle). */
+  chained: boolean;
 }
 
-/** OHLC over a bucket of rows. Values the extractor returns as null/undefined are skipped. */
-export function ohlcOver<T>(rows: readonly T[], value: (row: T) => number | null | undefined): Ohlc | null {
-  let open: number | null = null;
-  let close = 0;
-  let high = -Infinity;
-  let low = Infinity;
-  for (const r of rows) {
-    const v = value(r);
-    if (v == null || !Number.isFinite(v)) continue;
-    if (open === null) open = v;
-    close = v;
-    if (v > high) high = v;
-    if (v < low) low = v;
-  }
-  return open === null ? null : { open, high, low, close };
+/**
+ * Chained OHLC over consecutive buckets of one series. A bucket with no valid value yields null
+ * and does not break the chain: the next candle opens at the last real close.
+ */
+export function ohlcChain(values: ReadonlyArray<number | null | undefined>, ranges: ReadonlyArray<[number, number]>): Array<Ohlc | null> {
+  let prevClose: number | null = null;
+  return ranges.map(([s, e]) => {
+    let first: number | null = null;
+    let close = 0;
+    let hi = -Infinity;
+    let lo = Infinity;
+    for (let i = s; i < e; i++) {
+      const v = values[i];
+      if (v == null || !Number.isFinite(v)) continue;
+      if (first === null) first = v;
+      close = v;
+      if (v > hi) hi = v;
+      if (v < lo) lo = v;
+    }
+    if (first === null) return null;
+    const chained = prevClose !== null;
+    const open: number = prevClose ?? first;
+    prevClose = close;
+    return { open, close, chained, high: Math.max(hi, open), low: Math.min(lo, open) };
+  });
 }
 
 export interface MetricCandle extends Ohlc {
-  /** Previous-period value on the bucket's last day — the dashed comparison line over the candles. */
-  prevClose: number | null;
+  /** The previous period's candle for the same slot — drawn as the ghost next to this one. */
+  prev: Ohlc | null;
 }
 
 export interface CandleMetricSpec<T> {
@@ -90,13 +146,19 @@ export interface CandleMetricSpec<T> {
   prev: (row: T) => number | null | undefined;
 }
 
-export type CandleRow = { date: string; dateIso: string } & Record<string, MetricCandle | string>;
+export type CandleRow = {
+  /** X-axis label: the bucket's LAST day, so algo-update markers snap the same way as daily. */
+  date: string;
+  dateIso: string;
+  fromIso: string;
+  toIso: string;
+  days: number;
+  gran: CandleGranularity;
+} & Record<string, MetricCandle | string | number>;
 
 /**
- * Daily rows → one chart data array. All metrics share the same bucket boundaries (computed once
- * over the row count), so candles of different metrics stay X-aligned on a shared category axis,
- * and every row carries `date`/`dateIso` of its bucket's LAST day so algo-update markers can snap
- * to candle labels the same way they snap to daily labels in line mode.
+ * Daily rows → one chart data array. All metrics share the same bucket boundaries, so the panes
+ * stay X-aligned on a shared category axis.
  */
 export function buildCandleRows<T>(
   rows: readonly T[],
@@ -104,14 +166,31 @@ export function buildCandleRows<T>(
   label: (row: T) => string,
   dateIso: (row: T) => string,
 ): CandleRow[] {
-  return candleRanges(rows.length).map(([start, end]) => {
-    const bucket = rows.slice(start, end);
-    const last = bucket[bucket.length - 1];
-    const row: CandleRow = { date: label(last), dateIso: dateIso(last) };
-    for (const m of metrics) {
-      const o = ohlcOver(bucket, m.value);
-      if (o) row[m.key] = { ...o, prevClose: m.prev(last) ?? null };
-    }
+  const gran = candleGranularity(rows.length);
+  const isos = rows.map(dateIso);
+  const ranges = candleRanges(isos, gran);
+  const cur = metrics.map(m => ohlcChain(rows.map(m.value), ranges));
+  const prv = metrics.map(m => ohlcChain(rows.map(m.prev), ranges));
+  return ranges.map(([s, e], bi) => {
+    const last = rows[e - 1];
+    const row: CandleRow = {
+      date: label(last),
+      dateIso: isos[e - 1],
+      fromIso: isos[s],
+      toIso: isos[e - 1],
+      days: e - s,
+      gran,
+    };
+    metrics.forEach((m, mi) => {
+      const c = cur[mi][bi];
+      if (c) row[m.key] = { ...c, prev: prv[mi][bi] };
+    });
     return row;
   });
+}
+
+/** Signed percent change, or null when there is no base to compare against. */
+export function pctChange(from: number, to: number): number | null {
+  if (!Number.isFinite(from) || from === 0) return null;
+  return ((to - from) / Math.abs(from)) * 100;
 }
