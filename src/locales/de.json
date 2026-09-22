@@ -3454,7 +3454,7 @@
   "loginErrorUsePassword": "Diese Instanz meldet sich mit E-Mail und Passwort an. Google bleibt für Search-Console- und Analytics-Daten verbunden.",
   "loginErrorOwnerOnly": "Dieses Google-Konto ist nicht der Eigentümer dieser Instanz. Teammitglieder melden sich mit E-Mail und Passwort an — bitten Sie den Eigentümer oder einen Admin um ein Konto.",
   "passwordSuggestTitle": "Passwort zu Ihrem Konto hinzufügen",
-  "passwordSuggestHint": "Sie melden sich mit Google an, und das bleibt so — dies ist keine Migration. Aber ein Dashboard, das seinen eigenen Eigentümer ohne Google nicht hereinlässt, fällt mit Google aus; Teammitglieder brauchen die Passwortanmeldung ohnehin. Setzen Sie eines, dann haben Sie beide Türen. Wird einmal gefragt und danach nie wieder.",
+  "passwordSuggestHint": "Sie melden sich derzeit mit Google an. Aber ein Dashboard, das seinen eigenen Eigentümer ohne Google nicht hereinlässt, fällt mit Google aus; Teammitglieder brauchen die Passwortanmeldung ohnehin. Sobald Sie ein Passwort setzen, melden Sie sich damit an: Google ist dann kein Anmeldeweg mehr und bleibt nur für Ihre Search-Console- und Analytics-Daten verbunden. Wird einmal gefragt und danach nie wieder.",
   "passwordSuggestLater": "Jetzt nicht",
   "passwordSuggestSsh": "Lieber über die Serverkonsole? Per SSH im Projektordner:",
   "auditPagesAll": "Alle Seiten",

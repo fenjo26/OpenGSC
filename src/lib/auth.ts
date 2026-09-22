@@ -160,6 +160,10 @@ export const authOptions: NextAuthOptions = {
         await prisma.account.update({
           where: { id: existing.id },
           data: {
+            // A link re-homes the account onto the current owner. After an ownership transfer the
+            // row can still belong to the previous owner, and refreshing its tokens in place would
+            // leave the new owner's data sources reading through someone else's account.
+            ...(decision.kind === "link" && existing.userId !== owner.id ? { userId: owner.id } : {}),
             access_token:  account.access_token,
             refresh_token: account.refresh_token ?? existing.refresh_token,
             expires_at:    account.expires_at,

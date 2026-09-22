@@ -13,10 +13,11 @@ const DISMISS_KEY = "opengsc.passwordNoticeDismissed";
  * they do, someone else holds a working credential for their account, and "who did this" has no
  * answer. That is a security state, not a suggestion.
  *
- * An owner who has only ever used Google is *asked* once. Nothing is wrong with their account —
- * Google sign-in keeps working for them — but a dashboard that cannot let its own owner in without
- * a third party is one outage away from being unusable. Asking once and never again is the right
- * weight for that, and the notice disappears for good the moment a password exists.
+ * An owner who has only ever used Google is *asked* once. Nothing is wrong with their account, but a
+ * dashboard that cannot let its own owner in without a third party is one outage away from being
+ * unusable. Asking once and never again is the right weight for that, and the notice disappears for
+ * good the moment a password exists. The prompt says what that password changes: from then on it is
+ * the owner's way in, and Google only connects data (`src/lib/googleSignIn.ts`).
  */
 export default function PasswordChangeGate() {
   const { t } = useLanguage();

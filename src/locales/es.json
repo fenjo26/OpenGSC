@@ -3454,7 +3454,7 @@
   "loginErrorUsePassword": "En esta instancia se entra con correo y contraseña. Google sigue conectado para los datos de Search Console y Analytics.",
   "loginErrorOwnerOnly": "Esa cuenta de Google no es la propietaria de esta instancia. Los miembros entran con correo y contraseña: pide al propietario o a un admin que te cree la cuenta.",
   "passwordSuggestTitle": "Añade una contraseña a tu cuenta",
-  "passwordSuggestHint": "Entras con Google y eso seguirá funcionando: esto no es una migración. Pero un panel que no puede dejar entrar a su propio dueño sin Google se cae junto con él, y los miembros del equipo necesitan la contraseña de todos modos. Define una y tendrás las dos puertas. Se pregunta una vez y no volverá a aparecer.",
+  "passwordSuggestHint": "Hoy entras con Google. Pero un panel que no puede dejar entrar a su propio dueño sin Google se cae junto con él, y los miembros del equipo necesitan la contraseña de todos modos. En cuanto definas una contraseña, entrarás con ella: Google deja de ser un método de acceso y sigue conectado solo para tus datos de Search Console y Analytics. Se pregunta una vez y no volverá a aparecer.",
   "passwordSuggestLater": "Ahora no",
   "passwordSuggestSsh": "¿Prefieres la consola del servidor? Por SSH, en la carpeta del proyecto:",
   "auditPagesAll": "Todas las páginas",

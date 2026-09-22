@@ -3454,7 +3454,7 @@
   "loginErrorUsePassword": "Cette instance se connecte avec un e-mail et un mot de passe. Google reste connecté pour les données Search Console et Analytics.",
   "loginErrorOwnerOnly": "Ce compte Google n'est pas le propriétaire de cette instance. Les membres se connectent avec un e-mail et un mot de passe — demandez un compte au propriétaire ou à un admin.",
   "passwordSuggestTitle": "Ajoutez un mot de passe à votre compte",
-  "passwordSuggestHint": "Vous vous connectez avec Google et cela continue de fonctionner : ce n'est pas une migration. Mais un tableau de bord incapable de laisser entrer son propre propriétaire sans Google tombe en même temps que lui, et les membres de l'équipe ont de toute façon besoin du mot de passe. Définissez-en un et vous aurez les deux portes. Demandé une seule fois.",
+  "passwordSuggestHint": "Vous vous connectez aujourd'hui avec Google. Mais un tableau de bord incapable de laisser entrer son propre propriétaire sans Google tombe en même temps que lui, et les membres de l'équipe ont de toute façon besoin du mot de passe. Une fois le mot de passe défini, c'est avec lui que vous vous connecterez : Google cesse d'être un moyen de connexion et reste relié uniquement pour vos données Search Console et Analytics. Demandé une seule fois.",
   "passwordSuggestLater": "Pas maintenant",
   "passwordSuggestSsh": "Vous préférez la console du serveur ? En SSH, dans le dossier du projet :",
   "auditPagesAll": "Toutes les pages",

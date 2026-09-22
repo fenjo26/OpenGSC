@@ -3454,7 +3454,7 @@
   "loginErrorUsePassword": "This instance signs in with an email and a password. Google stays connected for Search Console and Analytics data.",
   "loginErrorOwnerOnly": "That Google account is not the owner of this instance. Team members sign in with an email and a password — ask the owner or an admin to create your account.",
   "passwordSuggestTitle": "Add a password to your account",
-  "passwordSuggestHint": "You sign in with Google, and that keeps working — this is not a migration. But a dashboard that cannot let its own owner in without Google is one outage away from being unusable, and team members need password sign-in anyway. Set one now and you will have both doors. Asked once; you will not see this again.",
+  "passwordSuggestHint": "You sign in with Google today. But a dashboard that cannot let its own owner in without Google is one outage away from being unusable, and team members need password sign-in anyway. Once you set a password it becomes how you sign in: Google stops being a login and stays connected only for your Search Console and Analytics data. Asked once; you will not see this again.",
   "passwordSuggestLater": "Not now",
   "passwordSuggestSsh": "Prefer the server console? Over SSH, in the project folder:",
   "auditPagesAll": "All pages",
