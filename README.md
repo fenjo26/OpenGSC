@@ -594,6 +594,8 @@ pm2 startup
 | `NEXTAUTH_URL` | The app's full URL, including domain | `https://your-domain.com` |
 | `GOOGLE_CLIENT_ID` | From Google Cloud Console | `123...apps.googleusercontent.com` |
 | `GOOGLE_CLIENT_SECRET` | From Google Cloud Console | `GOCSPX-...` |
+| `OPENGSC_OWNER_EMAIL` | Optional. Only these Google addresses (comma-separated) may become the owner of a fresh instance. Unset: the first Google sign-in becomes the owner | `you@gmail.com` |
+| `OPENGSC_ALLOW_GOOGLE_LOGIN` | Optional. Once the owner has a password, Google is no longer a login — only a way to connect GSC/GA accounts from Settings. `true` reopens it (e.g. after a lost password) | `true` |
 
 > `NEXTAUTH_URL` must **exactly match** the Authorized redirect URI in Google Console, down to `http://` vs `https://`. A mismatch causes `redirect_uri_mismatch`.
 

@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveCaptureBodies } from "@/lib/providerLog/bodies";
+import { workspaceOwner } from "./owner";
 import { enterCallContext, type CallContext } from "@/lib/providerLog/context";
 import {
   can, normalizeEmail, statusGrantsAccess, type Capability, type TeamRole, type Workspace,
@@ -27,6 +28,10 @@ import {
 // instead of degrading to "no membership found".
 const memberships = () => (prisma as any).membership;
 
+// Lives in ./owner so that `auth.ts` can resolve the owner without importing this file, which imports
+// `authOptions` from it.
+export { workspaceOwner };
+
 export interface WorkspaceContext extends Workspace {
   actorEmail: string;
   actorName: string | null;
@@ -34,29 +39,6 @@ export interface WorkspaceContext extends Workspace {
   membershipId: string | null;
 }
 
-/**
- * The account that owns this instance's data.
- *
- * `isOwner` is the explicit marker, but instances created before the column existed have it unset,
- * so the first user by id — the rule `auth.ts` has always used — is adopted and written back once.
- * Doing this lazily avoids a data migration in an updater that only runs `prisma db push`.
- */
-export async function workspaceOwner(): Promise<{ id: string; email: string | null; name: string | null } | null> {
-  try {
-    const marked = await prisma.user.findFirst({
-      where: { isOwner: true },
-      select: { id: true, email: true, name: true },
-    });
-    if (marked) return marked;
-  } catch {
-    // Column not migrated yet: fall through to the historical rule.
-    return prisma.user.findFirst({ orderBy: { id: "asc" }, select: { id: true, email: true, name: true } });
-  }
-  const first = await prisma.user.findFirst({ orderBy: { id: "asc" }, select: { id: true, email: true, name: true } });
-  if (!first) return null;
-  await prisma.user.update({ where: { id: first.id }, data: { isOwner: true } }).catch(() => { /* raced with another request */ });
-  return first;
-}
 
 /**
  * The header `src/proxy.ts` writes the matched path onto.

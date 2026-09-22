@@ -37,11 +37,13 @@ export default function AuthButton() {
 
   return (
     <button 
-      onClick={() => signIn("google")}
+      // To the login page, not straight to Google: once the owner has a password, Google is no
+      // longer a way in, and the page knows which doors are open.
+      onClick={() => signIn()}
       style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', borderRadius: '8px', background: 'var(--color-accent-purple)', color: '#fff', width: '100%' }}
     >
       <LogIn size={18} />
-      <span style={{ fontSize: '14px', fontWeight: 500 }}>Sign In with Google</span>
+      <span style={{ fontSize: '14px', fontWeight: 500 }}>Sign In</span>
     </button>
   );
 }

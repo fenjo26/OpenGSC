@@ -6,6 +6,8 @@ import { cookies } from "next/headers";
 import { decode } from "next-auth/jwt";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import { prisma } from "./prisma";
+import { ownerAuthState } from "./team/owner";
+import { decideGoogleSignIn, envFlag, parseEmailList } from "./googleSignIn";
 
 const useSecureCookies = process.env.NEXTAUTH_URL?.startsWith("https://") ?? false;
 
@@ -110,32 +112,51 @@ export const authOptions: NextAuthOptions = {
   ],
 
   callbacks: {
-    async signIn({ user, account }) {
+    async signIn({ user, account, profile }) {
       // A credentials sign-in has already been validated in `authorize`, and it must never reach
       // the Google linking logic below, which rewrites the session onto the owner's identity.
       if (account?.provider === "credentials") return true;
       if (account?.provider !== "google") return false;
 
-      // ── Find the owner (first user ever created) ──────────────────────────
-      const owner = await prisma.user.findFirst({ orderBy: { id: "asc" } });
+      // The owner is the account marked `isOwner` — the same one every other part of the app uses.
+      // This used to be "the first user by id", which stopped being true after an ownership
+      // transfer: the previous owner kept signing in as the owner through Google, and the new owner
+      // could not connect a single Google account because their session never matched.
+      const owner = await ownerAuthState();
+      if (owner === undefined) return "/login?error=unavailable";
 
-      if (!owner) {
-        // No users yet → first login, PrismaAdapter creates the user automatically.
-        return true;
-      }
-
-      // ── Check if this Google account is already linked ────────────────────
-      const existing = await prisma.account.findUnique({
+      const existing = owner ? await prisma.account.findUnique({
         where: {
           provider_providerAccountId: {
             provider: "google",
             providerAccountId: account.providerAccountId,
           },
         },
+      }) : null;
+
+      const decision = decideGoogleSignIn({
+        owner: owner ? { email: owner.email, hasPassword: owner.hasPassword } : null,
+        ownerSession: owner ? await ownerSessionPresent(owner.id) : false,
+        accountLinked: !!existing && existing.userId === owner?.id,
+        email: user.email ?? null,
+        emailVerified: (profile as { email_verified?: boolean } | undefined)?.email_verified,
+        bootstrapEmails: parseEmailList(process.env.OPENGSC_OWNER_EMAIL),
+        googleLoginForced: envFlag(process.env.OPENGSC_ALLOW_GOOGLE_LOGIN),
       });
 
+      // Every refusal is decided here, on the server, before a session exists. Hiding the button on
+      // /login is only courtesy: /api/auth/signin/google stays reachable, because connecting data
+      // sources needs it, and this callback is what makes it lead nowhere for anyone else.
+      if (decision.kind === "deny") {
+        console.warn(`[auth] refused a Google sign-in (${decision.reason}):`, account.providerAccountId);
+        return `/login?error=${decision.reason}`;
+      }
+
+      // No users yet → PrismaAdapter creates this one, and it becomes the owner.
+      if (decision.kind === "bootstrap" || !owner) return true;
+
+      // ── Store fresh tokens, or attach the account (link only) ─────────────
       if (existing) {
-        // Refresh tokens
         await prisma.account.update({
           where: { id: existing.id },
           data: {
@@ -147,17 +168,9 @@ export const authOptions: NextAuthOptions = {
           },
         });
       } else {
-        // A Google account that is not linked yet may only be attached by the owner, from inside an
-        // active session — the "add another Google account" button in Settings.
-        //
-        // Before this check, anyone who found the login page could sign in with Google and have
-        // their account attached to this instance as an extra Search Console connection. They never
-        // received a session, so they could not read anything, but their properties and their OAuth
-        // tokens landed in someone else's database uninvited.
-        if (!(await ownerSessionPresent(owner.id))) {
-          console.warn("[auth] rejected an unsolicited Google account link:", account.providerAccountId);
-          return "/login?error=owner_only";
-        }
+        // Reached only as `link`: `decideGoogleSignIn` never lets an unconnected account through a
+        // login. Before that rule, anyone who found the login page could sign in with Google and
+        // have their properties and OAuth tokens attached to someone else's instance.
         await prisma.account.create({
           data: {
             userId:            owner.id,
@@ -174,21 +187,13 @@ export const authOptions: NextAuthOptions = {
         });
       }
 
-      // If the OAuth email is different from the owner's email, redirect to settings 
-      // instead of returning true. This prevents NextAuth from trying to create a new User 
-      // and a new Account (which would crash due to the unique constraint).
-      if (account.providerAccountId !== owner.email && user.email !== owner.email) {
-        return "/settings";
-      }
+      // Connecting an account from Settings: the owner's session is already the right one. Returning
+      // a URL ends the OAuth round-trip without issuing a new session, which also keeps NextAuth
+      // from trying to create a second User for a Google address that is not the owner's.
+      if (decision.kind === "link") return "/settings";
 
-      // Reaching here means the Google account belongs to the owner, so signing in this way stays
-      // available — both doors work, and which one you use is a preference. What was closed is the
-      // other case: a Google account that is not the owner's no longer attaches itself to this
-      // instance, and adding one is an owner action taken from inside a session.
-      //
-      // A password still matters, and the app asks for one, because Google is a dependency this
-      // dashboard should not need in order to let its own owner in.
-
+      // `login`: the owner's own connected account, with Google login open (no password yet, or
+      // the operator forced it). The session is issued for the owner's row, not the adapter's.
       user.id    = owner.id;
       user.email = owner.email!;
       user.name  = owner.name;

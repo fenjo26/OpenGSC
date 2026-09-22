@@ -5,9 +5,15 @@ All notable changes to OpenGSC. Dates are release dates; the version shown in
 
 ## [Unreleased]
 
+### Security
+
+- **Google is no longer a public login once the owner has a password** ([#20](https://github.com/fenjo26/OpenGSC/issues/20)). Settings has always said that setting a password turns Google back into a data connection, but the server kept accepting the owner's Google sign-in. It is now refused in the NextAuth `signIn` callback — not just hidden — with `?error=use_password`, so `/api/auth/signin/google` leads nowhere for anyone who is not already signed in as the owner. Connecting and re-authorising Search Console / Analytics accounts from **Settings → Google accounts** works as before. An owner without a password keeps Google as their only way in; `OPENGSC_ALLOW_GOOGLE_LOGIN=true` reopens it after a lost password. The login page asks the new public `/api/auth/login-options` which doors are open: after setup it shows the password form straight away and drops the stale "Google OAuth only — no passwords" copy.
+- **`OPENGSC_OWNER_EMAIL` restricts who can claim a fresh instance.** Without it the first Google sign-in still becomes the owner; with it, only the listed (verified) addresses can.
+
 ### Fixed
 
 - **The Activation tab had no door.** Assets are created when catalogue rows are marked bought — the API action existed since the module landed, but no UI exposed it, and the panel had no manual entry: the tab showed its pipeline description to everyone, forever. The catalogue's bulk actions now include **«Куплено»** (stops the watch, moves the rows to the acquired stage, creates the activation cards), and the empty Activation tab has an add-domain field that creates the asset and runs the first Wayback harvest in one step.
+- **Google sign-in ignored ownership transfers.** `auth.ts` treated the first user by id as the owner while the rest of the app reads `User.isOwner`. After a transfer, the previous owner could still sign in through Google as the owner, and the new owner could not connect a Google account — their session never matched. Sign-in now resolves the owner through `workspaceOwner()` (moved to `src/lib/team/owner.ts`). A connected Google account that is not the owner's no longer refreshes its tokens from an anonymous sign-in attempt either.
 
 ## [1.7.1] — 2026-09-18
 
