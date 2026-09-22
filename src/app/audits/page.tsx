@@ -47,7 +47,7 @@ const siteRouteKey = (url: string) =>
 // Compact page list: first, last, and a window around the current page, with ellipses.
 function pageWindow(cur: number, total: number): (number | "…")[] {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i);
-  const out = [0];
+  const out: (number | "…")[] = [0];
   const from = Math.max(1, cur - 1);
   const to = Math.min(total - 2, cur + 1);
   if (from > 1) out.push("…");

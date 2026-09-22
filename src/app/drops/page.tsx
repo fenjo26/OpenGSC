@@ -792,6 +792,7 @@ export default function DropsPage() {
       skipped: parsed.skipped.length,
       withDr: parsed.rows.filter(r => r.dr != null).length,
       sample: parsed.rows.slice(0, 5).map(r => r.domain),
+      domains: parsed.rows.map(r => r.domain),
     };
   }, [raw, colOverride]);
 
@@ -1547,9 +1548,7 @@ export default function DropsPage() {
         {/* Name scan, zero requests: flags the flipped-but-not-renamed (situs…togel…) right
             in the preview — a "look at these first" label, not an exclusion. */}
         {(() => {
-          const flagged = preview.rows
-            .map(r => (r as { domain?: unknown }).domain)
-            .filter((d): d is string => typeof d === "string")
+          const flagged = preview.domains
             .flatMap(d => scanDomainName(d).map(h => `${d} (${h.code})`));
           if (!flagged.length) return null;
           return <div style={{ color: "var(--color-accent-orange, #ff9f0a)" }}>
