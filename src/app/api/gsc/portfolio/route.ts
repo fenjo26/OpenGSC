@@ -119,8 +119,12 @@ export async function GET(req: Request) {
         positionsC.push(prev ? +prev.position.toFixed(1) : 0);
       }
 
-      const nC  = norm(clicks),      nI  = norm(impressions),  nT  = norm(ctrs),   nP  = norm(positions);
-      const nCC = norm(clicksC),      nIC = norm(impressionsC), nTC = norm(ctrsC),  nPC = norm(positionsC);
+      // Position is inverted before normalising: rank 1 must sit at the top of the sparkline.
+      // The raw number would draw a ranking drop as an upward curve — the opposite of what
+      // every other metric on the card means by "up".
+      const flip = (arr: number[]) => norm(arr).map(v => 95 - v);
+      const nC  = norm(clicks),      nI  = norm(impressions),  nT  = norm(ctrs),   nP  = flip(positions);
+      const nCC = norm(clicksC),     nIC = norm(impressionsC), nTC = norm(ctrsC),  nPC = flip(positionsC);
 
       const data = currRows.map((r, i) => ({
         date: r.date.toISOString().split('T')[0],

@@ -20,6 +20,8 @@ import {
   algoChartLabel, algoImpact, withNeighbours, type AlgoImpactResult,
   type AlgoUpdate, type AlgoUpdateType,
 } from "@/lib/algoUpdates";
+import { readChartTypePref, buildCandleRows } from "@/lib/chartCandles";
+import { CandleBar, CandleTooltip, candleWickDataKey, candlePrevDataKey } from "@/components/CandleChartParts";
 import { useParams, useRouter } from "next/navigation";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
@@ -1316,7 +1318,10 @@ function SetupModal({ domain, siteDbId, onClose, onApplied }: {
 function SiteTooltip({ active, payload, label }: any) {
   const { t } = useLanguage();
   if (!active || !payload?.length) return null;
-  const d = payload.reduce((acc: any, p: any) => { acc[p.dataKey] = p.value; return acc; }, {} as any);
+  // Read the whole datum rather than reducing over dataKeys: position series use function
+  // dataKeys (zero-guarded), whose stringification is not a field name.
+  const d = payload[0]?.payload ?? {};
+  const cell = (v: any, suffix = "") => (v == null || v === "" ? "—" : `${v}${suffix}`);
   return (
     <div style={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: "10px", padding: "10px 14px", fontSize: "12px", color: "var(--color-text-primary)", boxShadow: "0 4px 20px rgba(0,0,0,0.3)" }}>
       <p style={{ fontWeight: 600, marginBottom: "6px", color: "var(--color-text-primary)" }}>{label}</p>
@@ -1329,7 +1334,7 @@ function SiteTooltip({ active, payload, label }: any) {
         <div key={key} style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "2px" }}>
           <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: color, flexShrink: 0, display: "inline-block" }} />
           <span style={{ color: "var(--color-text-secondary)", flex: 1 }}>{label}</span>
-          <span style={{ fontWeight: 600 }}>{d[key]}{suffix}</span>
+          <span style={{ fontWeight: 600 }}>{cell(d[key], suffix)}</span>
         </div>
       ))}
     </div>
@@ -4470,6 +4475,8 @@ function AnnotationsTab({ period, setPeriod, periodOptions, customDays, onSetupB
                 axisLine={false} tickLine={false} width={38} />
               <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: "var(--color-text-secondary)" }}
                 axisLine={false} tickLine={false} width={44} />
+              {/* Position's own hidden axis, reversed so rank 1 sits at the top. */}
+              <YAxis yAxisId="pos" reversed hide domain={[1, "dataMax"]} />
               <Tooltip
                 contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: "8px", fontSize: "12px" }}
                 labelStyle={{ color: "var(--color-text-secondary)" }} />
@@ -4492,7 +4499,7 @@ function AnnotationsTab({ period, setPeriod, periodOptions, customDays, onSetupB
               {/* Position is inverted: rank 1 belongs at the top of the chart, and the default
                   scale would draw an improvement as a fall. */}
               {activeMetrics.has("position") && (
-                <Line yAxisId="left" type="monotone" dataKey="position" stroke={C.position}
+                <Line yAxisId="pos" type="monotone" dataKey={(d: any) => d.position > 0 ? d.position : null} stroke={C.position}
                   strokeWidth={1.5} dot={false} connectNulls name={t("avgPosition")} />
               )}
               {renderAlgoMarkers(algoMarkers ?? [], t as never)}
@@ -5216,15 +5223,35 @@ export default function SitePage({
     // Empty fallback (no fake numbers)
     return Array.from({ length: 7 }, (_, i) => {
       const d = new Date(); d.setDate(d.getDate() - 7 + i);
-      return { date: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }), clicks: 0, impressions: 0, ctr: 0, position: 0, clicksC: 0, impressionsC: 0, ctrC: 0, positionC: 0 };
+      return { date: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }), dateIso: d.toISOString().split("T")[0], clicks: 0, impressions: 0, ctr: 0, position: 0, clicksC: 0, impressionsC: 0, ctrC: 0, positionC: 0 };
     });
   }, [siteData]);
+
+  // ── Candlestick view (Settings → Preferences). Read once per mount: the setting lives in a
+  // different route and navigating back here remounts the page, which re-reads it.
+  const [chartTypePref] = useState(readChartTypePref);
+
+  // Daily rows compressed into shared candle buckets (~40 candles, ≥2 days each — see
+  // src/lib/chartCandles.ts). *C === 0 means "no comparison row" in this dataset, not a real zero.
+  const candleData = useMemo(() => buildCandleRows(
+    chartData,
+    [
+      { key: "clicks",      value: r => r.clicks,                                prev: r => (r.clicksC > 0 ? r.clicksC : null) },
+      { key: "impressions", value: r => r.impressions,                           prev: r => (r.impressionsC > 0 ? r.impressionsC : null) },
+      { key: "ctr",         value: r => r.ctr,                                   prev: r => (r.ctrC > 0 ? r.ctrC : null) },
+      { key: "position",    value: r => (r.position > 0 ? r.position : null),    prev: r => (r.positionC > 0 ? r.positionC : null) },
+    ],
+    r => r.date,
+    r => r.dateIso,
+  ), [chartData]);
 
   // ── AIO Impact mode: clicks & impressions normalized to index 100 at the first
   // non-zero day, drawn on ONE axis. When AI Overviews eat clicks, the impressions
   // index keeps climbing while the clicks index detaches downward — the divergence
   // is the impact, which raw dual-axis lines can't show.
   const [aioMode, setAioMode] = useState(false);
+  // The AIO index mode is its own comparison of two curves, so it stays a line chart.
+  const candleMode = chartTypePref === "candle" && !aioMode;
 
   // ── Search-engine switcher: Google (local GSC data) vs live Bing / Yandex views.
   // Alt engines appear only when their key/token is configured in Settings.
@@ -5362,6 +5389,23 @@ export default function SitePage({
       })
       .filter((u): u is AlgoUpdate & { x: string; x2: string | null; impact: AlgoImpactResult } => u.x !== null);
   }, [siteData, algoUpdates]);
+
+  // In candle mode the X labels are bucket ends, not days — re-snap the markers to the candle
+  // labels, or every ReferenceLine would miss the data and be dropped silently. The impact
+  // measurement above stays on daily rows: it is data, not presentation.
+  const algoMarkersForMode = useMemo(() => {
+    if (!candleMode) return visibleAlgoUpdates;
+    const chart = candleData as unknown as { date: string; dateIso: string }[];
+    const out: typeof visibleAlgoUpdates = [];
+    for (const u of visibleAlgoUpdates) {
+      const x = snapToChartLabel(chart, u.date);
+      if (!x) continue;
+      const endIso = updateEnd(u);
+      const x2raw = endIso ? snapBackToChartLabel(chart, endIso) : null;
+      out.push({ ...u, x, x2: x2raw && x2raw !== x ? x2raw : null });
+    }
+    return out;
+  }, [candleMode, visibleAlgoUpdates, candleData]);
 
   // ── Rank tracker: which queries are already tracked (for Track buttons) ──────
   const [trackedKws, setTrackedKws] = useState<Set<string>>(new Set());
@@ -5686,7 +5730,7 @@ export default function SitePage({
                 half-drawn and unreadable. Only reserved when something needs it, so the plot
                 keeps its full height the rest of the time. */}
             <ComposedChart
-              data={aioMode ? aioChartData : chartData}
+              data={candleMode ? candleData : aioMode ? aioChartData : chartData}
               margin={{ top: googleUpdates && visibleAlgoUpdates.length > 0 ? 26 : 8, right: 0, left: 0, bottom: 0 }}
             >
               <defs>
@@ -5701,7 +5745,23 @@ export default function SitePage({
               <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "var(--color-text-secondary)" }} />
               <YAxis yAxisId="left"  axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "var(--color-text-secondary)" }} />
               {!aioMode && <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "var(--color-text-secondary)" }} />}
-              <Tooltip content={aioMode ? <AioTooltip /> : <SiteTooltip />} cursor={{ stroke: "var(--color-border)", strokeWidth: 1 }} />
+              {/* Position gets its own hidden axis, reversed so rank 1 sits at the top: a drop
+                  must read as a fall like every other metric, and the shared left axis cannot
+                  be flipped without dragging clicks and CTR with it. */}
+              {!aioMode && <YAxis yAxisId="pos" reversed hide domain={[1, "dataMax"]} />}
+              <Tooltip
+                content={aioMode ? <AioTooltip /> : candleMode ? (
+                  <CandleTooltip
+                    colors={{ clicks: C.clicks, impressions: C.impressions, ctr: C.ctr, position: C.position }}
+                    metricLabel={(k: string) => (k === "ctr" ? "CTR" : k === "position" ? t("avgPosition") : k === "clicks" ? t("clicks") : t("impressions"))}
+                    format={(k: string, v: number) => (k === "ctr" ? `${v}%` : k === "position" ? String(v) : Number(v).toLocaleString())}
+                    fields={["clicks", "impressions", "ctr", "position"]}
+                    invertedField="position"
+                    prevLabel={t("prev")}
+                  />
+                ) : <SiteTooltip />}
+                cursor={{ stroke: "var(--color-border)", strokeWidth: 1 }}
+              />
               {aioMode ? (
                 <>
                   {/* Index 100 baseline = the first non-zero day; divergence below it while
@@ -5710,20 +5770,36 @@ export default function SitePage({
                   <Line yAxisId="left" type="monotone" dataKey="imprIdx" stroke={C.impressions} strokeWidth={2} dot={false} />
                   <Line yAxisId="left" type="monotone" dataKey="clicksIdx" stroke={C.clicks} strokeWidth={2} dot={false} />
                 </>
+              ) : candleMode ? (
+                <>
+                  {/* Candles: body = open→close, wick = the bucket's min–max. Green closes better
+                      than it opened — for position that means a SMALLER number, the same inversion
+                      the reversed axis applies in line mode. */}
+                  {activeMetrics.has("clicks")      && <Bar yAxisId="left"  dataKey={candleWickDataKey("clicks")}      shape={(p: any) => <CandleBar {...p} field="clicks" />}      isAnimationActive={false} legendType="none" />}
+                  {activeMetrics.has("impressions") && <Bar yAxisId="right" dataKey={candleWickDataKey("impressions")} shape={(p: any) => <CandleBar {...p} field="impressions" />} isAnimationActive={false} legendType="none" />}
+                  {activeMetrics.has("ctr")         && <Bar yAxisId="left"  dataKey={candleWickDataKey("ctr")}         shape={(p: any) => <CandleBar {...p} field="ctr" />}         isAnimationActive={false} legendType="none" />}
+                  {activeMetrics.has("position")    && <Bar yAxisId="pos"   dataKey={candleWickDataKey("position")}    shape={(p: any) => <CandleBar {...p} field="position" invert flipAxis />} isAnimationActive={false} legendType="none" />}
+                  {/* The previous period stays comparable in candle mode: a dashed line through
+                      the prev-period values at each bucket's close. */}
+                  {activeMetrics.has("clicks")      && <Line yAxisId="left"  type="monotone" dataKey={candlePrevDataKey("clicks")}      stroke={C.clicks}     strokeWidth={1} strokeDasharray="4 3" dot={false} legendType="none" connectNulls />}
+                  {activeMetrics.has("impressions") && <Line yAxisId="right" type="monotone" dataKey={candlePrevDataKey("impressions")} stroke={C.impressions} strokeWidth={1} strokeDasharray="4 3" dot={false} legendType="none" connectNulls />}
+                  {activeMetrics.has("ctr")         && <Line yAxisId="left"  type="monotone" dataKey={candlePrevDataKey("ctr")}         stroke={C.ctr}        strokeWidth={1} strokeDasharray="4 3" dot={false} legendType="none" connectNulls />}
+                  {activeMetrics.has("position")    && <Line yAxisId="pos"   type="monotone" dataKey={candlePrevDataKey("position")}    stroke={C.position}   strokeWidth={1} strokeDasharray="4 3" dot={false} legendType="none" connectNulls />}
+                </>
               ) : (
                 <>
                   {activeMetrics.has("clicks")      && <Line yAxisId="left"  type="monotone" dataKey="clicksC"      stroke={C.clicks}       strokeWidth={1}   strokeDasharray="4 3" dot={false} legendType="none" />}
                   {activeMetrics.has("impressions") && <Line yAxisId="right" type="monotone" dataKey="impressionsC" stroke={C.impressions}   strokeWidth={1}   strokeDasharray="4 3" dot={false} legendType="none" />}
                   {activeMetrics.has("ctr")         && <Line yAxisId="left"  type="monotone" dataKey="ctrC"         stroke={C.ctr}           strokeWidth={1}   strokeDasharray="4 3" dot={false} legendType="none" />}
-                  {activeMetrics.has("position")    && <Line yAxisId="left"  type="monotone" dataKey="positionC"    stroke={C.position}      strokeWidth={1}   strokeDasharray="4 3" dot={false} legendType="none" />}
+                  {activeMetrics.has("position")    && <Line yAxisId="pos"   type="monotone" dataKey={(d: any) => d.positionC > 0 ? d.positionC : null} stroke={C.position}      strokeWidth={1}   strokeDasharray="4 3" dot={false} legendType="none" name={t("avgPosition")} />}
                   {activeMetrics.has("clicks")      && <Area yAxisId="left"  type="monotone" dataKey="clicks"      stroke={C.clicks}       strokeWidth={2}   fill={`url(#sg-clicks)`}      dot={false} />}
                   {activeMetrics.has("impressions") && <Area yAxisId="right" type="monotone" dataKey="impressions" stroke={C.impressions}   strokeWidth={2}   fill={`url(#sg-impressions)`} dot={false} />}
                   {activeMetrics.has("ctr")         && <Line yAxisId="left"  type="monotone" dataKey="ctr"         stroke={C.ctr}           strokeWidth={1.5} dot={false} />}
-                  {activeMetrics.has("position")    && <Line yAxisId="left"  type="monotone" dataKey="position"    stroke={C.position}      strokeWidth={1.5} dot={false} />}
+                  {activeMetrics.has("position")    && <Line yAxisId="pos"   type="monotone" dataKey={(d: any) => d.position > 0 ? d.position : null} stroke={C.position}    strokeWidth={1.5} dot={false} connectNulls name={t("avgPosition")} />}
                 </>
               )}
               {/* Google algorithm update markers (core / spam / discover) */}
-              {googleUpdates && renderAlgoMarkers(visibleAlgoUpdates, t as never)}
+              {googleUpdates && renderAlgoMarkers(algoMarkersForMode, t as never)}
             </ComposedChart>
           </ResponsiveContainer>
         </div>

@@ -8,12 +8,14 @@
 // button bumps refreshKey. Setup guide: docs/SEARCH-ENGINES-SETUP.md.
 
 import { useEffect, useMemo, useState } from "react";
-import { ComposedChart, Line, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import { ComposedChart, Line, Area, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { Loader2, AlertTriangle, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { severityMeta, problemLabel } from "@/lib/yandexDiagnostics";
 import { resolveEngineKey } from "@/lib/engineKeys";
 import { withShare, isGuestView } from "@/lib/shareParam";
+import { readChartTypePref, buildCandleRows } from "@/lib/chartCandles";
+import { CandleBar, CandleTooltip, candleWickDataKey, candlePrevDataKey } from "@/components/CandleChartParts";
 
 export type AltEngine = "bing" | "yandex";
 export type EngineMetric = "clicks" | "impressions" | "ctr" | "position";
@@ -32,17 +34,25 @@ export interface EngineSummary {
 }
 
 // Chart tooltip that shows only the current period (hides the dashed comparison series).
+// Reads the whole datum rather than payload dataKeys: the position series use function dataKeys
+// whose stringification is not a field name.
 function EngTooltip({ active, payload, label, t }: any) {
   if (!active || !payload?.length) return null;
-  const rows = payload.filter((p: any) => !String(p.dataKey).endsWith("C"));
+  const d = payload[0]?.payload ?? {};
+  const rows = [
+    { key: "clicks", v: d.clicks },
+    { key: "impressions", v: d.impressions },
+    { key: "ctr", v: d.ctr },
+    { key: "position", v: d.position },
+  ].filter(r => r.v != null);
   if (!rows.length) return null;
   const nm = (k: string) => k === "ctr" ? "CTR" : k === "position" ? t("avgPosition") : k === "clicks" ? t("clicks") : t("impressions");
-  const fmt = (k: string, v: any) => k === "ctr" ? `${v}%` : k === "position" ? (v == null ? "—" : Number(v).toFixed(1)) : Number(v).toLocaleString();
+  const fmt = (k: string, v: any) => k === "ctr" ? `${v}%` : k === "position" ? Number(v).toFixed(1) : Number(v).toLocaleString();
   return (
     <div style={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: "8px", fontSize: "12px", padding: "8px 10px" }}>
       <div style={{ fontWeight: 600, marginBottom: "4px", color: "var(--color-text-primary)" }}>{label}</div>
-      {rows.map((p: any) => (
-        <div key={p.dataKey} style={{ color: p.color }}>{nm(p.dataKey)}: {fmt(p.dataKey, p.value)}</div>
+      {rows.map(r => (
+        <div key={r.key} style={{ color: "var(--color-text-primary)" }}>{nm(r.key)}: {fmt(r.key, r.v)}</div>
       ))}
     </div>
   );
@@ -256,6 +266,22 @@ export default function EngineView({ engine, domain, siteDbId, refreshKey, metri
     });
   }, [curArr, prevArr]);
 
+  // Candlestick view (Settings → Preferences), same as the Google chart. Engine dates are already
+  // ISO strings, so the label and the snap date are the same field.
+  const [chartTypePref] = useState(readChartTypePref);
+  const candleMode = chartTypePref === "candle";
+  const candleData = useMemo(() => buildCandleRows(
+    view,
+    [
+      { key: "clicks",      value: r => r.clicks,      prev: r => r.clicksC },
+      { key: "impressions", value: r => r.impressions, prev: r => r.impressionsC },
+      { key: "ctr",         value: r => r.ctr,         prev: r => r.ctrC },
+      { key: "position",    value: r => r.position,    prev: r => r.positionC },
+    ],
+    r => r.date,
+    r => r.date,
+  ), [view]);
+
   const sumK = (arr: Point[], k: "clicks" | "impressions") => arr.reduce((s, r) => s + (r[k] || 0), 0);
   const totClicks = sumK(curArr, "clicks"), totImpr = sumK(curArr, "impressions");
   const prevClicks = sumK(prevArr, "clicks"), prevImpr = sumK(prevArr, "impressions");
@@ -335,12 +361,13 @@ export default function EngineView({ engine, domain, siteDbId, refreshKey, metri
       )}
 
       {/* Chart — identical to the GSC view: clicks + impressions as filled areas, CTR &
-          average position as lines. Which metrics show is driven by the shared toolbar
-          toggles (same 4 icon buttons as Google), so the two views behave the same. */}
+          average position as lines; candles when the operator picked them in Preferences.
+          Which metrics show is driven by the shared toolbar toggles (same 4 icon buttons
+          as Google), so the two views behave the same. */}
       {view.length > 0 && (
         <div style={card}>
           <ResponsiveContainer width="100%" height={260}>
-            <ComposedChart data={view} margin={{ top: 8, right: 4, bottom: 0, left: -8 }}>
+            <ComposedChart data={(candleMode ? candleData : view) as any} margin={{ top: 8, right: 4, bottom: 0, left: -8 }}>
               <defs>
                 {(["clicks", "impressions"] as EngineMetric[]).map(m => (
                   <linearGradient key={m} id={`eng-${m}`} x1="0" y1="0" x2="0" y2="1">
@@ -353,16 +380,45 @@ export default function EngineView({ engine, domain, siteDbId, refreshKey, metri
               <XAxis dataKey="date" tick={{ fontSize: 10, fill: "var(--color-text-secondary)" }} axisLine={false} tickLine={false} minTickGap={24} />
               <YAxis yAxisId="left" tick={{ fontSize: 10, fill: "var(--color-text-secondary)" }} axisLine={false} tickLine={false} width={40} />
               <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: "var(--color-text-secondary)" }} axisLine={false} tickLine={false} width={44} />
-              <Tooltip content={<EngTooltip t={t} />} />
+              {/* Position's own hidden axis, reversed so rank 1 sits at the top (same as the
+                  Google view). */}
+              <YAxis yAxisId="pos" reversed hide domain={[1, "dataMax"]} />
+              <Tooltip
+                content={candleMode ? (
+                  <CandleTooltip
+                    colors={{ clicks: EC.clicks, impressions: EC.impressions, ctr: EC.ctr, position: EC.position }}
+                    metricLabel={(k: string) => (k === "ctr" ? "CTR" : k === "position" ? t("avgPosition") : k === "clicks" ? t("clicks") : t("impressions"))}
+                    format={(k: string, v: number) => (k === "ctr" ? `${v}%` : k === "position" ? String(v) : Number(v).toLocaleString())}
+                    fields={["clicks", "impressions", "ctr", "position"]}
+                    invertedField="position"
+                    prevLabel={t("prev")}
+                  />
+                ) : <EngTooltip t={t} />}
+              />
+              {candleMode ? (
+                <>
+                  {active.has("clicks") && <Bar yAxisId="left" dataKey={candleWickDataKey("clicks")} shape={(p: any) => <CandleBar {...p} field="clicks" />} isAnimationActive={false} legendType="none" />}
+                  {active.has("impressions") && <Bar yAxisId="right" dataKey={candleWickDataKey("impressions")} shape={(p: any) => <CandleBar {...p} field="impressions" />} isAnimationActive={false} legendType="none" />}
+                  {active.has("ctr") && <Bar yAxisId="left" dataKey={candleWickDataKey("ctr")} shape={(p: any) => <CandleBar {...p} field="ctr" />} isAnimationActive={false} legendType="none" />}
+                  {active.has("position") && anyPos && <Bar yAxisId="pos" dataKey={candleWickDataKey("position")} shape={(p: any) => <CandleBar {...p} field="position" invert flipAxis />} isAnimationActive={false} legendType="none" />}
+                  {anyCmp && active.has("clicks") && <Line yAxisId="left" type="monotone" dataKey={candlePrevDataKey("clicks")} stroke={EC.clicks} strokeWidth={1} strokeDasharray="4 3" dot={false} connectNulls legendType="none" />}
+                  {anyCmp && active.has("impressions") && <Line yAxisId="right" type="monotone" dataKey={candlePrevDataKey("impressions")} stroke={EC.impressions} strokeWidth={1} strokeDasharray="4 3" dot={false} connectNulls legendType="none" />}
+                  {anyCmp && active.has("ctr") && <Line yAxisId="left" type="monotone" dataKey={candlePrevDataKey("ctr")} stroke={EC.ctr} strokeWidth={1} strokeDasharray="4 3" dot={false} connectNulls legendType="none" />}
+                  {anyCmp && active.has("position") && anyPos && <Line yAxisId="pos" type="monotone" dataKey={candlePrevDataKey("position")} stroke={EC.position} strokeWidth={1} strokeDasharray="4 3" dot={false} connectNulls legendType="none" />}
+                </>
+              ) : (
+                <>
               {/* Previous-period comparison (dashed, thin, same colors) — drawn underneath. */}
               {anyCmp && active.has("clicks") && <Line yAxisId="left" type="monotone" dataKey="clicksC" stroke={EC.clicks} strokeWidth={1} strokeDasharray="4 3" dot={false} connectNulls legendType="none" />}
               {anyCmp && active.has("impressions") && <Line yAxisId="right" type="monotone" dataKey="impressionsC" stroke={EC.impressions} strokeWidth={1} strokeDasharray="4 3" dot={false} connectNulls legendType="none" />}
               {anyCmp && active.has("ctr") && <Line yAxisId="left" type="monotone" dataKey="ctrC" stroke={EC.ctr} strokeWidth={1} strokeDasharray="4 3" dot={false} connectNulls legendType="none" />}
-              {anyCmp && active.has("position") && anyPos && <Line yAxisId="left" type="monotone" dataKey="positionC" stroke={EC.position} strokeWidth={1} strokeDasharray="4 3" dot={false} connectNulls legendType="none" />}
+              {anyCmp && active.has("position") && anyPos && <Line yAxisId="pos" type="monotone" dataKey={(d: CmpPoint) => d.positionC ?? null} stroke={EC.position} strokeWidth={1} strokeDasharray="4 3" dot={false} connectNulls legendType="none" />}
               {active.has("clicks") && <Area yAxisId="left" type="monotone" dataKey="clicks" name={t("clicks")} stroke={EC.clicks} strokeWidth={2} fill="url(#eng-clicks)" dot={false} />}
               {active.has("impressions") && <Area yAxisId="right" type="monotone" dataKey="impressions" name={t("impressions")} stroke={EC.impressions} strokeWidth={2} fill="url(#eng-impressions)" dot={false} />}
               {active.has("ctr") && <Line yAxisId="left" type="monotone" dataKey="ctr" name="CTR" stroke={EC.ctr} strokeWidth={1.5} dot={false} />}
-              {active.has("position") && anyPos && <Line yAxisId="left" type="monotone" dataKey="position" name={t("avgPosition")} stroke={EC.position} strokeWidth={1.5} dot={false} connectNulls />}
+              {active.has("position") && anyPos && <Line yAxisId="pos" type="monotone" dataKey={(d: CmpPoint) => d.position ?? null} name={t("avgPosition")} stroke={EC.position} strokeWidth={1.5} dot={false} connectNulls />}
+                </>
+              )}
             </ComposedChart>
           </ResponsiveContainer>
         </div>

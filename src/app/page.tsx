@@ -93,8 +93,10 @@ function makeSiteData(n = 14, startDate?: Date): { data: Pt[]; summary: Record<M
     rtC.push(+(t * f).toFixed(1)); rpC.push(+Math.min(100, p / f).toFixed(1));
   }
 
-  const nC = norm(rc), nI = norm(ri), nT = norm(rt), nP = norm(rp);
-  const nCC = norm(rcC), nIC = norm(riC), nTC = norm(rtC), nPC = norm(rpC);
+  // Position flipped: rank 1 at the top of the sparkline, same as the API does for real rows.
+  const flip = (a: number[]) => norm(a).map(v => 95 - v);
+  const nC = norm(rc), nI = norm(ri), nT = norm(rt), nP = flip(rp);
+  const nCC = norm(rcC), nIC = norm(riC), nTC = norm(rtC), nPC = flip(rpC);
 
   const base = startDate ? new Date(startDate) : (() => { const d = new Date(); d.setDate(d.getDate() - n); return d; })();
 

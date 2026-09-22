@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import { readChartTypePref, writeChartTypePref } from "@/lib/chartCandles";
 import TeamMembersPanel from "@/components/TeamMembersPanel";
 import SeoToolsSettings, { SeoProviderKeysSection, AeoProviderKeysSection } from "@/components/SeoToolsSettings";
 import MetricsSettingsSection from "@/components/MetricsSettingsSection";
@@ -735,6 +736,7 @@ function PreferencesSection({ user }: { user: any }) {
   const teamName = user?.name ? `${user.name.split(" ")[0]}'s Team` : "My Team";
   const [shareWithTeam, setShareWithTeam] = useState(true);
   const [useAI, setUseAI] = useState(true);
+  const [chartPref, setChartPref] = useState(readChartTypePref);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -776,6 +778,29 @@ function PreferencesSection({ user }: { user: any }) {
                 {lang === "en" ? "🇬🇧 EN" : lang === "ru" ? "🇷🇺 RU" : lang === "uk" ? "🇺🇦 UK" : lang === "fr" ? "🇫🇷 FR" : lang === "es" ? "🇪🇸 ES" : lang === "de" ? "🇩🇪 DE" : "🇨🇳 ZH"}
               </button>
             ))}
+          </div>
+        </div>
+      </SectionCard>
+
+      {/* Chart view: line vs candlesticks for the site performance charts. A preference, not a
+          per-chart toggle — most SEO operators live on curves, so candles are strictly opt-in.
+          Applies the next time a site page mounts (the charts read it once per mount). */}
+      <SectionCard>
+        <SectionTitle title={t("chartViewTitle")} />
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: "rgba(255,255,255,0.03)", borderRadius: "8px", border: "1px solid var(--color-border)" }}>
+          <div>
+            <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--color-text-primary)" }}>{t("chartViewLineCandle")}</div>
+            <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginTop: "2px" }}>{t("chartViewDesc")}</div>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", justifyContent: "flex-end" }}>
+            {([["line", t("chartViewLine")], ["candle", t("chartViewCandle")]] as const).map(([mode, label]) => {
+              const on = chartPref === mode;
+              return (
+                <button key={mode} onClick={() => { writeChartTypePref(mode); setChartPref(mode); }} style={{ padding: "6px 14px", borderRadius: "8px", fontSize: "13px", fontWeight: 600, cursor: "pointer", background: on ? "rgba(245,158,11,0.15)" : "transparent", color: on ? "#F59E0B" : "var(--color-text-secondary)", border: `1px solid ${on ? "rgba(245,158,11,0.3)" : "var(--color-border)"}`, transition: "all 0.15s" }}>
+                  {label}
+                </button>
+              );
+            })}
           </div>
         </div>
       </SectionCard>

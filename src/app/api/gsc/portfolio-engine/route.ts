@@ -85,8 +85,10 @@ function buildPayload(site: any, curr: Daily[], prev: Daily[], days: number) {
     clicksC.push(pr?.clicks ?? 0); impressionsC.push(pr?.impressions ?? 0);
     ctrsC.push(pr ? +((pr.ctr * 100).toFixed(2)) : 0); positionsC.push(pr ? +pr.position.toFixed(1) : 0);
   }
-  const nC = norm(clicks), nI = norm(impressions), nT = norm(ctrs), nP = norm(positions);
-  const nCC = norm(clicksC), nIC = norm(impressionsC), nTC = norm(ctrsC), nPC = norm(positionsC);
+  // Position inverted: rank 1 at the top of the sparkline (see portfolio/route.ts).
+  const flip = (arr: number[]) => norm(arr).map(v => 95 - v);
+  const nC = norm(clicks), nI = norm(impressions), nT = norm(ctrs), nP = flip(positions);
+  const nCC = norm(clicksC), nIC = norm(impressionsC), nTC = norm(ctrsC), nPC = flip(positionsC);
   const data = curr.map((r, i) => ({
     date: r.date, clicks: r.clicks, impressions: r.impressions, ctr: ctrs[i], position: positions[i],
     clicksC: clicksC[i], impressionsC: impressionsC[i], ctrC: ctrsC[i], positionC: positionsC[i],
