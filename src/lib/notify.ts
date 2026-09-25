@@ -124,7 +124,12 @@ export async function sendSlack(webhookUrl: string, text: string): Promise<{ ok:
   }
 }
 
-export async function notifyUser(userId: string, text: string): Promise<boolean> {
+export async function notifyUser(
+  userId: string,
+  text: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- wave-oct T3 fills this in (event filters per channel)
+  opts?: import("@/lib/notify/types").NotifyOptions,
+): Promise<boolean> {
   const creds = await getTelegramCreds(userId);
   const slackUrl = await getSlackWebhook(userId);
 
@@ -142,4 +147,16 @@ export async function notifyUser(userId: string, text: string): Promise<boolean>
     else console.warn(`[notify] slack send failed for user ${userId}: ${r.error}`);
   }
   return ok;
+}
+
+// Wave-oct (CONTRACT.md §3): per-channel delivery detail. Stub until T3 — the existing
+// two-argument notifyUser semantics are unchanged, existing callers count as event "alert".
+export async function notifyUserDetailed(
+  userId: string,
+  text: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- wave-oct T3 fills this in
+  opts?: import("@/lib/notify/types").NotifyOptions,
+): Promise<import("@/lib/notify/types").NotifyDelivery[]> {
+  await notifyUser(userId, text);
+  return [];
 }

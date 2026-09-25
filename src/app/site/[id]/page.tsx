@@ -14,7 +14,9 @@ import EngineView, { type AltEngine, type EngineSummary } from "@/components/Eng
 import SearchEnginesPanel from "@/components/SearchEnginesPanel";
 import { withShare } from "@/lib/shareParam";
 import { loadSyncedAt, rememberSyncedAt, fetchSyncState, watchSync, type SyncState } from "@/lib/syncedAt";
-import AeoTracker from "@/components/AeoTracker";
+import VisibilityHub from "@/components/VisibilityHub";
+import UptimePanel from "@/components/uptime/UptimePanel";
+import IndexAutoPanel from "@/components/IndexAutoPanel";
 import {
   ALGO_UPDATES, ALGO_UPDATE_COLORS, snapToChartLabel, snapBackToChartLabel, updateEnd,
   algoChartLabel, algoImpact, withNeighbours, type AlgoImpactResult,
@@ -3413,6 +3415,7 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
 
   return (
     <div style={{ padding: "24px 32px", display: "flex", flexDirection: "column", gap: "20px" }}>
+      <IndexAutoPanel siteDbId={siteDbId} domain={domain} />
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
 
       {/* ── Search engines: Bing / Yandex / IndexNow actions ── */}
@@ -5574,7 +5577,7 @@ export default function SitePage({
       {activeTab === "positions" && <RankTracker siteDbId={siteDbId} domain={domain} />}
 
       {/* ── AI Visibility (AEO Tracker) tab ── */}
-      {activeTab === "aeo" && <AeoTracker siteDbId={siteDbId} domain={domain} />}
+      {activeTab === "aeo" && <VisibilityHub siteDbId={siteDbId} domain={domain} />}
 
       {/* ── GA4 tab ── */}
       {activeTab === "ga4" && (
@@ -5600,7 +5603,7 @@ export default function SitePage({
       {activeTab === "optimize" && <OptimizeTab siteDbId={siteDbId} />}
 
       {/* ── Health tab ── */}
-      {activeTab === "health" && <SiteHealthPanel siteDbId={siteDbId} />}
+      {activeTab === "health" && <><UptimePanel siteDbId={siteDbId} /><SiteHealthPanel siteDbId={siteDbId} /></>}
 
       {activeTab === "audit" && <SiteAuditPanel siteDbId={siteDbId} />}
 

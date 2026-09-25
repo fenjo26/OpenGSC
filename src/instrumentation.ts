@@ -32,5 +32,14 @@ export async function register() {
     // the concurrency setting, and creates scheduled orders inside each workspace's hour.
     const { startAuditScheduler } = await import('@/lib/audit/auditScheduler');
     startAuditScheduler();
+    // Uptime monitor: HTTP checks every few minutes, alerts on up→down→up transitions only.
+    const { startUptimeScheduler } = await import('@/lib/uptime/scheduler');
+    startUptimeScheduler();
+    // Automatic URL Inspection inside Google's free per-property quota (resets at midnight PT).
+    const { startIndexScheduler } = await import('@/lib/indexing/scheduler');
+    startIndexScheduler();
+    // Brand mentions: Google News RSS + Wikipedia/Wikidata once a day per opted-in site.
+    const { startMentionsScheduler } = await import('@/lib/mentions/scheduler');
+    startMentionsScheduler();
   }
 }
