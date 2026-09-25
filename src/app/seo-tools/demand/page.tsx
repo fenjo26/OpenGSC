@@ -21,6 +21,7 @@ import { COUNTRIES, LANGUAGES, defaultLanguageFor } from "@/lib/seo/regions";
 import { formatUsd } from "@/lib/seo/metricsClient";
 import { getDataForSeoKey } from "@/lib/seo/keys";
 import DemandDomain from "@/components/DemandDomain";
+import TrendRadar from "@/components/TrendRadar";
 import type { DemandMode, KeywordIntent, MonthlyPoint } from "@/lib/seo/demand";
 
 type Verdict = "reach" | "wrong_page" | "none";
@@ -282,6 +283,11 @@ export default function DemandPage() {
       <div style={{ fontSize: "13px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>
         {view === "keyword" ? t("dmSub") : t("dmDomainSub")}
       </div>
+
+      {/* Trend radar (N5): the free half of demand — what is rising in your own Search
+          Console and in Google suggest — above the paid market discovery. Both halves share
+          the site list, so the block takes it as a prop rather than refetching. */}
+      <TrendRadar sites={sites} />
 
       <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
         <button className={view === "keyword" ? "pill active" : "pill"} onClick={() => setView("keyword")} style={{ cursor: "pointer" }}>
