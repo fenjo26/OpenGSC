@@ -4893,5 +4893,7 @@
   "repBrandLogoBadType": "Только PNG, SVG или JPEG",
   "repBrandSaved": "Сохранено",
   "extIdsHint": "По одному ID расширения на строку (см. chrome://extensions) — токен работает только для них.",
-  "extHowToSteps": "1. Откройте chrome://extensions и включите режим разработчика.\n2. Загрузите распакованную папку extension/ из репозитория.\n3. Создайте токен здесь и вставьте его в попап расширения."
+  "extHowToSteps": "1. Откройте chrome://extensions и включите режим разработчика.\n2. Загрузите распакованную папку extension/ из репозитория.\n3. Создайте токен здесь и вставьте его в попап расширения.",
+  "locHint": "Карточка бизнеса, NAP-консистентность, каталоги, разметка LocalBusiness, Google Business Profile.",
+  "locSiteSearch": "Поиск по сайтам…"
 }

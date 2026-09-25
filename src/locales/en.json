@@ -4893,5 +4893,7 @@
   "repBrandLogoBadType": "PNG, SVG or JPEG only",
   "repBrandSaved": "Saved",
   "extIdsHint": "One extension ID per line — find it on chrome://extensions. Only these IDs may use the token.",
-  "extHowToSteps": "1. Open chrome://extensions and enable Developer mode.\n2. Load the unpacked extension/ folder of this repository.\n3. Create a token here and paste it into the extension popup."
+  "extHowToSteps": "1. Open chrome://extensions and enable Developer mode.\n2. Load the unpacked extension/ folder of this repository.\n3. Create a token here and paste it into the extension popup.",
+  "locHint": "Business profile, NAP consistency, directories, LocalBusiness schema, Google Business Profile.",
+  "locSiteSearch": "Search sites…"
 }

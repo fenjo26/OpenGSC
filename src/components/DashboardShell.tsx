@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import PasswordChangeGate from "@/components/PasswordChangeGate";
 import { useSession, signOut } from "next-auth/react";
 import { useState, useEffect, Suspense } from "react";
-import { Settings, LogOut, Sparkles, Globe, Newspaper, LayoutDashboard, TrendingUp, Anchor, BarChart2, Users, Compass, Radar, Server, ClipboardCheck, Menu, Boxes, Waves, Fingerprint, MapPin, FileText, Inbox } from "lucide-react";
+import { Settings, LogOut, Sparkles, Globe, Newspaper, LayoutDashboard, TrendingUp, Anchor, BarChart2, Users, Compass, Radar, Server, ClipboardCheck, Menu, Boxes, Waves, FileText, Inbox } from "lucide-react";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { useTheme } from "@/lib/ThemeContext";
 import { useLayout } from "@/lib/LayoutContext";
@@ -628,10 +628,8 @@ function useNavItems(): NavItem[] {
     // credentials) instead of the entry hiding and the feature looking absent.
     { href: "/serp-monitor", label: t("serpmonNavTitle"), key: "serpmon", icon: <Waves size={14} /> },
     // ─── wave-nov nav entries (CONTRACT.md §3), after /serp-monitor ──────────────────
-    // N1: templates repeated across the portfolio's sites — reads only local data.
-    { href: "/footprint", label: t("fpNavTitle"), key: "footprint", icon: <Fingerprint size={14} /> },
-    // N4: Local SEO (business profile, NAP, directories, GBP) — sits next to the rank tools.
-    { href: "/local", label: t("locNavTitle"), key: "local", icon: <MapPin size={14} /> },
+    // Footprints and Local live in the SEO Tools hub now — the top nav stopped fitting at
+    // 16 items; both are analysis tools, not daily destinations.
     // N8: client reports (white-label, PDF, scheduled mailing).
     { href: "/reports", label: t("repNavTitle"), key: "reports", icon: <FileText size={14} /> },
     // N9: incoming leads from the embeddable audit widget.

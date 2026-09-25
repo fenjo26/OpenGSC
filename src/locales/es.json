@@ -4893,5 +4893,7 @@
   "repBrandLogoBadType": "Solo PNG, SVG o JPEG",
   "repBrandSaved": "Guardado",
   "extIdsHint": "Un ID de extensión por línea — búscalo en chrome://extensions. Solo estos ID pueden usar el token.",
-  "extHowToSteps": "1. Abre chrome://extensions y activa el modo de desarrollador.\n2. Carga la carpeta extension/ descomprimida del repositorio.\n3. Crea un token aquí y pégalo en el popup de la extensión."
+  "extHowToSteps": "1. Abre chrome://extensions y activa el modo de desarrollador.\n2. Carga la carpeta extension/ descomprimida del repositorio.\n3. Crea un token aquí y pégalo en el popup de la extensión.",
+  "locHint": "Ficha de negocio, coherencia NAP, directorios, marcado LocalBusiness, Google Business Profile.",
+  "locSiteSearch": "Buscar sitios…"
 }

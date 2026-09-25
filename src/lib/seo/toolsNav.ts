@@ -10,7 +10,7 @@
 
 import {
   Boxes, Globe, FileText, LayoutTemplate, PenLine, RefreshCw, Fingerprint, Search, Bot,
-  Quote, Link2, ScrollText, History, Compass, Users, Workflow, Languages, CopyX, type LucideIcon,
+  Quote, Link2, ScrollText, History, Compass, Users, Workflow, Languages, CopyX, MapPin, type LucideIcon,
 } from "lucide-react";
 
 export interface SeoTool {
@@ -31,6 +31,9 @@ export const SEO_TOOLS: SeoTool[] = [
   { href: "/seo-tools/competitors", key: "seoTabCompetitors", desc: "seoTileCompetitors", icon: Users,   color: "#5e5ce6" },
   { href: "/seo-tools/cluster",   key: "seoTabCluster",   desc: "seoTileCluster",   icon: Boxes,         color: "#bf5af2" },
   { href: "/seo-tools/geo",       key: "geoTabGeo",       desc: "seoTileGeo",       icon: Globe,         color: "#5e5ce6" },
+  // Local SEO is its own destination (not under /seo-tools/*), but it belongs in this list
+  // next to geo: the same "where" question, asked about a city instead of a country.
+  { href: "/local",               key: "locNavTitle",      desc: "locHint",          icon: MapPin,         color: "#30d158" },
   { href: "/seo-tools/outline",   key: "seoTabOutline",   desc: "seoTileOutline",   icon: FileText,      color: "#2997ff" },
   { href: "/seo-tools/landing",   key: "seoTabLanding",   desc: "seoTileLanding",   icon: LayoutTemplate, color: "#ff9f0a" },
   { href: "/seo-tools/text",      key: "seoTabText",      desc: "seoTileText",      icon: PenLine,       color: "#34c759" },
@@ -42,6 +45,9 @@ export const SEO_TOOLS: SeoTool[] = [
   { href: "/seo-tools/humanize",  key: "seoTabHumanize",  desc: "seoTileHumanize",  icon: Fingerprint,   color: "#ff6482" },
   { href: "/seo-tools/plagiarism", key: "plgTitle",       desc: "plgHint",          icon: CopyX,         color: "#ff453a" },
   { href: "/seo-tools/hreflang",  key: "hlTitle",         desc: "hlHint",           icon: Languages,     color: "#64d2ff" },
+  // Portfolio-level analysis after the per-page quality passes: hreflang wires one page's
+  // languages together, footprints ask whether the whole portfolio shares templates.
+  { href: "/footprint",           key: "fpNavTitle",       desc: "fpHint",           icon: Fingerprint,    color: "#bf5af2" },
   { href: "/seo-tools/analysis",  key: "seoTabAnalysis",  desc: "seoTileAnalysis",  icon: Search,        color: "#10A37F" },
   { href: "/seo-tools/googlebot", key: "seoTabGooglebot", desc: "seoTileGooglebot", icon: Bot,           color: "#4285F4" },
   { href: "/seo-tools/citations", key: "seoTabCitations", desc: "seoTileCitations", icon: Quote,         color: "#ff375f" },

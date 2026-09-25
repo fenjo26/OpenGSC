@@ -4893,5 +4893,7 @@
   "repBrandLogoBadType": "PNG, SVG ou JPEG uniquement",
   "repBrandSaved": "Enregistré",
   "extIdsHint": "Un ID d'extension par ligne — trouvez-le sur chrome://extensions. Seuls ces ID peuvent utiliser le jeton.",
-  "extHowToSteps": "1. Ouvrez chrome://extensions et activez le mode développeur.\n2. Chargez le dossier extension/ non compressé du dépôt.\n3. Créez un jeton ici et collez-le dans la fenêtre de l'extension."
+  "extHowToSteps": "1. Ouvrez chrome://extensions et activez le mode développeur.\n2. Chargez le dossier extension/ non compressé du dépôt.\n3. Créez un jeton ici et collez-le dans la fenêtre de l'extension.",
+  "locHint": "Fiche d'établissement, cohérence NAP, annuaires, balisage LocalBusiness, Google Business Profile.",
+  "locSiteSearch": "Rechercher un site…"
 }

@@ -4893,5 +4893,7 @@
   "repBrandLogoBadType": "仅支持 PNG、SVG 或 JPEG",
   "repBrandSaved": "已保存",
   "extIdsHint": "每行一个扩展 ID（见 chrome://extensions）— 只有这些 ID 可以使用令牌。",
-  "extHowToSteps": "1. 打开 chrome://extensions 并启用开发者模式。\n2. 加载本仓库中解压的 extension/ 文件夹。\n3. 在此处创建令牌并粘贴到扩展弹窗中。"
+  "extHowToSteps": "1. 打开 chrome://extensions 并启用开发者模式。\n2. 加载本仓库中解压的 extension/ 文件夹。\n3. 在此处创建令牌并粘贴到扩展弹窗中。",
+  "locHint": "商家资料、NAP 一致性、目录、LocalBusiness 结构化数据、Google Business Profile。",
+  "locSiteSearch": "搜索网站…"
 }

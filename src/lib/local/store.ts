@@ -64,9 +64,12 @@ export async function getSite(userId: string, siteDbId: string) {
   return prisma.site.findFirst({ where: { id: siteDbId, userId }, select: { id: true, url: true, siteId: true } });
 }
 
-export async function getProfile(userId: string, siteDbId: string): Promise<LocalProfileData | null> {
+// undefined = no such site in this workspace (the caller's 404); null = the site exists but
+// the profile is not filled in yet — a normal state the UI renders an empty form for, never
+// an error. Collapsing the two made the first visit to a fresh site answer 404.
+export async function getProfile(userId: string, siteDbId: string): Promise<LocalProfileData | null | undefined> {
   const site = await getSite(userId, siteDbId);
-  if (!site) return null;
+  if (!site) return undefined;
   const row = await prisma.localProfile.findUnique({ where: { siteId: site.id } });
   return row ? rowToProfileData(row) : null;
 }

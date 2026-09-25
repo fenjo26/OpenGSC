@@ -32,6 +32,7 @@ export default function LocalPage() {
   const { t } = useLanguage();
   const [sites, setSites] = useState<{ id: string; url: string; hasProfile: boolean }[] | null>(null);
   const [siteId, setSiteId] = useState("");
+  const [siteQuery, setSiteQuery] = useState("");
   const [profile, setProfile] = useState<LocalProfileData | null>(null);
   const [notMigrated, setNotMigrated] = useState(false);
   const [tab, setTab] = useState<Tab>("profile");
@@ -71,10 +72,15 @@ export default function LocalPage() {
     })();
   }, [t]);
 
-  // The selected site's profile (the whole page keys off it).
+  // The selected site's profile (the whole page keys off it). A site with no profile yet is
+  // NOT an error — the form below renders empty for it; only a vanished site resets the choice.
   const loadProfile = useCallback(async (id: string) => {
     setProfile(null);
     const d = await fetch(`/api/local/profile?siteId=${encodeURIComponent(id)}`).then(r => r.json()).catch(() => ({}));
+    if (d?.error === "site_not_found") {
+      localStorage.removeItem(SITE_STORE_KEY);
+      return;
+    }
     setProfile(d.profile ? (d.profile as LocalProfileData) : null);
   }, []);
 
@@ -87,6 +93,14 @@ export default function LocalPage() {
 
   const siteLabel = (url: string) => url.replace(/^https?:\/\//, "").replace(/^sc-domain:/, "").replace(/\/+$/, "");
   const hasProfile = !!profile;
+
+  // A plain select over 300 sites is unfindable — the filter narrows it first. The selected
+  // site stays listed even when it doesn't match: a select whose value is not among its
+  // options renders the wrong row.
+  const q = siteQuery.trim().toLowerCase();
+  const matching = q ? (sites ?? []).filter(s => siteLabel(s.url).toLowerCase().includes(q)) : (sites ?? []);
+  const selected = (sites ?? []).find(s => s.id === siteId);
+  const selectOptions = selected && !matching.some(s => s.id === selected.id) ? [selected, ...matching] : matching;
 
   if (notMigrated) {
     return (
@@ -106,11 +120,15 @@ export default function LocalPage() {
       </div>
 
       {/* Site selector — the shared-page convention: all sites, hidden included. */}
-      <div style={{ marginTop: 16, maxWidth: 420 }}>
+      <div style={{ marginTop: 16, maxWidth: 420, display: "flex", flexDirection: "column", gap: 6 }}>
         <span style={fieldLabel}><Building2 size={11} style={{ verticalAlign: "-1px" }} /> {t("selectSite")}</span>
+        {(sites?.length ?? 0) > 15 && (
+          <input style={inputStyle} placeholder={t("locSiteSearch" as never)} value={siteQuery}
+            onChange={e => setSiteQuery(e.target.value)} />
+        )}
         <select style={{ ...inputStyle, width: "100%" }} value={siteId} onChange={e => setSiteId(e.target.value)}>
           <option value="">—</option>
-          {(sites ?? []).map(s => (
+          {selectOptions.map(s => (
             <option key={s.id} value={s.id}>{siteLabel(s.url)}{s.hasProfile ? " ●" : ""}</option>
           ))}
         </select>

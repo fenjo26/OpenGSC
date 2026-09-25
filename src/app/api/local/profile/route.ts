@@ -19,8 +19,8 @@ export async function GET(req: Request) {
       return NextResponse.json({ sites });
     }
     const profile = await getProfile(userId, siteId);
-    if (profile === null) return NextResponse.json({ error: "site_not_found" }, { status: 404 });
-    return NextResponse.json({ profile: profile ?? null });
+    if (profile === undefined) return NextResponse.json({ error: "site_not_found" }, { status: 404 });
+    return NextResponse.json({ profile });
   } catch (error) {
     if (localSchemaMissing(error)) return NextResponse.json({ notMigrated: true });
     console.warn("[local] profile load failed:", error);
