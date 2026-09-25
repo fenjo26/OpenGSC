@@ -8,13 +8,38 @@
 // The chart is hand-rolled SVG stacked area (DrSparkline approach — no chart dependency), with
 // token colours plus the same status colours the Indexing tab's counter chips already use, and
 // text labels so colour is never the only carrier of meaning.
+//
+// wave-nov N6 adds the site: section: Google's quota reaches only verified properties, so for
+// URLs it could not inspect (or a site with no Google connection at all) the same table gets a
+// second opinion from a `site:` SERP query — labelled as an ESTIMATE from the SERP, never as
+// Google's verdict, priced before it runs (CONTRACT.md §0.5).
 
 import { useEffect, useState } from "react";
-import { Loader2, Play, RefreshCw, Save } from "lucide-react";
+import { Loader2, Play, RefreshCw, Save, Search } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import { formatUsd } from "@/lib/seo/metricsClient";
 import type { IndexAutoStatus, IndexInspectSettings } from "@/lib/indexing/types";
 
 type Status = IndexAutoStatus & { noGoogle?: boolean };
+
+type SerpIndexStatus = "indexed" | "not_indexed" | "error";
+
+interface SerpRow {
+  url: string;
+  googleChecked: string | null;
+  googleStatus: string | null;
+  serpIndexStatus: SerpIndexStatus | null;
+  serpIndexChecked: string | null;
+  serpIndexProvider: string | null;
+}
+
+interface SerpEstimate {
+  provider: string;
+  queries: number;
+  costUsd: number | null;
+  free: boolean;
+  unknownPrice: boolean;
+}
 
 const inputS: React.CSSProperties = {
   padding: "6px 9px", borderRadius: "8px", border: "1px solid var(--color-border)",
@@ -100,6 +125,24 @@ export default function IndexAutoPanel({ siteDbId, domain }: { siteDbId: string;
   const [running, setRunning] = useState(false);
   const [msg, setMsg] = useState("");
 
+  // ── site: index estimate (wave-nov N6) ──
+  const [serpRows, setSerpRows] = useState<SerpRow[]>([]);
+  const [serpPending, setSerpPending] = useState<string[]>([]);
+  const [serpEst, setSerpEst] = useState<SerpEstimate | null>(null);
+  const [serpBusy, setSerpBusy] = useState(false);
+  const [serpMsg, setSerpMsg] = useState("");
+  const [serpNoKey, setSerpNoKey] = useState(false);
+
+  const loadSerpRows = async () => {
+    try {
+      const d = await fetch(`/api/indexing/serp-check?siteId=${encodeURIComponent(siteDbId)}`).then(r => r.json());
+      if (d.notMigrated) return; // the Google half of the panel already shows the migration hint
+      if (d.error) return;
+      setSerpRows(d.rows ?? []);
+      setSerpPending(d.pendingUrls ?? []);
+    } catch { /* the site: section simply stays empty */ }
+  };
+
   const load = async () => {
     try {
       const d = await fetch(`/api/indexing/auto?siteId=${encodeURIComponent(siteDbId)}`).then(r => r.json());
@@ -121,7 +164,7 @@ export default function IndexAutoPanel({ siteDbId, domain }: { siteDbId: string;
   // callback is a genuine async boundary, and the cleanup keeps a fast unmount from setting
   // state on a dead component.
   useEffect(() => {
-    const id = setTimeout(() => { void load(); }, 0);
+    const id = setTimeout(() => { void load(); void loadSerpRows(); }, 0);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -165,6 +208,57 @@ export default function IndexAutoPanel({ siteDbId, domain }: { siteDbId: string;
   };
 
   const num = (v: string, fallback: number) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? n : fallback; };
+
+  // ── site: estimate (wave-nov N6) ──
+  // Two-click discipline: the first click only prices the pending URLs (no SERP query), the
+  // second runs them with confirm. The pending set is the honest "unknown" half — URLs Google's
+  // own quota has not inspected — which is exactly where a site: answer adds information.
+  const serpCostStr = (est: SerpEstimate): string =>
+    est.free ? t("aparserNoCost") : est.costUsd != null ? formatUsd(est.costUsd) : "—";
+
+  const serpCheck = async () => {
+    if (serpBusy) return;
+    if (!serpPending.length) return;
+    setSerpBusy(true); setSerpMsg("");
+    try {
+      const res = await fetch("/api/indexing/serp-check", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(serpEst ? { urls: serpPending, confirm: true } : { urls: serpPending }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (d.notMigrated) { setNotMigrated(true); setSerpBusy(false); return; }
+      if (!serpEst) {
+        // Price step. no_serp_key is a state, not a glitch: the section says what to configure.
+        if (d.error === "no_serp_key") setSerpNoKey(true);
+        else if (d.error) setSerpMsg(`✗ ${d.error}`);
+        else { setSerpNoKey(false); setSerpEst({ provider: d.provider, queries: d.queries, costUsd: d.costUsd, free: d.free, unknownPrice: d.unknownPrice }); }
+        setSerpBusy(false);
+        return;
+      }
+      // Run step.
+      if (!res.ok || d.error) {
+        setSerpMsg(`✗ ${d.error === "no_serp_key" ? t("seoErrNoSerpKey") : d.error === "cap_exceeded" ? t("dmCapExceeded") : `${d.error}${d.detail ? `: ${d.detail}` : ""}`}`);
+        setSerpEst(null);
+        setSerpBusy(false);
+        return;
+      }
+      const counts = d.counts ?? {};
+      setSerpMsg(
+        `✓ ${t("idxAutoRunDone").replace("{n}", String(d.queries ?? 0)).replace("{indexed}", String(counts.indexed ?? 0)).replace("{not}", String(counts.not_indexed ?? 0))}` +
+        (d.errors ? ` · ${d.errors} ${t("idxSerp_error")}` : "") +
+        (typeof d.costUsd === "number" && d.costUsd > 0 ? ` · ${formatUsd(d.costUsd)}` : ""),
+      );
+      setSerpEst(null);
+      await loadSerpRows();
+    } catch (e) {
+      setSerpMsg(`✗ ${e instanceof Error ? e.message : String(e)}`);
+    }
+    setSerpBusy(false);
+  };
+
+  const SERP_STATUS_COLOR: Record<SerpIndexStatus, string> = {
+    indexed: "#4ADE80", not_indexed: "#F87171", error: "#FBBF24",
+  };
 
   if (loading) {
     return (
@@ -213,6 +307,72 @@ export default function IndexAutoPanel({ siteDbId, domain }: { siteDbId: string;
           {msg}
         </div>
       )}
+
+      {/* site: estimate (wave-nov N6) — Google's quota cannot reach everything; the SERP can.
+          Always labelled as an estimate from the search results, never as Google's verdict. */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+        <h4 style={sectionTitle}>
+          {t("idxSerpColumn")}
+          <span style={{ fontWeight: 400, color: "var(--color-text-secondary)" }} title={t("idxSerpHint")}> — {t("idxSerpHint")}</span>
+        </h4>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+          <button
+            onClick={() => void serpCheck()}
+            disabled={serpBusy || !serpPending.length}
+            style={{ ...btn, opacity: serpBusy || !serpPending.length ? 0.5 : 1 }}
+            title={serpPending.length ? `${serpPending.length} URL` : t("idxSerpHint")}
+          >
+            {serpBusy ? <Loader2 size={12} className="spin" /> : <Search size={12} />}
+            {t("idxSerpCheck")}
+            {serpEst ? ` · ${serpCostStr(serpEst)}` : ""}
+          </button>
+          {serpEst && (
+            <span style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>
+              {t("plgEstimate").replace("{n}", String(serpEst.queries)).replace("{provider}", serpEst.provider).replace("{cost}", serpCostStr(serpEst))}
+            </span>
+          )}
+          {serpNoKey && <span style={{ fontSize: "12px", color: "var(--color-accent-red)" }}>{t("seoErrNoSerpKey")}</span>}
+          {serpMsg && (
+            <span style={{ fontSize: "12px", color: serpMsg.startsWith("✓") ? "var(--color-accent-green)" : "var(--color-accent-red)", wordBreak: "break-word" }}>
+              {serpMsg}
+            </span>
+          )}
+        </div>
+        {serpRows.length > 0 && (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: "left", fontWeight: 600, color: "var(--color-text-secondary)", padding: "4px 8px 4px 0", fontSize: "11px" }}>URL</th>
+                  <th style={{ textAlign: "left", fontWeight: 600, color: "var(--color-text-secondary)", padding: "4px 8px", fontSize: "11px" }} title={t("idxSerpHint")}>{t("idxSerpColumn")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {serpRows.slice(0, 10).map(r => (
+                  <tr key={r.url}>
+                    <td style={{ padding: "3px 8px 3px 0", maxWidth: "0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.url}>
+                      {r.url}
+                    </td>
+                    <td style={{ padding: "3px 8px", whiteSpace: "nowrap" }}>
+                      {r.serpIndexStatus ? (
+                        <span
+                          style={{ color: SERP_STATUS_COLOR[r.serpIndexStatus], fontWeight: 600 }}
+                          title={`${t("idxSerpHint")} · ${r.serpIndexProvider ?? ""} · ${r.serpIndexChecked ?? ""}`}
+                          aria-label={`${t(`idxSerp_${r.serpIndexStatus}`)} (${t("idxSerpHint")})`}
+                        >
+                          {t(`idxSerp_${r.serpIndexStatus}`)}
+                        </span>
+                      ) : (
+                        <span style={{ color: "var(--color-text-secondary)" }}>—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {noGoogle ? (
         <div style={{ fontSize: "13px", color: "var(--color-text-secondary)" }}>{t("idxAutoNoGoogle")}</div>
