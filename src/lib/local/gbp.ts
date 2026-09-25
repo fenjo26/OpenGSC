@@ -14,8 +14,9 @@ import { notifyUser } from "@/lib/notify";
 import { NOTIFY_L, normalizeLang } from "@/lib/notifyI18n";
 import { getAlertSettings } from "@/lib/alertScheduler";
 import {
-  GBP_ENDPOINTS, buildLocalPostBody, classifyGbpResponse, gbpErrorText, locationReadMask,
-  parseAccounts, parseCreatedPostName, parseLocations, parseReviews, v4LocationName,
+  GBP_ACCESS_FORM_URL, GBP_ENDPOINTS, buildLocalPostBody, classifyGbpResponse, gbpErrorText,
+  locationReadMask, parseAccounts, parseCreatedPostName, parseLocations, parseReviews,
+  v4LocationName,
 } from "./gbpParse";
 import { getProfile, markReviewsNotified, unnotifiedReviews, upsertReviews } from "./store";
 import type { GbpAccountRow, GbpCallError, GbpLocationRow, GbpReviewRow } from "./types";
@@ -23,6 +24,27 @@ import type { GbpAccountRow, GbpCallError, GbpLocationRow, GbpReviewRow } from "
 export { GBP_ACCESS_FORM_URL } from "./gbpParse";
 
 // ─── tokens ────────────────────────────────────────────────────────────────────
+
+// ─── redirect URI (the connect/callback pair and the status card share it) ─────
+
+/**
+ * The instance's own origin as the reverse proxy saw it. `req.url` behind a proxy names the
+ * internal address, so the forwarded headers win when present; the fallback is the request's
+ * own origin (right for localhost and direct exposure). The URI this builds is what the doc
+ * tells the operator to register in Google Cloud (docs/LOCAL-SEO.md).
+ */
+export function reqOrigin(req: Request): string {
+  const h = req.headers;
+  const host = h.get("x-forwarded-host") ?? h.get("host");
+  const proto = h.get("x-forwarded-proto") ?? (host?.startsWith("localhost") || host?.startsWith("127.") ? "http" : undefined);
+  if (host && proto) return `${proto}://${host}`;
+  return new URL(req.url).origin;
+}
+
+/** The OAuth redirect URI for THIS instance — one spelling everywhere it is used or shown. */
+export function gbpRedirectUri(origin: string): string {
+  return `${origin.replace(/\/+$/, "")}/api/local/gbp/callback`;
+}
 
 interface GbpToken {
   refresh_token?: string;
@@ -102,6 +124,41 @@ export async function gbpConnected(userId: string): Promise<boolean> {
 
 export async function gbpDisconnect(userId: string): Promise<void> {
   await prisma.user.update({ where: { id: userId }, data: { gbpToken: null } }).catch(() => {});
+}
+
+// ─── the state machine the GBP tab renders ────────────────────────────────────
+
+export interface GbpStatus {
+  /** gbp_not_configured | gbp_no_token | gbp_auth_failed | gbp_access_required | gbp_error | ok */
+  state: "gbp_not_configured" | "gbp_no_token" | "gbp_auth_failed" | "gbp_access_required" | "gbp_error" | "ok";
+  /** true when a Google account is linked (token present), regardless of quota. */
+  connected: boolean;
+  /** The pre-approval explanation card needs the apply link — always present for the client. */
+  applyUrl: string;
+  accounts?: GbpAccountRow[];
+  message?: string;
+}
+
+/**
+ * Everything the GBP tab needs in one call. Local reads only, UNLESS a token exists — then one
+ * accounts.list call runs, because quota-0 (CONTRACT §0.4) is only visible by trying. That call
+ * is free and lands in the journal; its classified failure is the state, never a throw.
+ */
+export async function gbpStatus(userId: string): Promise<GbpStatus> {
+  const applyUrl = GBP_ACCESS_FORM_URL;
+  if (!gbpConfigured()) return { state: "gbp_not_configured", connected: false, applyUrl };
+  if (!(await readToken(userId))) return { state: "gbp_no_token", connected: false, applyUrl };
+
+  const res = await listAccounts(userId);
+  if (!res.ok) {
+    return {
+      state: res.error === "gbp_auth_failed" ? "gbp_auth_failed" : res.error === "gbp_access_required" ? "gbp_access_required" : "gbp_error" as GbpStatus["state"],
+      connected: true,
+      applyUrl,
+      message: res.message,
+    };
+  }
+  return { state: "ok", connected: true, applyUrl, accounts: res.data ?? [] };
 }
 
 // ─── authenticated calls ───────────────────────────────────────────────────────

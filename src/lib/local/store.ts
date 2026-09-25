@@ -98,6 +98,22 @@ export async function saveProfile(userId: string, siteDbId: string, patch: Profi
   return rowToProfileData(row);
 }
 
+/**
+ * Persist the GBP account/location choice (brief §6: выбор аккаунта и локации → gbpAccount/
+ * gbpLocation). A null pair clears the selection. The profile must exist — the UI creates it
+ * first, and a selection without NAP data has nothing to publish for.
+ */
+export async function setGbpSelection(
+  userId: string, siteDbId: string, gbpAccount: string | null, gbpLocation: string | null,
+): Promise<void> {
+  const site = await getSite(userId, siteDbId);
+  if (!site) throw new Error("site_not_found");
+  await prisma.localProfile.update({
+    where: { siteId: site.id },
+    data: { gbpAccount, gbpLocation },
+  });
+}
+
 // ─── citations ─────────────────────────────────────────────────────────────────
 
 export interface CitationRow {
