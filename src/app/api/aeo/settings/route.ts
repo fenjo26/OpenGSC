@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { authOptions } from "@/lib/auth";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { AEO_DEFAULT_MODEL } from "@/lib/seo/aeo";
@@ -11,7 +10,10 @@ async function ownedSite(userId: string, siteId: string) {
   return prisma.site.findFirst({ where: { id: siteId, userId } });
 }
 
-function shape(site: any) {
+function shape(site: {
+  aeoModel?: string | null; market?: string | null; aeoCountry?: string | null;
+  aeoCity?: string | null; aeoLanguage?: string | null; aeoAuto?: boolean;
+}) {
   return {
     model: site.aeoModel || AEO_DEFAULT_MODEL,
     // `market` is the fallback, surfaced as `inheritedCountry` so the UI can show the country
