@@ -5,13 +5,18 @@
 // POST /api/audit creates the SiteAudit row and calls runAudit() without awaiting it.
 
 import { prisma } from "@/lib/prisma";
-import { checkAiCrawlability } from "@/lib/audit/aiCrawl";
+import { checkAiCrawlability, fetchRobots } from "@/lib/audit/aiCrawl";
 import { safeFetch } from "@/lib/security/safeFetch";
 import { extractAuditHtml, missingSecurityHeaders, robotsDirectivesConflict, type AuditHtmlSignals } from "@/lib/audit/pageSignals";
 export const AUDIT_PAGE_CEILING = 5000;
 
 import { AUDIT_ACTIONABLE_RULE_IDS, AUDIT_RULE_IDS, AUDIT_SCORING_RULE_IDS, evaluateAuditPageRules, type AuditPageFacts } from "@/lib/audit/rules";
 import { compareAuditFindings } from "@/lib/audit/verification";
+import { checkHreflangSite, mergeHreflangEntries, normalizeHreflangUrl, parseHreflangLinkHeader, parseHreflangSitemap, type HreflangEntry, type HreflangTargetState } from "@/lib/audit/hreflang";
+import { normalizeAuditUrl, pickMainQuery } from "@/lib/audit/queryAlign";
+import { isCwvPoor, pickPsiSample, resolvePsiApiKey, runPsiStage } from "@/lib/audit/psi";
+import { withCallContext } from "@/lib/providerLog/context";
+import { resolveCaptureBodies } from "@/lib/providerLog/bodies";
 
 const UA = "Mozilla/5.0 (compatible; OpenGSC-Audit/1.0; +https://opengsc.org)";
 const PAGE_TIMEOUT_MS = 20_000;
@@ -42,6 +47,8 @@ interface PageResult {
   contentType: string;
   loadMs: number;
   html: string | null;
+  /** Decoded HTML size in bytes — html_too_large works only if pages above the limit can still be fetched. */
+  htmlBytes: number;
   responseHeaders: Record<string, string>;
   fetchError?: string;
 }
@@ -54,22 +61,24 @@ async function fetchPage(url: string): Promise<PageResult> {
       headers: { "User-Agent": UA, Accept: "text/html,application/xhtml+xml" },
       redirect: "manual",
       timeoutMs: PAGE_TIMEOUT_MS,
-      maxBytes: 2 * 1024 * 1024,
+      // 5 MB (not 2): html_too_large flags decoded HTML above 2 MB, and a fetch that dies at
+      // the old cap would turn a "large document" finding into "fetch failed".
+      maxBytes: 5 * 1024 * 1024,
     });
     const loadMs = Date.now() - started;
     const contentType = res.headers.get("content-type") ?? "";
     const responseHeaders = Object.fromEntries([
       "content-security-policy", "strict-transport-security", "x-content-type-options",
-      "x-frame-options", "referrer-policy", "x-robots-tag",
+      "x-frame-options", "referrer-policy", "x-robots-tag", "link",
     ].map(name => [name, res.headers.get(name) ?? ""]));
     if (res.status >= 300 && res.status < 400) {
-      return { url, httpStatus: res.status, redirectTo: res.headers.get("location"), contentType, loadMs, html: null, responseHeaders };
+      return { url, httpStatus: res.status, redirectTo: res.headers.get("location"), contentType, loadMs, html: null, htmlBytes: 0, responseHeaders };
     }
     const isHtml = contentType.includes("html") || contentType === "";
     const html = res.ok && isHtml ? await res.text() : null;
-    return { url, httpStatus: res.status, redirectTo: null, contentType, loadMs, html, responseHeaders };
+    return { url, httpStatus: res.status, redirectTo: null, contentType, loadMs, html, htmlBytes: html ? Buffer.byteLength(html) : 0, responseHeaders };
   } catch (e: any) {
-    return { url, httpStatus: 0, redirectTo: null, contentType: "", loadMs: Date.now() - started, html: null, responseHeaders: {}, fetchError: String(e?.message ?? e).slice(0, 120) };
+    return { url, httpStatus: 0, redirectTo: null, contentType: "", loadMs: Date.now() - started, html: null, htmlBytes: 0, responseHeaders: {}, fetchError: String(e?.message ?? e).slice(0, 120) };
   }
 }
 
@@ -168,6 +177,59 @@ function buildIgnoreList(opts?: AuditOptions): string[] {
   return opts?.skipDefaultIgnores ? custom : [...DEFAULT_IGNORE, ...custom];
 }
 
+// ─── hreflang source 3: xhtml:link in XML sitemaps ────────────────────────────
+
+const SITEMAP_FETCH_LIMIT = 3;
+
+async function fetchSitemapText(url: string): Promise<string | null> {
+  try {
+    const res = await safeFetch(url, {
+      headers: { "User-Agent": UA, Accept: "application/xml,text/xml,*/*" },
+      redirect: "follow",
+      timeoutMs: 15_000,
+      maxBytes: 4 * 1024 * 1024,
+    });
+    if (!res.ok) return null;
+    return await res.text();
+  } catch { return null; }
+}
+
+/**
+ * hreflang sets declared in sitemaps: robots.txt `Sitemap:` lines (falling back to the
+ * /sitemap.xml convention), one nesting level of sitemapindex, xhtml:link entries from each
+ * document, merged across sitemaps. Best-effort like the whole sitemap source — any failure
+ * leaves it absent, and the head/header sources still work without it.
+ */
+async function loadSitemapHreflangs(root: URL): Promise<Map<string, HreflangEntry[]>> {
+  const robots = await fetchRobots(root).catch(() => null);
+  const urls = robots?.text
+    ? [...robots.text.matchAll(/^\s*sitemap\s*:\s*(\S+)\s*$/gim)].map(m => m[1])
+    : [];
+  const candidates = urls.length ? urls.slice(0, SITEMAP_FETCH_LIMIT) : [new URL("/sitemap.xml", root).href];
+
+  const docs: string[] = [];
+  for (const url of candidates) {
+    const xml = await fetchSitemapText(url);
+    if (!xml) continue;
+    if (/<sitemapindex/i.test(xml.slice(0, 2000))) {
+      for (const child of [...xml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)].map(m => m[1]).slice(0, SITEMAP_FETCH_LIMIT)) {
+        const childXml = await fetchSitemapText(child);
+        if (childXml) docs.push(childXml);
+      }
+    } else {
+      docs.push(xml);
+    }
+  }
+
+  const out = new Map<string, HreflangEntry[]>();
+  for (const doc of docs) {
+    for (const [loc, entries] of parseHreflangSitemap(doc)) {
+      out.set(loc, mergeHreflangEntries(out.get(loc) ?? [], entries));
+    }
+  }
+  return out;
+}
+
 export async function runAudit(auditId: string, opts?: AuditOptions): Promise<void> {
   if (activeAudits.has(auditId)) return;
   activeAudits.add(auditId);
@@ -192,6 +254,9 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
     // crawled. Started before the BFS loop so its two requests overlap with the page crawl rather
     // than serialising after it, and awaited only where its result is consumed (the summary below).
     const aiCrawlPromise = checkAiCrawlability(root).catch(() => null);
+    // The sitemap hreflang source overlaps the same way: robots.txt + up to 3+3 sitemap fetches
+    // run while pages crawl, and the result is consumed in the second pass.
+    const sitemapHreflangPromise = loadSitemapHreflangs(root).catch(() => new Map<string, HreflangEntry[]>());
 
     // Applied at link-collection time, so an ignored URL is neither crawled nor counted as a
     // broken target. Filtering only at the reporting end would still spend crawl budget on it.
@@ -304,13 +369,87 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
       return { hops, loop: false };
     };
 
+    // hreflang sets: head links + Link header (per page) + sitemap xhtml:link (site-wide),
+    // then the cross-page reciprocity checks over the whole crawl in the same pass that
+    // already computes titleDuplicate / internalInboundLinks.
+    const sitemapHreflang = await sitemapHreflangPromise;
+    const sitemapHreflangByNorm = new Map<string, HreflangEntry[]>();
+    for (const [loc, entries] of sitemapHreflang) {
+      const key = normalizeHreflangUrl(loc);
+      if (key) sitemapHreflangByNorm.set(key, mergeHreflangEntries(sitemapHreflangByNorm.get(key) ?? [], entries));
+    }
+    const hreflangEntriesByUrl = new Map<string, HreflangEntry[]>();
+    for (const [url, r] of results) {
+      const headerEntries = parseHreflangLinkHeader(r.responseHeaders["link"] ?? "");
+      const fromSitemap = sitemapHreflangByNorm.get(normalizeHreflangUrl(url)) ?? [];
+      const merged = mergeHreflangEntries(r.ex?.hreflang ?? [], headerEntries, fromSitemap);
+      if (merged.length) hreflangEntriesByUrl.set(url, merged);
+    }
+
+    // Per-page facts the target checks need: indexability and canonical status of every crawled
+    // page, computed once here and reused by both the target rules and the hreflang checks.
+    const noindexOf = new Map<string, boolean>();
+    const canonicalAbs = new Map<string, string | null>();
+    for (const [url, r] of results) {
+      const robots = [r.ex?.robots ?? "", r.responseHeaders["x-robots-tag"] ?? ""].filter(Boolean).join(", ").toLowerCase();
+      noindexOf.set(url, /(^|[\s,;:])noindex(?=$|[\s,;])/i.test(robots));
+      canonicalAbs.set(url, r.ex?.canonical ? new URL(r.ex.canonical, url).href : null);
+    }
+    const hreflangTargetStates = new Map<string, HreflangTargetState>();
+    for (const [url, r] of results) {
+      hreflangTargetStates.set(normalizeHreflangUrl(url), {
+        httpStatus: r.httpStatus,
+        noindex: noindexOf.get(url) ?? false,
+        canonical: canonicalAbs.get(url) ?? null,
+      });
+    }
+    const hreflangFindings = checkHreflangSite(
+      [...hreflangEntriesByUrl].map(([url, entries]) => ({
+        url,
+        htmlLang: results.get(url)?.ex?.htmlLang ?? "",
+        entries,
+      })),
+      hreflangTargetStates,
+    );
+
+    // Main GSC query per page: ONE grouped query for the whole audit (url+query sums over 28 d,
+    // web search type only), then the per-page maximum with an impressions floor is picked in
+    // memory. No DailyMetric rows → empty map → title_query_mismatch simply stays silent.
+    const mainQueryByNorm = new Map<string, { query: string; impressions: number }>();
+    {
+      type GroupedQuery = { url: string; query: string; _sum: { impressions: number | null } };
+      const grouped: GroupedQuery[] = await prisma.dailyMetric.groupBy({
+        by: ["url", "query"],
+        where: {
+          siteId: audit.siteId,
+          date: { gte: new Date(Date.now() - 28 * 86_400_000) },
+          searchType: "web",
+          query: { not: "" },
+          url: { not: "" },
+        },
+        _sum: { impressions: true },
+        orderBy: { _sum: { impressions: "desc" } },
+        take: 20_000,
+      }).catch(() => [] as GroupedQuery[]);
+      for (const row of grouped) {
+        const key = normalizeAuditUrl(String(row.url));
+        if (!key) continue;
+        const candidate = { query: String(row.query), impressions: Number(row._sum?.impressions ?? 0) };
+        const current = mainQueryByNorm.get(key);
+        if (!current || candidate.impressions > current.impressions) mainQueryByNorm.set(key, candidate);
+      }
+    }
+
     const rows: any[] = [];
     for (const [url, r] of results) {
       const broken: string[] = [];
+      const redirectLinks: string[] = [];
       if (r.ex) {
         for (const target of new Set(r.internalTargets ?? [])) {
           const st = statusOf.get(target);
-          if (st !== undefined && (st >= 400 || st === 0)) broken.push(target);
+          if (st === undefined) continue;
+          if (st >= 400 || st === 0) broken.push(target);
+          else if (st >= 300 && st < 400) redirectLinks.push(target);
         }
       }
 
@@ -330,6 +469,10 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
       // Redirect targets from the start URL keep depth 0, so the final homepage still receives
       // site-scope header/schema checks when http→https or apex→www is configured correctly.
       const isRoot = r.depth === 0;
+      const hreflangPage = hreflangFindings.get(url);
+      const mainQuery = mainQueryByNorm.get(normalizeAuditUrl(url)) ?? null;
+      // pickMainQuery applies the ≥ 20 impressions floor — the threshold lives in one place.
+      const mainQueryMeetsFloor = mainQuery ? pickMainQuery([mainQuery]) : null;
       const facts: AuditPageFacts = {
         hasHtml: !!r.ex,
         isRoot,
@@ -347,12 +490,25 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
         canonicalInvalid,
         canonicalMismatch,
         h1Count: r.ex?.h1Count ?? 0,
+        h1Text: r.ex?.h1Text ?? "",
         wordCount: r.ex?.wordCount ?? 0,
         imagesNoAlt: r.ex?.imagesNoAlt ?? 0,
         brokenLinkCount: broken.length,
         jsRendered,
         viewportPresent: r.ex?.viewportPresent ?? false,
+        viewportResponsive: r.ex?.viewportResponsive ?? false,
         htmlLang: r.ex?.htmlLang ?? "",
+        hreflangInvalid: hreflangPage?.invalid ?? [],
+        hreflangNoReturn: hreflangPage?.noReturn ?? [],
+        hreflangSelfMissing: hreflangPage?.selfMissing ?? false,
+        hreflangTargetBad: hreflangPage?.targetBad ?? [],
+        hreflangXDefaultMissing: hreflangPage?.xDefaultMissing ?? false,
+        langHreflangMismatch: hreflangPage?.langMismatch ?? "",
+        internalRedirectLinks: redirectLinks,
+        imagesNoDimensions: r.ex?.imagesNoDimensions ?? 0,
+        htmlBytes: r.htmlBytes,
+        mainQuery: mainQueryMeetsFloor,
+        cwvPoor: null, // filled by the PSI stage below, after the crawl
         jsonLdInvalid: r.ex?.jsonLdInvalid ?? 0,
         organizationSchemaIncomplete: r.ex?.organizationSchemaIncomplete ?? false,
         openGraphMissing: r.ex?.openGraphMissing.length ?? 0,
@@ -373,7 +529,14 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
         securityHeaders: isRoot && r.ex ? missingSecurityHeaders(r.responseHeaders, new URL(url).protocol === "https:") : [],
         redirectTo: r.redirectTo,
         brokenLinks: broken,
+        internalRedirectLinks: redirectLinks.slice(0, 5),
       });
+      // Context the audit's meta-fit suggestions need per page (H1 text, page language, main
+      // query) but which has no column of its own. Keys are prefixed "_" and every reader of
+      // evidence skips them; they ride along because the row must stay self-sufficient.
+      if (r.ex?.h1Text) evidence._h1 = r.ex.h1Text;
+      if (r.ex?.htmlLang) evidence._lang = r.ex.htmlLang;
+      if (mainQueryMeetsFloor) evidence._q = `${mainQueryMeetsFloor.query}\u001F${mainQueryMeetsFloor.impressions}`;
       rows.push({
         auditId,
         url,
@@ -384,33 +547,88 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
         metaDescription: r.ex?.metaDesc?.slice(0, 400) ?? "",
         h1Count: r.ex?.h1Count ?? 0,
         canonical: r.ex?.canonical ?? null,
-        noindex: /(^|[\s,;:])noindex(?=$|[\s,;])/i.test(robots),
+        noindex: noindexOf.get(url) ?? false,
         internalLinks: new Set(r.internalTargets ?? []).size,
         externalLinks: r.ex ? Math.max(0, r.ex.hrefs.length - (r.internalTargets?.length ?? 0)) : 0,
         imagesNoAlt: r.ex?.imagesNoAlt ?? 0,
         wordCount: r.ex?.wordCount ?? 0,
         loadMs: r.loadMs,
         depth: r.depth,
-        issues: issues.length ? JSON.stringify(issues) : null,
-        evidence: Object.keys(evidence).length ? JSON.stringify(evidence) : null,
-        brokenLinks: broken.length ? JSON.stringify(broken.slice(0, 50)) : null,
+        // Arrays in memory so the PSI stage can append cwv_poor before persisting.
+        issues,
+        evidence,
+        brokenLinks: broken.slice(0, 50),
+      });
+    }
+
+    // ── PageSpeed sample — after the crawl, and never holding the audit.
+    //
+    // No key → status "unavailable" (a UI message, not an error). Slow or failed requests →
+    // item errors and status "partial"; the audit still completes.
+    let psi: { status: string; items: unknown[] } | null = null;
+    {
+      const heartbeat = () => (prisma as any).siteAudit
+        .update({ where: { id: auditId }, data: { stage: "psi", heartbeatAt: new Date() } })
+        .catch(() => {});
+      const captureBodies = await resolveCaptureBodies(audit.site.userId).catch(() => false);
+      // withCallContext so the provider-log rows carry whose PSI quota this was.
+      await withCallContext({ userId: audit.site.userId, feature: "site-audit-psi", captureBodies }, async () => {
+        const psiKey = await resolvePsiApiKey(audit.site.userId);
+        if (!psiKey) {
+          psi = { status: "unavailable", items: [] };
+          return;
+        }
+        const sample = pickPsiSample([...results].map(([url, r]) => ({
+          url,
+          depth: r.depth,
+          httpStatus: r.httpStatus,
+          hasHtml: !!r.ex,
+          noindex: noindexOf.get(url) ?? false,
+          internalInboundLinks: inboundLinks.get(url) ?? 0,
+        })));
+        const summary = await runPsiStage(psiKey, sample, heartbeat);
+        psi = summary;
+        const byUrl = new Map(rows.map(row => [row.url, row]));
+        for (const item of summary.items) {
+          if (item.error || !isCwvPoor(item)) continue;
+          const row = byUrl.get(item.url);
+          if (!row || row.issues.includes("cwv_poor")) continue;
+          row.issues.push("cwv_poor");
+          bump("cwv_poor");
+          const parts = [
+            item.lcp != null ? `LCP ${(item.lcp / 1000).toFixed(1)} s` : null,
+            item.inp != null ? `INP ${Math.round(item.inp)} ms` : null,
+            item.cls != null ? `CLS ${item.cls.toFixed(2)}` : null,
+          ].filter(Boolean);
+          row.evidence.cwv_poor = `${parts.join(" · ")} (${item.source})`;
+        }
+      }).catch(() => {
+        // The stage must not take the audit down with it — an unknown PSI is "partial".
+        psi = { status: "partial", items: [] };
       });
     }
 
     await (prisma as any).siteAudit.update({ where: { id: auditId }, data: { stage: "persist", progress: 90, heartbeatAt: new Date() } }).catch(() => {});
 
+    // Rows carried arrays so the PSI stage could append findings; they become JSON only here,
+    // at the storage boundary.
+    const storedRows = rows.map(row => ({
+      ...row,
+      issues: row.issues.length ? JSON.stringify(row.issues) : null,
+      evidence: Object.keys(row.evidence).length ? JSON.stringify(row.evidence) : null,
+      brokenLinks: row.brokenLinks.length ? JSON.stringify(row.brokenLinks) : null,
+    }));
     // createMany is not supported for SQLite pre-Prisma5-style in all setups — chunked create is fine here.
-    for (let i = 0; i < rows.length; i += 50) {
-      await prisma.siteAuditPage.createMany({ data: rows.slice(i, i + 50) });
+    for (let i = 0; i < storedRows.length; i += 50) {
+      await prisma.siteAuditPage.createMany({ data: storedRows.slice(i, i + 50) });
     }
 
-    const rowIssues = (row: any): string[] => row.issues ? JSON.parse(row.issues) : [];
-    const pagesWithFindings = rows.filter(row => row.issues).length;
-    const pagesWithIssues = rows.filter(row => rowIssues(row).some(issue => AUDIT_ACTIONABLE_RULE_IDS.has(issue))).length;
+    const pagesWithFindings = rows.filter(row => row.issues.length).length;
+    const pagesWithIssues = rows.filter(row => row.issues.some((issue: string) => AUDIT_ACTIONABLE_RULE_IDS.has(issue))).length;
     // Informational and useful-but-non-universal checks remain visible without destabilizing the
     // established health score. Older audits keep the score already stored with them.
     const pagesWithScoredIssues = rows.filter(row => {
-      return rowIssues(row).some(issue => AUDIT_SCORING_RULE_IDS.has(issue));
+      return row.issues.some((issue: string) => AUDIT_SCORING_RULE_IDS.has(issue));
     }).length;
     // Awaited here, at the only point its result is used: the summary. By now the crawl has run
     // its course, so a slow robots/llms fetch (or one that already resolved) costs no extra latency.
@@ -420,14 +638,26 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
     if ((audit as any).baselineAuditId) {
       const baseline = await prisma.siteAudit.findFirst({
         where: { id: (audit as any).baselineAuditId, siteId: audit.siteId, status: "completed" },
-        select: { id: true },
+        select: { id: true, summary: true },
       });
       if (baseline) {
         const baselinePages = await prisma.siteAuditPage.findMany({ where: { auditId: baseline.id } });
+        // Which rules the baseline could possibly know: stored in its own summary at write time.
+        // For audits older than that field, the issue totals are the best available hint — a
+        // finding under a rule the baseline never saw is a new check, not a regression.
+        let baselineRuleIds: Set<string> | undefined;
+        try {
+          const baselineSummary = baseline.summary ? JSON.parse(baseline.summary) : null;
+          if (Array.isArray(baselineSummary?.ruleIds)) baselineRuleIds = new Set(baselineSummary.ruleIds);
+          else if (baselineSummary?.issues && typeof baselineSummary.issues === "object") {
+            baselineRuleIds = new Set(Object.keys(baselineSummary.issues));
+          }
+        } catch { /* legacy row — verification falls back to strict comparison */ }
         verification = compareAuditFindings(
           baseline.id,
           baselinePages.map(page => ({ url: page.url, httpStatus: page.httpStatus, issues: page.issues ? JSON.parse(page.issues) : [] })),
-          rows.map(row => ({ url: row.url, httpStatus: row.httpStatus, issues: row.issues ? JSON.parse(row.issues) : [] })),
+          rows.map(row => ({ url: row.url, httpStatus: row.httpStatus, issues: row.issues })),
+          baselineRuleIds,
         );
       }
     }
@@ -448,6 +678,11 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
           healthScore: rows.length ? Math.round(100 * (1 - pagesWithScoredIssues / rows.length)) : 0,
           issues: issueTotals,
           avgLoadMs: rows.length ? Math.round(rows.reduce((s, r) => s + r.loadMs, 0) / rows.length) : 0,
+          // The rule registry this audit ran with, so a future comparison can tell "the rule did
+          // not exist in the baseline" from "the problem appeared".
+          ruleIds: AUDIT_RULE_IDS,
+          // PSI sample (site-wide, not per-page). Absent only for audits that predate the stage.
+          ...(psi ? { psi } : {}),
           // Site-wide (not per-page), so it lives in the summary rather than as a row issue. Old
           // audits predating this field simply have no key, and the UI renders nothing for them.
           ...(aiCrawlability ? { aiCrawlability } : {}),
@@ -481,10 +716,11 @@ function buildEvidence(
   issues: string[],
   ctx: {
     facts: AuditPageFacts;
-    signals: { openGraphMissing?: string[]; twitterCardMissing?: string[]; mixedContentUrls?: string[]; jsonLdInvalid?: number; htmlLang?: string; canonical?: string | null } | null | undefined;
+    signals: { openGraphMissing?: string[]; twitterCardMissing?: string[]; mixedContentUrls?: string[]; jsonLdInvalid?: number; htmlLang?: string; canonical?: string | null; viewportContent?: string } | null | undefined;
     securityHeaders: string[];
     redirectTo?: string | null;
     brokenLinks: string[];
+    internalRedirectLinks?: string[];
   },
 ): Record<string, string> {
   const { facts, signals } = ctx;
@@ -521,6 +757,19 @@ function buildEvidence(
     mixed_content: list(signals?.mixedContentUrls, 3),
     security_headers_missing: list(ctx.securityHeaders, 6),
     orphan_sitemap_page: "in sitemap, no internal links",
+    hreflang_invalid: (facts.hreflangInvalid ?? []).join("; "),
+    hreflang_no_return: (facts.hreflangNoReturn ?? []).join("; "),
+    hreflang_self_missing: "hreflang set does not include this page",
+    hreflang_target_bad: (facts.hreflangTargetBad ?? []).join("; "),
+    hreflang_x_default_missing: "≥ 2 languages, no x-default",
+    lang_hreflang_mismatch: facts.langHreflangMismatch ?? "",
+    viewport_not_responsive: signals?.viewportContent ? `viewport: ${signals.viewportContent}` : "viewport is fixed-width or blocks zoom",
+    images_no_dimensions: `${facts.imagesNoDimensions ?? 0} images`,
+    internal_redirect_links: list(ctx.internalRedirectLinks, 5),
+    html_too_large: `${((facts.htmlBytes ?? 0) / (1024 * 1024)).toFixed(1)} MB HTML`,
+    // "query \u001F impressions" — the UI interpolates the localized auditEvidenceQuery template,
+    // the Markdown export renders its own English line.
+    title_query_mismatch: facts.mainQuery ? `${facts.mainQuery.query}\u001F${facts.mainQuery.impressions}` : "",
   };
   const out: Record<string, string> = {};
   for (const code of issues) {

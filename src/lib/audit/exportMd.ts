@@ -45,6 +45,31 @@ export interface AiCrawlLabels {
   llmsMissing: string;
 }
 
+// Mirrors PsiSummary in src/lib/audit/psi.ts — same "parsed JSON over the API boundary" rule
+// as AiCrawlSummary above, so the export keeps no runtime dependency on the crawler.
+export interface PsiSummary {
+  status: "ok" | "partial" | "unavailable" | string;
+  items: {
+    url: string;
+    source: "field" | "lab" | string;
+    lcp: number | null;
+    inp: number | null;
+    cls: number | null;
+    ttfb: number | null;
+    score: number | null;
+    error?: string;
+  }[];
+}
+
+export interface PsiLabels {
+  title: string;
+  hint: string;
+  field: string;
+  lab: string;
+  score: string;
+  unavailable: string;
+}
+
 export interface AuditMeta {
   siteUrl?: string; startedAt?: string; finishedAt?: string | null;
   pagesCrawled?: number; maxPages?: number; summary?: AuditSummary | null;
@@ -132,11 +157,30 @@ const FIXES: Record<string, string> = {
   twitter_card_incomplete: "Add twitter:card (summary_large_image) plus twitter:title and twitter:description, usually in the same layout as Open Graph.",
   mixed_content: "Assets are loaded over http:// on an https:// page; switch them to https or protocol-relative URLs.",
   security_headers_missing: "Add the missing response headers at the web server or CDN level.",
+  hreflang_invalid: "Fix the hreflang values: ISO 639-1 language, optional script/region (en, en-GB, zh-Hant, x-default), absolute URLs, one entry per language.",
+  hreflang_no_return: "Every page an alternate points to must list it back. Add the missing return entries.",
+  hreflang_self_missing: "Include the page itself in its own hreflang set (self-reference is required).",
+  hreflang_target_bad: "Point hreflang at final 200 URLs that are indexable and self-canonical — never at redirects, errors, noindex or non-canonical pages.",
+  hreflang_x_default_missing: "Add an x-default entry for users outside the language set.",
+  lang_hreflang_mismatch: "The <html lang> attribute and the page's own hreflang entry declare different languages; make them agree.",
+  viewport_not_responsive: 'Use <meta name="viewport" content="width=device-width, initial-scale=1"> and do not block zoom (no user-scalable=no, no maximum-scale below 2).',
+  images_no_dimensions: "Add width and height (attributes or CSS) to <img> tags so the browser reserves space; it prevents layout shift.",
+  internal_redirect_links: "Update the internal links to their final URLs so visitors and crawlers skip the redirect hop.",
+  html_too_large: "The HTML document exceeds 2 MB — inline data and embedded assets bloat it; move them to external, cacheable resources.",
+  title_query_mismatch: "Neither the title nor the H1 contains the query this page actually gets impressions for. Rework them around that query.",
+  cwv_poor: "Field/lab Core Web Vitals are in Google's poor band — see the PageSpeed sample section for which metric and how to read it.",
 };
 
 /** Stored evidence when the crawl captured it, otherwise whatever can be derived from the row. */
 function evidenceFor(code: string, p: AuditPage): string {
-  return p.evidence?.[code] || detailFor(code, p);
+  const raw = p.evidence?.[code] || detailFor(code, p);
+  // title_query_mismatch evidence is "query \u001F impressions" so the localized UI template
+  // and this developer-facing English report can each tell the story their own way.
+  if (code === "title_query_mismatch" && raw.includes("\u001F")) {
+    const [query, impressions] = raw.split("\u001F");
+    return `Main query: "${query}" · ${impressions} impressions / 28 d`;
+  }
+  return raw;
 }
 
 export function buildAuditMarkdown(
@@ -144,6 +188,7 @@ export function buildAuditMarkdown(
   pages: AuditPage[],
   labelFor: (code: string) => string,
   aiLabels?: AiCrawlLabels,
+  psiLabels?: PsiLabels,
 ): string {
   const host = (() => { try { return new URL(meta.siteUrl || "").host; } catch { return meta.siteUrl || "site"; } })();
   const out: string[] = [];
@@ -175,6 +220,28 @@ export function buildAuditMarkdown(
     out.push("");
   }
 
+  // PageSpeed sample — site-wide like AI Crawlability, emitted only when the audit ran the
+  // stage (older audits have no psi key) and labels were supplied. "unavailable" is stated as
+  // text rather than skipped: "we did not measure" and "we could not measure" must not blur.
+  const psi = meta.summary?.psi as PsiSummary | undefined;
+  if (psi && psiLabels) {
+    out.push(`## ${psiLabels.title}`, "", psiLabels.hint, "");
+    if (psi.status === "unavailable") {
+      out.push(psiLabels.unavailable, "");
+    } else if (Array.isArray(psi.items) && psi.items.length) {
+      const ms = (v: number | null) => v == null ? "—" : v >= 1000 ? `${(v / 1000).toFixed(1)} s` : `${Math.round(v)} ms`;
+      out.push("| Page | Source | LCP | INP | CLS | TTFB | Score |", "|---|---|---|---|---|---|---|");
+      for (const item of psi.items) {
+        out.push(
+          `| ${esc(shortUrl(item.url))} | ${item.error ? `error: ${esc(item.error)}` : item.source === "field" ? psiLabels.field : psiLabels.lab}` +
+          ` | ${item.error ? "—" : ms(item.lcp)} | ${item.error ? "—" : ms(item.inp)} | ${item.error ? "—" : item.cls == null ? "—" : item.cls.toFixed(2)}` +
+          ` | ${item.error ? "—" : ms(item.ttfb)} | ${item.error ? "—" : item.score == null ? "—" : String(item.score)} |`,
+        );
+      }
+      if (psi.status === "partial") out.push("", "Some pages in the sample did not finish (timeout or API error).");
+      out.push("");
+    }
+  }
 
   // Group pages by issue code, preserving crawl order within each group.
   const byIssue = new Map<string, AuditPage[]>();

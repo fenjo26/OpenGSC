@@ -1,3 +1,5 @@
+import { parseHreflangHead, type HreflangEntry } from "./hreflang";
+
 const strip = (value: string) => value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 const decode = (value: string) => value
   .replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">")
@@ -47,13 +49,23 @@ export interface AuditHtmlSignals {
   robots: string;
   canonical: string | null;
   h1Count: number;
+  /** Text of the first H1, ≤ 200 chars — the other half of the main-query alignment check. */
+  h1Text: string;
   hrefs: string[];
   imagesNoAlt: number;
+  /** Images without both width and height (attributes or style) — layout shift risk. */
+  imagesNoDimensions: number;
   wordCount: number;
   spaMarker: boolean;
   hasLargeScript: boolean;
   viewportPresent: boolean;
+  /** Viewport exists AND allows responsive width and zoom. */
+  viewportResponsive: boolean;
+  /** Raw content of the viewport meta — evidence for viewport_not_responsive. */
+  viewportContent: string;
   htmlLang: string;
+  /** <link rel="alternate" hreflang> entries from the head; header/sitemap sources merge in the crawler. */
+  hreflang: HreflangEntry[];
   jsonLdCount: number;
   jsonLdInvalid: number;
   organizationSchemaIncomplete: boolean;
@@ -70,6 +82,7 @@ export function extractAuditHtml(html: string): AuditHtmlSignals {
   const robots = [...metaValues(head, "robots"), ...metaValues(head, "googlebot")].join(", ").toLowerCase();
   const canonical = linkValue(head, "canonical");
   const h1Count = (html.match(/<h1[\s>]/gi) ?? []).length;
+  const h1Text = decode(strip(html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i)?.[1] ?? "")).slice(0, 200);
 
   const hrefs: string[] = [];
   for (const match of html.matchAll(/<a\s[^>]*href=["']([^"'#]+)["']/gi)) hrefs.push(decode(match[1]));
@@ -78,6 +91,20 @@ export function extractAuditHtml(html: string): AuditHtmlSignals {
   const imagesNoAlt = imageTags.filter(tag => {
     const alt = attributes(tag).alt;
     return alt === undefined || !alt.trim();
+  }).length;
+  const imagesNoDimensions = imageTags.filter(tag => {
+    const attrs = attributes(tag);
+    const src = (attrs.src || "").trim();
+    if (/^data:/i.test(src)) return false; // inline data-URI icons are exempt
+    const width = dimensionOf(attrs.width) ?? styleDimension(attrs.style, "width");
+    const height = dimensionOf(attrs.height) ?? styleDimension(attrs.style, "height");
+    if (width != null && height != null) return false; // both axes reserved — no shift risk
+    // A small explicitly-sized SVG is an icon, not content: exempting it keeps icon sets
+    // (which usually carry only one attribute) from flooding the finding.
+    const svg = /\.svg(\?|#|$)/i.test(src) || /^data:image\/svg/i.test(src);
+    const known = width ?? height;
+    if (svg && known != null && known < 32) return false;
+    return true;
   }).length;
 
   const body = html
@@ -90,7 +117,9 @@ export function extractAuditHtml(html: string): AuditHtmlSignals {
   const hasLargeScript = (html.match(/<script\b[^>]*>([\s\S]*?)<\/script>/gi) ?? [])
     .reduce((sum, tag) => sum + tag.length, 0) > 50_000;
 
-  const viewportPresent = metaValues(head, "viewport").some(value => value.trim().length > 0);
+  const viewportContent = metaValues(head, "viewport").find(value => value.trim().length > 0) ?? "";
+  const viewportPresent = viewportContent.length > 0;
+  const viewportResponsive = viewportIsResponsive(viewportContent);
   const htmlTag = head.match(/<html\b[^>]*>/i)?.[0] ?? "";
   const htmlLang = attributes(htmlTag).lang?.trim() ?? "";
 
@@ -134,11 +163,52 @@ export function extractAuditHtml(html: string): AuditHtmlSignals {
   }
 
   return {
-    title, metaDesc, robots, canonical, h1Count, hrefs, imagesNoAlt, wordCount,
-    spaMarker, hasLargeScript, viewportPresent, htmlLang, jsonLdCount, jsonLdInvalid,
+    title, metaDesc, robots, canonical, h1Count, h1Text, hrefs, imagesNoAlt, imagesNoDimensions, wordCount,
+    spaMarker, hasLargeScript, viewportPresent, viewportResponsive, viewportContent, htmlLang, hreflang: parseHreflangHead(html),
+    jsonLdCount, jsonLdInvalid,
     organizationSchemaIncomplete, openGraphMissing, twitterCardIncomplete, twitterCardMissing,
     mixedContentUrls: [...mixedContentUrls].slice(0, 20),
   };
+}
+
+// ─── dimension parsing for the layout-shift image check ────────────────────────
+
+/** Numeric value of a width/height attribute ("640", "640px", "50%"); null when absent or non-numeric. */
+function dimensionOf(value: string | undefined): number | null {
+  if (value == null) return null;
+  const match = value.trim().match(/^([\d.]+)\s*(px)?$/i);
+  return match ? parseFloat(match[1]) : null;
+}
+
+/** Numeric px value of `width:`/`height:` inside a style attribute; percentages reserve nothing reliably. */
+function styleDimension(style: string | undefined, property: "width" | "height"): number | null {
+  if (!style) return null;
+  const match = style.match(new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([\\d.]+)\\s*px`, "i"));
+  return match ? parseFloat(match[1]) : null;
+}
+
+/**
+ * A viewport meta that is actually mobile-friendly: it must map to the device width and must
+ * not block zoom. `width=device-width` (else the page renders at ~980 px and pinches), and
+ * neither `user-scalable=no` nor `maximum-scale < 2` — Google treats zoom-blocking as an
+ * accessibility failure and has ignored the directive in Chrome since 2016, so the markup
+ * only ever hurts screen-reader and low-vision users.
+ */
+export function viewportIsResponsive(content: string): boolean {
+  const directives = new Map<string, string>();
+  for (const part of content.split(",")) {
+    const eq = part.indexOf("=");
+    const key = (eq === -1 ? part : part.slice(0, eq)).trim().toLowerCase();
+    const value = (eq === -1 ? "" : part.slice(eq + 1)).trim().toLowerCase();
+    if (key) directives.set(key, value);
+  }
+  const widths = (directives.get("width") ?? "").split(",").map(s => s.trim());
+  if (!widths.includes("device-width")) return false;
+  const scalable = directives.get("user-scalable");
+  if (scalable === "no" || scalable === "0") return false;
+  const maxScale = parseFloat(directives.get("maximum-scale") ?? "");
+  if (Number.isFinite(maxScale) && maxScale < 2) return false;
+  return true;
 }
 
 export function robotsDirectivesConflict(value: string): boolean {
