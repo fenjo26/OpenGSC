@@ -5,7 +5,7 @@
 // page table. Same fire-and-forget/poll UX as the SEO Tools background jobs.
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Play, Trash2, AlertTriangle, CheckCircle, ExternalLink, Filter, Download, RefreshCw, Clock } from "lucide-react";
+import { Loader2, Play, Trash2, AlertTriangle, CheckCircle, ExternalLink, Filter, Download, RefreshCw, Clock, Copy, Sparkles } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { withShare, isGuestView } from "@/lib/shareParam";
 import { buildAuditMarkdown } from "@/lib/audit/exportMd";
@@ -48,8 +48,7 @@ function AiBadge({ status, label }: { status: AiCrawlBot["status"]; label: strin
 
 // The translation function's key type is the dictionary's keyof — same shape useLanguage exposes.
 // Typed locally (not imported) so this card stays a self-contained block.
-function AiCrawlabilityCard({ data, t }: { data: AiCrawlSummary; t: (k: string) => string }) {
-  // File-level badges: present/missing/failed. Missing robots = all allowed per spec (neutral, not
+function AiCrawlabilityCard({ data, t }: { data: AiCrawlSummary; t: (k: string) => string }) {  // File-level badges: present/missing/failed. Missing robots = all allowed per spec (neutral, not
   // red); failed = we couldn't read it (amber, genuinely uncertain). llms.txt missing is the norm,
   // never an error.
   const fileBadge = (status: AiCrawlSummary["robots"]["status"], present: boolean, presentLabel: string, missingLabel: string) =>
@@ -98,6 +97,196 @@ function AiCrawlabilityCard({ data, t }: { data: AiCrawlSummary; t: (k: string) 
 }
 
 
+// ─── PageSpeed sample card (wave-oct T5) ──────────────────────────────────────
+// Site-wide like AI Crawlability, so it is a card above the issue list rather than per-page
+// chips. Every threshold colour carries its word ("good / needs work / poor") — colour alone
+// is never the only carrier of meaning, and the same words label the Health tab's vitals.
+
+interface PsiItem {
+  url: string;
+  source: "field" | "lab";
+  lcp: number | null;
+  inp: number | null;
+  cls: number | null;
+  ttfb: number | null;
+  score: number | null;
+  error?: string;
+}
+interface PsiSummaryData { status: "ok" | "partial" | "unavailable" | string; items?: PsiItem[] }
+
+/** good ≤ goodLimit · warn ≤ poorLimit · poor above. null value → no verdict at all. */
+function cwvBand(value: number | null, goodLimit: number, poorLimit: number): "good" | "warn" | "poor" | null {
+  if (value == null) return null;
+  if (value <= goodLimit) return "good";
+  return value <= poorLimit ? "warn" : "poor";
+}
+
+const CWV_COLORS: Record<"good" | "warn" | "poor", string> = { good: "#34c759", warn: "#ff9f0a", poor: "#ff375f" };
+
+function PsiCard({ data, t }: { data: PsiSummaryData; t: (k: string) => string }) {
+  const bandLabel = (band: "good" | "warn" | "poor" | null) =>
+    band === "good" ? t("healthVitalsGood") : band === "warn" ? t("healthVitalsNeedsWork") : band === "poor" ? t("healthVitalsPoor") : "";
+  const ms = (v: number | null) => (v == null ? "—" : v >= 1000 ? `${(v / 1000).toFixed(1)} s` : `${Math.round(v)} ms`);
+  const cell = (value: number | null, unit: "ms" | "s" | "cls", goodLimit: number, poorLimit: number) => {
+    const band = unit === "cls" ? cwvBand(value, goodLimit, poorLimit) : cwvBand(value, goodLimit, poorLimit);
+    return (
+      <td style={{ padding: "8px 8px", whiteSpace: "nowrap" }}>
+        <span style={{ color: band ? CWV_COLORS[band] : "var(--color-text-secondary)", fontWeight: band === "good" ? 500 : 700 }}>
+          {unit === "cls" ? (value == null ? "—" : value.toFixed(2)) : ms(value)}
+        </span>
+        {band && <span style={{ color: "var(--color-text-tertiary)", fontSize: "10px", marginLeft: "4px" }}>{bandLabel(band)}</span>}
+      </td>
+    );
+  };
+
+  return (
+    <div className="panel" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+      <div>
+        <div style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)" }}>{t("auditPsiTitle")}</div>
+        <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "2px" }}>{t("auditPsiHint")}</div>
+      </div>
+      {data.status === "unavailable" ? (
+        // No key is a normal state, stated as text with a way out — never a red error.
+        <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", display: "flex", alignItems: "center", gap: "6px" }}>
+          <AlertTriangle size={13} color="var(--color-text-tertiary)" /> {t("auditPsiUnavailable")}
+        </div>
+      ) : (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+            <thead>
+              <tr style={{ borderBottom: "1px solid var(--color-border)", color: "var(--color-text-secondary)", textAlign: "left" }}>
+                <th style={{ padding: "8px 10px" }}>URL</th>
+                <th style={{ padding: "8px 8px" }}>LCP</th>
+                <th style={{ padding: "8px 8px" }}>INP</th>
+                <th style={{ padding: "8px 8px" }}>CLS</th>
+                <th style={{ padding: "8px 8px" }}>TTFB</th>
+                <th style={{ padding: "8px 10px" }}>{t("auditPsiScore")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(data.items ?? []).map(item => (
+                <tr key={item.url} style={{ borderBottom: "1px solid var(--color-border)" }}>
+                  <td style={{ padding: "8px 10px", maxWidth: "280px" }}>
+                    <a href={item.url} target="_blank" rel="noreferrer" style={{ color: "var(--color-accent-blue)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "250px", display: "inline-block", verticalAlign: "bottom" }}>{item.url.replace(/^https?:\/\/[^/]+/, "") || "/"}</span>
+                      <ExternalLink size={11} />
+                    </a>
+                    <span style={{ display: "block", fontSize: "10px", color: "var(--color-text-tertiary)" }}>{item.source === "field" ? t("auditPsiField") : t("auditPsiLab")}</span>
+                  </td>
+                  {item.error ? (
+                    <td colSpan={5} style={{ padding: "8px 8px", color: "#ff9f0a", fontSize: "11px" }}>{item.error}</td>
+                  ) : (
+                    <>
+                      {cell(item.lcp, "ms", 2500, 4000)}
+                      {/* Lab rows have no INP: "—" plus no verdict, not a green zero. */}
+                      {cell(item.inp, "ms", 200, 500)}
+                      {cell(item.cls, "cls", 0.1, 0.25)}
+                      {cell(item.ttfb, "ms", 800, 1800)}
+                      <td style={{ padding: "8px 10px" }}>
+                        <span style={{ fontWeight: 700, color: item.score == null ? "var(--color-text-secondary)" : item.score >= 90 ? CWV_COLORS.good : item.score >= 50 ? CWV_COLORS.warn : CWV_COLORS.poor }}>
+                          {item.score ?? "—"}
+                        </span>
+                      </td>
+                    </>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {data.status === "partial" && (
+            <div style={{ fontSize: "11px", color: "#ff9f0a", padding: "8px 10px 0" }}>{t("healthVitalsNeedsWork")}: PageSpeed API — partial sample</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Meta-fit suggestion card (wave-oct T5) ───────────────────────────────────
+// Attached to the four meta-length issues. Calls T1's /api/seo/meta-fit (contract §4) with the
+// affected pages — keyword = the page's main GSC query, else its H1 — and only ever shows
+// suggestions: nothing is written to the database, the site owner applies the texts themselves.
+
+interface MetaFitResultView {
+  id?: string;
+  title?: { field: string; before: string; after: string; length: number; method: string; inBand: boolean; auditOk: boolean };
+  description?: { field: string; before: string; after: string; length: number; method: string; inBand: boolean; auditOk: boolean };
+  llmCalls: number;
+}
+
+function MetaFitCard({ state, t, onRunLlm }: {
+  state: { busy: boolean; error: string; results: MetaFitResultView[] };
+  t: (k: string) => string;
+  onRunLlm: () => void;
+}) {
+  const copy = (text: string) => { navigator.clipboard?.writeText(text).catch(() => {}); };
+  const rows: { page: string; field: string; r: NonNullable<MetaFitResultView["title"]> }[] = [];
+  for (const result of state.results) {
+    if (result.title) rows.push({ page: result.id ?? "", field: "title", r: result.title });
+    if (result.description) rows.push({ page: result.id ?? "", field: "description", r: result.description });
+  }
+  // Anything the free pass left outside the audit band is exactly what the paid pass is for.
+  const unresolved = state.results.filter(r =>
+    (r.title && (!r.title.auditOk || !r.title.inBand)) || (r.description && (!r.description.auditOk || !r.description.inBand)),
+  ).length;
+
+  return (
+    <div className="panel" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+        <div style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)" }}>{t("metaFitTitle")}</div>
+        {state.busy && <Loader2 size={13} className="spin" />}
+        {unresolved > 0 && !state.busy && (
+          <button onClick={onRunLlm} title={t("metaFitRunLlm")}
+            style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "6px 12px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-primary)", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>
+            <Sparkles size={13} /> {t("metaFitRunLlm")}
+          </button>
+        )}
+      </div>
+      {state.error && <div style={{ fontSize: "12px", color: "#f87171", display: "flex", alignItems: "center", gap: "6px" }}><AlertTriangle size={13} /> {state.error}</div>}
+      {rows.length === 0 && !state.error && <div style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>{t("metaFitNothing")}</div>}
+      {rows.length > 0 && (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+            <thead>
+              <tr style={{ borderBottom: "1px solid var(--color-border)", color: "var(--color-text-secondary)", textAlign: "left" }}>
+                {/* Language-neutral headers (→, #) where no i18n key exists; the field column
+                    says which meta tag it is via existing keys. */}
+                <th style={{ padding: "8px 10px" }}>URL</th>
+                <th style={{ padding: "8px 8px" }}>{t("metaFitTitle")}</th>
+                <th style={{ padding: "8px 8px" }}>—</th>
+                <th style={{ padding: "8px 8px" }}>→</th>
+                <th style={{ padding: "8px 8px" }}>✓/≈</th>
+                <th style={{ padding: "8px 8px" }} title={t("metaFitLen")}>#</th>
+                <th style={{ padding: "8px 10px" }} />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, i) => {
+                const ok = row.r.auditOk && row.r.inBand;
+                return (
+                  <tr key={`${row.page}:${row.field}:${i}`} style={{ borderBottom: "1px solid var(--color-border)" }}>
+                    <td style={{ padding: "8px 10px", maxWidth: "180px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--color-text-secondary)" }}>{row.page.replace(/^https?:\/\/[^/]+/, "") || "/"}</td>
+                    <td style={{ padding: "8px 8px", whiteSpace: "nowrap", color: "var(--color-text-secondary)" }}>{row.field === "title" ? t("auditColTitle") : t("rwSnippetDescLabel")}</td>
+                    <td style={{ padding: "8px 8px", maxWidth: "220px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--color-text-tertiary)" }} title={row.r.before}>{row.r.before}</td>
+                    <td style={{ padding: "8px 4px", color: ok ? CWV_COLORS.good : CWV_COLORS.warn, fontWeight: 700 }}>{ok ? "✓" : "≈"}</td>
+                    <td style={{ padding: "8px 8px", maxWidth: "260px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--color-text-primary)" }} title={row.r.after}>{row.r.after}</td>
+                    <td style={{ padding: "8px 8px", whiteSpace: "nowrap", color: ok ? CWV_COLORS.good : CWV_COLORS.warn, fontWeight: 700 }}>{row.r.length}</td>
+                    <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>
+                      <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginRight: "8px" }}>{t(`metaFitMethod_${row.r.method}` as never)}</span>
+                      <button onClick={() => copy(row.r.after)} title={t("metaFitCopy")} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", padding: "2px" }}><Copy size={13} /></button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
   const { t } = useLanguage();
   const guest = isGuestView();
@@ -118,6 +307,9 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
   const [exporting, setExporting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+  // Meta-fit suggestions for the four meta-length issues. Nothing is written to the database —
+  // the card only shows proposed texts (and copies them to the clipboard on request).
+  const [metaFit, setMetaFit] = useState<{ busy: boolean; error: string; results: MetaFitResultView[] }>({ busy: false, error: "", results: [] });
 
   const loadList = useCallback(async () => {
     try {
@@ -207,6 +399,12 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
           robotsMissing: t("auditAiRobotsMissing"), robotsFailed: t("auditAiFailed"),
           llmsMissing: t("auditAiLlmsMissing"),
         },
+        // Same deal for the PageSpeed sample table: absent labels → no PSI section in the export.
+        {
+          title: t("auditPsiTitle"), hint: t("auditPsiHint"),
+          field: t("auditPsiField"), lab: t("auditPsiLab"),
+          score: t("auditPsiScore"), unavailable: t("auditPsiUnavailable"),
+        },
       );
       const host = (() => { try { return new URL(d.audit?.siteUrl || "").host; } catch { return "site"; } })();
       const day = new Date(d.audit?.finishedAt ?? Date.now()).toISOString().slice(0, 10);
@@ -220,7 +418,57 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
     const next = issueFilter === code ? "" : code;
     setIssueFilter(next);
     setAuditPage(0);
+    setMetaFit({ busy: false, error: "", results: [] });
     openAudit(current.audit.id, next);
+  };
+
+  // The four meta-length issues get the "suggest fixed meta" action (contract §4): POST T1's
+  // route with the affected pages, keyword = the page's main query from the audit evidence,
+  // falling back to its H1. Free pass first; the LLM pass needs its own confirmation.
+  const META_FIT_CODES = new Set(["title_too_long", "title_too_short", "description_too_long", "description_too_short"]);
+  const runMetaFit = async (allowLlm: boolean) => {
+    if (!filteredPages.length) return;
+    setMetaFit({ busy: true, error: "", results: [] });
+    try {
+      const items = filteredPages.slice(0, 50).map(p => {
+        // "_q" evidence is "query \u001F impressions", captured during the crawl.
+        const mainQuery = typeof p.evidence?._q === "string" && p.evidence._q.includes("\u001F")
+          ? p.evidence._q.split("\u001F")[0] : "";
+        return {
+          id: p.url,
+          keyword: mainQuery || p.evidence?._h1 || p.title || "",
+          language: p.evidence?._lang || "en",
+          ...(p.title ? { title: p.title } : {}),
+          ...(p.metaDescription ? { description: p.metaDescription } : {}),
+        };
+      });
+      const res = await fetch("/api/seo/meta-fit", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items, allowLlm }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // Until T1 merges, the route answers 501 not_implemented — a readable message, not blank.
+        setMetaFit({
+          busy: false,
+          error: d.error === "not_implemented"
+            ? `${t("metaFitTitle")}: ${t("errGeneric")} — /api/seo/meta-fit (T1) not merged yet`
+            : `${t("errGeneric")}: ${d.error ?? res.status}`,
+          results: [],
+        });
+        return;
+      }
+      setMetaFit({ busy: false, error: "", results: Array.isArray(d.results) ? d.results : [] });
+    } catch (e) {
+      setMetaFit({ busy: false, error: e instanceof Error ? e.message : String(e), results: [] });
+    }
+  };
+  const runMetaFitLlm = () => {
+    const unresolved = metaFit.results.filter(r =>
+      (r.title && (!r.title.auditOk || !r.title.inBand)) || (r.description && (!r.description.auditOk || !r.description.inBand)),
+    ).length;
+    if (!window.confirm(t("metaFitConfirm").replace("{n}", String(Math.max(1, unresolved))))) return;
+    runMetaFit(true);
   };
 
   const summary = current?.audit?.summary;
@@ -363,6 +611,25 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
               the dictionary's keyof union. */}
           {summary.aiCrawlability && <AiCrawlabilityCard data={summary.aiCrawlability} t={t as (k: string) => string} />}
 
+          {/* PageSpeed sample — above the issue list: it explains the site's speed, not one page */}
+          {summary.psi && <PsiCard data={summary.psi} t={t as (k: string) => string} />}
+
+          {/* Meta-fit suggestions — the action attached to the four meta-length issues */}
+          {issueFilter && META_FIT_CODES.has(issueFilter) && !guest && (
+            <>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <button onClick={() => runMetaFit(false)} disabled={metaFit.busy || !filteredPages.length}
+                  style={{ display: "inline-flex", alignItems: "center", gap: "7px", padding: "9px 14px", borderRadius: "9px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-primary)", fontSize: "13px", fontWeight: 600, cursor: metaFit.busy ? "default" : "pointer" }}>
+                  {metaFit.busy ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />} {t("metaFitSuggest")}
+                </button>
+                <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>{filteredPages.length}</span>
+              </div>
+              {(metaFit.busy || metaFit.error || metaFit.results.length > 0) && (
+                <MetaFitCard state={metaFit} t={t as (k: string) => string} onRunLlm={runMetaFitLlm} />
+              )}
+            </>
+          )}
+
           {/* Issue chips */}
           <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
             {Object.entries(summary.issues as Record<string, number>).sort((a, b) => b[1] - a[1]).map(([code, count]) => (
@@ -426,6 +693,18 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
                           );
                         })}
                       </div>
+                      {/* Evidence — the value behind the verdict. Shown for the filtered issue
+                          only: it is what the reader asked to drill into, and printing every
+                          evidence line on every row turns the table back into a scroll bar. */}
+                      {issueFilter && typeof p.evidence?.[issueFilter] === "string" && p.evidence[issueFilter] && (
+                        <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "4px", lineHeight: 1.5 }}>
+                          {issueFilter === "title_query_mismatch" && p.evidence[issueFilter].includes("\u001F")
+                            ? t("auditEvidenceQuery")
+                              .replace("{q}", p.evidence[issueFilter].split("\u001F")[0])
+                              .replace("{n}", p.evidence[issueFilter].split("\u001F")[1] ?? "")
+                            : p.evidence[issueFilter]}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}

@@ -48,7 +48,8 @@ export interface AiCrawlReport {
 
 // ─── robots.txt fetch ─────────────────────────────────────────────────────────
 
-async function fetchRobots(root: URL): Promise<{ status: "ok" | "missing" | "failed"; text: string | null }> {
+/** robots.txt fetch shared with the audit's hreflang sitemap discovery. */
+export async function fetchRobots(root: URL): Promise<{ status: "ok" | "missing" | "failed"; text: string | null }> {
   try {
     const res = await safeFetch(new URL("/robots.txt", root), {
       headers: { "User-Agent": UA, Accept: "text/plain" },
