@@ -3,9 +3,9 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
-## Unreleased — волна «Ноябрь»
+## [1.8.1] — 2026-09-25
 
-Вся волна собрана в ветке `feat/wave-nov`. На деплое: `npm i` (новая зависимость `web-push`),
+Волна «Ноябрь»: весь бэклог одним релизом. На деплое: `npm i` (новая зависимость `web-push`),
 `npx prisma db push` (новые модели Footprint/BacklinkTox/Local/Trend/Plagiarism/Report/Lead/
 PushSubscription/Ext) и `npx prisma generate`.
 
@@ -23,6 +23,7 @@ PushSubscription/Ext) и `npx prisma generate`.
 - **N10 — PWA + web push.** OpenGSC installs on the phone as an app, keeps the last dashboard data readable offline, and gains **Web Push** as a notification channel (VAPID keys in Settings, per-device event filters; alerts, digests, uptime and lead events already flow to it). Push works only over HTTPS — on `http://` the UI explains why instead of showing the button. Doc: `docs/PWA.md`.
 - **N11 — Browser extension (Chrome/Edge MV3).** Unpacked install, no store — it talks to your self-hosted instance. «This page in OpenGSC» shows a portfolio URL's clicks/impressions/position, top queries, index status, audit issues and ranks; a quick DOM audit runs inside the extension (title/description lengths, H1, canonical, robots, hreflang, JSON-LD, OG, links, images without alt — nothing leaves the browser); «Send to OpenGSC» routes by context: a portfolio URL becomes an index-check priority, a foreign URL an Outreach prospect, selected text opens `/seo-tools/outline?keyword=…` pre-filled, a table selection downloads CSV. Token-authenticated `/api/ext/*` (401 without one), extension-ID allowlist on your side. Doc: `docs/EXTENSION.md`.
 - **Integration (R).** `/seo-tools/outline` accepts `?keyword=`, `?note=` and `?gl=` — the Local service-area handover and the extension arrive by plain link now; a finished article links to its plagiarism check; `sendEmail` gained envelope options (`to`, `html`, attachments for PDF reports) and the report/lead e-mails ride it instead of their own transports; 106 new i18n keys × 7 locales.
+- **Dashboard.** The site's uptime status moved from the name row (favicon → dot → name) into the card footer as an online/offline tag beside market and tags: tinted chip with the status word and the animated dot, theme-aware colours (light and dark), the full story (status · since · 24 h) in the tooltip; absent when the site has no monitor.
 
 ## [1.8.0] — 2026-09-25
 
