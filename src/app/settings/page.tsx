@@ -14,7 +14,7 @@ import TeamMembersPanel from "@/components/TeamMembersPanel";
 import SeoToolsSettings, { SeoProviderKeysSection, AeoProviderKeysSection } from "@/components/SeoToolsSettings";
 import MetricsSettingsSection from "@/components/MetricsSettingsSection";
 import ProviderLogSection from "@/components/ProviderLogSection";
-import NotifyChannelsCard from "@/components/NotifyChannelsCard";
+import NotifyChannelsCard, { ChannelEventsRow } from "@/components/NotifyChannelsCard";
 import UptimeSettingsCard from "@/components/uptime/UptimeSettingsCard";
 
 type NavItem = "accounts" | "bing" | "yandex" | "teams" | "api" | "api-keys" | "indexing-api" | "metrics" | "seo-tools" | "provider-log" | "notifications" | "members" | "preferences" | "supersites";
@@ -1026,6 +1026,9 @@ function NotificationsSection() {
           </div>
         )}
         {tgMsg && <div style={{ fontSize: "12px", color: tgMsg.startsWith(t("tgErr")) ? "#f87171" : "#10B981", marginTop: "10px" }}>{tgMsg}</div>}
+        {/* Wave-oct T3: which event types this channel receives (empty = everything). The bot
+            credentials themselves stay in the block above. */}
+        <ChannelEventsRow id="telegram" />
       </SectionCard>
 
       {/* Slack Webhook */}
@@ -1058,6 +1061,8 @@ function NotificationsSection() {
           </div>
         )}
         {slackMsg && <div style={{ fontSize: "12px", color: slackMsg.includes("Error") || slackMsg.includes("invalid") ? "#f87171" : "#10B981", marginTop: "10px" }}>{slackMsg}</div>}
+        {/* Wave-oct T3: event filter for the Slack channel (credentials stay in the block above). */}
+        <ChannelEventsRow id="slack" />
       </SectionCard>
 
       {/* Wave-oct delivery channels (Discord/Teams/SMTP/webhook) and the uptime workspace settings */}
