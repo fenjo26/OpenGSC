@@ -35,6 +35,15 @@ export interface DigestQueryRow { q: string; cur: number; prev: number; d: numbe
 export interface DigestStriking { query: string; site: string; pos: number; impr: number }
 export interface DigestAttention { name: string; pct: number }
 export interface DigestRankMove { keyword: string; from: number; to: number; d: number }
+/** Trend radar (N5): one hottest query of the portfolio's window. */
+export interface DigestTrend {
+  query: string;
+  site: string;
+  source: string;   // gsc_rising | gsc_new | suggest
+  score: number;
+  growth: number | null; // ×1.0-style display factor; null for gsc_new/suggest
+  impressions: number | null;
+}
 
 export interface DigestData {
   tag: string;
@@ -52,6 +61,8 @@ export interface DigestData {
   strikingCount: number;
   attention: DigestAttention[];
   rankMoves: DigestRankMove[];
+  /** Trend radar (N5). null — таблиц нет или трендов за период не нашлось: секция не рисуется. */
+  trends: DigestTrend[] | null;
   /** null — модуль ссылок ничего не знает про этот портфель, секция не рисуется */
   backlinks: DigestBacklinks | null;
   engines: { bing: EngineRow[]; yandex: EngineRow[] };
@@ -131,6 +142,7 @@ export async function buildDigestData(
     period: { days, from: day(curStart), to: day(now), prevFrom: day(prevStart), prevTo: day(curStart), allTime: days === 0 },
     portfolio: { counted: 0, up: 0, down: 0, clicks: 0, prevClicks: 0, impr: 0, prevImpr: 0 },
     gainers: [], losers: [], topSites: [], winnersQ: [], losersQ: [], striking: [], strikingCount: 0, attention: [], rankMoves: [],
+    trends: null,
     backlinks: null,
     engines: { bing: [], yandex: [] },
   };
@@ -231,6 +243,29 @@ export async function buildDigestData(
     .filter(x => x.d !== 0)
     .sort((a, b) => Math.abs(b.d) - Math.abs(a.d))
     .slice(0, FULL.rankMoves);
+
+  // ── Trend radar (N5): the portfolio's 5 hottest queries of the window, whichever site
+  // they belong to. "За период" = lastSeenAt inside the window — a trend the radar last saw
+  // before the window is last week's news. Rows hidden by the operator (dismissed) and rows
+  // their source dropped 14+ days ago never get here: the store hides them for the same reason.
+  try {
+    const hot = await prisma.trendItem.findMany({
+      where: { siteId: { in: siteIds }, dismissed: false, lastSeenAt: { gte: effectiveCurStart, lte: now } },
+      orderBy: { score: "desc" },
+      take: 5,
+    });
+    if (hot.length) {
+      base.trends = hot.map(r => {
+        const growth = r.impressions != null && r.prevImpressions != null && r.prevImpressions > 0
+          ? Math.round((r.impressions / r.prevImpressions) * 10) / 10
+          : null;
+        return {
+          query: r.query, site: nameOf.get(r.siteId) ?? "", source: r.source,
+          score: Math.round(r.score * 100) / 100, growth, impressions: r.impressions,
+        };
+      });
+    }
+  } catch { /* TrendItem ещё не мигрирована — секции просто нет */ }
 
   // ── Links: what appeared and what went away.
   // Counted from SiteBacklinkEvent rows inside the window — never from SiteBacklink itself,
@@ -351,6 +386,18 @@ export function renderDigestMarkdown(data: DigestData): string {
   if (data.rankMoves.length) {
     lines.push("", L.rankMoves);
     for (const m of data.rankMoves.slice(0, 10)) lines.push(`  ${m.d > 0 ? "▲" : "▼"} ${m.keyword}: ${m.from} → ${m.to}`);
+  }
+
+  // Trend radar (N5): ≤5 hottest queries of the window. The growth factor reads only for
+  // gsc_rising — a new query or a suggestion has no baseline, and printing "×—" would imply
+  // a measurement that was never made.
+  if (data.trends?.length) {
+    lines.push("", L.digestTrends);
+    for (const tr of data.trends.slice(0, 5)) {
+      const factor = tr.growth != null ? ` ×${tr.growth.toFixed(1)}` : "";
+      const volume = tr.impressions != null ? ` (${fmtNum(tr.impressions)})` : "";
+      lines.push(`  ${tr.query}${factor} — ${tr.site}${volume}`);
+    }
   }
 
   const B = data.backlinks;
