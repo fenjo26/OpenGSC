@@ -243,18 +243,15 @@ function ServiceAreas({ areas, country }: { areas: string[]; country: string }) 
   const { t } = useLanguage();
   const [service, setService] = useState<Record<string, string>>({});
 
-  const createPage = async (area: string) => {
+  const createPage = (area: string) => {
     const svc = (service[area] ?? "").trim();
     if (!svc) return;
     const note = t("locCreatePageNote" as never);
-    // The outline page accepts a sessionStorage handover (its own "cluster seed" channel):
-    // keyword + market. The local-landing note travels via the clipboard.
-    try {
-      sessionStorage.setItem("seoClusterSeed", JSON.stringify({ keyword: `${svc} ${area}`, ...(country ? { gl: country.toLowerCase() } : {}) }));
-      await navigator.clipboard.writeText(`${svc} ${area} — ${note}`);
-    } catch { /* clipboard needs a gesture; the sessionStorage seed still lands */
-    }
-    window.location.href = "/seo-tools/outline";
+    // The outline form accepts a query handover (?keyword=…&note=…&gl=…): the local-landing
+    // note rides the link itself now — no clipboard permission to ask for, no sessionStorage
+    // seed that a new tab would lose.
+    const q = new URLSearchParams({ keyword: `${svc} ${area}`, note, ...(country ? { gl: country.toLowerCase() } : {}) });
+    window.location.href = `/seo-tools/outline?${q.toString()}`;
   };
 
   return (

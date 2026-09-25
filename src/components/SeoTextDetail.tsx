@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft, Pencil, Copy, FileText, Download, ChevronDown, Save, Check, X, Code2,
+  ArrowLeft, Pencil, Copy, CopyX, FileText, Download, ChevronDown, Save, Check, X, Code2,
   ExternalLink, Target, Hash, ListTree, ArrowUp, Shield, ImageIcon, Loader2, Wand2, AlertTriangle,
   CheckCircle2, HelpCircle, Tag,
 } from "lucide-react";
@@ -311,6 +311,10 @@ export default function SeoTextDetail({ item: initial }: { item: HistoryItem }) 
         <button onClick={copyAll} style={{ ...btnGhost, ...copiedStyle(copied === "all") }}>{copied === "all" ? <Check size={15} /> : <Copy size={15} />} {copied === "all" ? t("seoCopied") : t("seoCopyShort")}</button>
         <button onClick={copyForDocs} style={{ ...btnGhost, ...copiedStyle(copied === "docs") }}>{copied === "docs" ? <Check size={15} /> : <FileText size={15} />} {copied === "docs" ? t("seoCopied") : t("seoForGoogleDocs")}</button>
         <button onClick={() => setShowHtml(true)} style={btnGhost}><Code2 size={15} /> {t("seoFormatHtml")}</button>
+        {/* Link, not router.push: the plagiarism tool is a separate page with its own deep-link
+            (?history=<id> loads this record's body into its textarea) — a plain anchor keeps the
+            history entry reusable (open in new tab) and the behaviour discoverable. */}
+        <a href={`/seo-tools/plagiarism?history=${item.id}`} style={btnGhost}><CopyX size={15} /> {t("plgTitle")}</a>
         <div style={{ position: "relative" }}>
           <button onClick={() => setDlOpen(o => !o)} style={btnGhost}><Download size={15} /> {t("seoDownload")} <ChevronDown size={13} /></button>
           {dlOpen && (

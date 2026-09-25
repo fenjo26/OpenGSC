@@ -1,18 +1,11 @@
 // N8 — the client e-mail of a report run.
 //
-// sendEmail() in src/lib/notify/channels.ts (N10's file — not modifiable from this task)
-// sends a title+markdown notification to the channel's OWN configured `to` list and has no
-// attachments and no per-call override. A client report needs neither of the first two
-// things it lacks — it goes to the report's own recipients — so this module builds a
-// transport from the SAME stored SMTP config (readChannels), with the same SSRF guard
-// (assertSafeTarget, so the SMTP host cannot become a port scanner of the internal
-// network) and the same error codes. What it deliberately does NOT do is attach the PDF:
-// the e-mail carries the client link instead; the channels.ts change that would allow
-// attachments is described in the N8 report for R.
+// It rides sendEmail() from src/lib/notify/channels.ts (extended by wave-nov R with envelope
+// options): the SAME stored SMTP config, the same SSRF guard (assertSafeTarget, so the SMTP
+// host cannot become a port scanner of the internal network), the same retry/error codes —
+// only the envelope is ours: the report's own recipients, subject and branded HTML body.
 
-import nodemailer from "nodemailer";
-import { SafeFetchError, assertSafeTarget } from "@/lib/security/safeFetch";
-import { readChannels } from "@/lib/notify/channels";
+import { readChannels, sendEmail } from "@/lib/notify/channels";
 import type { NotifyChannelsConfig } from "@/lib/notify/types";
 
 export interface ReportEmail {
@@ -25,16 +18,6 @@ export interface ReportEmail {
 
 export type ReportMailResult = { ok: true } | { ok: false; error: string };
 
-const smtpError = (e: unknown): string => {
-  const err = e as { code?: string; responseCode?: number; message?: string };
-  const code = String(err?.code ?? "");
-  if (code === "EAUTH" || err?.responseCode === 535) return "smtp_auth";
-  if (["ETIMEDOUT", "ECONNECTION", "ECONNREFUSED", "EDNS", "ESOCKET", "EPROTOCOL", "EENVELOPE", "EADDRESS"].includes(code)) return "smtp_connect";
-  return `smtp_error ${String(err?.message ?? e).slice(0, 150)}`.trim();
-};
-
-const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
-
 export async function isSmtpConfigured(userId: string): Promise<boolean> {
   const cfg = await readChannels(userId).catch(() => ({}) as NotifyChannelsConfig);
   return Boolean(cfg.email?.host);
@@ -45,43 +28,11 @@ export async function sendReportEmail(userId: string, mail: ReportEmail): Promis
   const email = cfg.email;
   if (!email?.host) return { ok: false, error: "smtp_not_configured" };
   if (!mail.to.length) return { ok: false, error: "no_recipients" };
-  try {
-    await assertSafeTarget(`https://${email.host}`);
-  } catch (e) {
-    if (e instanceof SafeFetchError && e.code === "private_address") return { ok: false, error: "private_address" };
-    return { ok: false, error: "smtp_connect" };
-  }
-
-  const transport = nodemailer.createTransport({
-    host: email.host,
-    port: email.port,
-    secure: email.secure,
-    ...(email.user && email.pass ? { auth: { user: email.user, pass: email.pass } } : {}),
-    connectionTimeout: 10_000,
-    greetingTimeout: 10_000,
-    socketTimeout: 15_000,
-  });
-  const send = () => transport.sendMail({
-    from: email.from,
-    to: mail.to.slice(0, 20).join(", "),
-    subject: mail.subject.slice(0, 200),
-    text: mail.text,
+  const res = await sendEmail(email, mail.subject.slice(0, 200), mail.text, {
+    to: mail.to,
     html: mail.html,
   });
-  try {
-    try {
-      await send();
-    } catch (e) {
-      if (smtpError(e) === "smtp_auth") throw e; // wrong password will not fix itself — no retry
-      await sleep(2_000);
-      await send(); // one retry on network errors, like sendEmail
-    }
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: smtpError(e) };
-  } finally {
-    transport.close();
-  }
+  return res.ok ? { ok: true } : { ok: false, error: res.error ?? "smtp_error" };
 }
 
 // ─── the body ─────────────────────────────────────────────────────────────────

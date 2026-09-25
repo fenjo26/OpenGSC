@@ -363,8 +363,31 @@ function smtpError(e: unknown): string {
   return `smtp_error ${String(err?.message ?? e).slice(0, 150)}`.trim();
 }
 
-export async function sendEmail(cfg: EmailConfig | null, title: string, text: string): Promise<{ ok: boolean; error?: string }> {
-  if (!cfg?.host || !cfg.to?.length) return { ok: false, error: "not_configured" };
+/** Per-call envelope overrides for sendEmail. The notify fan-out passes none; client reports
+ *  (N8) and widget lead e-mails (N9) reuse the SAME stored SMTP channel but with their own
+ *  recipients/HTML — and N8 attaches the rendered PDF. */
+export interface SendEmailOptions {
+  /** Replaces the channel's own recipient list. Same shape check as at save time; capped at 20
+   *  (reports' MAX_RECIPIENTS — wider than the channel's own 10, an owner's client list). */
+  to?: string[];
+  /** Full HTML body, replacing the markdown-generated one; the flat `text` stays the fallback. */
+  html?: string;
+  /** Attachments by absolute server path (e.g. a rendered report PDF). */
+  attachments?: { filename: string; path: string }[];
+}
+
+const OPT_RECIPIENT_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export async function sendEmail(
+  cfg: EmailConfig | null, title: string, text: string, opts: SendEmailOptions = {},
+): Promise<{ ok: boolean; error?: string }> {
+  if (!cfg?.host) return { ok: false, error: "not_configured" };
+  // An override replaces the stored list; without one the stored list is still required —
+  // the notify fan-out must keep its exact old semantics.
+  const recipients = opts.to
+    ? opts.to.map(v => String(v).trim()).filter(v => OPT_RECIPIENT_RE.test(v)).slice(0, 20)
+    : cfg.to;
+  if (!recipients?.length) return { ok: false, error: "not_configured" };
   // The SMTP client must not become a port scanner of the internal network either.
   try {
     await assertSafeTarget(`https://${cfg.host}`);
@@ -384,7 +407,14 @@ export async function sendEmail(cfg: EmailConfig | null, title: string, text: st
   });
   const mail = () => {
     const { subject, text: flat, html } = toEmail(title, fitUtf8(text, MAX_TEXT_CHARS));
-    return transport.sendMail({ from: cfg.from, to: cfg.to.slice(0, 10).join(", "), subject, text: flat, html });
+    return transport.sendMail({
+      from: cfg.from,
+      to: recipients.join(", "),
+      subject,
+      text: flat,
+      html: opts.html ? fitUtf8(opts.html, MAX_BODY_BYTES) : html,
+      ...(opts.attachments?.length ? { attachments: opts.attachments } : {}),
+    });
   };
   try {
     try {
