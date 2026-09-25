@@ -3,8 +3,8 @@
 import { usePathname, useRouter } from "next/navigation";
 import PasswordChangeGate from "@/components/PasswordChangeGate";
 import { useSession, signOut } from "next-auth/react";
-import { useState, useEffect, Suspense } from "react";
-import { Settings, LogOut, Sparkles, Globe, Newspaper, LayoutDashboard, TrendingUp, Anchor, BarChart2, Users, Compass, Radar, Server, ClipboardCheck, Menu, Boxes, Waves, FileText, Inbox } from "lucide-react";
+import { useState, useEffect, useRef, Suspense } from "react";
+import { Settings, LogOut, Sparkles, Globe, Newspaper, LayoutDashboard, TrendingUp, Anchor, BarChart2, Users, Compass, Radar, Server, ClipboardCheck, Menu, Boxes, Waves, FileText, Inbox, ChevronDown } from "lucide-react";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { useTheme } from "@/lib/ThemeContext";
 import { useLayout } from "@/lib/LayoutContext";
@@ -580,7 +580,22 @@ export interface NavItem {
   key: string;
   exact?: boolean;
   icon: React.ReactNode;
+  /** Items sharing a group collapse into one dropdown in the top bar (and one titled section in
+   *  the mobile sheet). Ungrouped items stay top-level. The group sits where its first item is. */
+  group?: NavGroupKey;
 }
+
+type NavGroupKey = "analytics" | "monitoring" | "recon" | "clients";
+
+// 14 destinations stopped fitting one row even at 2000px. Grouped by what the page looks at:
+// analytics — this instance's own GSC data; monitoring — things that change over time and get
+// watched; recon — somebody else's sites and domains; clients — what goes out to customers.
+const NAV_GROUPS: Record<NavGroupKey, { labelKey: string; icon: React.ReactNode }> = {
+  analytics: { labelKey: "navGroupAnalytics", icon: <TrendingUp size={14} /> },
+  monitoring: { labelKey: "navGroupMonitoring", icon: <Waves size={14} /> },
+  recon: { labelKey: "navGroupRecon", icon: <Radar size={14} /> },
+  clients: { labelKey: "navGroupClients", icon: <Inbox size={14} /> },
+};
 
 function useNavItems(): NavItem[] {
   const { t } = useLanguage();
@@ -614,38 +629,38 @@ function useNavItems(): NavItem[] {
 
   return [
     { href: "/", label: t("menuDashboard"), key: "sites", exact: true, icon: <LayoutDashboard size={14} /> },
-    { href: "/striking", label: t("menuStriking"), key: "striking", icon: <TrendingUp size={14} /> },
-    { href: "/cannibalization", label: t("menuCannibalization"), key: "cannibalization", icon: <Anchor size={14} /> },
-    { href: "/decay", label: t("menuDecay"), key: "decay", icon: <BarChart2 size={14} /> },
+    { href: "/striking", label: t("menuStriking"), key: "striking", icon: <TrendingUp size={14} />, group: "analytics" as const },
+    { href: "/cannibalization", label: t("menuCannibalization"), key: "cannibalization", icon: <Anchor size={14} />, group: "analytics" as const },
+    { href: "/decay", label: t("menuDecay"), key: "decay", icon: <BarChart2 size={14} />, group: "analytics" as const },
     // Fourth portfolio-wide report, next to the three above: the per-site history stays in
     // each site's Audit tab, this is the workspace view (every run, plus never-audited sites).
-    { href: "/audits", label: t("menuAudits"), key: "audits", icon: <ClipboardCheck size={14} /> },
+    { href: "/audits", label: t("menuAudits"), key: "audits", icon: <ClipboardCheck size={14} />, group: "analytics" as const },
     // Competitors and Demand are not here: both live under SEO Tools. Everything in this bar
     // reads data the instance already holds; those two buy data from outside it, which is the
     // line SEO Tools draws.
     { href: "/seo-tools", label: t("seoNavTitle"), key: "seo-tools", icon: <Sparkles size={14} /> },
-    { href: "/indexer", label: t("indexerNavTitle"), key: "indexer", icon: <Globe size={14} /> },
+    { href: "/indexer", label: t("indexerNavTitle"), key: "indexer", icon: <Globe size={14} />, group: "monitoring" as const },
     // Sits next to the portfolio tools but points outward: everything above reads this instance's
     // own data, this one looks at somebody else's site.
-    { href: "/crawler", label: t("crawlerNavTitle"), key: "crawler", icon: <Radar size={14} /> },
+    { href: "/crawler", label: t("crawlerNavTitle"), key: "crawler", icon: <Radar size={14} />, group: "recon" as const },
     // Between the crawler and the digest for the same reason the crawler sits where it does:
     // it looks outward at domains this instance does not own. Unlike the crawler it looks at
     // ones nobody owns yet.
-    { href: "/drops", label: t("dropsNavTitle"), key: "drops", icon: <Boxes size={14} /> },
+    { href: "/drops", label: t("dropsNavTitle"), key: "drops", icon: <Boxes size={14} />, group: "recon" as const },
     // Visible always, unlike /aparser: the page itself explains what is missing (A-Parser
     // credentials) instead of the entry hiding and the feature looking absent.
-    { href: "/serp-monitor", label: t("serpmonNavTitle"), key: "serpmon", icon: <Waves size={14} /> },
+    { href: "/serp-monitor", label: t("serpmonNavTitle"), key: "serpmon", icon: <Waves size={14} />, group: "monitoring" as const },
     // ─── wave-nov nav entries (CONTRACT.md §3), after /serp-monitor ──────────────────
     // Footprints and Local live in the SEO Tools hub now — the top nav stopped fitting at
     // 16 items; both are analysis tools, not daily destinations.
     // N8: client reports (white-label, PDF, scheduled mailing).
-    { href: "/reports", label: t("repNavTitle"), key: "reports", icon: <FileText size={14} /> },
+    { href: "/reports", label: t("repNavTitle"), key: "reports", icon: <FileText size={14} />, group: "clients" as const },
     // N9: incoming leads from the embeddable audit widget.
-    { href: "/leads", label: t("leadNavTitle"), key: "leads", icon: <Inbox size={14} /> },
-    { href: "/digest", label: t("digestNavTitle"), key: "digest", icon: <Newspaper size={14} /> },
+    { href: "/leads", label: t("leadNavTitle"), key: "leads", icon: <Inbox size={14} />, group: "clients" as const },
+    { href: "/digest", label: t("digestNavTitle"), key: "digest", icon: <Newspaper size={14} />, group: "monitoring" as const },
     // Points inward at the user's own machine rather than at this instance's data or at
     // somebody else's site — hence last, and hidden until that machine exists.
-    ...(hasAparser ? [{ href: "/aparser", label: t("aparserNavTitle"), key: "aparser", icon: <Server size={14} /> }] : []),
+    ...(hasAparser ? [{ href: "/aparser", label: t("aparserNavTitle"), key: "aparser", icon: <Server size={14} />, group: "recon" as const }] : []),
   ];
 }
 
@@ -663,37 +678,137 @@ function navAccent(key: string): { color: string; bg: string } {
 }
 
 // ─── NavLinks component for top navigation ────────────────────────────────────
+type NavEntry =
+  | { kind: "item"; item: NavItem }
+  | { kind: "group"; key: NavGroupKey; items: NavItem[] };
+
+/** Folds the flat list into top-level entries; a group takes the slot of its first item. */
+function buildNavEntries(items: NavItem[]): NavEntry[] {
+  const out: NavEntry[] = [];
+  const seen = new Map<NavGroupKey, NavItem[]>();
+  for (const item of items) {
+    if (!item.group) { out.push({ kind: "item", item }); continue; }
+    const bucket = seen.get(item.group);
+    if (bucket) { bucket.push(item); continue; }
+    const fresh = [item];
+    seen.set(item.group, fresh);
+    out.push({ kind: "group", key: item.group, items: fresh });
+  }
+  return out;
+}
+
+function navButtonStyle(isActive: boolean, color: string, bg: string): React.CSSProperties {
+  return {
+    display: "flex", alignItems: "center", gap: "6px",
+    padding: "6px 12px", borderRadius: "8px",
+    fontSize: "13px", fontWeight: isActive ? 700 : 500,
+    cursor: "pointer", border: "none",
+    color: isActive ? color : "var(--color-text-secondary)",
+    background: isActive ? bg : "transparent",
+    transition: "all 0.15s",
+    whiteSpace: "nowrap",
+  };
+}
+
 function NavLinks() {
   const router = useRouter();
   const pathname = usePathname();
   const items = useNavItems();
+  const { t } = useLanguage();
+  const [openGroup, setOpenGroup] = useState<NavGroupKey | null>(null);
+  const navRef = useRef<HTMLElement>(null);
+
+  // Same render-time adjustment as NavBurger: a route change from anywhere closes the dropdown.
+  const [menuPath, setMenuPath] = useState(pathname);
+  if (pathname !== menuPath) {
+    setMenuPath(pathname);
+    if (openGroup) setOpenGroup(null);
+  }
+
+  // Outside click / Escape. A document listener rather than a full-screen backdrop, so a click
+  // on a neighbouring group opens it straight away instead of first just closing this one.
+  useEffect(() => {
+    if (!openGroup) return;
+    const onDown = (e: MouseEvent) => {
+      if (navRef.current && !navRef.current.contains(e.target as Node)) setOpenGroup(null);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpenGroup(null); };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [openGroup]);
+
+  const hoverOn = (active: boolean) => (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (!active) e.currentTarget.style.background = "var(--color-card-hover)";
+  };
+  const hoverOff = (active: boolean) => (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (!active) e.currentTarget.style.background = "transparent";
+  };
 
   return (
-    <nav className="nav-desktop">
-      {items.map(item => {
-        const isActive = isNavActive(item, pathname);
-        const { color: activeColor, bg: bgActive } = navAccent(item.key);
+    <nav className="nav-desktop" ref={navRef}>
+      {buildNavEntries(items).map(entry => {
+        if (entry.kind === "item") {
+          const { item } = entry;
+          const isActive = isNavActive(item, pathname);
+          const { color, bg } = navAccent(item.key);
+          return (
+            <button
+              key={item.href}
+              onClick={() => router.push(item.href)}
+              aria-current={isActive ? "page" : undefined}
+              style={navButtonStyle(isActive, color, bg)}
+              onMouseOver={hoverOn(isActive)}
+              onMouseOut={hoverOff(isActive)}
+            >
+              {item.icon}
+              {item.label}
+            </button>
+          );
+        }
 
+        const group = NAV_GROUPS[entry.key];
+        const activeChild = entry.items.find(i => isNavActive(i, pathname));
+        const isActive = !!activeChild;
+        const { color, bg } = navAccent(activeChild?.key ?? "");
+        const isOpen = openGroup === entry.key;
         return (
-          <button
-            key={item.href}
-            onClick={() => router.push(item.href)}
-            style={{
-              display: "flex", alignItems: "center", gap: "6px",
-              padding: "6px 14px", borderRadius: "8px",
-              fontSize: "13px", fontWeight: isActive ? 700 : 500,
-              cursor: "pointer", border: "none",
-              color: isActive ? activeColor : "var(--color-text-secondary)",
-              background: isActive ? bgActive : "transparent",
-              transition: "all 0.15s",
-              whiteSpace: "nowrap",
-            }}
-            onMouseOver={e => { if (!isActive) e.currentTarget.style.background = "var(--color-card-hover)"; }}
-            onMouseOut={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
-          >
-            {item.icon}
-            {item.label}
-          </button>
+          <div key={entry.key} className="nav-group">
+            <button
+              aria-haspopup="menu"
+              aria-expanded={isOpen}
+              onClick={() => setOpenGroup(g => (g === entry.key ? null : entry.key))}
+              style={navButtonStyle(isActive, color, bg)}
+              onMouseOver={hoverOn(isActive)}
+              onMouseOut={hoverOff(isActive)}
+            >
+              {activeChild ? activeChild.icon : group.icon}
+              {t(group.labelKey as never)}
+              <ChevronDown size={13} className="nav-chevron" data-open={isOpen} />
+            </button>
+            {isOpen && (
+              <div className="nav-dropdown" role="menu">
+                {entry.items.map(item => {
+                  const childActive = isNavActive(item, pathname);
+                  return (
+                    <button
+                      key={item.href}
+                      role="menuitem"
+                      className="nav-sheet-item"
+                      data-active={childActive}
+                      onClick={() => { setOpenGroup(null); router.push(item.href); }}
+                    >
+                      {item.icon}
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         );
       })}
     </nav>
@@ -742,18 +857,24 @@ function NavBurger() {
         <>
           <div style={{ position: "fixed", inset: 0, zIndex: 44 }} onClick={() => setOpen(false)} />
           <nav className="nav-sheet">
-            {items.map(item => {
-              const isActive = isNavActive(item, pathname);
-              return (
+            {buildNavEntries(items).map(entry => {
+              const renderItem = (item: NavItem) => (
                 <button
                   key={item.href}
                   className="nav-sheet-item"
-                  data-active={isActive}
+                  data-active={isNavActive(item, pathname)}
                   onClick={() => { setOpen(false); router.push(item.href); }}
                 >
                   {item.icon}
                   {item.label}
                 </button>
+              );
+              if (entry.kind === "item") return renderItem(entry.item);
+              return (
+                <div key={entry.key}>
+                  <div className="nav-sheet-heading">{t(NAV_GROUPS[entry.key].labelKey as never)}</div>
+                  {entry.items.map(renderItem)}
+                </div>
               );
             })}
           </nav>

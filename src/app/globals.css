@@ -684,12 +684,33 @@ input:-webkit-autofill {
   margin-left: 20px;
   flex: 1;
   min-width: 0;
-  /* 14 destinations with nowrap labels no longer fit one row on every width: instead of
-     overflowing the viewport edge (the last items silently clipped), the row wraps —
-     every item stays visible and clickable at any window width. */
-  flex-wrap: wrap;
+  /* One row. The 14 destinations are folded into 6 top-level entries (four of them dropdowns,
+     see NAV_GROUPS in DashboardShell), which fit with full labels down to the 900px burger
+     breakpoint. No overflow here: it would clip the absolutely positioned dropdowns. */
+  flex-wrap: nowrap;
 }
 .nav-burger { display: none; }
+
+.nav-group { position: relative; }
+.nav-chevron { opacity: 0.6; transition: transform 0.15s; }
+.nav-chevron[data-open="true"] { transform: rotate(180deg); }
+/* Inside the header's stacking context (z 40), so it covers the page but stays under the
+   avatar menu (50). Items reuse .nav-sheet-item. */
+.nav-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 210px;
+  display: flex;
+  flex-direction: column;
+  padding: 6px 0;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+  z-index: 45;
+}
+.nav-dropdown .nav-sheet-item { font-size: 13px; padding: 9px 16px; }
 
 @media (max-width: 900px) {
   .nav-desktop { display: none; }
@@ -746,6 +767,15 @@ input:-webkit-autofill {
   cursor: pointer;
 }
 .nav-sheet-item:hover { background: var(--color-card-hover); }
+.nav-sheet-heading {
+  padding: 12px 18px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary, var(--color-text-secondary));
+  opacity: 0.8;
+}
 .nav-sheet-item[data-active="true"] {
   font-weight: 700;
   color: var(--color-accent-blue);
