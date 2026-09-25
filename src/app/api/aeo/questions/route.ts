@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { authOptions } from "@/lib/auth";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { getUserAeoCreds } from "@/lib/aeoTracker";
@@ -34,7 +33,7 @@ export async function GET(req: Request) {
     // The client highlights our own domain inside the competitor lists, so it needs the
     // normalized host rather than the raw GSC property string.
     host: hostOf(site.url),
-    questions: questions.map((q: any) => ({
+    questions: questions.map((q: { id: string; question: string; createdAt: Date; lastCheckedAt: Date | null; lastResults: string | null }) => ({
       id: q.id,
       question: q.question,
       createdAt: q.createdAt,

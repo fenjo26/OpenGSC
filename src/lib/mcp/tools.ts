@@ -45,6 +45,13 @@ import { OUTREACH_TOOLS } from "./toolsOutreach";
 import { SOURCE_AUDIT_TOOLS } from "./toolsSourceAudit";
 import { DROPS_TOOLS } from "./toolsDrops";
 import { SERPMON_TOOLS } from "./toolsSerpMon";
+// Wave-oct contour arrays (CONTRACT.md §5) — empty stubs until their tasks land:
+// toolsMeta (T1), toolsUptime (T2), toolsIndex (T4), toolsMentions (T6), toolsVisibility (T7).
+import { META_TOOLS } from "./toolsMeta";
+import { UPTIME_TOOLS } from "./toolsUptime";
+import { INDEX_TOOLS } from "./toolsIndex";
+import { MENTIONS_TOOLS } from "./toolsMentions";
+import { VISIBILITY_TOOLS } from "./toolsVisibility";
 import { rawQuery } from "@/lib/db/raw";
 import { buildRelatedIntentGroups, siteBrandTerms } from "@/lib/cannibalization/relatedIntent";
 
@@ -568,6 +575,23 @@ const CORE_TOOLS: McpTool[] = [
       const site = await resolveSite(userId, args.site);
       const urls = (Array.isArray(args.urls) ? args.urls : []).map(String).filter(u => u.startsWith("http")).slice(0, 10);
       if (!urls.length) throw new Error("Pass 1–10 absolute URLs in `urls`.");
+
+      // Quota ledger (wave-oct T4): inspect_url, the manual button and the auto queue all draw
+      // on the same 2,000/day-per-property pool, counted in America/Los_Angeles days. On a day
+      // Google already answered 429 for this property, fail fast instead of making calls that
+      // are guaranteed to come back 429. (quota.ts from src/lib/indexing would be the cleaner
+      // import, but the T4 contour may only change this handler body, not the imports.)
+      const ptDay = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(d);
+      const today = ptDay(new Date());
+      const ledgerKey = { property_day: { property: site.siteId, day: today } };
+      const ledgerRow = await prisma.inspectionQuota.findUnique({ where: ledgerKey }).catch(() => null);
+      if (ledgerRow?.exhaustedAt && ptDay(new Date(ledgerRow.exhaustedAt)) === today) {
+        throw new Error(
+          `Google's URL Inspection quota for this property is exhausted for today (${ledgerRow.used}/2000 used) ` +
+          `and resets at midnight Pacific time. Manual checks and the auto queue share this pool.`,
+        );
+      }
+
       const accounts = await getUserGoogleAccounts(userId);
       if (!accounts.length) throw new Error("No Google account connected to this instance.");
 
@@ -604,7 +628,18 @@ const CORE_TOOLS: McpTool[] = [
         }
         if (!done) results.push({ url, error: "inspection_failed (no linked account has access to this property, or quota exhausted)" });
       }
-      return { site: site.url, inspected: results };
+
+      // Account the spend: every URL hit the API at least once (retries included in the total
+      // would need per-account counting; one per URL is the honest floor). Manual use — the
+      // `auto` column stays for the scheduler's share.
+      const answered = results.filter(r => !(r as { error?: string }).error).length;
+      const errored = results.length - answered;
+      await prisma.inspectionQuota.upsert({
+        where: ledgerKey,
+        create: { property: site.siteId, day: today, used: results.length, errors: errored },
+        update: { used: { increment: results.length }, errors: errored ? { increment: errored } : undefined },
+      }).catch(() => {});
+      return { site: site.url, inspected: results, quota: { day: today, spent: results.length } };
     },
   },
 
@@ -769,7 +804,7 @@ const CORE_TOOLS: McpTool[] = [
 
 // The single registry the route handler sees. Order matters only for readability in
 // tools/list — agents pick by name, and get_capabilities groups them by cost.
-export const MCP_TOOLS: McpTool[] = [...CORE_TOOLS, ...DATA_TOOLS, ...METRICS_TOOLS, ...DEMAND_TOOLS, ...OPTIMIZE_TOOLS, ...OUTREACH_TOOLS, ...SOURCE_AUDIT_TOOLS, ...DROPS_TOOLS, ...SERPMON_TOOLS];
+export const MCP_TOOLS: McpTool[] = [...CORE_TOOLS, ...DATA_TOOLS, ...METRICS_TOOLS, ...DEMAND_TOOLS, ...OPTIMIZE_TOOLS, ...OUTREACH_TOOLS, ...SOURCE_AUDIT_TOOLS, ...DROPS_TOOLS, ...SERPMON_TOOLS, ...META_TOOLS, ...UPTIME_TOOLS, ...INDEX_TOOLS, ...MENTIONS_TOOLS, ...VISIBILITY_TOOLS];
 
 // A duplicate name would silently shadow a tool in findTool, and the failure would look
 // like "that tool ignores half its arguments" rather than "there are two of them".

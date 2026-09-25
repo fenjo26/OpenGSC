@@ -130,6 +130,8 @@ paid tools. A suspended member's token stops working on the next call.
 | `get_rank_tracker` | Tracked keyword positions with direction |
 | `get_rank_history` | Every RankCheck point per keyword — the trend, not just the latest standing |
 | `get_aeo_visibility` | AI answer-engine citation state per tracked question |
+| `get_ai_share_of_voice` | Share of voice vs competitors and top-cited domains, recomputed from stored AEO answers — adding a competitor costs nothing |
+| `get_brand_mentions` | Brand mentions feed (Google News, Wikipedia, Wikidata) with state/source/link filters |
 | `get_geo_audits` | Stored GEO audit reports: who AI search cites for a query |
 | `get_backlinks` | The site's own backlink inventory with liveness/index status |
 | `get_link_mentions` | Competitor backlinks (Link Monitor) + multi-linker domains |
@@ -177,7 +179,9 @@ create new data, and it is the one that costs money.
 | Tool | Returns |
 |---|---|
 | `get_site_health` | SSL / Safe Browsing / VirusTotal / Core Web Vitals snapshot |
+| `get_uptime` | Uptime status of every site, or one site's full summary (latency, incidents, uptime %) |
 | `get_indexing_status` | Sitemap index-status counts + recent URL inspections (cached) |
+| `get_index_coverage` | Index coverage by day, not-indexed reasons, recent traffic losses and the Google URL Inspection quota state |
 | `get_site_audit` | Latest built-in-crawler audit: health score, issues, affected URLs |
 | `get_clarity` | Microsoft Clarity behaviour data: dead clicks, rage clicks, scroll depth |
 | `get_indexer_stats` | Private indexer network: per-domain verified bot hits, 304 rate, never-crawled domains |
@@ -192,6 +196,7 @@ create new data, and it is the one that costs money.
 | `get_optimization_brief` | net | **Start here.** Everything known about one URL in one call: its queries, striking-distance keywords, CTR gaps, decay trend, cannibalization conflicts, audit issues and live content |
 | `fetch_page_content` | net | Any URL as clean article Markdown, boilerplate stripped |
 | `analyze_text` | local | Deterministic check of a draft: uniqueness, invented/dropped numbers and identifiers, heading-structure match, machine tells. No model called |
+| `fit_meta` | local (**paid** with `allow_llm: true`, needs `confirm`) | Fits title/description into the audit band: deterministic trim/pick first, up to 2 AI repair calls only when asked for |
 | `get_generations` | local | The SEO Tools history — what has already been written, so you extend instead of duplicating |
 | `get_generation_job` | local | Poll a background generation job |
 | `start_rewrite_job` | **paid** | The app's own Content Rewriter over up to 20 pages, in the background; each page saved as it finishes |

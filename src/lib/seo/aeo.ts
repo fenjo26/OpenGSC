@@ -7,6 +7,7 @@
 //   Perplexity  chat/completions (sonar) — search is built in; we tune context size/location.
 //   Claude      Messages API + the server-side `web_search` tool.
 //   Grok        chat/completions + xAI Live Search (`search_parameters`).
+//   Gemini      generateContent + the `google_search` grounding tool (T7).
 //
 // Three things were wrong with the previous version and are worth stating so they don't come
 // back. (1) `tool_choice: "auto"` on a mini model meant the model usually skipped the search
@@ -20,10 +21,11 @@
 // Hence the result shape: the full answer text, every citation, whether a search actually ran,
 // and our rank among the cited domains — the raw material the UI needs to explain itself.
 
+import { defaultModelFor } from "@/lib/providerDefaults";
 import { loggedFetch, type CallHandle } from "@/lib/providerLog/log";
 import { usageFrom } from "@/lib/providerLog/tokens";
 
-export type AeoEngine = "chatgpt" | "perplexity" | "claude" | "grok";
+export type AeoEngine = "chatgpt" | "perplexity" | "claude" | "grok" | "gemini";
 
 // "cited" — our domain is linked in the answer. "mentioned" — the brand is named in the prose
 // but nothing links to us (real, and worth seeing, but a weaker outcome than a citation).
@@ -71,7 +73,7 @@ export interface AeoRunOptions {
 // shallowly, or skip the search entirely, and that was the single biggest source of false
 // "not cited" in this tracker.
 export const AEO_DEFAULT_MODEL = "gpt-5.6-terra";
-export const AEO_ENGINES: AeoEngine[] = ["chatgpt", "perplexity", "claude", "grok"];
+export const AEO_ENGINES: AeoEngine[] = ["chatgpt", "perplexity", "claude", "grok", "gemini"];
 
 // ─── Shared helpers ──────────────────────────────────────────────────────────
 
@@ -518,6 +520,111 @@ export async function checkGrok(apiKey: string, question: string, domain: string
   }
 }
 
+// ─── Gemini — generateContent + google_search grounding ──────────────────────
+
+// The current Flash model with Search grounding. The id comes from the same defaults table the
+// rest of the app reads (providerDefaults), so it ages with that table instead of silently
+// going stale here — the one rule is that it must be a model that accepts the google_search tool.
+export const AEO_GEMINI_MODEL = defaultModelFor("gemini");
+
+// Looks like a bare host: "example.com", "sub.example.co.uk". No spaces, at least one dot,
+// host-legal characters only.
+function looksLikeHost(s: string): boolean {
+  return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(s.trim().toLowerCase());
+}
+
+// Gemini's grounding uri is a vertexaisearch.cloud.google.com redirect, but the source usually
+// surfaces in the title as "... — Publisher" or "... | example.com". Reading the domain off the
+// title costs nothing; expanding the redirect would be one more network call per citation, per
+// check — exactly the kind of hidden cost this tracker refuses. Returns "" when the title does
+// not name a host (the honest answer, not a guess).
+export function hostFromTitle(title: string): string {
+  const t = (title || "").trim().toLowerCase().replace(/^www\./, "");
+  if (looksLikeHost(t)) return t;
+  const segments = t.split(/\s+[–—|·:,-]\s+/);
+  for (let i = segments.length - 1; i >= 0; i--) {
+    const s = segments[i].replace(/^www\./, "");
+    if (looksLikeHost(s)) return s;
+  }
+  return "";
+}
+
+/** A Gemini generateContent response — only the fields this parser reads. */
+interface GeminiResponse {
+  candidates?: {
+    content?: { parts?: { text?: string }[] };
+    groundingMetadata?: {
+      webSearchQueries?: unknown[];
+      groundingChunks?: { web?: { uri?: unknown; title?: unknown; domain?: unknown } }[];
+    };
+  }[];
+}
+
+/** Pure parse of a Gemini generateContent response with google_search grounding. Exported for
+ *  tests; checkGemini is a thin fetch + verdict around it. */
+export function parseGeminiGrounding(data: GeminiResponse, model: string): EngineTrace {
+  const cand = Array.isArray(data?.candidates) ? data.candidates[0] : null;
+  const parts = Array.isArray(cand?.content?.parts) ? cand.content.parts : [];
+  const text = parts.map(p => (typeof p?.text === "string" ? p.text : "")).join("").trim();
+
+  const gm = cand?.groundingMetadata;
+  const chunks = Array.isArray(gm?.groundingChunks) ? gm.groundingChunks : [];
+  const citations: AeoCitation[] = [];
+  for (const chunk of chunks) {
+    const web = chunk?.web;
+    if (!web) continue;
+    const uri = typeof web.uri === "string" ? web.uri : "";
+    const title = typeof web.title === "string" ? web.title : "";
+    // Some API revisions put the source domain on the chunk directly; when they do it is the
+    // most trustworthy copy. Otherwise fall back to the title, else leave it empty.
+    const direct = typeof web.domain === "string" ? web.domain.trim() : "";
+    const domain = looksLikeHost(direct) ? direct.replace(/^www\./, "").toLowerCase() : hostFromTitle(title);
+    if (!uri && !domain) continue;
+    citations.push({ url: uri, domain, title });
+  }
+
+  const searched = Array.isArray(gm?.webSearchQueries) && gm.webSearchQueries.length > 0;
+  return { text, citations, scanned: citations.map(c => c.domain), searched, model };
+}
+
+export async function checkGemini(apiKey: string, question: string, domain: string, brandTerms: string[], o: AeoRunOptions = {}): Promise<AeoCheckResult> {
+  const model = o.model || AEO_GEMINI_MODEL;
+  const rawBase = (o.baseUrl || "").trim().replace(/\/+$/, "");
+  const root = rawBase || "https://generativelanguage.googleapis.com";
+
+  try {
+    const { res, call } = await loggedFetch(
+      `${root}/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: languageHint(o.language) }] },
+          contents: [{ role: "user", parts: [{ text: question }] }],
+          // Server-side Search grounding — the analogue of the other engines' web-search tools.
+          // Billed past Google's free tier, which is why the UI confirms cost before a check.
+          tools: [{ google_search: {} }],
+        }),
+        signal: AbortSignal.timeout(120_000),
+      },
+      { provider: "gemini", model },
+    );
+    if (!res.ok) {
+      const error = `gemini ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`;
+      call.finish({ error });
+      return failed(error, model);
+    }
+
+    const data = await res.json();
+    call.finish({ ...usageFrom("gemini", data), responseBody: data });
+    return verdict(hostOf(domain), brandTerms, parseGeminiGrounding(data, model));
+  } catch (e) {
+    const name = e instanceof Error ? e.name : "";
+    const msg = e instanceof Error ? e.message : String(e);
+    return failed(name === "TimeoutError" || name === "AbortError" ? "timeout" : `gemini: ${msg}`, model);
+  }
+}
+
 export async function runAeoCheck(
   engine: AeoEngine, apiKey: string, question: string, domain: string, brandTerms: string[], o: AeoRunOptions = {},
 ): Promise<AeoCheckResult> {
@@ -528,5 +635,6 @@ export async function runAeoCheck(
     case "perplexity": return checkPerplexity(apiKey, question, domain, terms, o);
     case "claude": return checkClaude(apiKey, question, domain, terms, o);
     case "grok": return checkGrok(apiKey, question, domain, terms, o);
+    case "gemini": return checkGemini(apiKey, question, domain, terms, o);
   }
 }

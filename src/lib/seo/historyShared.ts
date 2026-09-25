@@ -18,6 +18,13 @@ export interface SeoDiagnostics {
   missingHeadings?: string[];
   /** Layer A marks scrub (marksScrub.ts): what the final text was carrying before the strip. */
   marksScrub?: { total: number; byClass: Record<string, number> };
+  /**
+   * Meta-tag length fitting (metaFit.ts, wave-oct T1): how the head block's Title/Description
+   * were brought inside the target band. Structural mirror of MetaFitResult from
+   * metaLimits.ts — duplicated inline because this file must stay import-free (it is pulled
+   * into both a client bundle and API routes).
+   */
+  metaFit?: { field: "title" | "description"; before: string; after: string; length: number; method: string; inBand: boolean; auditOk: boolean }[];
 }
 
 // A text record keeps only the article STRING in `data`, so everything the generator reported
@@ -32,6 +39,7 @@ export function textDiagnostics(result: any): SeoDiagnostics | null {
     ...(result.autoCleaned ? { autoCleaned: true } : {}),
     ...(result.incomplete ? { incomplete: true, missingHeadings: result.missingHeadings ?? [] } : {}),
     ...(result.marksScrub && result.marksScrub.total > 0 ? { marksScrub: result.marksScrub } : {}),
+    ...(Array.isArray(result.metaFit) ? { metaFit: result.metaFit as SeoDiagnostics["metaFit"] } : {}),
   };
   return Object.keys(diag).length ? (diag as SeoDiagnostics) : null;
 }

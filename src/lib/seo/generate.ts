@@ -23,6 +23,8 @@ import {
 import { findRagFacts } from "@/lib/seo/rag";
 import { decodeHtmlEntities } from "@/lib/seo/outlineFormat";
 import { scrubMarks } from "@/lib/seo/marksScrub";
+import { META_LIMITS, metaLength, type MetaFitItem, type MetaFitResult } from "@/lib/seo/metaLimits";
+import { fitMeta, readMetaBlock, writeMetaBlock } from "@/lib/seo/metaFit";
 
 // Language-agnostic "this heading is a FAQ section" test — templates carry "H2: FAQ" and the
 // localization pass renames it («FAQ : Tout savoir…», «Часто задаваемые вопросы»…).
@@ -425,6 +427,43 @@ async function enrichOutlineSections(outline: any, ctx: {
   return enrichedAny;
 }
 
+// ─── Meta-band enforcement for outline options (wave-oct T1) ──────────────────────
+// The model cannot count characters, `pick()` takes the FIRST non-empty option, and the audit
+// flags everything outside 50–65 / 150–165 — the production export had titles of 66–80. So the
+// band is enforced here by code: options already inside the target band are reordered to the
+// front (pick() and outlineFormat then select one automatically — no foreign files touched),
+// and when NOTHING fits, one fitMeta repair pass (the outline call is already paid, the
+// provider is known) puts a fitted variant first. Returns the MetaFitResults of the repair
+// pass for diagnostics; an empty array means everything was solvable by reordering alone.
+async function fitOutlineMetaOptions(outline: Record<string, unknown>, ctx: {
+  keyword: string; language: string; provider: string; apiKey: string; model?: string; baseUrl?: string;
+}): Promise<MetaFitResult[]> {
+  const meta = (outline.meta as Record<string, unknown> | undefined) ?? (outline.meta = {});
+  const diag: MetaFitResult[] = [];
+  for (const field of ["title", "description"] as const) {
+    const key = `${field}_options`;
+    const existing = meta[key];
+    const raw: string[] = Array.isArray(existing) ? existing.map((x) => String(x ?? "")) : [];
+    const opts = raw.filter((s) => s.trim());
+    if (!opts.length) continue;
+    const { targetMin, targetMax } = META_LIMITS[field];
+    const inBand = (s: string) => { const n = metaLength(s); return n >= targetMin && n <= targetMax; };
+    if (opts.some(inBand)) {
+      meta[key] = [...opts.filter(inBand), ...opts.filter((s) => !inBand(s))];
+      continue;
+    }
+    const item: MetaFitItem = field === "title"
+      ? { keyword: ctx.keyword, language: ctx.language, title: opts[0], titleOptions: opts }
+      : { keyword: ctx.keyword, language: ctx.language, description: opts[0], descriptionOptions: opts };
+    const res = await fitMeta(item, { allow: true, provider: ctx.provider, apiKey: ctx.apiKey, model: ctx.model, baseUrl: ctx.baseUrl });
+    const r = res[field];
+    if (!r) continue;
+    if (r.method === "forced_cut" || r.method === "unfixable" || r.method === "llm") diag.push(r);
+    if (r.after && r.after !== opts[0]) meta[key] = [r.after, ...opts];
+  }
+  return diag;
+}
+
 // ─── Outline (structure) ─────────────────────────────────────────────────────────
 export async function genOutline(b: any): Promise<GenResult> {
   const keyword = String(b.keyword ?? "").trim();
@@ -766,6 +805,15 @@ export async function genOutline(b: any): Promise<GenResult> {
   if (meta.h1) meta.h1 = fixYear(meta.h1);
   if (Array.isArray(meta.title_options)) meta.title_options = meta.title_options.map(fixYear);
   if (Array.isArray(meta.description_options)) meta.description_options = meta.description_options.map(fixYear);
+  // META FIT (wave-oct T1), after the year fix and the localization pass — both rewrite the
+  // options, so the band is enforced on the final strings. Best-effort: a fitting failure must
+  // never cost the user the outline.
+  try {
+    const metaFitDiag = await fitOutlineMetaOptions(outline, {
+      keyword, language: String(b.language ?? "en"), provider, apiKey, model, baseUrl,
+    });
+    if (metaFitDiag.length) outline._metaFit = metaFitDiag;
+  } catch { /* best-effort */ }
   for (const q of (Array.isArray((outline as any).faq) ? (outline as any).faq : [])) {
     if (q?.question) q.question = fixYear(q.question);
   }
@@ -1591,6 +1639,43 @@ export async function genText(b: any): Promise<GenResult> {
     judgeConcerns = verdict.concerns ?? [];
   }
 
+  // ── META FIT (wave-oct T1) ────────────────────────────────────────────────────────────
+  // The head block was ensured above; now its Title/Description are measured and forced inside
+  // the target band — the model cannot count characters, and the audit flags everything
+  // outside 50–65 / 150–165 (production: titles of 66–80, descriptions up to 181). Runs as the
+  // LAST text-shaping step, after the marks scrub and the mechanics repair, so the lengths are
+  // those of the FINAL characters. Local fitting first (block value + the outline's options as
+  // candidates, deterministic trim); repair calls when needed (the text call is already paid,
+  // the provider is known). forced_cut/unfixable ride along with the judge's soft findings —
+  // they never bin the article.
+  let metaFit: MetaFitResult[] | undefined;
+  try {
+    const block = readMetaBlock(text);
+    if (block) {
+      const oMeta = b.outline?.meta || {};
+      const fitted = await fitMeta({
+        keyword: keyword || String(slimOutline.meta?.keyword ?? ""),
+        language,
+        title: block.title,
+        description: block.description,
+        titleOptions: Array.isArray(oMeta.title_options) ? oMeta.title_options.map(String) : [],
+        descriptionOptions: Array.isArray(oMeta.description_options) ? oMeta.description_options.map(String) : [],
+      }, { allow: true, provider, apiKey, model, baseUrl });
+      const t = fitted.title;
+      const d = fitted.description;
+      const patch: { title?: string; description?: string } = {};
+      if (t && t.after && t.after !== block.title) patch.title = t.after;
+      if (d && d.after && d.after !== block.description) patch.description = d.after;
+      if (patch.title != null || patch.description != null) text = writeMetaBlock(text, patch);
+      const results = [t, d].filter((r): r is MetaFitResult => !!r);
+      if (results.length) metaFit = results;
+      for (const r of results) {
+        if (r.method === "forced_cut") judgeConcerns.push(`meta_fit: ${r.field} forced_cut (${r.length}, was ${metaLength(r.before)}) — cut at a word boundary, review the wording`);
+        if (r.method === "unfixable") judgeConcerns.push(`meta_fit: ${r.field} still outside ${META_LIMITS[r.field].targetMin}–${META_LIMITS[r.field].targetMax} (${r.length}) — fix manually`);
+      }
+    }
+  } catch { /* best-effort: never fail the article over meta lengths */ }
+
   return {
     ok: true,
     data: {
@@ -1601,6 +1686,7 @@ export async function genText(b: any): Promise<GenResult> {
       ...(marks ? { marksScrub: marks } : {}),
       ...(mechIssues.length ? { mechanics: mechIssues } : {}),
       ...(judgeConcerns.length ? { judgeConcerns } : {}),
+      ...(metaFit?.length ? { metaFit } : {}),
       // Present only when sections are genuinely absent, so existing consumers see the same
       // shape they always did for a complete article.
       ...(incomplete ? { incomplete: true, missingHeadings, chunkError: chunked?.lastError } : {}),

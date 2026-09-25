@@ -3,6 +3,8 @@
 // user's current language into alertSettings/digestSettings and the templates below
 // render in that language. Same locales as the app: en / ru / uk / fr / es / de / zh.
 
+import type { UptimeCause } from "@/lib/uptime/types";
+
 export type NotifyLang = "en" | "ru" | "uk" | "fr" | "es" | "de" | "zh";
 
 export const normalizeLang = (v: unknown): NotifyLang =>
@@ -83,7 +85,50 @@ type Tpl = {
   serpmonStormKeywords: (list: string) => string;
   serpmonStormHosts: (list: string) => string;
   serpmonTestPrefix: string;
+  // wave-oct (CONTRACT.md §8): uptime monitor, index losses, brand mentions, channel tests.
+  // `dur` arguments are pre-formatted by formatDuration below ("12 min", "2 ч 5 мин").
+  uptimeDownTitle: (site: string) => string;
+  uptimeDownMsg: (site: string, url: string, cause: string, since: string) => string;
+  uptimeStillDownMsg: (site: string, dur: string) => string;
+  uptimeUpTitle: (site: string) => string;
+  uptimeUpMsg: (site: string, dur: string) => string;
+  uptimeDegradedMsg: (site: string, ms: number) => string;
+  uptimeCause: (code: UptimeCause, http: number | null) => string;
+  indexLossTitle: (site: string) => string;
+  indexLossMsg: (site: string, n: number, lines: string) => string;
+  mentionsNotifyTitle: (site: string) => string;
+  mentionsNotifyMsg: (site: string, n: number, lines: string) => string;
+  notifyTestMsg: (channel: string) => string;
 };
+
+// Downtime formatting for push messages: the two most significant non-zero units of
+// d/h/min/s, so "12 мин" fits where "12 minutes 0 seconds" would wrap.
+const DUR_UNITS: Record<NotifyLang, { d: string; h: string; min: string; s: string }> = {
+  en: { d: "d",   h: "h",   min: "min", s: "s" },
+  ru: { d: "д",   h: "ч",   min: "мин", s: "с" },
+  uk: { d: "д",   h: "год", min: "хв",  s: "с" },
+  fr: { d: "j",   h: "h",   min: "min", s: "s" },
+  es: { d: "d",   h: "h",   min: "min", s: "s" },
+  de: { d: "d",   h: "h",   min: "min", s: "s" },
+  zh: { d: "天",  h: "小时", min: "分钟", s: "秒" },
+};
+
+export function formatDuration(ms: number, lang: NotifyLang): string {
+  const u = DUR_UNITS[lang];
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const parts: { n: number; unit: string }[] = [];
+  const d = Math.floor(total / 86_400);
+  const h = Math.floor((total % 86_400) / 3_600);
+  const min = Math.floor((total % 3_600) / 60);
+  const s = total % 60;
+  if (d) parts.push({ n: d, unit: u.d });
+  if (h) parts.push({ n: h, unit: u.h });
+  if (min) parts.push({ n: min, unit: u.min });
+  if (s) parts.push({ n: s, unit: u.s });
+  const top = parts.slice(0, 2);
+  if (!top.length) return `0 ${u.s}`;
+  return top.map(p => `${p.n} ${p.unit}`).join(" ");
+}
 
 export const NOTIFY_L: Record<NotifyLang, Tpl> = {
   en: {
@@ -156,6 +201,30 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     serpmonStormKeywords: list => `Most shaken keywords: ${list}`,
     serpmonStormHosts: list => `Most entries and exits: ${list}`,
     serpmonTestPrefix: "\u{1F9EA} TEST \u2014 fabricated data, not a real storm:",
+    uptimeDownTitle: site => `\u{1F534} ${site} is down`,
+    uptimeDownMsg: (site, url, cause, since) => `*${site}* is not responding.\nURL: ${url}\nReason: ${cause}\nSince: ${since}`,
+    uptimeStillDownMsg: (site, dur) => `*${site}* is still down (${dur}).`,
+    uptimeUpTitle: site => `\u{1F7E2} ${site} is back`,
+    uptimeUpMsg: (site, dur) => `*${site}* is responding again. Downtime: ${dur}.`,
+    uptimeDegradedMsg: (site, ms) => `\u{1F7E1} *${site}* is slow: ${ms} ms.`,
+    uptimeCause: (code, http) => {
+      switch (code) {
+        case "timeout": return "timeout";
+        case "dns": return "DNS error";
+        case "tls": return "SSL/TLS error";
+        case "connect": return "connection refused";
+        case "http_status": return http != null ? `HTTP ${http}` : "error";
+        case "keyword_missing": return "expected text not found";
+        case "redirect_loop": return "redirect loop";
+        case "blocked_target": return "address not allowed";
+        default: return "error";
+      }
+    },
+    indexLossTitle: site => `\u{1F4C9} ${site}: pages left Google's index`,
+    indexLossMsg: (site, n, lines) => `*${site}* \u2014 ${n} page(s) with traffic are no longer indexed:\n${lines}`,
+    mentionsNotifyTitle: site => `\u{1F4F0} New mentions of ${site}`,
+    mentionsNotifyMsg: (site, n, lines) => `*${site}* \u2014 ${n} new mention(s):\n${lines}`,
+    notifyTestMsg: channel => `\u2705 OpenGSC test message via ${channel}.`,
   },
   ru: {
     rankDropTitle: kw => `📉 Падение позиции: ${kw}`,
@@ -227,6 +296,30 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     serpmonStormKeywords: list => `Сильнее всего трясло: ${list}`,
     serpmonStormHosts: list => `Больше всего входов и выходов: ${list}`,
     serpmonTestPrefix: "\u{1F9EA} ТЕСТ \u2014 выдуманные данные, не настоящий шторм:",
+    uptimeDownTitle: site => `\u{1F534} ${site} недоступен`,
+    uptimeDownMsg: (site, url, cause, since) => `*${site}* не отвечает.\nURL: ${url}\nПричина: ${cause}\nС: ${since}`,
+    uptimeStillDownMsg: (site, dur) => `*${site}* всё ещё недоступен (${dur}).`,
+    uptimeUpTitle: site => `\u{1F7E2} ${site} снова работает`,
+    uptimeUpMsg: (site, dur) => `*${site}* снова отвечает. Простой: ${dur}.`,
+    uptimeDegradedMsg: (site, ms) => `\u{1F7E1} *${site}* отвечает медленно: ${ms} мс.`,
+    uptimeCause: (code, http) => {
+      switch (code) {
+        case "timeout": return "таймаут";
+        case "dns": return "ошибка DNS";
+        case "tls": return "ошибка SSL/TLS";
+        case "connect": return "соединение отклонено";
+        case "http_status": return http != null ? `HTTP ${http}` : "ошибка";
+        case "keyword_missing": return "нет ожидаемого текста";
+        case "redirect_loop": return "цикл редиректов";
+        case "blocked_target": return "адрес запрещён";
+        default: return "ошибка";
+      }
+    },
+    indexLossTitle: site => `\u{1F4C9} ${site}: страницы выпали из индекса Google`,
+    indexLossMsg: (site, n, lines) => `*${site}* \u2014 ${n} стр. с трафиком больше не в индексе:\n${lines}`,
+    mentionsNotifyTitle: site => `\u{1F4F0} Новые упоминания ${site}`,
+    mentionsNotifyMsg: (site, n, lines) => `*${site}* \u2014 новых упоминаний: ${n}\n${lines}`,
+    notifyTestMsg: channel => `\u2705 Тестовое сообщение OpenGSC через ${channel}.`,
   },
   uk: {
     rankDropTitle: kw => `📉 Падіння позиції: ${kw}`,
@@ -298,6 +391,30 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     serpmonStormKeywords: list => `Найсильніше трусило: ${list}`,
     serpmonStormHosts: list => `Найбільше входів і виходів: ${list}`,
     serpmonTestPrefix: "\u{1F9EA} ТЕСТ \u2014 вигадані дані, не справжній шторм:",
+    uptimeDownTitle: site => `\u{1F534} ${site} недоступний`,
+    uptimeDownMsg: (site, url, cause, since) => `*${site}* не відповідає.\nURL: ${url}\nПричина: ${cause}\nЗ: ${since}`,
+    uptimeStillDownMsg: (site, dur) => `*${site}* досі недоступний (${dur}).`,
+    uptimeUpTitle: site => `\u{1F7E2} ${site} знову працює`,
+    uptimeUpMsg: (site, dur) => `*${site}* знову відповідає. Простій: ${dur}.`,
+    uptimeDegradedMsg: (site, ms) => `\u{1F7E1} *${site}* відповідає повільно: ${ms} мс.`,
+    uptimeCause: (code, http) => {
+      switch (code) {
+        case "timeout": return "таймаут";
+        case "dns": return "помилка DNS";
+        case "tls": return "помилка SSL/TLS";
+        case "connect": return "з'єднання відхилено";
+        case "http_status": return http != null ? `HTTP ${http}` : "помилка";
+        case "keyword_missing": return "немає очікуваного тексту";
+        case "redirect_loop": return "цикл редиректів";
+        case "blocked_target": return "адресу заборонено";
+        default: return "помилка";
+      }
+    },
+    indexLossTitle: site => `\u{1F4C9} ${site}: сторінки випали з індексу Google`,
+    indexLossMsg: (site, n, lines) => `*${site}* \u2014 ${n} стор. з трафіком більше не в індексі:\n${lines}`,
+    mentionsNotifyTitle: site => `\u{1F4F0} Нові згадки ${site}`,
+    mentionsNotifyMsg: (site, n, lines) => `*${site}* \u2014 нових згадок: ${n}\n${lines}`,
+    notifyTestMsg: channel => `\u2705 Тестове повідомлення OpenGSC через ${channel}.`,
   },
   fr: {
     rankDropTitle: kw => `📉 Chute de position : ${kw}`,
@@ -369,6 +486,30 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     serpmonStormKeywords: list => `Mots-clés les plus secoués : ${list}`,
     serpmonStormHosts: list => `Plus d'entrées et de sorties : ${list}`,
     serpmonTestPrefix: "\u{1F9EA} TEST \u2014 données fictives, pas une vraie tempête :",
+    uptimeDownTitle: site => `\u{1F534} ${site} est inaccessible`,
+    uptimeDownMsg: (site, url, cause, since) => `*${site}* ne répond pas.\nURL : ${url}\nCause : ${cause}\nDepuis : ${since}`,
+    uptimeStillDownMsg: (site, dur) => `*${site}* est toujours inaccessible (${dur}).`,
+    uptimeUpTitle: site => `\u{1F7E2} ${site} est de retour`,
+    uptimeUpMsg: (site, dur) => `*${site}* répond à nouveau. Indisponibilité : ${dur}.`,
+    uptimeDegradedMsg: (site, ms) => `\u{1F7E1} *${site}* est lent : ${ms} ms.`,
+    uptimeCause: (code, http) => {
+      switch (code) {
+        case "timeout": return "délai dépassé";
+        case "dns": return "erreur DNS";
+        case "tls": return "erreur SSL/TLS";
+        case "connect": return "connexion refusée";
+        case "http_status": return http != null ? `HTTP ${http}` : "erreur";
+        case "keyword_missing": return "texte attendu introuvable";
+        case "redirect_loop": return "boucle de redirection";
+        case "blocked_target": return "adresse non autorisée";
+        default: return "erreur";
+      }
+    },
+    indexLossTitle: site => `\u{1F4C9} ${site} : des pages ont quitté l'index de Google`,
+    indexLossMsg: (site, n, lines) => `*${site}* \u2014 ${n} page(s) avec du trafic ne sont plus indexées :\n${lines}`,
+    mentionsNotifyTitle: site => `\u{1F4F0} Nouvelles mentions de ${site}`,
+    mentionsNotifyMsg: (site, n, lines) => `*${site}* \u2014 ${n} nouvelle(s) mention(s) :\n${lines}`,
+    notifyTestMsg: channel => `\u2705 Message de test OpenGSC via ${channel}.`,
   },
   es: {
     rankDropTitle: kw => `📉 Caída de posición: ${kw}`,
@@ -440,6 +581,30 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     serpmonStormKeywords: list => `Consultas más agitadas: ${list}`,
     serpmonStormHosts: list => `Más entradas y salidas: ${list}`,
     serpmonTestPrefix: "\u{1F9EA} PRUEBA \u2014 datos inventados, no es una tormenta real:",
+    uptimeDownTitle: site => `\u{1F534} ${site} está caído`,
+    uptimeDownMsg: (site, url, cause, since) => `*${site}* no responde.\nURL: ${url}\nMotivo: ${cause}\nDesde: ${since}`,
+    uptimeStillDownMsg: (site, dur) => `*${site}* sigue caído (${dur}).`,
+    uptimeUpTitle: site => `\u{1F7E2} ${site} vuelve a funcionar`,
+    uptimeUpMsg: (site, dur) => `*${site}* vuelve a responder. Caída: ${dur}.`,
+    uptimeDegradedMsg: (site, ms) => `\u{1F7E1} *${site}* responde lento: ${ms} ms.`,
+    uptimeCause: (code, http) => {
+      switch (code) {
+        case "timeout": return "tiempo de espera agotado";
+        case "dns": return "error de DNS";
+        case "tls": return "error de SSL/TLS";
+        case "connect": return "conexión rechazada";
+        case "http_status": return http != null ? `HTTP ${http}` : "error";
+        case "keyword_missing": return "no se encontró el texto esperado";
+        case "redirect_loop": return "bucle de redirecciones";
+        case "blocked_target": return "dirección no permitida";
+        default: return "error";
+      }
+    },
+    indexLossTitle: site => `\u{1F4C9} ${site}: páginas salieron del índice de Google`,
+    indexLossMsg: (site, n, lines) => `*${site}* \u2014 ${n} página(s) con tráfico ya no están indexadas:\n${lines}`,
+    mentionsNotifyTitle: site => `\u{1F4F0} Nuevas menciones de ${site}`,
+    mentionsNotifyMsg: (site, n, lines) => `*${site}* \u2014 ${n} mención(es) nueva(s):\n${lines}`,
+    notifyTestMsg: channel => `\u2705 Mensaje de prueba de OpenGSC vía ${channel}.`,
   },
   de: {
     rankDropTitle: kw => `📉 Positionsverlust: ${kw}`,
@@ -511,6 +676,30 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     serpmonStormKeywords: list => `Stärkst erschütterte Keywords: ${list}`,
     serpmonStormHosts: list => `Meiste Ein- und Austritte: ${list}`,
     serpmonTestPrefix: "\u{1F9EA} TEST \u2014 erfundene Daten, kein echter Sturm:",
+    uptimeDownTitle: site => `\u{1F534} ${site} ist nicht erreichbar`,
+    uptimeDownMsg: (site, url, cause, since) => `*${site}* antwortet nicht.\nURL: ${url}\nGrund: ${cause}\nSeit: ${since}`,
+    uptimeStillDownMsg: (site, dur) => `*${site}* ist immer noch nicht erreichbar (${dur}).`,
+    uptimeUpTitle: site => `\u{1F7E2} ${site} ist wieder da`,
+    uptimeUpMsg: (site, dur) => `*${site}* antwortet wieder. Ausfall: ${dur}.`,
+    uptimeDegradedMsg: (site, ms) => `\u{1F7E1} *${site}* ist langsam: ${ms} ms.`,
+    uptimeCause: (code, http) => {
+      switch (code) {
+        case "timeout": return "Zeitüberschreitung";
+        case "dns": return "DNS-Fehler";
+        case "tls": return "SSL/TLS-Fehler";
+        case "connect": return "Verbindung abgelehnt";
+        case "http_status": return http != null ? `HTTP ${http}` : "Fehler";
+        case "keyword_missing": return "erwarteter Text nicht gefunden";
+        case "redirect_loop": return "Redirect-Schleife";
+        case "blocked_target": return "Adresse nicht erlaubt";
+        default: return "Fehler";
+      }
+    },
+    indexLossTitle: site => `\u{1F4C9} ${site}: Seiten haben Googles Index verlassen`,
+    indexLossMsg: (site, n, lines) => `*${site}* \u2014 ${n} Seite(n) mit Traffic sind nicht mehr indexiert:\n${lines}`,
+    mentionsNotifyTitle: site => `\u{1F4F0} Neue Erwähnungen von ${site}`,
+    mentionsNotifyMsg: (site, n, lines) => `*${site}* \u2014 ${n} neue Erwähnung(en):\n${lines}`,
+    notifyTestMsg: channel => `\u2705 OpenGSC-Testnachricht über ${channel}.`,
   },
   zh: {
     rankDropTitle: kw => `📉 排名下降：${kw}`,
@@ -582,5 +771,29 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     serpmonStormKeywords: list => `波动最大的关键词：${list}`,
     serpmonStormHosts: list => `进入和退出最多：${list}`,
     serpmonTestPrefix: "\u{1F9EA} 测试 \u2014 模拟数据，并非真实风暴：",
+    uptimeDownTitle: site => `\u{1F534} ${site} 已宕机`,
+    uptimeDownMsg: (site, url, cause, since) => `*${site}* 无响应。\nURL：${url}\n原因：${cause}\n开始于：${since}`,
+    uptimeStillDownMsg: (site, dur) => `*${site}* 仍然宕机（${dur}）。`,
+    uptimeUpTitle: site => `\u{1F7E2} ${site} 已恢复`,
+    uptimeUpMsg: (site, dur) => `*${site}* 已恢复响应。宕机时长：${dur}。`,
+    uptimeDegradedMsg: (site, ms) => `\u{1F7E1} *${site}* 响应缓慢：${ms} 毫秒。`,
+    uptimeCause: (code, http) => {
+      switch (code) {
+        case "timeout": return "超时";
+        case "dns": return "DNS 错误";
+        case "tls": return "SSL/TLS 错误";
+        case "connect": return "连接被拒绝";
+        case "http_status": return http != null ? `HTTP ${http}` : "错误";
+        case "keyword_missing": return "未找到预期文本";
+        case "redirect_loop": return "重定向循环";
+        case "blocked_target": return "地址被禁止";
+        default: return "错误";
+      }
+    },
+    indexLossTitle: site => `\u{1F4C9} ${site}：页面掉出了 Google 索引`,
+    indexLossMsg: (site, n, lines) => `*${site}* \u2014 ${n} 个有流量的页面不再被索引：\n${lines}`,
+    mentionsNotifyTitle: site => `\u{1F4F0} ${site} 的新提及`,
+    mentionsNotifyMsg: (site, n, lines) => `*${site}* \u2014 新提及 ${n} 条：\n${lines}`,
+    notifyTestMsg: channel => `\u2705 OpenGSC 通过 ${channel} 发送的测试消息。`,
   },
 };

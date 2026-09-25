@@ -1,0 +1,141 @@
+{
+  "captchaResult": null,
+  "kind": "pagespeedonline#result",
+  "id": "https://example.com/",
+  "loadingScoreVersion": "chrome-2024",
+  "loadingExperience": {
+    "id": "https://example.com/",
+    "metrics": {
+      "CUMULATIVE_LAYOUT_SHIFT_SCORE": {
+        "percentile": 28,
+        "distributions": [
+          { "min": 0, "max": 10, "proportion": 0.421 },
+          { "min": 10, "max": 25, "proportion": 0.251 },
+          { "min": 25, "proportion": 0.328 }
+        ],
+        "category": "SLOW"
+      },
+      "FIRST_CONTENTFUL_PAINT_MS": {
+        "percentile": 2101,
+        "distributions": [
+          { "min": 0, "max": 1800, "proportion": 0.387 },
+          { "min": 1800, "max": 3000, "proportion": 0.261 },
+          { "min": 3000, "proportion": 0.352 }
+        ],
+        "category": "AVERAGE"
+      },
+      "INTERACTION_TO_NEXT_PAINT_MS": {
+        "percentile": 612,
+        "distributions": [
+          { "min": 0, "max": 200, "proportion": 0.357 },
+          { "min": 200, "max": 500, "proportion": 0.248 },
+          { "min": 500, "proportion": 0.395 }
+        ],
+        "category": "SLOW"
+      },
+      "LARGEST_CONTENTFUL_PAINT_MS": {
+        "percentile": 4310,
+        "distributions": [
+          { "min": 0, "max": 2500, "proportion": 0.258 },
+          { "min": 2500, "max": 4000, "proportion": 0.241 },
+          { "min": 4000, "proportion": 0.501 }
+        ],
+        "category": "SLOW"
+      }
+    },
+    "overall_category": "SLOW",
+    "initial_url": "https://example.com/"
+  },
+  "pageLoadMetrics": {
+    "requestedUrl": "https://example.com/",
+    "metrics": {}
+  },
+  "lighthouseResult": {
+    "requestedUrl": "https://example.com/",
+    "finalUrl": "https://example.com/",
+    "lighthouseVersion": "12.4.0",
+    "formFactor": "mobile",
+    "scoreDisplayMode": "numeric",
+    "userAgent": "Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36",
+    "environment": {
+      "benchmarkIndex": 1300,
+      "credits": null
+    },
+    "runWarnings": [],
+    "categories": {
+      "performance": {
+        "id": "performance",
+        "title": "Performance",
+        "score": 0.62,
+        "auditRefs": [
+          { "id": "first-contentful-paint", "weight": 10, "group": "metrics" },
+          { "id": "largest-contentful-paint", "weight": 25, "group": "metrics" },
+          { "id": "total-blocking-time", "weight": 30, "group": "metrics" },
+          { "id": "cumulative-layout-shift", "weight": 25, "group": "metrics" },
+          { "id": "speed-index", "weight": 10, "group": "metrics" }
+        ]
+      }
+    },
+    "audits": {
+      "first-contentful-paint": {
+        "id": "first-contentful-paint",
+        "title": "First Contentful Paint",
+        "description": "First Contentful Paint marks the time at which the first text or image is painted.",
+        "score": 0.61,
+        "scoreDisplayMode": "numeric",
+        "numericValue": 2101.4,
+        "displayValue": "2.1 s"
+      },
+      "largest-contentful-paint": {
+        "id": "largest-contentful-paint",
+        "title": "Largest Contentful Paint",
+        "description": "Largest Contentful Paint marks the time at which the largest text or image is painted.",
+        "score": 0.35,
+        "scoreDisplayMode": "numeric",
+        "numericValue": 4102.5,
+        "displayValue": "4.1 s"
+      },
+      "cumulative-layout-shift": {
+        "id": "cumulative-layout-shift",
+        "title": "Cumulative Layout Shift",
+        "description": "Cumulative Layout Shift measures the movement of visible elements within the viewport.",
+        "score": 0.68,
+        "scoreDisplayMode": "numeric",
+        "numericValue": 0.278,
+        "displayValue": "0.28"
+      },
+      "interaction-to-next-paint": {
+        "id": "interaction-to-next-paint",
+        "title": "Interaction to Next Paint",
+        "description": "Interaction to Next Paint measures the time from a user interaction to when the page responds visually.",
+        "score": 0.55,
+        "scoreDisplayMode": "numeric",
+        "numericValue": 213.1,
+        "displayValue": "210 ms"
+      },
+      "server-response-time": {
+        "id": "server-response-time",
+        "title": "Initial server response time was short",
+        "description": "Keep the server response time for the main document short because all other requests depend on it.",
+        "score": 1,
+        "scoreDisplayMode": "binary",
+        "numericValue": 570.331,
+        "displayValue": "0.6 s",
+        "details": {
+          "type": "opportunity",
+          "overallSavingsMs": 0
+        }
+      }
+    },
+    "categoryGroups": {
+      "metrics": { "title": "Metrics" }
+    },
+    "timing": { "total": 12480 },
+    "i18n": { "rendererFormattedStrings": {} },
+    "stackPacks": [],
+    "fullPageScreenshot": null,
+    "runtimeError": null
+  },
+  "analysisUTCTimestamp": "2026-09-25T09:00:00Z",
+  "version": { "major": 5, "minor": 1 }
+}

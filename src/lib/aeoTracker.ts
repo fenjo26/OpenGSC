@@ -16,24 +16,28 @@ export interface AeoCreds {
   perplexity?: string;
   claude?: string;
   grok?: string;
+  gemini?: string;
   chatgptBaseUrl?: string;
   claudeBaseUrl?: string;
   perplexityBaseUrl?: string;
   grokBaseUrl?: string;
+  geminiBaseUrl?: string;
   chatgptModel?: string;
   claudeModel?: string;
   perplexityModel?: string;
   grokModel?: string;
+  geminiModel?: string;
 }
 
 // Reads the user's server-side settings snapshot (User.seoSettings — the same mirror
-// getUserSerpCreds in lib/rank.ts uses). ChatGPT/Claude reuse the existing generic AI
-// provider keys (aiKey_openai / aiKey_anthropic, already used for content generation);
-// Perplexity/Grok are AEO-specific keys (seoKey_perplexity / seoKey_xai) set alongside the
-// SEO Tools SERP keys in Settings → SEO Tools.
+// getUserSerpCreds in lib/rank.ts uses). ChatGPT/Claude/Gemini reuse the existing generic AI
+// provider keys (aiKey_openai / aiKey_anthropic / aiKey_gemini, already used for content
+// generation — the Gemini one is the "Google Gemini" provider in Settings → API keys, mirrored
+// here by SeoKeysSync); Perplexity/Grok are AEO-specific keys (seoKey_perplexity / seoKey_xai)
+// set alongside the SEO Tools SERP keys in Settings → SEO Tools.
 export async function getUserAeoCreds(userId: string): Promise<AeoCreds> {
   try {
-    const rows: any[] = await rawQuery(
+    const rows = await rawQuery<{ seoSettings?: string | null }[]>(
       `SELECT seoSettings FROM "User" WHERE id = ?`, userId,
     );
     const raw = rows?.[0]?.seoSettings;
@@ -42,14 +46,17 @@ export async function getUserAeoCreds(userId: string): Promise<AeoCreds> {
     return {
       chatgpt: s["aiKey_openai"] || undefined,
       claude: s["aiKey_anthropic"] || undefined,
+      gemini: s["aiKey_gemini"] || undefined,
       perplexity: s["seoKey_perplexity"] || undefined,
       grok: s["seoKey_xai"] || undefined,
       chatgptBaseUrl: s["aiBaseUrl_openai"] || undefined,
       claudeBaseUrl: s["aiBaseUrl_anthropic"] || undefined,
+      geminiBaseUrl: s["aiBaseUrl_gemini"] || undefined,
       perplexityBaseUrl: s["seoBaseUrl_perplexity"] || undefined,
       grokBaseUrl: s["seoBaseUrl_xai"] || undefined,
       chatgptModel: s["aiModel_openai"] || undefined,
       claudeModel: s["aiModel_anthropic"] || undefined,
+      geminiModel: s["aiModel_gemini"] || undefined,
       perplexityModel: s["seoModel_perplexity"] || undefined,
       grokModel: s["seoModel_xai"] || undefined,
     };
@@ -59,7 +66,7 @@ export async function getUserAeoCreds(userId: string): Promise<AeoCreds> {
 }
 
 export function hasAnyAeoCreds(creds: AeoCreds): boolean {
-  return !!(creds.chatgpt || creds.perplexity || creds.claude || creds.grok);
+  return !!(creds.chatgpt || creds.perplexity || creds.claude || creds.grok || creds.gemini);
 }
 
 // Site.brandedKeywords is JSON array text (e.g. '["ikea","ikea chair"]'); tolerate a plain
@@ -173,6 +180,9 @@ export async function checkTrackedQuestion(
     } else if (engine === "grok") {
       if (creds.grokBaseUrl) engineOpts.baseUrl = creds.grokBaseUrl;
       if (creds.grokModel) engineOpts.model = creds.grokModel;
+    } else if (engine === "gemini") {
+      if (creds.geminiBaseUrl) engineOpts.baseUrl = creds.geminiBaseUrl;
+      if (creds.geminiModel) engineOpts.model = creds.geminiModel;
     }
 
     const r = await runAeoCheck(engine, key, q.question, cfg.url, cfg.brandTerms, engineOpts);

@@ -5,13 +5,14 @@ import { useRouter } from "next/navigation";
 import {
   ArrowLeft, Pencil, Copy, FileText, Download, ChevronDown, Save, Check, X, Code2,
   ExternalLink, Target, Hash, ListTree, ArrowUp, Shield, ImageIcon, Loader2, Wand2, AlertTriangle,
-  CheckCircle2, HelpCircle,
+  CheckCircle2, HelpCircle, Tag,
 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { HistoryItem, getHistoryItem, updateHistory, patchHistory } from "@/lib/seo/history";
 import { outlineHeadings, articleHeadings, markdownToHtml, htmlDocument, countWords, splitArticleSections, hasVerifiableFacts } from "@/lib/seo/outlineFormat";
 import { getSeoGenCreds, getTaskCreds, getSerpCreds, getFirecrawlKey, getAutoFactcheck, getAutoImages, getFactSourceCount, getFactBearingOnly, getFactReuseCorpus, getKieKey } from "@/lib/seo/keys";
 import { IMAGE_MODELS, imageModel, type ImageModelId } from "@/lib/seo/imageModels";
+import { META_LIMITS } from "@/lib/seo/metaLimits";
 
 /**
  * What the pipeline noticed and could not fix by itself.
@@ -39,7 +40,12 @@ function DiagnosticsPanel({ diag }: { diag: NonNullable<NonNullable<HistoryItem[
   const fixed = mech.filter(m => m.fixed);
   const open_ = mech.filter(m => !m.fixed);
   const concerns = diag.judgeConcerns ?? [];
-  const attention = open_.length + concerns.length + (diag.incomplete ? 1 : 0);
+  // Meta-length fitting (wave-oct T1): only the outcomes a human should look at count as
+  // attention — a field that was picked/trimmed into the band is handled, a forced cut or an
+  // unfixable value is not.
+  const metaFitRows = (diag.metaFit ?? []).filter(m => m.method !== "kept");
+  const metaFitBad = metaFitRows.filter(m => m.method === "forced_cut" || m.method === "unfixable");
+  const attention = open_.length + concerns.length + metaFitBad.length + (diag.incomplete ? 1 : 0);
   const clean = attention === 0 && fixed.length === 0;
 
   const chip = (color: string): React.CSSProperties => ({
@@ -87,11 +93,22 @@ function DiagnosticsPanel({ diag }: { diag: NonNullable<NonNullable<HistoryItem[
           ))}
 
           {concerns.map((c, i) => (
-            <div key={`c${i}`} style={{ fontSize: "13px", color: "var(--color-text-secondary)", borderLeft: "2px solid var(--color-accent-orange)", paddingLeft: "10px", display: "flex", gap: "7px" }}>
+            <div key={`c${i}`} style={{ fontSize: "13px", color: "var(--color-text-secondary)", borderLeft: `2px solid var(--color-accent-orange)`, paddingLeft: "10px", display: "flex", gap: "7px" }}>
               <HelpCircle size={14} color="var(--color-accent-orange)" style={{ marginTop: "2px", flexShrink: 0 }} />
               <div><b style={{ color: "var(--color-text-primary)" }}>{t("seoDiagJudgeConcern")}</b><div style={{ marginTop: "2px" }}>{c}</div></div>
             </div>
           ))}
+
+          {metaFitRows.map((m, i) => {
+            const bad = m.method === "forced_cut" || m.method === "unfixable";
+            const label = t(`metaFitMethod_${m.method}` as never);
+            return (
+              <div key={`m${i}`} style={{ fontSize: "13px", color: "var(--color-text-secondary)", borderLeft: `2px solid ${bad ? "var(--color-accent-orange)" : "var(--color-accent-green)"}`, paddingLeft: "10px" }}>
+                <b style={{ color: "var(--color-text-primary)" }}>{m.field === "title" ? "Title" : "Meta Description"} — {label}</b>
+                <div style={{ marginTop: "2px", wordBreak: "break-word" }}>{m.after || m.before} <span style={{ color: "var(--color-text-tertiary)" }}>({m.length})</span></div>
+              </div>
+            );
+          })}
 
           {fixed.map((m, i) => (
             <div key={`f${i}`} style={{ fontSize: "13px", color: "var(--color-text-tertiary)", borderLeft: `2px solid ${green}`, paddingLeft: "10px" }}>
@@ -99,6 +116,136 @@ function DiagnosticsPanel({ diag }: { diag: NonNullable<NonNullable<HistoryItem[
               <div style={{ marginTop: "2px" }}>{m.detail}</div>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Meta-tags plaque (wave-oct T1) ────────────────────────────────────────────────
+//
+// The audit colors a site red over title/description length, and the model cannot count
+// characters — so the lengths are shown here, measured by code, next to the two buttons that
+// fix them: a free deterministic pass first, and a paid AI pass (explicit confirm, ≤ 2 calls)
+// only for what the free pass could not fit.
+
+// Display-only mirror of readMetaBlock (metaFit.ts). This component must not import the
+// fitting module itself — `fitMeta`'s repair path reaches @/lib/llm, which does not belong in
+// a client bundle. Keep the label parsing in sync with the server-side one.
+function parseMetaHead(text: string): { title: string; description: string } | null {
+  if (!text) return null;
+  const firstHeading = text.search(/^#{1,6}\s/m);
+  const head = firstHeading > 0 ? text.slice(0, firstHeading) : (firstHeading === 0 ? "" : text);
+  if (!/(^|\n)\s*(```)?\s*title\s*:/i.test(head)) return null;
+  let title = "";
+  let description = "";
+  for (const line of head.split(/\r?\n/)) {
+    const bare = line.trim().replace(/^```+/, "").replace(/```+$/, "").trim();
+    if (/^title\s*:/i.test(bare)) title = bare.replace(/^title\s*:/i, "").trim();
+    else if (/^meta\s+description\s*:/i.test(bare)) description = bare.replace(/^meta\s+description\s*:/i, "").trim();
+  }
+  return title || description ? { title, description } : null;
+}
+
+function MetaPlaque({ item, article, language, onArticle }: {
+  item: HistoryItem; article: string; language: string; onArticle: (text: string) => void;
+}) {
+  const { t } = useLanguage();
+  const [busy, setBusy] = useState<"free" | "llm" | null>(null);
+  const [err, setErr] = useState("");
+  const [note, setNote] = useState("");
+  const [triedFree, setTriedFree] = useState(false);
+
+  const block = parseMetaHead(article);
+  const diag = item.meta?.diagnostics?.metaFit;
+  if (!block) return null;
+
+  const rows = (["title", "description"] as const).map((field) => {
+    const value = field === "title" ? block.title : block.description;
+    const limits = META_LIMITS[field];
+    const n = Array.from(value.trim()).length;
+    const state = !value ? "short" : n < limits.targetMin ? "short" : n > limits.targetMax ? "long" : "ok";
+    return { field, value, n, limits, state, method: diag?.find(d => d.field === field)?.method };
+  });
+  const outOfBand = rows.some(r => r.state !== "ok");
+
+  async function run(allowLlm: boolean) {
+    if (busy) return;
+    setErr(""); setNote("");
+    const cur = parseMetaHead(article);
+    if (!cur) return;
+    const creds = allowLlm ? getTaskCreds("text") : null;
+    if (allowLlm && !creds?.apiKey) { setErr(t("seoErrNoAiKey")); return; }
+    if (allowLlm && !window.confirm(t("metaFitConfirm").replace("{n}", "2"))) return;
+    setBusy(allowLlm ? "llm" : "free");
+    try {
+      const res = await fetch("/api/seo/meta-fit", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: [{ id: item.id, keyword: item.keyword, language, title: cur.title, description: cur.description }],
+          historyIds: [item.id],
+          ...(allowLlm && creds ? { allowLlm: true, aiProvider: creds.provider, aiApiKey: creds.apiKey, model: creds.model || undefined, aiBaseUrl: creds.baseUrl || undefined } : {}),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setErr(String(data.error || "error")); return; }
+      const r0: { title?: { after?: string; before?: string }; description?: { after?: string; before?: string } } | undefined = (data.results || [])[0];
+      const changed = !!(r0 && [r0.title, r0.description].some(f => f && f.after !== f.before));
+      setTriedFree(!allowLlm ? true : triedFree);
+      if (changed) {
+        // The route already persisted the fitted block; pull the saved record back so this
+        // view and the local cache agree with the server.
+        const rec = await fetch(`/api/seo/history?id=${encodeURIComponent(item.id)}`).then(r => r.json()).catch(() => null);
+        if (rec?.record?.data != null) { updateHistory(item.id, rec.record.data); onArticle(String(rec.record.data)); }
+        setNote(t("metaFitApplied"));
+      } else {
+        setNote(t("metaFitNothing"));
+      }
+    } catch (e) { setErr(String((e as Error | undefined)?.message ?? e ?? "error")); }
+    setBusy(null);
+  }
+
+  const pill = (ok: boolean): React.CSSProperties => ({
+    fontSize: "11px", fontWeight: 700, padding: "2px 9px", borderRadius: "20px", whiteSpace: "nowrap",
+    color: ok ? "var(--color-accent-green)" : "var(--color-accent-red)",
+    background: ok ? "rgba(52,199,89,0.12)" : "rgba(255,69,58,0.12)",
+  });
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "8px", padding: "10px 14px", marginBottom: "14px", border: "1px solid var(--color-border)", borderRadius: "10px", background: "var(--color-bg)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: "7px", fontSize: "13px", fontWeight: 700, color: "var(--color-text-primary)" }}>
+          <Tag size={14} /> {t("metaFitTitle")}
+        </span>
+        {rows.map(r => (
+          <span
+            key={r.field}
+            title={r.method ? t(`metaFitMethod_${r.method}` as never) : undefined}
+            style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--color-text-secondary)", minWidth: 0 }}
+          >
+            <b style={{ color: "var(--color-text-primary)" }}>{r.field === "title" ? "Title" : "Description"}</b>
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "260px" }}>{r.value || "—"}</span>
+            <span style={pill(r.state === "ok")}>
+              {t("metaFitLen").replace("{n}", String(r.n)).replace("{max}", String(r.limits.targetMax))}
+              {r.state === "ok" ? ` ✓ ${t("metaFitOk")}` : ` — ${r.state === "long" ? t("metaFitTooLong") : t("metaFitTooShort")}`}
+            </span>
+          </span>
+        ))}
+        <div style={{ flex: 1 }} />
+        {outOfBand && (
+          <button onClick={() => run(false)} disabled={!!busy} style={btnGhost}>
+            {busy === "free" ? <Loader2 size={14} className="spin" /> : <Wand2 size={14} />} {t("metaFitRunFree")}
+          </button>
+        )}
+        {outOfBand && triedFree && (
+          <button onClick={() => run(true)} disabled={!!busy} style={{ ...btnGhost, color: "var(--color-accent-orange)" }}>
+            {busy === "llm" ? <Loader2 size={14} className="spin" /> : <Wand2 size={14} />} {t("metaFitRunLlm")}
+          </button>
+        )}
+      </div>
+      {(err || note) && (
+        <div style={{ fontSize: "12px", color: err ? "var(--color-accent-red)" : "var(--color-accent-green)" }}>
+          {err || note}
         </div>
       )}
     </div>
@@ -228,6 +375,14 @@ export default function SeoTextDetail({ item: initial }: { item: HistoryItem }) 
         </div>
 
         <div style={{ display: tab === "text" ? "block" : "none" }}>
+        {!edit && (
+          <MetaPlaque
+            item={item}
+            article={article}
+            language={String(outline?.meta?.language ?? "en")}
+            onArticle={(txt) => setItem(prev => ({ ...prev, data: txt }))}
+          />
+        )}
         {(
           edit ? (
             <textarea className="tool-input" style={{ minHeight: "460px", resize: "vertical", fontFamily: "monospace", fontSize: "13px" }} value={editText} onChange={e => setEditText(e.target.value)} />

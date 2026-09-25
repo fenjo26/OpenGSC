@@ -4,6 +4,7 @@ import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { analyzeUrl } from "@/lib/seo/googlebot";
 import { assertSafeTarget, SafeFetchError } from "@/lib/security/safeFetch";
+import { quotaToday, recordInspections } from "@/lib/indexing/quota";
 
 // POST /api/seo/googlebot
 // body: { url: string, desktop?: boolean, referer?: boolean, firecrawlKey?: string, wayback?: boolean }
@@ -71,6 +72,15 @@ async function inspectOwnSite(userId: string, inspectUrl: string) {
   let siteUrl = match.siteId;
   if (siteUrl.startsWith("sc-domain:")) siteUrl = "https://" + siteUrl.slice("sc-domain:".length) + "/";
 
+  // Quota ledger (wave-oct): this single inspection draws on the same 2,000/day property pool
+  // as the Indexing button, the auto queue and MCP inspect_url. On a spent day the GSC block
+  // is simply absent — the googlebot analysis itself does not depend on it. Ledger problems
+  // (table missing before db push) must not break the route either.
+  try {
+    const quota = await quotaToday(match.siteId);
+    if (quota.exhausted) return { ownSite: { id: match.id, url: match.url }, gsc: null };
+  } catch { /* ledger unavailable */ }
+
   try {
     const res = await fetch("https://searchconsole.googleapis.com/v1/urlInspection/index:inspect", {
       method: "POST",
@@ -78,7 +88,15 @@ async function inspectOwnSite(userId: string, inspectUrl: string) {
       body: JSON.stringify({ inspectionUrl: inspectUrl, siteUrl }),
       signal: AbortSignal.timeout(12000),
     });
-    if (!res.ok) return { ownSite: { id: match.id, url: match.url }, gsc: null };
+    if (!res.ok) {
+      if (res.status === 429) {
+        await recordInspections(match.siteId, 0, { auto: false, errors: 1, exhausted: true }).catch(() => {});
+      } else {
+        await recordInspections(match.siteId, 1, { auto: false }).catch(() => {}); // answered, quota spent
+      }
+      return { ownSite: { id: match.id, url: match.url }, gsc: null };
+    }
+    await recordInspections(match.siteId, 1, { auto: false }).catch(() => {});
     const data = await res.json();
     const idx = data?.inspectionResult?.indexStatusResult;
     if (!idx) return { ownSite: { id: match.id, url: match.url }, gsc: null };

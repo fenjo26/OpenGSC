@@ -92,6 +92,8 @@ model User {
   digestSettings   String? // JSON: { enabled, frequency: "daily"|"weekly", hourUtc, tag, days, ai, lastSentAt }
   syncSettings     String? // JSON: { enabled, hour, timeZone, lastRunAt } — automatic GSC sync, see src/lib/syncSchedule.ts
   auditQueueSettings String? // JSON: { concurrency, defaultIntervalDays, scheduleHourUtc, retryAttempts, retryDelayMin, paused } — audit queue + scheduler knobs, see src/lib/audit/queue.ts
+  uptimeSettings   String? // JSON: UptimeWorkspaceSettings (src/lib/uptime/types.ts)
+  notifyChannels   String? // JSON: NotifyChannelsConfig (src/lib/notify/types.ts) — secrets inside, never sent to the browser unmasked
 
   // Third-party API integrations
   neuralIndexerToken String?
@@ -233,6 +235,22 @@ model Site {
   ga4PropertyId         String?   // GA4 numeric property ID (e.g. "123456789")
   ga4PropertyName       String?   // GA4 property display name (cached for UI)
 
+  // Uptime monitor (T2). One monitor per site; created lazily by the uptime scheduler when the
+  // workspace has autoEnroll on, or explicitly from the site's Health tab.
+  uptimeMonitor         UptimeMonitor?
+
+  // Automatic URL Inspection (T4). JSON: IndexInspectSettings (src/lib/indexing/types.ts).
+  // Null = defaults (DEFAULT_INDEX_INSPECT).
+  indexInspect          String?
+  indexCoverage         IndexCoverageDaily[]
+
+  // Brand mentions (T6). JSON: MentionSettings (src/lib/mentions/types.ts). Null = off.
+  mentionSettings       String?
+  brandMentions         BrandMention[]
+
+  // AI share of voice (T7). JSON: AiCompetitor[] (src/lib/visibility/types.ts). Null = none.
+  aeoCompetitors        String?
+
   // Client read-only share settings
   shareEnabled          Boolean   @default(false)
   shareToken            String?   @unique
@@ -277,6 +295,10 @@ model SitemapUrl {
   googleCoverage String?   // raw coverage state
   googleReason   String?
   googleChecked  DateTime?
+  googleVerdict   String?   // PASS | NEUTRAL | FAIL | PARTIAL | VERDICT_UNSPECIFIED (raw from the API)
+  googleLastCrawl DateTime?
+  googleCanonical String?   // Google-selected canonical, when it differs from the URL it is worth showing
+  googleNextCheck DateTime? // when the auto-inspection queue may pick this URL again (T4)
 
   // XML River check
   xrStatus      String?   // "indexed" | "not_indexed" | "error"
@@ -300,6 +322,7 @@ model SitemapUrl {
   @@index([siteId])
   @@index([siteId, inventoryStatus])
   @@index([siteId, changeStatus])
+  @@index([siteId, googleNextCheck])
 }
 
 // A one-off X-ray of any domain — usually somebody else's.
@@ -1996,4 +2019,145 @@ model SerpProjectHost {
 
   @@id([projectId, hostId])
   @@index([projectId, keywords])
+}
+
+// ─── Uptime monitor (T2) ─────────────────────────────────────────────────────
+// One HTTP check per site every intervalMin. Raw checks are kept 7 days; UptimeDaily keeps the
+// long history (uptime %, latency) forever at one row per monitor per UTC day. An incident is
+// opened after failThreshold consecutive failures and closed by the first success after it.
+model UptimeMonitor {
+  id               String    @id @default(cuid())
+  siteId           String    @unique
+  enabled          Boolean   @default(true)
+  url              String                        // absolute https URL; default = site root
+  intervalMin      Int       @default(5)         // one of UPTIME_INTERVALS
+  timeoutMs        Int       @default(15000)
+  acceptStatus     String    @default("200-399") // ranges/codes, comma-separated: "200-399,401"
+  keyword          String    @default("")        // must appear in the body when non-empty
+  slowMs           Int       @default(5000)      // above this → degraded (still "up" for alerts)
+  failThreshold    Int       @default(2)
+  alerts           Boolean   @default(true)
+  status           String    @default("unknown") // UptimeStatus
+  statusSince      DateTime?
+  consecutiveFails Int       @default(0)
+  lastCheckedAt    DateTime?
+  lastLatencyMs    Int?
+  lastHttpStatus   Int?
+  lastError        String?                       // UptimeCause code + short detail, ≤ 300 chars
+  nextCheckAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  site      Site             @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  checks    UptimeCheck[]
+  daily     UptimeDaily[]
+  incidents UptimeIncident[]
+
+  @@index([enabled, nextCheckAt])
+}
+
+model UptimeCheck {
+  id         String   @id @default(cuid())
+  monitorId  String
+  checkedAt  DateTime @default(now())
+  ok         Boolean
+  httpStatus Int?
+  latencyMs  Int?
+  cause      String?  // UptimeCause when !ok
+  detail     String?  // ≤ 300 chars
+
+  monitor UptimeMonitor @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+
+  @@index([monitorId, checkedAt])
+  @@index([checkedAt])
+}
+
+model UptimeDaily {
+  monitorId  String
+  day        String   // "YYYY-MM-DD", UTC
+  checks     Int      @default(0)
+  fails      Int      @default(0)
+  latencySum Int      @default(0) // over successful checks only
+  latencyMax Int      @default(0)
+  downMs     Int      @default(0) // incident time falling inside this day
+
+  monitor UptimeMonitor @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+
+  @@id([monitorId, day])
+}
+
+model UptimeIncident {
+  id          String    @id @default(cuid())
+  monitorId   String
+  startedAt   DateTime  // time of the FIRST failed check of the streak, not of confirmation
+  endedAt     DateTime?
+  cause       String    // UptimeCause of the confirming check
+  detail      String?
+  httpStatus  Int?
+  alertedDown Boolean   @default(false)
+  alertedUp   Boolean   @default(false)
+  lastReminderAt DateTime?
+
+  monitor UptimeMonitor @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+
+  @@index([monitorId, startedAt])
+  @@index([endedAt])
+}
+
+// ─── URL Inspection quota ledger (T4) ─────────────────────────────────────────
+// Google's URL Inspection quota is 2000/day and 600/min PER PROPERTY, reset at midnight
+// America/Los_Angeles. Every inspection from any path (manual button, MCP inspect_url, the
+// auto queue) increments the same row, so the auto queue never starves the manual button.
+model InspectionQuota {
+  property String   // Site.siteId, e.g. "sc-domain:example.com"
+  day      String   // "YYYY-MM-DD" in America/Los_Angeles
+  used     Int      @default(0)
+  auto     Int      @default(0) // part of `used` spent by the auto queue
+  errors   Int      @default(0)
+  exhaustedAt DateTime?        // set on a quota error from Google; the queue stops for this day
+
+  @@id([property, day])
+}
+
+// One row per site per UTC day, written once a day by the T4 scheduler from SitemapUrl.
+model IndexCoverageDaily {
+  siteId     String
+  day        String   // "YYYY-MM-DD", UTC
+  total      Int      @default(0) // active sitemap URLs
+  indexed    Int      @default(0)
+  notIndexed Int      @default(0)
+  unknown    Int      @default(0) // never inspected
+  reasons    String?  // JSON: Record<coverageState, count> for notIndexed
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@id([siteId, day])
+}
+
+// ─── Brand mentions (T6) ─────────────────────────────────────────────────────
+model BrandMention {
+  id          String    @id @default(cuid())
+  siteId      String
+  source      String    // MentionSource
+  kind        String    @default("mention") // MentionKind
+  term        String    // the watched term that matched
+  url         String
+  urlKey      String    // normalizeMentionUrl(url) — dedupe key, ≤ 191 chars (sha1 hex when longer)
+  title       String    @default("")
+  snippet     String    @default("")
+  publisher   String    @default("")
+  lang        String    @default("")
+  publishedAt DateTime?
+  firstSeenAt DateTime  @default(now())
+  linkStatus  String    @default("unchecked") // MentionLinkStatus
+  linkCheckedAt DateTime?
+  reviewed    Boolean   @default(false)
+  dismissed   Boolean   @default(false)
+  notifiedAt  DateTime?
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@unique([siteId, source, urlKey])
+  @@index([siteId, firstSeenAt])
+  @@index([siteId, dismissed, reviewed])
 }
