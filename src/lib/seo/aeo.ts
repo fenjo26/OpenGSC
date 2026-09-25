@@ -8,6 +8,9 @@
 //   Claude      Messages API + the server-side `web_search` tool.
 //   Grok        chat/completions + xAI Live Search (`search_parameters`).
 //   Gemini      generateContent + the `google_search` grounding tool (T7).
+//   AI Overviews the block Google itself shows above its SERP for the question (N7) — no
+//              model is asked anything; the question is run through DataForSEO SER Advanced
+//              or A-Parser SE::Google and the ai_overview element is read off the page.
 //
 // Three things were wrong with the previous version and are worth stating so they don't come
 // back. (1) `tool_choice: "auto"` on a mini model meant the model usually skipped the search
@@ -24,12 +27,19 @@
 import { defaultModelFor } from "@/lib/providerDefaults";
 import { loggedFetch, type CallHandle } from "@/lib/providerLog/log";
 import { usageFrom } from "@/lib/providerLog/tokens";
+import { aparserOneRequest, parserResultProblem, type AparserCreds } from "./aparser";
+import { aparserSerpOptions, captchaShows, describeAparserRow } from "./aparserSerp";
+import { DFS_LOC, dfsCostUsd } from "./serp";
+import { defaultLanguageFor } from "./regions";
 
-export type AeoEngine = "chatgpt" | "perplexity" | "claude" | "grok" | "gemini";
+export type AeoEngine = "chatgpt" | "perplexity" | "claude" | "grok" | "gemini" | "ai_overview";
 
 // "cited" — our domain is linked in the answer. "mentioned" — the brand is named in the prose
 // but nothing links to us (real, and worth seeing, but a weaker outcome than a citation).
-export type AeoStatus = "cited" | "mentioned" | "absent";
+// "no_overview" — Google served the SERP but showed no AI Overview block for this question
+// (ai_overview engine only). That is NOT "not cited": the engine never had a chance to cite
+// anyone, so it is a separate state and is kept out of every share-of-voice denominator.
+export type AeoStatus = "cited" | "mentioned" | "absent" | "no_overview";
 
 export interface AeoCitation { url: string; domain: string; title: string }
 
@@ -62,6 +72,10 @@ export interface AeoRunOptions {
   language?: string | null;
   /** Base URL for custom endpoints / proxies */
   baseUrl?: string | null;
+  /** The "ai_overview" engine's supplier: a DataForSEO key or the owner's A-Parser connection.
+   *  Unlike every other engine there is no API key of Google's to pass — the overview is read
+   *  off a regular SERP, so whoever fetches that SERP is the provider. */
+  aio?: AioContext | null;
 }
 
 // Used only when the site has no model chosen and the picker could not list the account's
@@ -73,7 +87,7 @@ export interface AeoRunOptions {
 // shallowly, or skip the search entirely, and that was the single biggest source of false
 // "not cited" in this tracker.
 export const AEO_DEFAULT_MODEL = "gpt-5.6-terra";
-export const AEO_ENGINES: AeoEngine[] = ["chatgpt", "perplexity", "claude", "grok", "gemini"];
+export const AEO_ENGINES: AeoEngine[] = ["chatgpt", "perplexity", "claude", "grok", "gemini", "ai_overview"];
 
 // ─── Shared helpers ──────────────────────────────────────────────────────────
 
@@ -625,10 +639,195 @@ export async function checkGemini(apiKey: string, question: string, domain: stri
   }
 }
 
+// ─── Google AI Overviews — the block on Google's own SERP (N7) ────────────────
+
+/** Who fetches the SERP the AI Overview is read from. DataForSEO first, A-Parser as the
+ *  self-hosted alternative — the same preference the brief states. */
+export interface AioContext {
+  provider: "dataforseo" | "aparser";
+  /** DataForSEO credential: "login:password" or the ready Base64 token from the dashboard. */
+  dataForSeoKey?: string;
+  /** A-Parser connection (SE::Google). */
+  aparser?: { baseUrl: string; password: string; configPreset?: string };
+}
+
+/** What an AI Overview parse produced. `noOverview` means the SERP came back fine and Google
+ *  simply showed no overview for the question — a verdict, not an error. */
+export interface AioParseResult {
+  text: string;
+  citations: AeoCitation[];
+  noOverview: boolean;
+}
+
+/** The model label stored on the AeoCheck row for this engine. There is no model — the text is
+ *  Google's own overview — so the label names the source instead, exactly like `model` names the
+ *  answering model on every other engine. */
+export const AIO_MODEL_LABEL = "google-ai-overview";
+
+// One SERP page is all an overview ever needs: the block renders above the organic results.
+const AIO_DEPTH = 10;
+
+// A DataForSEO SERP Advanced response carries the overview as an item of type "ai_overview"
+// alongside the organic rows. The sources have been seen under two keys (`items` in the
+// documented shape, `references` in some revisions) and the domain under `source` or `domain`;
+// every spelling is read, none is assumed. A block with neither text nor sources is treated as
+// absent — an overview we cannot read is not evidence of anything.
+export function parseDataForSeoAiOverview(data: unknown): AioParseResult {
+  const root = data as { tasks?: { result?: { items?: unknown[] }[] }[] } | null;
+  const items = root?.tasks?.[0]?.result?.[0]?.items;
+  const block = (Array.isArray(items) ? items : []).find(
+    (it): it is Record<string, unknown> => !!it && typeof it === "object" && (it as { type?: unknown }).type === "ai_overview",
+  );
+  if (!block) return { text: "", citations: [], noOverview: true };
+
+  const refs: Record<string, unknown>[] = [
+    ...(Array.isArray(block.items) ? (block.items as unknown[]) : []),
+    ...(Array.isArray(block.references) ? (block.references as unknown[]) : []),
+  ].filter((r): r is Record<string, unknown> => !!r && typeof r === "object");
+
+  const citations: AeoCitation[] = [];
+  for (const r of refs) {
+    const url = typeof r.url === "string" ? r.url : "";
+    const domain =
+      (typeof r.domain === "string" && r.domain.trim()) ||
+      (typeof r.source === "string" && r.source.trim()) ||
+      domainOf(url);
+    const title = typeof r.title === "string" ? r.title : "";
+    if (!url && !domain) continue;
+    citations.push({ url, domain, title });
+  }
+
+  let text = typeof block.text === "string" ? block.text.trim() : "";
+  if (!text) {
+    // Item-level texts exist in some revisions — joined they are still the overview's content.
+    const parts = refs.map(r => (typeof r.text === "string" ? r.text.trim() : "")).filter(Boolean);
+    if (parts.length) text = parts.join("\n");
+  }
+
+  if (!text && !citations.length) return { text: "", citations: [], noOverview: true };
+  return { text, citations, noOverview: false };
+}
+
+// A-Parser's SE::Google row reports the overview as two flat fields, `ai_answer` and `ai_type`
+// (both "none" when Google showed no block — confirmed against live SERP Monitor history). No
+// source list travels with them, so citations stay empty and the verdict runs on the text alone;
+// bare URLs in the text are still picked up by `linksFromText` inside `verdict`.
+export function parseAparserAiOverview(row: unknown): AioParseResult {
+  const r = (row ?? {}) as Record<string, unknown>;
+  const asStr = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v)).trim();
+  const aiAnswer = asStr(r.ai_answer);
+  if (!aiAnswer || /^none$/i.test(aiAnswer)) return { text: "", citations: [], noOverview: true };
+  return { text: aiAnswer, citations: [], noOverview: false };
+}
+
+function aioVerdict(host: string, brandTerms: string[], p: AioParseResult): AeoCheckResult {
+  if (p.noOverview) {
+    return {
+      cited: false, mentioned: false, status: "no_overview", url: null, snippet: null, rank: null,
+      answerText: null, citations: [], searched: true, scanned: false, model: AIO_MODEL_LABEL,
+    };
+  }
+  return verdict(host, brandTerms, { text: p.text, citations: p.citations, scanned: [], searched: true, model: AIO_MODEL_LABEL });
+}
+
+async function checkAiOverviewDataForSeo(
+  credential: string, question: string, domain: string, brandTerms: string[], o: AeoRunOptions,
+): Promise<AeoCheckResult> {
+  const host = hostOf(domain);
+  const cred = (credential || "").trim();
+  const auth = cred.includes(":") ? Buffer.from(cred).toString("base64") : cred;
+  const gl = (o.country || "us").toLowerCase();
+  const task = [{
+    keyword: question,
+    language_code: o.language || defaultLanguageFor(gl),
+    location_code: DFS_LOC[gl] ?? 2840,
+    depth: AIO_DEPTH,
+  }];
+
+  try {
+    const { res, call } = await loggedFetch("https://api.dataforseo.com/v3/serp/google/organic/live/advanced", {
+      method: "POST",
+      headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
+      body: JSON.stringify(task),
+      signal: AbortSignal.timeout(45_000),
+    }, { provider: "dataforseo", model: AIO_MODEL_LABEL });
+    const data = await res.json().catch(() => null);
+    const costUsd = dfsCostUsd(data);
+    if (!res.ok) {
+      const error = `ai_overview dataforseo ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`;
+      call.finish({ error, ...(costUsd != null ? { costUsd } : {}) });
+      return failed(error, AIO_MODEL_LABEL);
+    }
+    // The envelope and the task each carry their own status; both are checked, like serp.ts.
+    if (data?.status_code && data.status_code !== 20000) {
+      const error = `ai_overview dataforseo ${data.status_code}: ${data.status_message}`;
+      call.finish({ error, costUsd, responseBody: data });
+      return failed(error, AIO_MODEL_LABEL);
+    }
+    const taskObj = data?.tasks?.[0];
+    if (taskObj?.status_code && taskObj.status_code !== 20000) {
+      const error = `ai_overview dataforseo task ${taskObj.status_code}: ${taskObj.status_message}`;
+      call.finish({ error, costUsd, responseBody: data });
+      return failed(error, AIO_MODEL_LABEL);
+    }
+    call.finish({ ...(costUsd != null ? { costUsd } : {}), responseBody: data });
+    return aioVerdict(host, brandTerms, parseDataForSeoAiOverview(data));
+  } catch (e) {
+    const name = e instanceof Error ? e.name : "";
+    const msg = e instanceof Error ? e.message : String(e);
+    return failed(name === "TimeoutError" || name === "AbortError" ? "timeout" : `ai_overview dataforseo: ${msg}`, AIO_MODEL_LABEL);
+  }
+}
+
+async function checkAiOverviewAparser(
+  creds: AparserCreds | null | undefined, question: string, domain: string, brandTerms: string[], o: AeoRunOptions,
+): Promise<AeoCheckResult> {
+  if (!creds?.baseUrl || !creds.password) return failed("ai_overview aparser: no connection", AIO_MODEL_LABEL);
+  const host = hostOf(domain);
+  const options = aparserSerpOptions({
+    depth: AIO_DEPTH,
+    gl: (o.country || "").toLowerCase(),
+    hl: (o.language || "").toLowerCase(),
+  });
+
+  try {
+    const r = await aparserOneRequest(creds, "SE::Google", question, options, { doLog: true });
+    if (r.error || !r.data) {
+      return failed(`ai_overview aparser: ${r.error || "no answer"}`, AIO_MODEL_LABEL);
+    }
+    const row = Array.isArray(r.data.results) ? r.data.results[0] : null;
+    if (!row || typeof row !== "object") {
+      return failed(`ai_overview aparser: no result row (${describeAparserRow(row, r.data.logs)})`, AIO_MODEL_LABEL);
+    }
+    // An overview that IS there wins over any SERP-side problem — the block is parsed from the
+    // same page the organic rows are. Without one, an empty page must be told apart from "Google
+    // showed no overview": a burnt proxy / captcha is an error, `ai_answer: "none"` is a verdict.
+    const parsed = parseAparserAiOverview(row);
+    if (parsed.noOverview) {
+      let problem = parserResultProblem(row, ["serp"]);
+      if (problem === "aparser_parser_failed" && captchaShows(row) > 0) problem = "aparser_blocked_or_empty";
+      if (problem) return failed(`ai_overview aparser: ${problem} (${describeAparserRow(row, r.data.logs)})`, AIO_MODEL_LABEL);
+    }
+    return aioVerdict(host, brandTerms, parsed);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return failed(`ai_overview aparser: ${msg}`, AIO_MODEL_LABEL);
+  }
+}
+
+export async function checkAiOverview(
+  ctx: AioContext | null | undefined, question: string, domain: string, brandTerms: string[], o: AeoRunOptions = {},
+): Promise<AeoCheckResult> {
+  if (!ctx) return failed("no_aio_provider", AIO_MODEL_LABEL);
+  if (ctx.provider === "dataforseo") return checkAiOverviewDataForSeo(ctx.dataForSeoKey || "", question, domain, brandTerms, o);
+  return checkAiOverviewAparser(ctx.aparser, question, domain, brandTerms, o);
+}
+
 export async function runAeoCheck(
   engine: AeoEngine, apiKey: string, question: string, domain: string, brandTerms: string[], o: AeoRunOptions = {},
 ): Promise<AeoCheckResult> {
-  if (!apiKey) return failed("no_key");
+  // ai_overview has no key of its own — it runs on whoever fetches the SERP (o.aio).
+  if (engine !== "ai_overview" && !apiKey) return failed("no_key");
   const terms = brandTermsFor(hostOf(domain), brandTerms);
   switch (engine) {
     case "chatgpt": return checkChatGpt(apiKey, question, domain, terms, o);
@@ -636,5 +835,6 @@ export async function runAeoCheck(
     case "claude": return checkClaude(apiKey, question, domain, terms, o);
     case "grok": return checkGrok(apiKey, question, domain, terms, o);
     case "gemini": return checkGemini(apiKey, question, domain, terms, o);
+    case "ai_overview": return checkAiOverview(o.aio, question, domain, terms, o);
   }
 }
