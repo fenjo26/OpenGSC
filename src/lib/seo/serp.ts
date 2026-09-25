@@ -9,6 +9,10 @@ import {
   APARSER_SERP_OPTION_IDS, APARSER_SERP_PARSERS, aparserSerpOptions, describeAparserRow, mapAparserSerp,
 } from "./aparserSerp";
 import { aparserOneRequest, resolveBaseUrl, type AparserCreds } from "./aparser";
+import {
+  dfsLocationParams, parseAparserLocal, parseDfsLocalPack, parseSerperPlaces, supportsLocation,
+  type LocalPackEntry,
+} from "./localPack";
 
 export type SerpEngine = "google" | "bing" | "yandex";
 
@@ -100,6 +104,15 @@ export interface SerpResponse {
   features?: string[];
   /** A-Parser only: positions left empty because the provider mis-resolved their link, with the title Google showed there. */
   repairedRows?: { position: number; title: string }[];
+  /**
+   * wave-nov N3: the SERP's map pack (the three businesses on the map), top three only.
+   * Present ONLY on geolocated requests (`location` set) — calls without a location get the
+   * same response they always did, byte for byte, because SERP Monitor and SEO Tools also call
+   * `runSerp` and their snapshots must not grow new fields.
+   */
+  localPack?: LocalPackEntry[];
+  /** true/false = the provider said pack / no pack; null/undefined = it does not say (A-Parser builds without a local block). */
+  hasLocalPack?: boolean | null;
   error?: string;
   /**
    * Human-readable context for `error`, when the provider has any: what the answer contained and
@@ -193,7 +206,18 @@ async function serperSearch(
     if (results.length >= want) break;
   }
 
-  return { engine, provider: "serper", keyword, results: results.slice(0, want), peopleAlsoAsk: paa, relatedSearches: related };
+  // wave-nov N3: the map pack rides on page 1 of the answer. Read ONLY on geolocated queries,
+  // so a country-level call returns exactly the response it did before this field existed.
+  const local = opts.location
+    ? {
+        localPack: parseSerperPlaces(page1.data.places),
+        // Serper parses the whole SERP and omits `places` when there is no pack, so its
+        // absence is an answer ("no pack"), not a shrug.
+        hasLocalPack: Array.isArray(page1.data.places) && page1.data.places.length > 0,
+      }
+    : {};
+
+  return { engine, provider: "serper", keyword, results: results.slice(0, want), peopleAlsoAsk: paa, relatedSearches: related, ...local };
 }
 
 // ─── DataForSEO ──────────────────────────────────────────────────────────────
@@ -243,12 +267,17 @@ async function dataForSeoSearch(
   const cred = (credential || "").trim();
   const auth = cred.includes(":") ? Buffer.from(cred).toString("base64") : cred;
 
-  const task = [{
+  // wave-nov N3: a geolocated query replaces location_code with location_name /
+  // location_coordinate (the API refuses a task carrying both). An unrecognised name comes
+  // back as an error naming the location — that surfaces as `location_unknown`, never as an
+  // empty SERP that would read as "ranked nowhere".
+  const task: Record<string, unknown> = {
     keyword,
     language_code: opts.hl || defaultLanguageFor(opts.gl || "us"),
-    location_code: DFS_LOC[(opts.gl || "us").toLowerCase()] ?? 2840,
     depth: opts.num || 10,
-  }];
+  };
+  if (opts.location) Object.assign(task, dfsLocationParams(opts.location));
+  else task.location_code = DFS_LOC[(opts.gl || "us").toLowerCase()] ?? 2840;
 
   let res: Response;
   let call: CallHandle;
@@ -256,7 +285,7 @@ async function dataForSeoSearch(
     ({ res, call } = await loggedFetch(path, {
       method: "POST",
       headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
-      body: JSON.stringify(task),
+      body: JSON.stringify([task]),
       signal: AbortSignal.timeout(45000),
     }, { provider: "dataforseo" }));
   } catch (e: any) {
@@ -269,18 +298,24 @@ async function dataForSeoSearch(
   }
   const data = await res.json();
   // The one provider in this file that states what the request cost, in dollars, in the
-  // response itself. Read, never computed — an absent or non-numeric `cost` stays null.
+  // response itself. Read, never computed — an absent or non-finite `cost` stays null.
   const costUsd = dfsCostUsd(data);
+  // An error whose own message names the location is a location the API could not resolve —
+  // report it as the code the tracker and the UI know, with the API's wording as detail.
+  const locationUnknown = (msg: unknown): string | null =>
+    /location/i.test(String(msg ?? "")) ? "location_unknown" : null;
   if (data?.status_code && data.status_code !== 20000) {
-    const error = `dataforseo ${data.status_code}: ${data.status_message}`;
+    const locErr = locationUnknown(data.status_message);
+    const error = locErr ?? `dataforseo ${data.status_code}: ${data.status_message}`;
     call.finish({ error, costUsd, responseBody: data });
-    return { engine, provider: "dataforseo", keyword, results: [], error };
+    return { engine, provider: "dataforseo", keyword, results: [], error, ...(locErr ? { errorDetail: `dataforseo ${data.status_code}: ${data.status_message}` } : {}) };
   }
   const taskObj = data?.tasks?.[0];
   if (taskObj?.status_code && taskObj.status_code !== 20000) {
-    const error = `dataforseo task ${taskObj.status_code}: ${taskObj.status_message}`;
+    const locErr = locationUnknown(taskObj.status_message);
+    const error = locErr ?? `dataforseo task ${taskObj.status_code}: ${taskObj.status_message}`;
     call.finish({ error, costUsd, responseBody: data });
-    return { engine, provider: "dataforseo", keyword, results: [], error };
+    return { engine, provider: "dataforseo", keyword, results: [], error, ...(locErr ? { errorDetail: `dataforseo task ${taskObj.status_code}: ${taskObj.status_message}` } : {}) };
   }
   call.finish({ costUsd, responseBody: data });
   const items: any[] = taskObj?.result?.[0]?.items ?? [];
@@ -295,8 +330,16 @@ async function dataForSeoSearch(
   const paa = items.filter((it) => it.type === "people_also_ask")
     .flatMap((it) => (it.items ?? []).map((q: any) => q.title)).filter(Boolean);
   const related = items.filter((it) => it.type === "related_searches")
-    .flatMap((it) => it.items ?? []).filter(Boolean);
-  return { engine, provider: "dataforseo", keyword, results, peopleAlsoAsk: paa, relatedSearches: related };
+    .flatMap((it) => (it.items ?? [])).filter(Boolean);
+  // wave-nov N3, geolocated queries only: items of type "local_pack" are the map pack, one
+  // item per business. DataForSEO parses every SERP feature, so "no such item" = no pack.
+  const local = opts.location
+    ? (() => {
+        const localPack = parseDfsLocalPack(items);
+        return { localPack, hasLocalPack: localPack.length > 0 || items.some((it) => it?.type === "local_pack") };
+      })()
+    : {};
+  return { engine, provider: "dataforseo", keyword, results, peopleAlsoAsk: paa, relatedSearches: related, ...local };
 }
 
 // ─── ScrapingRobot ───────────────────────────────────────────────────────────
@@ -483,8 +526,10 @@ async function scrapingRobotSearch(
 
 // ─── GoAnyAPI ─────────────────────────────────────────────────────────────────
 // Cached Google SERPs with Ahrefs-style strength metrics attached to every result. Two
-// parameters only (`keyword`, `country`) — no language, no depth, no device — so `hl`, `num` and
-// `location` are accepted and ignored rather than silently changing the answer.
+// parameters only (`keyword`, `country`) — no language, no depth, no device — so `hl` and
+// `num` are accepted and ignored rather than silently changing the answer. `location` is the
+// exception (wave-nov N3): `runSerp` refuses it outright, because a cached country SERP
+// returned as a city position is not a degraded answer, it is a wrong one.
 
 async function goAnySearch(
   apiKey: string,
@@ -553,6 +598,13 @@ const SELF_HOSTED_PROVIDERS = new Set<string>(["aparser"]);
 
 const APARSER_SERP_TIMEOUT_MS = 180_000; // ten pages outrun two minutes on slow proxies
 
+/**
+ * The SE::Google preset's own option id for geo-targeting a query (verified on a live
+ * instance during SERP Monitor's history — the same class of undocumented id as `gl`/`hl`
+ * above, which is why it is named here and not guessed at the call site).
+ */
+const APARSER_LOCAL_OPTION_ID = "location";
+
 async function aparserSearch(
   password: string,
   keyword: string,
@@ -570,12 +622,16 @@ async function aparserSearch(
   const want = opts.num || 10;
   const gl = (opts.gl || "us").toLowerCase();
   const hl = opts.hl || defaultLanguageFor(gl);
+  const loc = String(opts.location ?? "").trim();
   const creds: AparserCreds = {
     baseUrl: base.url,
     password,
     configPreset: opts.configPreset || undefined,
   };
   const options = aparserSerpOptions({ depth: want, gl, hl });
+  // wave-nov N3: the geo is the load-bearing parameter of a local check, so it rides with the
+  // depth override — and the degraded retry below keeps it, dropping only gl/hl.
+  if (loc) options.push({ type: "override", id: APARSER_LOCAL_OPTION_ID, value: loc });
   const parserPreset = (opts.aparserPreset || "").trim() || "default";
 
   let r = await aparserOneRequest(creds, APARSER_SERP_PARSERS.google, keyword, options, { preset: parserPreset, timeoutMs: APARSER_SERP_TIMEOUT_MS, doLog: true });
@@ -584,9 +640,13 @@ async function aparserSearch(
     // already carries the right country/language is still a workable setup, so retry with the
     // depth override alone rather than failing every keyword at once; the same trade the GEO
     // A-Parser engine makes. (Depth lost too would shorten snapshots silently, which is why it
-    // is retried with, not without.)
+    // is retried with, not without.) A LOCAL query keeps its location in the retry: dropping
+    // the geo would answer a different question and store it under the local keyword.
+    const keep = loc
+      ? [APARSER_SERP_OPTION_IDS.pagecount, APARSER_LOCAL_OPTION_ID]
+      : [APARSER_SERP_OPTION_IDS.pagecount];
     r = await aparserOneRequest(creds, APARSER_SERP_PARSERS.google, keyword,
-      options.filter((o) => o.id === APARSER_SERP_OPTION_IDS.pagecount), { preset: parserPreset, timeoutMs: APARSER_SERP_TIMEOUT_MS, doLog: true });
+      options.filter((o) => keep.includes(o.id)), { preset: parserPreset, timeoutMs: APARSER_SERP_TIMEOUT_MS, doLog: true });
   }
   if (!r.data) {
     return { engine, provider: "aparser", keyword, results: [], error: r.error ?? "aparser_failed" };
@@ -601,6 +661,10 @@ async function aparserSearch(
       errorDetail: `${mapped.problem}${mapped.problemDetail ? ` (${mapped.problemDetail})` : ""} · ${describeAparserRow(Array.isArray(r.data.results) ? row : r.data.results, r.data.logs)}`,
     };
   }
+  // wave-nov N3: read the pack ONLY on geolocated queries, and only if the row carries a local
+  // block at all — the live-probe fixtures have none, so on the builds we know the honest
+  // answer is "provider does not say" (hasLocalPack: null), never a guessed empty pack.
+  const local = loc ? parseAparserLocal(row) : null;
   return {
     engine,
     provider: "aparser",
@@ -609,6 +673,7 @@ async function aparserSearch(
     ...(mapped.totalCount !== "" ? { totalCount: mapped.totalCount } : {}),
     ...(mapped.features.length ? { features: mapped.features } : {}),
     ...(mapped.repaired?.length ? { repairedRows: mapped.repaired } : {}),
+    ...(local ? { hasLocalPack: local.hasPack, ...(local.pack.length ? { localPack: local.pack } : {}) } : {}),
   };
 }
 
@@ -630,6 +695,15 @@ export async function runSerp(
   const engineProblem = unsupportedEngine(provider, engine);
   if (engineProblem) {
     return { engine, provider, keyword, results: [], error: engineProblem };
+  }
+  // wave-nov N3: a provider with no location parameter would answer a geolocated query at
+  // country level, and that answer would be stored under a city keyword — a wrong position
+  // the history keeps. Refused before any request; the tracker and its UI know this code.
+  if (opts.location && !supportsLocation(provider)) {
+    return {
+      engine, provider, keyword, results: [], error: "location_unsupported",
+      errorDetail: `${provider} takes no location parameter, so it cannot answer a city-level query. Pick Serper, DataForSEO or A-Parser in Settings → SEO Tools.`,
+    };
   }
   try {
     if (provider === "aparser") return await aparserSearch(apiKey, keyword, opts);

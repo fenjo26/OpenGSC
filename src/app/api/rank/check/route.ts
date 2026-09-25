@@ -3,6 +3,7 @@ import { authOptions } from "@/lib/auth";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { getUserSerpCreds, checkSiteKeywords } from "@/lib/rank";
+import { reportLocalPackChanges } from "@/lib/rankScheduler";
 
 // POST /api/rank/check  { siteId, keywordId?, force? }
 // Runs SERP checks now: one keyword (keywordId), all stale (default), or all (force).
@@ -30,6 +31,12 @@ export async function POST(req: Request) {
     before,
     limit: creds.provider === "aparser" ? 5 : 20,
   });
+
+  // wave-nov N3: a manual check reports map-pack moves through the same once-a-day reporter
+  // the scheduler uses (AlertEvent dedupe `lp:<siteId>:<utcDay>` keeps it to one message).
+  if (result.packChanges?.length) {
+    await reportLocalPackChanges(userId, siteId, site.url, result.packChanges);
+  }
 
   return NextResponse.json({ ok: true, provider: creds.provider, fallbackProvider: creds.fallback?.provider ?? null, ...result });
 }

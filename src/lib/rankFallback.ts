@@ -8,12 +8,39 @@
 // A check that fails everywhere is stored as an error and keeps the last known position — never
 // as "not found".
 
+import { supportsLocation, type LocalPackEntry } from "./seo/localPack";
+
 export interface RankAttempt {
   position: number | null;
   url: string | null;
   depth: number;
   error?: string;
   provider: string;
+  /**
+   * wave-nov N3: the SERP's map pack, when the check was geolocated and the provider reported
+   * one. Carried through `checkWithFallback` untouched (the spreads below keep unknown fields),
+   * because a fallback that answered must bring its OWN pack, not inherit the failed
+   * primary's fragments.
+   */
+  localPack?: LocalPackEntry[];
+  hasLocalPack?: boolean | null;
+}
+
+/**
+ * wave-nov N3: is the configured fallback eligible for a geolocated check? A provider without
+ * a location parameter would answer the COUNTRY SERP, and the tracker would store it as the
+ * city position — the exact lie CONTRACT.md §0.2/§0.3 exists to prevent. Such a fallback is
+ * dropped for local keywords (the primary's error is stored as-is), and kept for everything
+ * else.
+ */
+export function fallbackForLocation(
+  fallback: string | null | undefined,
+  location: string | null | undefined,
+): string | null {
+  const id = String(fallback ?? "").trim();
+  if (!id) return null;
+  if (location && !supportsLocation(id)) return null;
+  return id;
 }
 
 export interface RankOutcome extends RankAttempt {
