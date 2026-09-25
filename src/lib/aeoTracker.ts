@@ -5,8 +5,9 @@
 import { prisma } from "@/lib/prisma";
 import {
   runAeoCheck, AEO_ENGINES, AEO_DEFAULT_MODEL, hostOf,
-  type AeoEngine, type AeoCheckResult, type AeoRunOptions, type AeoStatus,
+  type AeoEngine, type AeoCheckResult, type AeoRunOptions, type AeoStatus, type AioContext,
 } from "@/lib/seo/aeo";
+import { getAparserServerCreds } from "@/lib/seo/aparserServerCreds";
 import { rawQuery } from "@/lib/db/raw";
 
 export const AEO_STALE_MS = 24 * 60 * 60 * 1000; // daily — AEO checks cost real money per engine
@@ -27,6 +28,9 @@ export interface AeoCreds {
   perplexityModel?: string;
   grokModel?: string;
   geminiModel?: string;
+  /** The ai_overview engine has no key of Google's to pass — this names who fetches the SERP
+   *  the overview is read from (DataForSEO key, else the owner's A-Parser connection). */
+  ai_overview?: AioContext;
 }
 
 // Reads the user's server-side settings snapshot (User.seoSettings — the same mirror
@@ -34,39 +38,59 @@ export interface AeoCreds {
 // provider keys (aiKey_openai / aiKey_anthropic / aiKey_gemini, already used for content
 // generation — the Gemini one is the "Google Gemini" provider in Settings → API keys, mirrored
 // here by SeoKeysSync); Perplexity/Grok are AEO-specific keys (seoKey_perplexity / seoKey_xai)
-// set alongside the SEO Tools SERP keys in Settings → SEO Tools.
+// set alongside the SEO Tools SERP keys in Settings → SEO Tools. The ai_overview engine rides
+// on the SERP infrastructure: the DataForSEO key (seoKey_dataforseo) when present, else the
+// owner's A-Parser connection — DataForSEO first because it needs no instance of one's own.
 export async function getUserAeoCreds(userId: string): Promise<AeoCreds> {
+  let s: Record<string, unknown> = {};
   try {
     const rows = await rawQuery<{ seoSettings?: string | null }[]>(
       `SELECT seoSettings FROM "User" WHERE id = ?`, userId,
     );
     const raw = rows?.[0]?.seoSettings;
-    if (!raw) return {};
-    const s = JSON.parse(raw);
-    return {
-      chatgpt: s["aiKey_openai"] || undefined,
-      claude: s["aiKey_anthropic"] || undefined,
-      gemini: s["aiKey_gemini"] || undefined,
-      perplexity: s["seoKey_perplexity"] || undefined,
-      grok: s["seoKey_xai"] || undefined,
-      chatgptBaseUrl: s["aiBaseUrl_openai"] || undefined,
-      claudeBaseUrl: s["aiBaseUrl_anthropic"] || undefined,
-      geminiBaseUrl: s["aiBaseUrl_gemini"] || undefined,
-      perplexityBaseUrl: s["seoBaseUrl_perplexity"] || undefined,
-      grokBaseUrl: s["seoBaseUrl_xai"] || undefined,
-      chatgptModel: s["aiModel_openai"] || undefined,
-      claudeModel: s["aiModel_anthropic"] || undefined,
-      geminiModel: s["aiModel_gemini"] || undefined,
-      perplexityModel: s["seoModel_perplexity"] || undefined,
-      grokModel: s["seoModel_xai"] || undefined,
-    };
-  } catch {
-    return {};
+    if (raw) s = JSON.parse(raw);
+  } catch { s = {}; }
+
+  let aiOverview: AioContext | undefined;
+  const dfsKey = String(s["seoKey_dataforseo"] ?? "").trim();
+  if (dfsKey) {
+    aiOverview = { provider: "dataforseo", dataForSeoKey: dfsKey };
+  } else {
+    // getAparserServerCreds pings to pick between env/settings passwords (cached a minute), so
+    // it is only consulted when it can actually decide the engine's availability.
+    const ap = await getAparserServerCreds(userId);
+    if (ap) aiOverview = { provider: "aparser", aparser: { baseUrl: ap.baseUrl, password: ap.password, ...(ap.configPreset ? { configPreset: ap.configPreset } : {}) } };
   }
+
+  // Settings values arrive as unknown JSON; a non-string at any of these slots is "not set",
+  // never a crash on the read path.
+  const str = (key: string): string | undefined => {
+    const v = s[key];
+    return typeof v === "string" && v ? v : undefined;
+  };
+
+  return {
+    chatgpt: str("aiKey_openai"),
+    claude: str("aiKey_anthropic"),
+    gemini: str("aiKey_gemini"),
+    perplexity: str("seoKey_perplexity"),
+    grok: str("seoKey_xai"),
+    chatgptBaseUrl: str("aiBaseUrl_openai"),
+    claudeBaseUrl: str("aiBaseUrl_anthropic"),
+    geminiBaseUrl: str("aiBaseUrl_gemini"),
+    perplexityBaseUrl: str("seoBaseUrl_perplexity"),
+    grokBaseUrl: str("seoBaseUrl_xai"),
+    chatgptModel: str("aiModel_openai"),
+    claudeModel: str("aiModel_anthropic"),
+    geminiModel: str("aiModel_gemini"),
+    perplexityModel: str("seoModel_perplexity"),
+    grokModel: str("seoModel_xai"),
+    ai_overview: aiOverview,
+  };
 }
 
 export function hasAnyAeoCreds(creds: AeoCreds): boolean {
-  return !!(creds.chatgpt || creds.perplexity || creds.claude || creds.grok || creds.gemini);
+  return !!(creds.chatgpt || creds.perplexity || creds.claude || creds.grok || creds.gemini || creds.ai_overview);
 }
 
 // Site.brandedKeywords is JSON array text (e.g. '["ikea","ikea chair"]'); tolerate a plain
@@ -164,10 +188,15 @@ export async function checkTrackedQuestion(
   try { lastResults = q.lastResults ? JSON.parse(q.lastResults) : {}; } catch { lastResults = {}; }
 
   for (const engine of AEO_ENGINES) {
-    const key = creds[engine];
-    if (!key) continue; // engine not configured — leave its last known state untouched
+    // The ai_overview engine runs on the SERP context instead of a key; every other engine
+    // needs its own key or its last known state stays untouched.
+    if (engine === "ai_overview" && !creds.ai_overview) continue;
+    const key = engine === "ai_overview" ? "aio" : creds[engine as Exclude<AeoEngine, "ai_overview">];
+    if (!key) continue;
     const engineOpts: AeoRunOptions = { ...cfg.options };
-    if (engine === "claude") {
+    if (engine === "ai_overview") {
+      engineOpts.aio = creds.ai_overview ?? null;
+    } else if (engine === "claude") {
       if (creds.claudeBaseUrl) engineOpts.baseUrl = creds.claudeBaseUrl;
       if (creds.claudeModel) engineOpts.model = creds.claudeModel;
     } else if (engine === "chatgpt") {
