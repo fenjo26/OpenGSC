@@ -20,6 +20,8 @@ import { loadSyncedAt, rememberSyncedAt, fetchSyncState, watchSync, type SyncSta
 import { marketFor } from "@/lib/seo/market";
 import { usePersistedState, isGscPeriod, isIsoDate, isSearchType } from "@/lib/usePersistedState";
 import { getAhrefsDrKey } from "@/lib/seo/keys";
+import UptimeDot from "@/components/uptime/UptimeDot";
+import type { UptimeBadge } from "@/lib/uptime/types";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Metric = "clicks" | "impressions" | "ctr" | "position";
@@ -27,6 +29,7 @@ type SortBy = "az" | "total" | "growth" | "growth_pct" | "decline" | "decline_im
 type Comparison = "disabled" | "previous" | "yoy" | "prev_month";
 type SearchType = "web" | "discover" | "news" | "image" | "video";
 type BrandedFilter = "all" | "branded" | "nonbranded";
+type UptimeFilter = "all" | "issues" | "down" | "up";
 
 // ─── Metric config ────────────────────────────────────────────────────────────
 const MC = {
@@ -637,6 +640,33 @@ function PortfolioPageContent() {
   const tagsInitialized = useRef(false);
   const [exportSite, setExportSite] = useState<string | null>(null);
 
+  // ─── Uptime (T2) ───────────────────────────────────────────────────────────
+  // One GET /api/uptime/status on load and every 60 s while the tab is visible. A hidden tab
+  // skips its ticks (no pointless load), the map is siteDbId → badge. Plain useState, the same
+  // as the neighboring tag/market filters — a filter the neighbors do not persist, this one
+  // does not persist either.
+  const [uptimeMap, setUptimeMap] = useState<Record<string, UptimeBadge>>({});
+  const [uptimeNotifyDegraded, setUptimeNotifyDegraded] = useState(false);
+  const [uptimeFilter, setUptimeFilter] = useState<UptimeFilter>("all");
+  useEffect(() => {
+    let stopped = false;
+    const load = () => {
+      fetch("/api/uptime/status")
+        .then(r => r.json())
+        .then(d => {
+          if (stopped || !Array.isArray(d.badges)) return; // 401 / notMigrated → no dots, no lie
+          const map: Record<string, UptimeBadge> = {};
+          for (const b of d.badges as UptimeBadge[]) map[b.siteId] = b;
+          setUptimeMap(map);
+          setUptimeNotifyDegraded(d.notifyDegraded === true);
+        })
+        .catch(() => {});
+    };
+    load();
+    const timer = setInterval(() => { if (document.visibilityState === "visible") load(); }, 60_000);
+    return () => { stopped = true; clearInterval(timer); };
+  }, []);
+
   const [activeMetrics, setActiveMetrics] = useState<Set<Metric>>(new Set(["clicks", "impressions", "ctr", "position"]));
   // Line vs candles (Settings → Preferences → Charts), hydration-safe.
   const chartTypePref = useChartTypePref();
@@ -939,6 +969,7 @@ function PortfolioPageContent() {
     filterDimension !== null && filterText.trim() !== "",
     !!activeTag,
     !!activeMarket,
+    uptimeFilter !== "all",
   ].filter(Boolean).length;
 
   // Fetch Ahrefs DR for all dashboard domains (chunked; server caches 7 days).
@@ -1018,6 +1049,14 @@ function PortfolioPageContent() {
       if (branded === "nonbranded" && brandedRatio(s.url) >= 0.45) return false;
       if (activeTag && !(siteTags[s.id] || []).includes(activeTag)) return false;
       if (activeMarket && !marketMatch(s)) return false;
+      // Uptime status filter: down/up strictly; "issues" = offline or slow. Sites without a
+      // monitor (no badge) survive only under "all" — not being watched is not a status.
+      if (uptimeFilter !== "all") {
+        const st = uptimeMap[s.id]?.status;
+        if (uptimeFilter === "issues" && st !== "down" && st !== "degraded") return false;
+        if (uptimeFilter === "down" && st !== "down") return false;
+        if (uptimeFilter === "up" && st !== "up") return false;
+      }
       // Portfolio dimension filters work on domain/position, so they apply to every engine.
       if (filterText.trim() && filterText !== "__longtail__") {
         const txt = filterText.trim().toLowerCase();
@@ -1089,13 +1128,30 @@ function PortfolioPageContent() {
   const isArchived  = (s: { archivedAt?: string | null }) => Boolean(s.archivedAt);
   const archivedSites = filtered.filter(isArchived);
   const liveFiltered  = filtered.filter(s => !isArchived(s));
-  const favSites    = liveFiltered.filter(s => favorites.has(s.id) && !hidden.has(s.id));
-  const restSites   = liveFiltered.filter(s => !favorites.has(s.id) && !hidden.has(s.id));
+  // "Needs attention": down sites (and slow ones when the workspace asked to be alerted about
+  // slow). Hidden and archived never join — being shelved is not being down. The group sits
+  // ABOVE favorites and its members are not repeated below, so it reads as "look here first"
+  // without breaking whatever sort the user chose. Plain computation (no useMemo): `filtered`
+  // above is not memoized either, and building a Set here is cheaper than preserving one.
+  const needsAttentionIds = new Set<string>();
+  for (const s of liveFiltered) {
+    if (hidden.has(s.id)) continue;
+    const st = uptimeMap[s.id]?.status;
+    if (st === "down" || (st === "degraded" && uptimeNotifyDegraded)) needsAttentionIds.add(s.id);
+  }
+  const attentionSites = liveFiltered.filter(s => needsAttentionIds.has(s.id) && !hidden.has(s.id));
+  const favSites    = liveFiltered.filter(s => favorites.has(s.id) && !hidden.has(s.id) && !needsAttentionIds.has(s.id));
+  const restSites   = liveFiltered.filter(s => !favorites.has(s.id) && !hidden.has(s.id) && !needsAttentionIds.has(s.id));
   const hiddenSites = liveFiltered.filter(s => hidden.has(s.id));
+  // One warning line over the whole list when the checker itself could not reach the network —
+  // gray dots above sites the server could not honestly judge.
+  const checkerOffline = Object.values(uptimeMap).some(b => b.status === "checker_offline");
+  const uptimeDownCount = Object.values(uptimeMap).filter(b => b.status === "down").length;
 
   // ─── Totals from visible (filtered) sites — respects search/tag/market/branded filters ──
-  // When a tag or market is active, totals are computed only over sites matching it
-  const visibleForTotals = [...favSites, ...restSites].filter(
+  // When a tag or market is active, totals are computed only over sites matching it. The
+  // attention group is a placement, not a filter — its sites stay in the totals.
+  const visibleForTotals = [...attentionSites, ...favSites, ...restSites].filter(
     s => (!activeTag || (siteTags[s.id] || []).includes(activeTag))
       && (!activeMarket || marketMatch(s))
   );
@@ -1397,6 +1453,45 @@ function PortfolioPageContent() {
         );
       })()}
 
+      {/* Uptime status filter — pills like the branded row, from the live badge map. */}
+      {(() => {
+        const counts = { down: 0, degraded: 0, up: 0 };
+        for (const s of sites) {
+          const st = uptimeMap[s.id]?.status;
+          if (st === "down") counts.down++;
+          else if (st === "degraded") counts.degraded++;
+          else if (st === "up") counts.up++;
+        }
+        if (!counts.down && !counts.degraded && !counts.up) return null; // nothing watched yet
+        const pills: { v: UptimeFilter; l: string; n?: number; color: string }[] = [
+          { v: "all", l: t("uptimeFilterAll"), color: "#3B82F6" },
+          { v: "issues", l: t("uptimeFilterIssues"), n: counts.down + counts.degraded, color: "#ff9f0a" },
+          { v: "down", l: t("uptimeStatus_down"), n: counts.down, color: "#ff453a" },
+          { v: "up", l: t("uptimeStatus_up"), n: counts.up, color: "#34c759" },
+        ];
+        return (
+          <>
+            {md}{ms(t("uptimeFilter"))}
+            <div style={{ padding: "4px 14px 10px", display: "flex", gap: "6px", flexWrap: "wrap" }}>
+              {pills.map(({ v, l, n, color }) => {
+                const isActive = uptimeFilter === v;
+                return (
+                  <button key={v} onClick={() => setUptimeFilter(isActive && v !== "all" ? "all" : v)} style={{
+                    padding: "4px 10px", borderRadius: "20px", fontSize: "12px", fontWeight: 500, cursor: "pointer",
+                    border: `1px solid ${isActive ? color : "var(--color-border)"}`,
+                    background: isActive ? "rgba(255,255,255,0.06)" : "transparent",
+                    color: isActive ? color : "var(--color-text-secondary)",
+                  }}>
+                    {l} {n != null && n > 0 && <span style={{ opacity: 0.6 }}>{n}</span>}
+                    {isActive && <span style={{ marginLeft: "5px", fontWeight: 700 }}>✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        );
+      })()}
+
       {md}{ms(t("presetFilters"))}
       <button style={mi(filterDimension === "query" && filterText === "?")}
         onClick={() => { setFilterDimension("query"); setFilterText("?"); }}>
@@ -1535,6 +1630,9 @@ function PortfolioPageContent() {
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={`/api/favicon?domain=${domain}`} width={16} height={16} alt=""
                 style={{borderRadius:"3px",flexShrink:0,filter:blur?"blur(5px)":"none",transition:"filter 0.25s"}} onError={e=>((e.target as HTMLImageElement).style.display="none")} />
+              {/* Uptime status dot — absent when the site has no monitor: no check is not a
+                  status, and a colored dot would invent one. */}
+              <UptimeDot badge={uptimeMap[site.id] ?? null} />
               <span style={{fontWeight:500,fontSize:"13px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",filter:blur?"blur(5px)":"none",transition:"filter 0.25s"}}>
                 {domain}
               </span>
@@ -1810,6 +1908,11 @@ function PortfolioPageContent() {
           <div style={{display:"flex",alignItems:"center",gap:"6px",padding:"4px 12px",borderRadius:"20px",fontSize:"12px",fontWeight:600,cursor:"default",border:"1px solid rgba(59,130,246,0.4)",background:"rgba(59,130,246,0.12)",color:"#3B82F6",whiteSpace:"nowrap"}}>
             {t("allSitesSection")} (<span style={{filter:blur?"blur(5px)":"none",transition:"filter 0.25s"}}>{sites.length}</span>)
           </div>
+          {uptimeDownCount > 0 && (
+            <div title={t("uptimeStatus_down")} style={{display:"flex",alignItems:"center",gap:"6px",padding:"4px 12px",borderRadius:"20px",fontSize:"12px",fontWeight:700,cursor:"default",border:"1px solid rgba(255,69,58,0.4)",background:"rgba(255,69,58,0.12)",color:"var(--color-accent-red)",whiteSpace:"nowrap"}}>
+              ● {t("uptimeDownCount").replace("{n}", String(uptimeDownCount))}
+            </div>
+          )}
           {accounts.map(acc => (
             <div key={acc.id} style={{display:"flex",alignItems:"center",gap:"5px",padding:"4px 10px",borderRadius:"20px",fontSize:"12px",background:"var(--color-bg-secondary,rgba(255,255,255,0.04))",border:"1px solid var(--color-border)"}}>
               {acc.picture
@@ -1966,6 +2069,16 @@ function PortfolioPageContent() {
               onRemove={() => { setFilterDimension(null); setFilterText(""); }}
             />
           )}
+          {uptimeFilter !== "all" && (
+            <FilterChip
+              label={`${t("uptimeFilter")}: ${
+                uptimeFilter === "issues" ? t("uptimeFilterIssues")
+                : uptimeFilter === "down" ? t("uptimeStatus_down")
+                : t("uptimeStatus_up")
+              }`}
+              onRemove={() => setUptimeFilter("all")}
+            />
+          )}
         </div>
       )}
 
@@ -2003,6 +2116,23 @@ function PortfolioPageContent() {
         </div>
       ) : (
         <>
+          {/* The checker itself could not reach the network on its last pass — the gray dots
+              below describe the checker, not the sites. One line, no per-site noise. */}
+          {checkerOffline && engine === "google" && (
+            <div style={{margin:"0 0 10px",padding:"8px 14px",borderRadius:"10px",background:"rgba(255,159,10,0.08)",border:"1px solid rgba(255,159,10,0.3)",fontSize:"12px",color:"var(--color-accent-orange)"}}>
+              {t("uptimeStatus_checker_offline")}
+            </div>
+          )}
+          {attentionSites.length>0 && (
+            <section style={{marginBottom:"12px"}}>
+              <div style={{fontSize:"11px",color:"var(--color-accent-red)",fontWeight:600,marginBottom:"12px",textTransform:"uppercase",letterSpacing:"0.07em"}}>
+                ⚠ {t("uptimeNeedsAttention")} (<span style={{filter:blur?"blur(4px)":"none",transition:"filter 0.25s"}}>{attentionSites.length}</span>)
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(340px,1fr))",gap:"12px"}}>
+                {attentionSites.map((s,i)=><SiteCard key={s.id||i} site={s}/>)}
+              </div>
+            </section>
+          )}
           {favSites.length>0 && (
             <section>
               <div style={{fontSize:"11px",color:"var(--color-text-secondary)",fontWeight:600,marginBottom:"12px",textTransform:"uppercase",letterSpacing:"0.07em"}}>⭐ {t("favoritesSection")} (<span style={{filter:blur?"blur(4px)":"none",transition:"filter 0.25s"}}>{favSites.length}</span>)</div>
@@ -2056,8 +2186,11 @@ function PortfolioPageContent() {
                   <div className="archive-list">
                     {archivedSites.map((s,i)=>(
                       <div key={s.id||i} className={archiveBusy===s.id ? "archive-row busy" : "archive-row"}>
-                        <span className="archive-domain" style={{filter:blur?"blur(4px)":"none",transition:"filter 0.25s"}}>
-                          {getDomain(s.url)}
+                        <span style={{display:"inline-flex",alignItems:"center",gap:"6px"}}>
+                          <UptimeDot badge={uptimeMap[s.id] ?? null} />
+                          <span className="archive-domain" style={{filter:blur?"blur(4px)":"none",transition:"filter 0.25s"}}>
+                            {getDomain(s.url)}
+                          </span>
                         </span>
                         {s.archivedAt && (
                           <span className="archive-date">
