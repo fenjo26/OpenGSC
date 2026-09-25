@@ -173,6 +173,24 @@ export async function notifyUserDetailed(
     if (!eventAllowed(ch.events, event)) continue;
     jobs.push({ channel: id, run: () => deliverStoredChannel(cfg, id, event, title, text) });
   }
+  // wave-nov (N10): web push — every subscription of the owner AND accepted workspace members,
+  // each device filtered by its own event list (one subscription is one person's phone). The
+  // config is not in the notifyChannels JSON but in PushSubscription rows; a table that has
+  // not been migrated yet simply means push does not participate — never a broken notification.
+  try {
+    const push = await import("@/lib/push");
+    const subs = await push.listWorkspaceSubscriptions(userId);
+    if (subs.some(s => push.subscriptionAllows(s.events, event))) {
+      jobs.push({
+        channel: "webpush",
+        run: async () => {
+          const report = await push.sendWorkspacePush(userId, title, text, event);
+          if (report.ok > 0) return { ok: true };
+          return { ok: false, error: report.error ?? `delivered ${report.ok}/${report.sent}` };
+        },
+      });
+    }
+  } catch { /* PushSubscription not available — the other channels still deliver */ }
   if (!jobs.length) return [];
 
   const settled = await Promise.allSettled(jobs.map(j => j.run()));
