@@ -4895,5 +4895,22 @@
   "extIdsHint": "Un ID de extensión por línea — búscalo en chrome://extensions. Solo estos ID pueden usar el token.",
   "extHowToSteps": "1. Abre chrome://extensions y activa el modo de desarrollador.\n2. Carga la carpeta extension/ descomprimida del repositorio.\n3. Crea un token aquí y pégalo en el popup de la extensión.",
   "locHint": "Ficha de negocio, coherencia NAP, directorios, marcado LocalBusiness, Google Business Profile.",
-  "locSiteSearch": "Buscar sitios…"
+  "locSiteSearch": "Buscar sitios…",
+  "partnersOrbitra": "Rastreador de tráfico self-hosted (alternativa a Keitaro) — conectado a los leads de OpenGSC: un clic convierte un lead ganado en campaña",
+  "leadWhatToggle": "Qué es y cómo funciona",
+  "leadWhatP1": "Esta pestaña es tu embudo de entrada: los leads llegan aquí desde el widget de auditoría incrustable, con los hallazgos adjuntos.",
+  "leadWhatP2": "Toma el código del widget en Ajustes → Widget de auditoría e incrusta el iframe en tu web de agencia o cualquier landing. El visitante escribe su dominio, ve una puntuación y los principales problemas, deja un e-mail a cambio del informe completo — y aparece aquí.",
+  "leadWhatP3": "Después: primera carta (un clic), propuesta comercial generada de los hallazgos, lead convertido en cliente — o, con el puente Orbitra de abajo, una campaña creada en el rastreador con un clic.",
+  "leadWhatEmbedHint": "Código para incrustar (la clave está en Ajustes → Widget de auditoría):",
+  "leadOrbTitle": "Rastreador Orbitra",
+  "leadOrbHint": "Conecta tu Orbitra (Usuarios → Claves API → crea una clave write) y cada lead gana un botón «crear campaña» — con el nombre del dominio del lead, lista para tráfico.",
+  "leadOrbUrl": "URL del rastreador",
+  "leadOrbKey": "Clave API (write)",
+  "leadOrbSave": "Guardar",
+  "leadOrbTest": "Probar conexión",
+  "leadOrbTestOk": "Conectado ✓",
+  "leadOrbSaved": "Guardado ✓",
+  "leadOrbFail": "Falló — revisa la URL y la clave",
+  "leadOrbSend": "→ campaña en Orbitra",
+  "leadOrbOpen": "Abrir en Orbitra"
 }

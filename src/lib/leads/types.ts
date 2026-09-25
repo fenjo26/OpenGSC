@@ -135,6 +135,9 @@ export interface LeadListItem {
   /** Page the widget was embedded on (Origin header). */
   origin: string;
   status: LeadStatus;
+  /** Orbitra tracker bridge — campaign created from this lead (null = not sent). */
+  orbitraCampaignId: number | null;
+  orbitraAlias: string | null;
   createdAt: string;
   proposal: string | null;
 }

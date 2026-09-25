@@ -343,7 +343,7 @@ Per-site client reports: toggle the sections (summary, traffic, queries, pages, 
 
 ### Audit Widget & Leads
 
-An embeddable "check your website" iframe for your agency site: the visitor types a domain, gets a score and the top problems from the same audit rules, and leaves an e-mail — you receive a **lead with the findings attached**, the material for the first letter, and a one-click **proposal document** drafted from the audit. The public contour is rate-limited per IP, Turnstile-gated, SSRF-guarded (private addresses refused, `allowPrivate: false`) and stores only a salted IP hash. MCP: `list_leads`. Doc: [`docs/LEADS.md`](docs/LEADS.md).
+An embeddable "check your website" iframe for your agency site: the visitor types a domain, gets a score and the top problems from the same audit rules, and leaves an e-mail — you receive a **lead with the findings attached**, the material for the first letter, and a one-click **proposal document** drafted from the audit. The public contour is rate-limited per IP, Turnstile-gated, SSRF-guarded (private addresses refused, `allowPrivate: false`) and stores only a salted IP hash. MCP: `list_leads`. Doc: [`docs/LEADS.md`](docs/LEADS.md). A won lead can become a tracker campaign in a connected [Orbitra](https://orbitra.link) instance in one click.
 
 ### PWA & Push Notifications
 

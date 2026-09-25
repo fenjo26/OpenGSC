@@ -30,6 +30,7 @@ type LeadRow = {
   id: string; userId: string; domain: string; email: string; name: string; message: string;
   score: number; findings: string; source: string; status: string; ipHash: string;
   origin: string; proposal: string | null; createdAt: Date; updatedAt: Date;
+  orbitraCampaignId: number | null; orbitraAlias: string | null;
 };
 
 function parseFindings(raw: string): LeadFinding[] {
@@ -56,6 +57,8 @@ function toListItem(row: LeadRow): LeadListItem {
     status: (LEAD_STATUSES as readonly string[]).includes(row.status) ? row.status as LeadStatus : "new",
     createdAt: row.createdAt.toISOString(),
     proposal: row.proposal,
+    orbitraCampaignId: row.orbitraCampaignId ?? null,
+    orbitraAlias: row.orbitraAlias ?? null,
   };
 }
 
@@ -138,6 +141,21 @@ export interface LeadFilter {
   q?: string;
   limit?: number;
   offset?: number;
+}
+
+// The Orbitra bridge writes here: the campaign reference on a won lead. Never set by the
+// UI directly — only by /api/leads/[id]/orbitra after the tracker confirms creation.
+export async function setLeadOrbitra(
+  userId: string,
+  id: string,
+  ref: { campaignId: number | null; alias: string },
+): Promise<LeadFull | null> {
+  const hit = await prisma.lead.updateMany({
+    where: { id, userId },
+    data: { orbitraCampaignId: ref.campaignId, orbitraAlias: ref.alias },
+  });
+  if (hit.count === 0) return null;
+  return getLead(userId, id);
 }
 
 export async function listLeads(userId: string, filter: LeadFilter): Promise<{ leads: LeadListItem[]; total: number; notMigrated?: boolean }> {

@@ -125,6 +125,14 @@ const SUPPORT_PARTNERS = [
     tileBg: "#ffffff",
     imgStyle: { maxHeight: "30px" } as React.CSSProperties,
   },
+  {
+    id: "Orbitra",
+    name: "Orbitra.link",
+    href: "https://orbitra.link/?utm_source=opengsc",
+    logo: "/partners/orbitra-logo.svg",
+    tileBg: "#ffffff",
+    imgStyle: { maxHeight: "28px" } as React.CSSProperties,
+  },
 ] as const;
 
 function FeedbackModal({ mode, onClose }: { mode: "feedback" | "thanks"; onClose: () => void }) {

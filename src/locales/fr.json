@@ -4895,5 +4895,22 @@
   "extIdsHint": "Un ID d'extension par ligne — trouvez-le sur chrome://extensions. Seuls ces ID peuvent utiliser le jeton.",
   "extHowToSteps": "1. Ouvrez chrome://extensions et activez le mode développeur.\n2. Chargez le dossier extension/ non compressé du dépôt.\n3. Créez un jeton ici et collez-le dans la fenêtre de l'extension.",
   "locHint": "Fiche d'établissement, cohérence NAP, annuaires, balisage LocalBusiness, Google Business Profile.",
-  "locSiteSearch": "Rechercher un site…"
+  "locSiteSearch": "Rechercher un site…",
+  "partnersOrbitra": "Traqueur de trafic auto-hébergé (alternative à Keitaro) — connecté aux leads OpenGSC : un clic transforme un lead gagné en campagne",
+  "leadWhatToggle": "Qu'est-ce que c'est et comment ça marche",
+  "leadWhatP1": "Cet onglet est votre pipeline entrant : les leads arrivent ici depuis le widget d'audit intégrable, avec les constats de l'audit joints.",
+  "leadWhatP2": "Prenez le code du widget dans Paramètres → Widget d'audit et intégrez l'iframe sur votre site d'agence ou n'importe quelle landing. Un visiteur saisit son domaine, voit un score et les principaux problèmes, laisse un e-mail pour le rapport complet — et devient un lead ici.",
+  "leadWhatP3": "Ensuite : première lettre (un clic), proposition commerciale générée depuis les constats, lead passé client — ou, avec le pont Orbitra ci-dessous, une campagne créée dans le traqueur en un clic.",
+  "leadWhatEmbedHint": "Code d'intégration (la clé est dans Paramètres → Widget d'audit) :",
+  "leadOrbTitle": "Traqueur Orbitra",
+  "leadOrbHint": "Connectez votre Orbitra (Utilisateurs → Clés API → créez une clé write) et chaque lead gagne un bouton « créer une campagne » — nommée d'après le domaine du lead, prête pour le trafic.",
+  "leadOrbUrl": "URL du traqueur",
+  "leadOrbKey": "Clé API (write)",
+  "leadOrbSave": "Enregistrer",
+  "leadOrbTest": "Tester la connexion",
+  "leadOrbTestOk": "Connecté ✓",
+  "leadOrbSaved": "Enregistré ✓",
+  "leadOrbFail": "Échec — vérifiez l'URL et la clé",
+  "leadOrbSend": "→ campagne dans Orbitra",
+  "leadOrbOpen": "Ouvrir dans Orbitra"
 }

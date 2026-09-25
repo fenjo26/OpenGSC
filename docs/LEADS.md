@@ -103,3 +103,26 @@ proposal skeleton, extra UI labels — lives in `src/lib/leads/i18n.ts` in all s
 languages, because the public page has no session locale and the locale JSONs are owned by
 N0/R. `t2()` reads the locale first, so a key R later migrates into the locales keeps
 working.
+
+## Orbitra bridge (lead → tracker campaign)
+
+For operators who also run [Orbitra.link](https://orbitra.link/?utm_source=opengsc) — a
+self-hosted traffic tracker — the lead inbox connects to it directly:
+
+1. In Orbitra: **Users → API keys** → create a key with the **write** scope.
+2. In OpenGSC `/leads`: the **Orbitra tracker** card at the top → paste the tracker URL
+   and the key → Save → *Test connection* (one read call proves both halves).
+3. Every lead now carries a **“→ campaign in Orbitra”** button. It creates one campaign
+   named after the lead's domain (`alias ogsc-<domain>-<timestamp>`, no streams or offers
+   invented — a shell you fill in when the traffic starts). The lead then shows an
+   `Orbitra ↗` badge with the created campaign's alias; the button never creates a second
+   campaign for the same lead.
+
+The other direction needs no setup at all: the audit widget is a plain iframe, so it can
+be embedded into an Orbitra landing page — leads from paid traffic then arrive here with
+the landing's URL in the `origin` field (subids included, if the landing URL carries
+them).
+
+The URL/key live in `InstanceSetting` (`orbitra_url` / `orbitra_key`); the lead row only
+stores the created campaign's `orbitraCampaignId` / `orbitraAlias`. The bridge never runs
+from the public contour.

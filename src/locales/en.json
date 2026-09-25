@@ -4895,5 +4895,22 @@
   "extIdsHint": "One extension ID per line — find it on chrome://extensions. Only these IDs may use the token.",
   "extHowToSteps": "1. Open chrome://extensions and enable Developer mode.\n2. Load the unpacked extension/ folder of this repository.\n3. Create a token here and paste it into the extension popup.",
   "locHint": "Business profile, NAP consistency, directories, LocalBusiness schema, Google Business Profile.",
-  "locSiteSearch": "Search sites…"
+  "locSiteSearch": "Search sites…",
+  "partnersOrbitra": "Self-hosted traffic tracker (a Keitaro alternative) — connects to OpenGSC leads: one click turns a won lead into a campaign",
+  "leadWhatToggle": "What is this and how it works",
+  "leadWhatP1": "This tab is your inbound pipeline: leads arrive here from the embeddable audit widget, with the audit findings attached.",
+  "leadWhatP2": "Take the widget code in Settings → Audit widget and embed the iframe on your agency site or any landing page. A visitor types their domain, sees a score and the top problems, and leaves an e-mail to get the full report — that e-mail becomes a lead here.",
+  "leadWhatP3": "Then: write the first letter (one click), generate a commercial proposal from the findings, mark the lead a client — or, with the Orbitra bridge below, create a tracker campaign for it in one click.",
+  "leadWhatEmbedHint": "Embed code (the key is in Settings → Audit widget):",
+  "leadOrbTitle": "Orbitra tracker",
+  "leadOrbHint": "Connect your Orbitra (Users → API keys → create a write key) and every lead gets a “create campaign” button — the campaign is named after the lead's domain, ready for traffic.",
+  "leadOrbUrl": "Tracker URL",
+  "leadOrbKey": "Write API key",
+  "leadOrbSave": "Save",
+  "leadOrbTest": "Test connection",
+  "leadOrbTestOk": "Connected ✓",
+  "leadOrbSaved": "Saved ✓",
+  "leadOrbFail": "Failed — check URL and key",
+  "leadOrbSend": "→ campaign in Orbitra",
+  "leadOrbOpen": "Open in Orbitra"
 }

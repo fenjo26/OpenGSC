@@ -4895,5 +4895,22 @@
   "extIdsHint": "每行一个扩展 ID（见 chrome://extensions）— 只有这些 ID 可以使用令牌。",
   "extHowToSteps": "1. 打开 chrome://extensions 并启用开发者模式。\n2. 加载本仓库中解压的 extension/ 文件夹。\n3. 在此处创建令牌并粘贴到扩展弹窗中。",
   "locHint": "商家资料、NAP 一致性、目录、LocalBusiness 结构化数据、Google Business Profile。",
-  "locSiteSearch": "搜索网站…"
+  "locSiteSearch": "搜索网站…",
+  "partnersOrbitra": "自托管流量追踪器（Keitaro 替代品）— 与 OpenGSC 线索打通：一键把赢单线索变成推广活动",
+  "leadWhatToggle": "这是什么、如何运作",
+  "leadWhatP1": "这个标签页是你的入站管道：线索来自可嵌入的审计挂件，附带审计发现。",
+  "leadWhatP2": "在 设置 → 审计挂件 里获取挂件代码，把 iframe 嵌到你的代理网站或任何落地页。访客输入域名，看到评分和主要问题，留下邮箱获取完整报告 — 就成为这里的线索。",
+  "leadWhatP3": "之后：一键写首封信、根据发现生成商业提案、把线索标记为客户 — 或者用下面的 Orbitra 桥接，一键在追踪器里为它创建推广活动。",
+  "leadWhatEmbedHint": "嵌入代码（密钥在 设置 → 审计挂件）：",
+  "leadOrbTitle": "Orbitra 追踪器",
+  "leadOrbHint": "连接你的 Orbitra（用户 → API 密钥 → 创建 write 密钥），每个线索都会获得“创建活动”按钮 — 活动以线索域名命名，随时可以投流量。",
+  "leadOrbUrl": "追踪器 URL",
+  "leadOrbKey": "API 密钥（write）",
+  "leadOrbSave": "保存",
+  "leadOrbTest": "测试连接",
+  "leadOrbTestOk": "已连接 ✓",
+  "leadOrbSaved": "已保存 ✓",
+  "leadOrbFail": "失败 — 请检查 URL 和密钥",
+  "leadOrbSend": "→ 在 Orbitra 建活动",
+  "leadOrbOpen": "在 Orbitra 打开"
 }
