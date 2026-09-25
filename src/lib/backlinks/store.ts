@@ -581,29 +581,36 @@ async function clicksByUrlLast28d(siteId: string, urls: string[]): Promise<Map<s
 
 export async function readRecovery(siteId: string): Promise<RecoveryRow[]> {
   const since = new Date(Date.now() - RECOVERY_EVENT_WINDOW_DAYS * 86_400_000);
-  const [rows, events] = await Promise.all([
-    db.siteBacklink.findMany({
-      where: {
-        siteId,
-        OR: [{ apiLost: true }, { checkStatus: "missing" }, { checkTargetOk: false }],
-      },
-      select: {
-        id: true, urlFrom: true, domainFrom: true, urlTo: true, apiAnchor: true, apiDr: true,
-        apiContent: true, apiDofollow: true, apiNofollow: true, apiSponsored: true,
-        apiHttpCode: true, apiLost: true, checkStatus: true, checkNofollow: true,
-        checkSponsored: true, checkTargetOk: true, pageStatus: true, favorite: true, checkedAt: true,
-      },
-      take: 5000,
-    }),
-    db.siteBacklinkEvent
-      .findMany({
-        where: { siteId, kind: { in: ["lost", "rel_downgraded"] }, createdAt: { gte: since } },
-        select: { backlinkId: true, kind: true, createdAt: true },
-        orderBy: { createdAt: "asc" },
-        take: 20000,
-      })
-      .catch(() => [] as { backlinkId: string; kind: string; createdAt: Date }[]),
-  ]);
+  // Events first: a row lost ONLY by a rel_downgrade event (apiLost false, check found,
+  // target fine) is invisible to the row-level OR below — the event is its only witness.
+  const events = await db.siteBacklinkEvent
+    .findMany({
+      where: { siteId, kind: { in: ["lost", "rel_downgraded"] }, createdAt: { gte: since } },
+      select: { backlinkId: true, kind: true, createdAt: true },
+      orderBy: { createdAt: "asc" },
+      take: 20000,
+    })
+    .catch(() => [] as { backlinkId: string; kind: string; createdAt: Date }[]);
+  const downgradedIds = [...new Set(events.filter((e) => e.kind === "rel_downgraded").map((e) => e.backlinkId))];
+
+  const rows = await db.siteBacklink.findMany({
+    where: {
+      siteId,
+      OR: [
+        { apiLost: true },
+        { checkStatus: "missing" },
+        { checkTargetOk: false },
+        ...(downgradedIds.length ? [{ id: { in: downgradedIds } }] : []),
+      ],
+    },
+    select: {
+      id: true, urlFrom: true, domainFrom: true, urlTo: true, apiAnchor: true, apiDr: true,
+      apiContent: true, apiDofollow: true, apiNofollow: true, apiSponsored: true,
+      apiHttpCode: true, apiLost: true, checkStatus: true, checkNofollow: true,
+      checkSponsored: true, checkTargetOk: true, pageStatus: true, favorite: true, checkedAt: true,
+    },
+    take: 5000,
+  });
   if (!rows?.length) return [];
 
   // Latest loss date and the rel-downgrade flag, per row.
