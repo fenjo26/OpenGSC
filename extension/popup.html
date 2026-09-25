@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>OpenGSC</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header>
+    <span class="brand">OpenGSC</span>
+    <a id="openOptions" href="#options" data-i18n="optionsLink"></a>
+  </header>
+
+  <main id="content">
+    <div class="state" id="stateLoading"><span class="spinner"></span><span data-i18n="loading"></span></div>
+  </main>
+
+  <!-- ── state templates ─────────────────────────────────────────────────────── -->
+  <template id="tplConfigure">
+    <div class="state">
+      <p data-i18n="needConfigure"></p>
+      <button class="primary" id="btnOpenOptions2" data-i18n="openOptionsBtn"></button>
+    </div>
+  </template>
+
+  <template id="tplUnsupported">
+    <div class="state"><p data-i18n="unsupportedPage"></p></div>
+  </template>
+
+  <!-- GSC / PageSpeed: only the "open this URL in OpenGSC" button (brief п.4). -->
+  <template id="tplSpecial">
+    <div class="state">
+      <p class="specialNote" data-i18n="specialNote"></p>
+      <button class="primary" id="btnOpenApp" data-i18n="openApp"></button>
+    </div>
+  </template>
+
+  <template id="tplError">
+    <div class="state">
+      <p id="errorText" class="errorText"></p>
+      <button class="ghost" id="btnOpenOptions3" data-i18n="openOptionsBtn"></button>
+    </div>
+  </template>
+
+  <!-- ── the main layout ──────────────────────────────────────────────────────── -->
+  <template id="tplMain">
+    <section class="pagehead">
+      <div class="url" id="pageUrl" title=""></div>
+      <div class="pillRow" id="sitePills"></div>
+    </section>
+
+    <div class="actions">
+      <button class="primary" id="btnSend" data-i18n="send"></button>
+      <button class="ghost" id="btnKeywords" data-i18n="sendKeywords" hidden></button>
+      <button class="ghost" id="btnCsv" data-i18n="downloadCsv" hidden></button>
+      <span class="actionResult" id="actionResult" role="status"></span>
+    </div>
+
+    <section class="card" id="summaryCard">
+      <h3 data-i18n="inOpengsc"></h3>
+      <div id="summaryBody"></div>
+    </section>
+
+    <section class="card">
+      <h3 data-i18n="miniAudit"></h3>
+      <div id="auditBody"></div>
+    </section>
+
+    <footer>
+      <span id="instanceLabel"></span>
+    </footer>
+  </template>
+
+  <script src="lib/api.js"></script>
+  <script src="lib/audit.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
