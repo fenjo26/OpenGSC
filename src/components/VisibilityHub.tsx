@@ -57,11 +57,11 @@ export default function VisibilityHub({
       {active === "ai" && <AeoTracker siteDbId={siteDbId} domain={domain} />}
       {active === "sov" && (
         <>
-          <AiShareOfVoice siteDbId={siteDbId} domain={domain} />
-          <CitedDomains siteDbId={siteDbId} domain={domain} />
+          <AiShareOfVoice siteDbId={siteDbId} domain={domain} readOnly={readOnly} />
+          <CitedDomains siteDbId={siteDbId} domain={domain} readOnly={readOnly} />
         </>
       )}
-      {active === "mentions" && <MentionsPanel siteDbId={siteDbId} domain={domain} />}
+      {active === "mentions" && <MentionsPanel siteDbId={siteDbId} domain={domain} readOnly={readOnly} />}
       {active === "llm" && <BrandVisibility siteDbId={siteDbId} />}
     </div>
   );

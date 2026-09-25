@@ -20,7 +20,7 @@ export async function sendDigestNow(userId: string, tag: string, days: number, a
     const summary = await aiSummary(userId, content, lang);
     if (summary) full = `${content}\n\n${summary}`;
   }
-  const sent = await notifyUser(userId, full);
+  const sent = await notifyUser(userId, full, { event: "digest" });
   
   let sentToVal: string | null = null;
   if (sent) {

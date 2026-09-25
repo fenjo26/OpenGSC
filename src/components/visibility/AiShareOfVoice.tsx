@@ -96,7 +96,7 @@ function ShareBars({ rows }: {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
-export default function AiShareOfVoice({ siteDbId, domain }: { siteDbId: string; domain: string }) {
+export default function AiShareOfVoice({ siteDbId, domain, readOnly = false }: { siteDbId: string; domain: string; readOnly?: boolean }) {
   const { t } = useLanguage();
   const { blur } = usePrivacy();
   const blurStyle: React.CSSProperties = blur ? { filter: "blur(5px)", userSelect: "none" } : {};
@@ -298,19 +298,22 @@ export default function AiShareOfVoice({ siteDbId, domain }: { siteDbId: string;
                 {c.terms.map(term => (
                   <span key={term} className="pill" style={{ fontSize: "10.5px", padding: "2px 8px" }}>{term}</span>
                 ))}
-                <button
-                  onClick={() => saveList(competitors.filter((_, j) => j !== i))}
-                  disabled={saving}
-                  title={c.name}
-                  style={{ marginLeft: "auto", background: "none", border: "none", cursor: saving ? "not-allowed" : "pointer", color: "#EF4444", padding: "2px", opacity: 0.7 }}>
-                  <Trash2 size={13} />
-                </button>
+                {!readOnly && (
+                  <button
+                    onClick={() => saveList(competitors.filter((_, j) => j !== i))}
+                    disabled={saving}
+                    title={c.name}
+                    style={{ marginLeft: "auto", background: "none", border: "none", cursor: saving ? "not-allowed" : "pointer", color: "#EF4444", padding: "2px", opacity: 0.7 }}>
+                    <Trash2 size={13} />
+                  </button>
+                )}
               </div>
             ))}
           </div>
         )}
 
-        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "flex-end" }}>
+        {!readOnly && (
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "flex-end" }}>
           <div>
             <label style={labelStyle}>{t("aiSovCompName")}</label>
             <input value={name} onChange={e => setName(e.target.value)} style={{ ...inputStyle, width: "150px" }} />
@@ -349,7 +352,8 @@ export default function AiShareOfVoice({ siteDbId, domain }: { siteDbId: string;
             }}>
             <Plus size={13} /> {saving ? "…" : t("aiSovAddCompetitor")}
           </button>
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -35,7 +35,7 @@ export async function POST(req: Request) {
     if (quota.exhausted) {
       return NextResponse.json({
         ok: false, checked: 0, errors: urls.length,
-        hint: 'api_error',
+        hint: 'quota_exhausted',
         detail: `Google URL Inspection quota exhausted for this property (${quota.used}/${INSPECTION_DAILY_LIMIT} today) — resets at midnight Pacific time.`,
       }, { status: 200 });
     }
@@ -54,7 +54,7 @@ export async function POST(req: Request) {
     if (firstError === 'no_google_account') {
       return NextResponse.json({ error: 'No Google account connected' }, { status: 400 });
     } else if (firstError === 'quota_exhausted') {
-      hint = 'api_error';
+      hint = 'quota_exhausted';
       detail = 'Google URL Inspection quota exhausted — resets at midnight Pacific time.';
     } else if (firstError === 'property_not_verified' || firstError === 'sc_domain_not_supported') {
       hint = 'property_not_verified';

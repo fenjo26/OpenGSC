@@ -3141,6 +3141,8 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
         setCheckMsg(`⚠ ${t("idxGoogleScDomainError")}`);
       } else if (d.hint === "property_not_verified") {
         setCheckMsg(`⚠ ${t("idxGoogleNotVerifiedError")}`);
+      } else if (d.hint === "quota_exhausted") {
+        setCheckMsg(`⚠ ${t("idxAutoExhausted")}`);
       } else if (d.hint === "api_error") {
         setCheckMsg(`✗ ${d.detail ?? t("idxErrors")}`);
       } else {
@@ -5577,7 +5579,7 @@ export default function SitePage({
       {activeTab === "positions" && <RankTracker siteDbId={siteDbId} domain={domain} />}
 
       {/* ── AI Visibility (AEO Tracker) tab ── */}
-      {activeTab === "aeo" && <VisibilityHub siteDbId={siteDbId} domain={domain} />}
+      {activeTab === "aeo" && <VisibilityHub siteDbId={siteDbId} domain={domain} readOnly={readOnly} />}
 
       {/* ── GA4 tab ── */}
       {activeTab === "ga4" && (

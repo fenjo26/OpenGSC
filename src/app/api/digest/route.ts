@@ -98,7 +98,7 @@ export async function POST(req: Request) {
     }
     let sent = false;
     if (action === "send") {
-      sent = await notifyUser(userId, full);
+      sent = await notifyUser(userId, full, { event: "digest" });
       try {
         await prisma.digest.create({ data: { userId, tag, days, content: full, sentTo: sent ? "telegram" : null } });
       } catch { /* not migrated */ }

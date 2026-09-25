@@ -27,7 +27,7 @@ async function fetchCited(siteDbId: string): Promise<{ cited: CitedDomainRow[]; 
   };
 }
 
-export default function CitedDomains({ siteDbId, domain }: { siteDbId: string; domain: string }) {
+export default function CitedDomains({ siteDbId, domain, readOnly = false }: { siteDbId: string; domain: string; readOnly?: boolean }) {
   const { t } = useLanguage();
   const { blur } = usePrivacy();
   const blurStyle: React.CSSProperties = blur ? { filter: "blur(5px)", userSelect: "none" } : {};
@@ -117,7 +117,7 @@ export default function CitedDomains({ siteDbId, domain }: { siteDbId: string; d
                     )}
                   </td>
                   <td style={{ padding: "7px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
-                    {(sentTo.has(row.domain) || row.isUs) ? (
+                    {(sentTo.has(row.domain) || row.isUs || readOnly) ? (
                       sentTo.has(row.domain) && <span style={{ fontSize: "10.5px", fontWeight: 700, color: GREEN }}>✓</span>
                     ) : (
                       <button
