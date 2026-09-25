@@ -128,3 +128,13 @@ test("a www.-prefixed row survives as its apex, not as a host", () => {
   assert.equal(ok("https://www.example.com/path"), "example.com");
   assert.equal(ok("www.com"), "www.com", "one label after www. is the apex itself");
 });
+
+// The bug that shipped: "tower-rush.uk.com" was stored as "uk.com" because uk.com was
+// treated as an ordinary two-label host instead of the public suffix the PSL says it is
+// (CentralNic retail zone — registration happens at the third level, same for net.ru etc.).
+test("third-level retail zones (uk.com family) keep their name", () => {
+  assert.equal(ok("tower-rush.uk.com"), "tower-rush.uk.com");
+  assert.equal(ok("www.tower-rush.uk.com"), "tower-rush.uk.com");
+  assert.equal(rejected("uk.com"), "not_registrable");
+  assert.equal(ok("shop.net.ru"), "shop.net.ru");
+});

@@ -60,6 +60,19 @@ export function sanitiseForUrl(domain: string): string {
 export const RDAP_BOOTSTRAP = "https://rdap.org/domain/";
 
 /**
+ * CentralNic's retail second-level zones — every entry is a public suffix in the PSL
+ * PRIVATE section (the `// CentralNic` block), so the registration is the THIRD label:
+ * "tower-rush.uk.com" is the apex and "uk.com" alone is the registry's own zone. Copied
+ * from the live list on 2026-09-25; gb.com, kr.com, qc.com and uy.com are no longer in
+ * it and stay out. Each zone also has a verified registry profile below.
+ */
+const CENTRALNIC_RETAIL_ZONES = [
+  "za.bz", "br.com", "cn.com", "de.com", "eu.com", "jpn.com", "mex.com", "ru.com",
+  "sa.com", "uk.com", "us.com", "za.com", "com.de", "gb.net", "hu.net", "jp.net",
+  "se.net", "uk.net", "ae.org", "com.se",
+];
+
+/**
  * Suffixes that take two labels. Not a public-suffix list — just the ones a drop list realistically
  * contains. Anything not here is treated as a single-label TLD, which is the right default.
  */
@@ -89,6 +102,11 @@ const TWO_LABEL_SUFFIXES = new Set([
   "com.ec", "com.uy", "com.py", "com.bo", "com.ve",
   "com.cy", "com.sg", "com.my", "com.ph", "com.vn",
   "co.id", "co.th", "com.eg", "com.sa",
+  ...CENTRALNIC_RETAIL_ZONES,
+  // The same shape under other operators, from the same 2026-09-25 PSL fetch (MSK-IX for
+  // the .ru second-levels, ZaNiC for za.net/za.org). No registry profile below: they ride
+  // the bootstrap fallback and its corroboration rules.
+  "net.ru", "org.ru", "pp.ru", "za.net", "za.org",
 ]);
 
 /**
@@ -200,6 +218,21 @@ const PROFILES: RegistryProfile[] = [
       "set; that API is IP-allowlisted, so its calls never go through the proxy pool. " +
       "gr.whois-servers.net points at RIPE, whose \"not found\" still proves nothing.",
   },
+
+  // ─── Verified: CentralNic retail second-level zones (uk.com, ru.com, …) ────
+  // One profile per zone in CENTRALNIC_RETAIL_ZONES. Live-checked 2026-09-25 across the
+  // whole block: RDAP answers per zone at rdap.centralnic.com/<zone>/ (200 on a
+  // registered name, 404 on a free one), and whois.centralnic.com carries the same
+  // records — so a free verdict corroborates like any gTLD's instead of falling to the
+  // bootstrap, where a 404 can mean either.
+  ...CENTRALNIC_RETAIL_ZONES.map(tld => ({
+    tld,
+    rdap: `https://rdap.centralnic.com/${tld}/`,
+    whoisHost: "whois.centralnic.com",
+    minIntervalMs: 1500,
+    verified: true,
+    notes: "CentralNic retail second-level zone (PSL PRIVATE section).",
+  })),
 ];
 
 const BY_TLD = new Map(PROFILES.map(p => [p.tld, p]));

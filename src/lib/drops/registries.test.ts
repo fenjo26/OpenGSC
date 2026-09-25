@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { tldOf, resolveProfile, profileForDomain, allProfiles, RDAP_BOOTSTRAP, registryAnswerable } from "./registries";
+import { tldOf, apexOf, resolveProfile, profileForDomain, allProfiles, RDAP_BOOTSTRAP, registryAnswerable } from "./registries";
 
 test("the effective TLD survives the spellings a real list contains", () => {
   assert.equal(tldOf("example.com"), "com");
@@ -91,4 +91,33 @@ test("every RDAP base ends in a slash so the domain can be appended", () => {
 test("profileForDomain refuses a row that is not a domain", () => {
   assert.equal(profileForDomain("192.0.2.1"), null);
   assert.equal(profileForDomain("example.com")?.tld, "com");
+});
+
+// CentralNic retail zones are public suffixes in their own right (PSL PRIVATE section), so
+// the registration is the third label. Before this the apex computation kept "uk.com" and
+// the stored row lost the very name it was about.
+test("CentralNic retail zones keep the third label as the apex", () => {
+  assert.equal(tldOf("tower-rush.uk.com"), "uk.com");
+  assert.equal(apexOf("tower-rush.uk.com"), "tower-rush.uk.com");
+  assert.equal(apexOf("www.tower-rush.uk.com"), "tower-rush.uk.com");
+  assert.equal(tldOf("uk.com"), null, "the zone itself is not a registrable name");
+  assert.equal(apexOf("казино.ru.com"), "казино.ru.com");
+});
+
+test("CentralNic retail zones resolve to a verified registry profile", () => {
+  const p = profileForDomain("tower-rush.uk.com");
+  assert.ok(p);
+  assert.equal(p.tld, "uk.com");
+  assert.equal(p.verified, true);
+  assert.ok(p.rdap?.startsWith("https://rdap.centralnic.com/uk.com/"), p.rdap);
+});
+
+// MSK-IX / ZaNiC second-levels share the shape but ship without a hand-written profile:
+// the bootstrap fallback answers, with its corroboration rules.
+test("other PSL-private second-levels keep the apex but get no hand-written profile", () => {
+  assert.equal(apexOf("card.net.ru"), "card.net.ru");
+  assert.equal(tldOf("net.ru"), null);
+  const p = profileForDomain("card.net.ru");
+  assert.ok(p);
+  assert.equal(p.verified, false);
 });
