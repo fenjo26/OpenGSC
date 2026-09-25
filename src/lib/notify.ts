@@ -33,7 +33,7 @@ export async function sendTelegram(botToken: string, chatId: string, text: strin
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         // Markdown parse errors are common with user data ("_" in URLs, etc.) — retry plain.
-        if (String((d as any)?.description ?? "").includes("parse")) {
+        if (String((d as { description?: string }).description ?? "").includes("parse")) {
           const retry = await fetch(`${TG(botToken)}/sendMessage`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -42,13 +42,13 @@ export async function sendTelegram(botToken: string, chatId: string, text: strin
           });
           if (!retry.ok) return { ok: false, error: `telegram ${retry.status}` };
         } else {
-          return { ok: false, error: (d as any)?.description ?? `telegram ${res.status}` };
+          return { ok: false, error: (d as { description?: string }).description ?? `telegram ${res.status}` };
         }
       }
     }
     return { ok: true };
-  } catch (e: any) {
-    return { ok: false, error: String(e?.message ?? e).slice(0, 200) };
+  } catch (e) {
+    return { ok: false, error: String((e as Error)?.message ?? e).slice(0, 200) };
   }
 }
 
@@ -58,22 +58,25 @@ export async function detectChatId(botToken: string): Promise<{ chatId?: string;
     const res = await fetch(`${TG(botToken)}/getUpdates?limit=20`, { signal: AbortSignal.timeout(15_000) });
     if (!res.ok) return { error: res.status === 401 ? "invalid_token" : `telegram ${res.status}` };
     const d = await res.json();
-    const updates: any[] = Array.isArray(d?.result) ? d.result : [];
+    const updates = (Array.isArray(d?.result) ? d.result : []) as {
+      message?: { chat?: { id?: number; username?: string; first_name?: string } };
+      edited_message?: { chat?: { id?: number; username?: string; first_name?: string } };
+    }[];
     for (let i = updates.length - 1; i >= 0; i--) {
       const msg = updates[i]?.message ?? updates[i]?.edited_message;
       const chat = msg?.chat;
       if (chat?.id) return { chatId: String(chat.id), username: chat.username ?? chat.first_name ?? "" };
     }
     return { error: "no_messages" };
-  } catch (e: any) {
-    return { error: String(e?.message ?? e).slice(0, 200) };
+  } catch (e) {
+    return { error: String((e as Error)?.message ?? e).slice(0, 200) };
   }
 }
 
 // Server-side read of a user's Telegram credentials (raw SQL — see seoSettings convention).
 export async function getTelegramCreds(userId: string): Promise<{ botToken: string; chatId: string } | null> {
   try {
-    const rows: any[] = await rawQuery(
+    const rows = await rawQuery<{ telegramBotToken?: string; telegramChatId?: string }[]>(
       `SELECT telegramBotToken, telegramChatId FROM "User" WHERE id = ?`, userId);
     const r = rows?.[0];
     if (!r?.telegramBotToken || !r?.telegramChatId) return null;
@@ -85,7 +88,7 @@ export async function getTelegramCreds(userId: string): Promise<{ botToken: stri
 
 export async function getSlackWebhook(userId: string): Promise<string | null> {
   try {
-    const rows: any[] = await rawQuery(
+    const rows = await rawQuery<{ slackWebhook?: string }[]>(
       `SELECT slackWebhook FROM "User" WHERE id = ?`, userId);
     return rows?.[0]?.slackWebhook || null;
   } catch {
@@ -119,44 +122,70 @@ export async function sendSlack(webhookUrl: string, text: string): Promise<{ ok:
       return { ok: false, error: `slack error ${res.status}: ${txt}` };
     }
     return { ok: true };
-  } catch (e: any) {
-    return { ok: false, error: String(e?.message ?? e).slice(0, 200) };
+  } catch (e) {
+    return { ok: false, error: String((e as Error)?.message ?? e).slice(0, 200) };
   }
 }
 
 export async function notifyUser(
   userId: string,
   text: string,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- wave-oct T3 fills this in (event filters per channel)
+  // Wave-oct T3: without opts the event is "alert", so every existing two-argument caller keeps
+  // its exact semantics. With opts, each channel's event filter (empty = all; "test" passes all)
+  // decides whether it participates.
   opts?: import("@/lib/notify/types").NotifyOptions,
 ): Promise<boolean> {
-  const creds = await getTelegramCreds(userId);
-  const slackUrl = await getSlackWebhook(userId);
-
-  if (!creds && !slackUrl) return false;
-
-  let ok = false;
-  if (creds) {
-    const r = await sendTelegram(creds.botToken, creds.chatId, text);
-    if (r.ok) ok = true;
-    else console.warn(`[notify] telegram send failed for user ${userId}: ${r.error}`);
-  }
-  if (slackUrl) {
-    const r = await sendSlack(slackUrl, text);
-    if (r.ok) ok = true;
-    else console.warn(`[notify] slack send failed for user ${userId}: ${r.error}`);
-  }
-  return ok;
+  const deliveries = await notifyUserDetailed(userId, text, opts);
+  return deliveries.some(d => d.ok);
 }
 
-// Wave-oct (CONTRACT.md §3): per-channel delivery detail. Stub until T3 — the existing
-// two-argument notifyUser semantics are unchanged, existing callers count as event "alert".
+// Wave-oct (CONTRACT.md §3): per-channel delivery detail. Fan-out is parallel (Promise.allSettled)
+// so one failing channel never breaks the others; true/ok when at least one delivered.
 export async function notifyUserDetailed(
   userId: string,
   text: string,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- wave-oct T3 fills this in
   opts?: import("@/lib/notify/types").NotifyOptions,
 ): Promise<import("@/lib/notify/types").NotifyDelivery[]> {
-  await notifyUser(userId, text);
-  return [];
+  const { readChannels, deliverStoredChannel, updateDeliveryStatus } = await import("@/lib/notify/channels");
+  const { eventAllowed } = await import("@/lib/notify/format");
+  const event: import("@/lib/notify/types").NotifyEvent = opts?.event ?? "alert";
+  const title = (opts?.title ?? text.split("\n")[0] ?? text).slice(0, 500);
+
+  // Raw SQL read (getSlackWebhook convention): a missing notifyChannels column on a not-yet-
+  // migrated instance returns {} and delivery degrades to Telegram + Slack, as before.
+  const cfg = await readChannels(userId);
+  const creds = await getTelegramCreds(userId);
+  const slackUrl = await getSlackWebhook(userId);
+
+  type Job = { channel: import("@/lib/notify/types").NotifyChannelId; run: () => Promise<{ ok: boolean; error?: string }> };
+  const jobs: Job[] = [];
+  // Telegram/Slack have no `on` switch — configured means on; their event filters live in the
+  // shared config (telegramEvents / slackEvents).
+  if (creds && eventAllowed(cfg.telegramEvents, event)) {
+    jobs.push({ channel: "telegram", run: () => sendTelegram(creds.botToken, creds.chatId, text) });
+  }
+  if (slackUrl && eventAllowed(cfg.slackEvents, event)) {
+    jobs.push({ channel: "slack", run: () => sendSlack(slackUrl, text) });
+  }
+  for (const id of ["discord", "teams", "email", "webhook"] as const) {
+    const ch = cfg[id];
+    if (!ch || !ch.on) continue;
+    if (!eventAllowed(ch.events, event)) continue;
+    jobs.push({ channel: id, run: () => deliverStoredChannel(cfg, id, event, title, text) });
+  }
+  if (!jobs.length) return [];
+
+  const settled = await Promise.allSettled(jobs.map(j => j.run()));
+  const results: import("@/lib/notify/types").NotifyDelivery[] = settled.map((s, i) => {
+    if (s.status === "fulfilled") {
+      if (s.value.ok) return { channel: jobs[i].channel, ok: true };
+      console.warn(`[notify] ${jobs[i].channel} send failed for user ${userId}: ${s.value.error}`);
+      return { channel: jobs[i].channel, ok: false, error: s.value.error };
+    }
+    console.warn(`[notify] ${jobs[i].channel} threw for user ${userId}:`, s.reason);
+    return { channel: jobs[i].channel, ok: false, error: String((s.reason as Error)?.message ?? s.reason).slice(0, 200) };
+  });
+  // One raw UPDATE for the whole call, merging only lastOkAt/lastError into a fresh read.
+  await updateDeliveryStatus(userId, results);
+  return results;
 }
