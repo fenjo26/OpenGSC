@@ -17,6 +17,7 @@ import { rawQuery, rawExec } from "@/lib/db/raw";
 import { getTelegramCreds, getSlackWebhook, sendTelegram, sendSlack } from "@/lib/notify";
 import { getAlertSettings } from "@/lib/alertScheduler";
 import { NOTIFY_L, normalizeLang } from "@/lib/notifyI18n";
+import { pushChannelSummary, sendWorkspacePush } from "@/lib/push";
 import {
   toDiscordChunks, discordBody, toTeamsCard, toEmail, toWebhookBody, signWebhook,
   isDiscordWebhookUrl, isTeamsWebhookUrl, isHttpsUrl,
@@ -26,8 +27,10 @@ import type {
 } from "./types";
 import { NOTIFY_EVENTS } from "./types";
 
-/** The four channels whose whole config (secrets included) lives in User.notifyChannels. */
-export type StoredChannelId = Exclude<NotifyChannelId, "telegram" | "slack">;
+/** The four channels whose whole config (secrets included) lives in User.notifyChannels.
+ *  wave-nov (N0): webpush widened NotifyChannelId but is NOT a stored channel — its
+ *  subscriptions live in the PushSubscription table (N10) — so it is excluded here. */
+export type StoredChannelId = Exclude<NotifyChannelId, "telegram" | "slack" | "webpush">;
 const STORED_IDS: readonly StoredChannelId[] = ["discord", "teams", "email", "webhook"];
 
 const HTTP_TIMEOUT_MS = 10_000;
@@ -130,12 +133,26 @@ function storedView(id: StoredChannelId, cfg: NotifyChannelsConfig): NotifyChann
 
 export async function channelViews(userId: string): Promise<NotifyChannelView[]> {
   const cfg = await readChannels(userId);
-  const [tg, slack] = await Promise.all([getTelegramCreds(userId), getSlackWebhook(userId)]);
+  const [tg, slack, push] = await Promise.all([
+    getTelegramCreds(userId), getSlackWebhook(userId), pushChannelSummary(userId),
+  ]);
   return [
     // Telegram/Slack credentials stay in their own User columns; only the event filter lives here.
     { id: "telegram" as const, configured: !!tg, on: !!tg, events: cfg.telegramEvents ?? [], target: tg ? `chat ${tg.chatId}` : null, lastOkAt: null, lastError: null },
     { id: "slack" as const, configured: !!slack, on: !!slack, events: cfg.slackEvents ?? [], target: slack ? maskWebhookUrl(slack) : null, lastOkAt: null, lastError: null },
     ...STORED_IDS.map(id => storedView(id, cfg)),
+    // wave-nov (N10): the push row. Its config is not stored JSON but PushSubscription rows —
+    // one event filter per device, so the card links to PushSettingsCard instead of editing
+    // here. `target` carries the device count; lastOkAt is the newest accepted delivery.
+    {
+      id: "webpush" as const,
+      configured: push.count > 0,
+      on: push.count > 0,
+      events: [],
+      target: push.count > 0 ? `${push.count}` : null,
+      lastOkAt: push.lastOkAt,
+      lastError: null,
+    },
   ];
 }
 
@@ -346,8 +363,31 @@ function smtpError(e: unknown): string {
   return `smtp_error ${String(err?.message ?? e).slice(0, 150)}`.trim();
 }
 
-export async function sendEmail(cfg: EmailConfig | null, title: string, text: string): Promise<{ ok: boolean; error?: string }> {
-  if (!cfg?.host || !cfg.to?.length) return { ok: false, error: "not_configured" };
+/** Per-call envelope overrides for sendEmail. The notify fan-out passes none; client reports
+ *  (N8) and widget lead e-mails (N9) reuse the SAME stored SMTP channel but with their own
+ *  recipients/HTML — and N8 attaches the rendered PDF. */
+export interface SendEmailOptions {
+  /** Replaces the channel's own recipient list. Same shape check as at save time; capped at 20
+   *  (reports' MAX_RECIPIENTS — wider than the channel's own 10, an owner's client list). */
+  to?: string[];
+  /** Full HTML body, replacing the markdown-generated one; the flat `text` stays the fallback. */
+  html?: string;
+  /** Attachments by absolute server path (e.g. a rendered report PDF). */
+  attachments?: { filename: string; path: string }[];
+}
+
+const OPT_RECIPIENT_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export async function sendEmail(
+  cfg: EmailConfig | null, title: string, text: string, opts: SendEmailOptions = {},
+): Promise<{ ok: boolean; error?: string }> {
+  if (!cfg?.host) return { ok: false, error: "not_configured" };
+  // An override replaces the stored list; without one the stored list is still required —
+  // the notify fan-out must keep its exact old semantics.
+  const recipients = opts.to
+    ? opts.to.map(v => String(v).trim()).filter(v => OPT_RECIPIENT_RE.test(v)).slice(0, 20)
+    : cfg.to;
+  if (!recipients?.length) return { ok: false, error: "not_configured" };
   // The SMTP client must not become a port scanner of the internal network either.
   try {
     await assertSafeTarget(`https://${cfg.host}`);
@@ -367,7 +407,14 @@ export async function sendEmail(cfg: EmailConfig | null, title: string, text: st
   });
   const mail = () => {
     const { subject, text: flat, html } = toEmail(title, fitUtf8(text, MAX_TEXT_CHARS));
-    return transport.sendMail({ from: cfg.from, to: cfg.to.slice(0, 10).join(", "), subject, text: flat, html });
+    return transport.sendMail({
+      from: cfg.from,
+      to: recipients.join(", "),
+      subject,
+      text: flat,
+      html: opts.html ? fitUtf8(opts.html, MAX_BODY_BYTES) : html,
+      ...(opts.attachments?.length ? { attachments: opts.attachments } : {}),
+    });
   };
   try {
     try {
@@ -405,6 +452,7 @@ export async function deliverStoredChannel(
 
 const CHANNEL_LABEL: Record<NotifyChannelId, string> = {
   telegram: "Telegram", slack: "Slack", discord: "Discord", teams: "Microsoft Teams", email: "E-mail", webhook: "Webhook",
+  webpush: "Web Push", // wave-nov (N10): real channel since N10 — see sendWorkspacePush
 };
 
 export async function testChannel(userId: string, id: NotifyChannelId): Promise<NotifyDelivery> {
@@ -424,6 +472,14 @@ export async function testChannel(userId: string, id: NotifyChannelId): Promise<
     case "slack": {
       const url = await getSlackWebhook(userId);
       r = url ? await sendSlack(url, text) : { ok: false, error: "not_configured" };
+      break;
+    }
+    // wave-nov (N10): real delivery — one test push to every device of the workspace. No
+    // stored config exists to deliver through; the subscriptions themselves ARE the channel.
+    case "webpush": {
+      const report = await sendWorkspacePush(userId, title, text, "test", { url: "/" });
+      if (report.sent === 0) r = { ok: false, error: "not_configured" };
+      else r = report.ok > 0 ? { ok: true } : { ok: false, error: report.error ?? `delivered ${report.ok}/${report.sent}` };
       break;
     }
     default:

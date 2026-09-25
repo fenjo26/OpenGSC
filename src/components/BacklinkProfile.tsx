@@ -29,6 +29,9 @@ import {
   type MetricsProvider, type SubscriptionInfo,
 } from "@/lib/seo/metricsPricing";
 import { METRICS_GATEWAY_URL } from "@/components/SeoToolsSettings";
+import ToxicityTab from "@/components/backlinks/ToxicityTab";
+import DisavowTab from "@/components/backlinks/DisavowTab";
+import RecoveryTab from "@/components/backlinks/RecoveryTab";
 
 /** `{host}` / `{n}` placeholders in locale strings — `t()` returns them verbatim by design. */
 const fill = (s: string, vars: Record<string, string>) =>
@@ -41,6 +44,9 @@ const TABLE_ROWS_PER_PAGE = 100;
 type View = "all" | "ahrefs" | "majestic" | "semrush";
 /** The providers this component can read or refresh — one tab each, plus the merged view. */
 type BlProvider = MetricsProvider;
+/** N2 sections inside the profile: the provider view plus toxicity/disavow/recovery.
+ *  Site context only — a drops-catalogue domain has no SiteBacklink rows to classify. */
+type Section = "profile" | "toxicity" | "disavow" | "recovery";
 
 /** One rendered row, normalized across the three views. */
 interface Row {
@@ -100,6 +106,9 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
   const guest = isGuestView();
 
   const [view, setView] = useState<View>("all");
+  // N2 sections. "profile" keeps the exact behaviour this component always had; the other
+  // three render their own tab component below and skip the provider view entirely.
+  const [section, setSection] = useState<Section>("profile");
   const [rows, setRows] = useState<Row[]>([]);
   const [history, setHistory] = useState<{ ahrefs: Snapshot[]; majestic: Snapshot[]; semrush: Snapshot[] }>({ ahrefs: [], majestic: [], semrush: [] });
   const [busy, setBusy] = useState(false);
@@ -391,7 +400,7 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
         <Link2 size={17} color="var(--color-accent-blue)" />
         <h3 className="title-sm" style={{ margin: 0 }}>{t("blpTitle")}</h3>
 
-        {!guest && <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+        {!guest && section === "profile" && <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
           {estimate != null && (
             <span className="metric-cost">
               {estimate.parts.map(({ p, units }) => `${PROVIDER_NAME[p]} ${units.toLocaleString()}`).join(" + ")}
@@ -407,6 +416,32 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
       </div>
       <p style={{ fontSize: "12px", color: "var(--color-text-secondary)", margin: "0 0 14px" }}>{t("blpSub")}</p>
 
+      {/* N2 section tabs — the site's own profile only. The share (guest) view keeps
+          toxicity and recovery read-only and gets no disavow tab: that file is the
+          operator's decision, not client-report material. */}
+      {siteDbId && (
+        <div style={{ display: "flex", gap: "6px", marginBottom: "12px", flexWrap: "wrap" }}>
+          {(["profile", "toxicity", "disavow", "recovery"] as const)
+            .filter((s) => !guest || s !== "disavow")
+            .map((s) => (
+              <button key={s} className={section === s ? "pill active" : "pill"}
+                onClick={() => setSection(s)} style={{ cursor: "pointer" }}>
+                {s === "profile" ? t("blTabProfile" as never) : t(`blTab${s[0].toUpperCase()}${s.slice(1)}` as never)}
+              </button>
+            ))}
+        </div>
+      )}
+
+      {siteDbId && section !== "profile" ? (
+        section === "toxicity" ? (
+          <ToxicityTab siteDbId={siteDbId} guest={guest} />
+        ) : section === "recovery" ? (
+          <RecoveryTab siteDbId={siteDbId} guest={guest} />
+        ) : (
+          <DisavowTab siteDbId={siteDbId} />
+        )
+      ) : (
+        <>
       {/* Provider tabs — "load from where" lives here, not only in Settings. All is the merged
           main table; the provider tabs show that source's own view and refresh its own key. */}
       {!guest && (
@@ -537,6 +572,8 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
                 style={{ cursor: pageNo >= tablePages ? "default" : "pointer", opacity: pageNo >= tablePages ? 0.5 : 1 }}>›</button>
             </div>
           )}
+        </>
+      )}
         </>
       )}
     </div>

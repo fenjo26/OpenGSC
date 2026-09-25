@@ -1,0 +1,106 @@
+/* OpenGSC extension options — the app's palette, rewritten as plain CSS
+   (globals.css is the source of truth; dark is the app's default, light follows the OS). */
+
+:root {
+  color-scheme: dark;
+  --color-bg: #000000;
+  --color-card: #1c1c1e;
+  --color-card-hover: #2c2c2e;
+  --color-border: #3a3a3c;
+  --color-text-primary: #f5f5f7;
+  --color-text-secondary: #a1a1a6;
+  --color-text-tertiary: #6e6e73;
+  --color-accent-blue: #2997ff;
+  --color-accent-green: #34c759;
+  --color-accent-red: #ff453a;
+  --color-accent-orange: #ff9f0a;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --color-bg: #f5f5f7;
+    --color-card: #ffffff;
+    --color-card-hover: #fafafc;
+    --color-border: #d2d2d7;
+    --color-text-primary: #1d1d1f;
+    --color-text-secondary: #6e6e73;
+    --color-text-tertiary: #a1a1a6;
+    --color-accent-blue: #0066cc;
+    --color-accent-green: #1d8348;
+    --color-accent-red: #c0392b;
+    --color-accent-orange: #b7600a;
+  }
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 640px; margin: 0 auto; padding: 24px 16px 48px; display: flex; flex-direction: column; gap: 16px; }
+h1 { font-size: 22px; font-weight: 700; }
+h2 { font-size: 15px; font-weight: 700; margin-bottom: 10px; }
+.sub { color: var(--color-text-secondary); font-size: 13px; }
+.hint { color: var(--color-text-secondary); font-size: 12.5px; margin-top: 8px; }
+
+.card {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; font-size: 13px; }
+.field span { color: var(--color-text-secondary); }
+
+input {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-family: ui-monospace, monospace;
+  outline: none;
+}
+input:focus { border-color: var(--color-accent-blue); }
+
+.row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+button {
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: none;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+button.primary { background: var(--color-accent-blue); color: #fff; }
+button.ghost {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+}
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.status { font-size: 12.5px; }
+.status.ok { color: var(--color-accent-green); }
+.status.err { color: var(--color-accent-red); }
+.status.warn { color: var(--color-accent-orange); }
+
+.mono {
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  user-select: all;
+}

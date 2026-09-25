@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import PasswordChangeGate from "@/components/PasswordChangeGate";
 import { useSession, signOut } from "next-auth/react";
 import { useState, useEffect, Suspense } from "react";
-import { Settings, LogOut, Sparkles, Globe, Newspaper, LayoutDashboard, TrendingUp, Anchor, BarChart2, Users, Compass, Radar, Server, ClipboardCheck, Menu, Boxes, Waves } from "lucide-react";
+import { Settings, LogOut, Sparkles, Globe, Newspaper, LayoutDashboard, TrendingUp, Anchor, BarChart2, Users, Compass, Radar, Server, ClipboardCheck, Menu, Boxes, Waves, Fingerprint, MapPin, FileText, Inbox } from "lucide-react";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { useTheme } from "@/lib/ThemeContext";
 import { useLayout } from "@/lib/LayoutContext";
@@ -627,6 +627,15 @@ function useNavItems(): NavItem[] {
     // Visible always, unlike /aparser: the page itself explains what is missing (A-Parser
     // credentials) instead of the entry hiding and the feature looking absent.
     { href: "/serp-monitor", label: t("serpmonNavTitle"), key: "serpmon", icon: <Waves size={14} /> },
+    // ─── wave-nov nav entries (CONTRACT.md §3), after /serp-monitor ──────────────────
+    // N1: templates repeated across the portfolio's sites — reads only local data.
+    { href: "/footprint", label: t("fpNavTitle"), key: "footprint", icon: <Fingerprint size={14} /> },
+    // N4: Local SEO (business profile, NAP, directories, GBP) — sits next to the rank tools.
+    { href: "/local", label: t("locNavTitle"), key: "local", icon: <MapPin size={14} /> },
+    // N8: client reports (white-label, PDF, scheduled mailing).
+    { href: "/reports", label: t("repNavTitle"), key: "reports", icon: <FileText size={14} /> },
+    // N9: incoming leads from the embeddable audit widget.
+    { href: "/leads", label: t("leadNavTitle"), key: "leads", icon: <Inbox size={14} /> },
     { href: "/digest", label: t("digestNavTitle"), key: "digest", icon: <Newspaper size={14} /> },
     // Points inward at the user's own machine rather than at this instance's data or at
     // somebody else's site — hence last, and hidden until that machine exists.
@@ -965,8 +974,12 @@ function TopBar() {
 }
 
 // ─── Shell ────────────────────────────────────────────────────────────────────
-// Paths rendered without the app shell (no TopBar): auth pages and public share links.
-const AUTH_PATHS = ["/login", "/share", "/join"];
+// Paths rendered without the app shell (no TopBar): auth pages, public share links, and the
+// wave-nov public surfaces — the embeddable audit widget (N9) opens inside somebody else's
+// iframe, and the client report link (N8, /share/report/<token>) opens for a customer. Both
+// must render with zero app chrome. /share/report/ is already covered by the "/share" prefix;
+// "/embed" is new.
+const AUTH_PATHS = ["/login", "/share", "/join", "/embed"];
 
 function Shell({ children }: { children: React.ReactNode }) {
   // Shell no longer reads the layout context: page width is applied through CSS custom properties

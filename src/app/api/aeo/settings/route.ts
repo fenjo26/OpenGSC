@@ -2,18 +2,20 @@ import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { AEO_DEFAULT_MODEL } from "@/lib/seo/aeo";
+import { sentimentAutoEnabled, setSentimentAuto } from "@/lib/visibility/sentimentStore";
 
-// Per-site AI Visibility settings: which model answers, where it answers from, and whether the
-// background scheduler is allowed to spend the user's credits unattended.
+// Per-site AI Visibility settings: which model answers, where it answers from, whether the
+// background scheduler is allowed to spend the user's credits unattended, and whether fresh
+// answers get a sentiment pass automatically (N7 — off by default, like aeoAuto).
 
 async function ownedSite(userId: string, siteId: string) {
   return prisma.site.findFirst({ where: { id: siteId, userId } });
 }
 
-function shape(site: {
+async function getShape(site: {
   aeoModel?: string | null; market?: string | null; aeoCountry?: string | null;
   aeoCity?: string | null; aeoLanguage?: string | null; aeoAuto?: boolean;
-}) {
+}, userId: string, siteId: string) {
   return {
     model: site.aeoModel || AEO_DEFAULT_MODEL,
     // `market` is the fallback, surfaced as `inheritedCountry` so the UI can show the country
@@ -23,6 +25,7 @@ function shape(site: {
     city: site.aeoCity ?? null,
     language: site.aeoLanguage ?? null,
     auto: !!site.aeoAuto,
+    sentimentAuto: await sentimentAutoEnabled(userId, siteId),
   };
 }
 
@@ -32,13 +35,14 @@ export async function GET(req: Request) {
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
-  const site = await ownedSite(userId, searchParams.get("siteId") || "");
+  const siteId = searchParams.get("siteId") || "";
+  const site = await ownedSite(userId, siteId);
   if (!site) return NextResponse.json({ error: "Site not found" }, { status: 404 });
 
-  return NextResponse.json(shape(site));
+  return NextResponse.json(await getShape(site, userId, site.id));
 }
 
-// PUT /api/aeo/settings  { siteId, model?, country?, city?, language?, auto? }
+// PUT /api/aeo/settings  { siteId, model?, country?, city?, language?, auto?, sentimentAuto? }
 // Empty string clears a field back to null — "ask without a location" has to be expressible,
 // otherwise a country picked once could never be un-picked.
 export async function PUT(req: Request) {
@@ -66,5 +70,19 @@ export async function PUT(req: Request) {
     ? await prisma.site.update({ where: { id: site.id }, data })
     : site;
 
-  return NextResponse.json({ ok: true, ...shape(updated) });
+  // The sentiment toggle has no Site column in this wave (schema is N0's); it lives in
+  // InstanceSetting under `aeoSentAuto:<siteId>` — written only after the ownership check above.
+  if (b.sentimentAuto !== undefined) {
+    try {
+      await setSentimentAuto(userId, site.id, !!b.sentimentAuto);
+    } catch (e) {
+      const v = e as { code?: string; message?: string };
+      if (v?.code === "P2025" || v?.code === "P2021" || /no such table/i.test(String(v?.message ?? ""))) {
+        return NextResponse.json({ notMigrated: true });
+      }
+      throw e;
+    }
+  }
+
+  return NextResponse.json({ ok: true, ...(await getShape(updated, userId, site.id)) });
 }

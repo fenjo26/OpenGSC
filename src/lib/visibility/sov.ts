@@ -8,7 +8,7 @@
 
 import type { AiCompetitor, CitedDomainRow, SovEngineRow, SovReport } from "./types";
 
-export interface SovAnswer { questionId: string; question: string; engine: string; checkedAt: Date; answerText: string | null; citations: { url: string; domain: string; title: string }[]; rank: number | null; status: string | null }
+export interface SovAnswer { questionId: string; question: string; engine: string; checkedAt: Date; answerText: string | null; citations: { url: string; domain: string; title: string }[]; rank: number | null; status: string | null; sentiment?: string | null }
 
 // ─── folding: case- and diacritics-insensitive comparison ─────────────────────
 
@@ -78,21 +78,27 @@ function rivalTerms(r: AiCompetitor): string[] {
 
 /** For every (questionId, engine) pair keeps only the newest answer inside [from, to].
  *  A question checked thirty times must not outweigh one checked once. Rows without answer
- *  text are dropped: an errored check (which never stores text) is not evidence that a brand
- *  went unmentioned. */
+ *  text are dropped EXCEPT a `no_overview` row: that is the engine's current verdict for the
+ *  pair ("Google shows no overview for this question"), so it is selected like any answer and
+ *  then EXCLUDED from every denominator — the pair leaves the report rather than dragging a
+ *  stale older answer behind it. An errored check (no text, no status) is never a candidate:
+ *  a rate limit is not evidence that a brand went unmentioned. */
 export function latestPerQuestionEngine(answers: SovAnswer[], from: Date, to: Date): SovAnswer[] {
   const fromMs = from.getTime();
   const toMs = to.getTime();
-  const latest = new Map<string, SovAnswer>();
+  const latest = new Map<string, { a: SovAnswer; ts: number }>();
   for (const a of answers) {
-    if (!a.answerText || !a.answerText.trim()) continue;
     const ts = a.checkedAt instanceof Date ? a.checkedAt.getTime() : new Date(a.checkedAt).getTime();
     if (ts < fromMs || ts > toMs) continue;
+    const hasAnswer = !!a.answerText && !!a.answerText.trim();
+    const noOverview = a.status === "no_overview";
+    if (!hasAnswer && !noOverview) continue; // errored / hollow row — not evidence
     const key = `${a.questionId}\u0000${a.engine}`;
     const prev = latest.get(key);
-    if (!prev || ts >= prev.checkedAt.getTime()) latest.set(key, a);
+    if (!prev || ts >= prev.ts) latest.set(key, { a, ts });
   }
-  return [...latest.values()];
+  // A selected no_overview row retires the pair instead of counting as an answer.
+  return [...latest.values()].map(x => x.a).filter(a => a.status !== "no_overview");
 }
 
 // ─── ISO weeks ────────────────────────────────────────────────────────────────
@@ -330,4 +336,36 @@ export function questionLike(query: string, lang: string): boolean {
   // GSC queries arrive in whatever language the site's visitors speak.
   const lists = FOLDED_QUESTION_WORDS.get(l) ? [FOLDED_QUESTION_WORDS.get(l)!] : ALL_FOLDED_WORDS;
   return lists.some(list => list.includes(first));
+}
+
+// ─── sentiment distribution (N7) ──────────────────────────────────────────────
+
+/** Counts per sentiment over the answers that mention the brand. `notAnalysed` = mentions the
+ *  sentiment pass has not reached (or the model answered garbage for): null, not zero, not
+ *  "neutral" — an unmeasured answer is a different thing from a measured neutral one. */
+export interface SentimentSlice {
+  positive: number;
+  neutral: number;
+  negative: number;
+  mixed: number;
+  notAnalysed: number;
+}
+
+const emptySlice = (): SentimentSlice => ({ positive: 0, neutral: 0, negative: 0, mixed: 0, notAnalysed: 0 });
+
+/** Distribution of stored sentiment across `answers` (expected: the windowed latest-per-pair
+ *  list) that mention the brand behind `terms`. Returns null when the brand is not mentioned
+ *  anywhere — "no data", never a slice of zeros pretending to be a measurement. */
+export function sentimentDistribution(answers: SovAnswer[], terms: string[]): SentimentSlice | null {
+  const rows = answers.filter(a => a.status === "cited" || a.status === "mentioned" || mentionsOf(a.answerText ?? "", terms));
+  if (!rows.length) return null;
+  const slice = emptySlice();
+  for (const r of rows) {
+    if (r.sentiment === "positive" || r.sentiment === "neutral" || r.sentiment === "negative" || r.sentiment === "mixed") {
+      slice[r.sentiment] += 1;
+    } else {
+      slice.notAnalysed += 1;
+    }
+  }
+  return slice;
 }

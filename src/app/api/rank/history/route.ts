@@ -30,7 +30,7 @@ export async function GET(req: Request) {
   const checks = await prisma.rankCheck.findMany({
     where: { keywordId, checkedAt: { gte: since } },
     orderBy: { checkedAt: "asc" },
-    select: { checkedAt: true, position: true, url: true, error: true },
+    select: { checkedAt: true, position: true, url: true, error: true, localPack: true, hasLocalPack: true },
   });
 
   // GSC daily series for this exact query. For a guest (share link) there's no session user,
@@ -45,7 +45,7 @@ export async function GET(req: Request) {
   });
 
   // Merge by ISO day
-  const byDay = new Map<string, { date: string; serp: number | null; gsc: number | null; clicks: number; impressions: number }>();
+  const byDay = new Map<string, { date: string; serp: number | null; gsc: number | null; clicks: number; impressions: number; pack: number | null; hasPack: boolean | null }>();
   const dayOf = (d: Date | string) => new Date(d).toISOString().split("T")[0];
   for (const r of gscRows) {
     const day = r.keys?.[0] ?? "";
@@ -56,12 +56,21 @@ export async function GET(req: Request) {
       gsc: +((r.position ?? 0).toFixed(1)),
       clicks: r.clicks ?? 0,
       impressions: r.impressions ?? 0,
+      pack: null,
+      hasPack: null,
     });
   }
   for (const c of checks) {
     const day = dayOf(c.checkedAt);
-    const row = byDay.get(day) ?? { date: day, serp: null, gsc: null, clicks: 0, impressions: 0 };
+    const row = byDay.get(day) ?? { date: day, serp: null, gsc: null, clicks: 0, impressions: 0, pack: null, hasPack: null };
     if (c.position !== null) row.serp = c.position; // last check of the day wins
+    // wave-nov N3: the map-pack place is a SECOND series, never folded into `serp`. Only a
+    // check that said something about the pack touches these fields, so a day with no local
+    // information stays null rather than reading as "outside the pack".
+    if (c.localPack !== null || c.hasLocalPack !== null) {
+      row.pack = c.localPack;
+      row.hasPack = c.hasLocalPack ?? null;
+    }
     byDay.set(day, row);
   }
 
@@ -70,10 +79,12 @@ export async function GET(req: Request) {
   return NextResponse.json({
     keyword: kw.keyword,
     country: kw.country,
+    location: kw.location,
     position: kw.lastPosition,
     bestPosition: kw.bestPosition,
     url: kw.lastUrl,
+    localPack: kw.lastLocalPack,
     series,
-    checks: checks.map(c => ({ date: c.checkedAt, position: c.position, url: c.url, error: c.error })),
+    checks: checks.map(c => ({ date: c.checkedAt, position: c.position, url: c.url, error: c.error, localPack: c.localPack, hasLocalPack: c.hasLocalPack })),
   });
 }

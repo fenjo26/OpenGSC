@@ -1,0 +1,85 @@
+{
+  "_comment": "Shape of a DataForSEO SERP Google Organic Live Advanced answer with a local pack, per https://docs.dataforseo.com/v3/serp/google/organic/live/advanced/ (account fields removed, names changed). Items of type \"local_pack\" are one per business in the map pack; the interleaved organic row proves the filter.",
+  "version": "0.1.20260901",
+  "status_code": 20000,
+  "status_message": "Ok.",
+  "cost": 0.0013,
+  "tasks_count": 1,
+  "tasks_error": 0,
+  "tasks": [
+    {
+      "id": "09201445-1535-0102-0000-5b7c6a1b3d4e",
+      "status_code": 20000,
+      "status_message": "Ok.",
+      "cost": 0.0013,
+      "result_count": 12,
+      "result": [
+        {
+          "keyword": "taxi thessaloniki airport",
+          "type": "organic",
+          "se_domain": "google.gr",
+          "location_code": 2300,
+          "language_code": "en",
+          "check_url": "https://www.google.gr/search?q=taxi%20thessaloniki%20airport&hl=en&gl=gr&uule=w+CAISCIh..."
+          ,
+          "se_results_count": 8240000,
+          "items_count": 12,
+          "items": [
+            {
+              "type": "local_pack",
+              "rank_group": 1,
+              "rank_absolute": 1,
+              "position": "left",
+              "title": "Sky Taxi Thessaloniki",
+              "domain": "skytaxi.gr",
+              "phone": "+30 2310 000000",
+              "url": "https://skytaxi.gr/",
+              "address": "Airport Road, Thessaloniki 546 03",
+              "address_info": { "borough": "Thessaloniki", "address": "Airport Road", "city": "Thessaloniki", "zip": "546 03", "region": "Central Macedonia", "country_code": "GR" },
+              "geo_coordinates": { "latitude": 40.5197, "longitude": 22.9709 },
+              "rating": { "rating_type": "Max5", "value": 4.9, "votes_count": 210, "rating_count": 42 },
+              "price_level": "FREE"
+            },
+            {
+              "type": "local_pack",
+              "rank_group": 2,
+              "rank_absolute": 2,
+              "position": "left",
+              "title": "Thessaloniki Airport Transfers 24h",
+              "domain": null,
+              "address": null,
+              "rating": { "rating_type": "Max5", "value": 4.6, "votes_count": 87 }
+            },
+            {
+              "type": "organic",
+              "rank_group": 1,
+              "rank_absolute": 4,
+              "domain": "skytaxi.gr",
+              "title": "Sky Taxi — Thessaloniki airport transfers",
+              "description": "Fixed price airport transfers, 24/7.",
+              "url": "https://skytaxi.gr/"
+            },
+            {
+              "type": "local_pack",
+              "rank_group": 3,
+              "rank_absolute": 3,
+              "position": "left",
+              "title": "KTEL Transfers",
+              "domain": "ktel-macedonia.gr",
+              "rating": null
+            },
+            {
+              "type": "organic",
+              "rank_group": 2,
+              "rank_absolute": 5,
+              "domain": "example-travel-blog.gr",
+              "title": "Thessaloniki Airport Taxi Guide",
+              "description": "Everything about taxis at SKG.",
+              "url": "https://www.example-travel-blog.gr/taxi-guide"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

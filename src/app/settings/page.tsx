@@ -16,6 +16,11 @@ import MetricsSettingsSection from "@/components/MetricsSettingsSection";
 import ProviderLogSection from "@/components/ProviderLogSection";
 import NotifyChannelsCard, { ChannelEventsRow } from "@/components/NotifyChannelsCard";
 import UptimeSettingsCard from "@/components/uptime/UptimeSettingsCard";
+// wave-nov settings cards (CONTRACT.md §3) — each stub is replaced by its owning task.
+import PushSettingsCard from "@/components/PushSettingsCard";                       // N10
+import ReportBrandingCard from "@/components/reports/ReportBrandingCard";           // N8
+import WidgetSettingsCard from "@/components/leads/WidgetSettingsCard";             // N9
+import ExtensionTokenCard from "@/components/ExtensionTokenCard";                   // N11
 
 type NavItem = "accounts" | "bing" | "yandex" | "teams" | "api" | "api-keys" | "indexing-api" | "metrics" | "seo-tools" | "provider-log" | "notifications" | "members" | "preferences" | "supersites";
 
@@ -1068,6 +1073,13 @@ function NotificationsSection() {
       {/* Wave-oct delivery channels (Discord/Teams/SMTP/webhook) and the uptime workspace settings */}
       <NotifyChannelsCard />
       <UptimeSettingsCard />
+
+      {/* Wave-nov settings cards (CONTRACT.md §3), after UptimeSettingsCard. Stub bodies from
+          the foundation commit; N10/N8/N9/N11 replace their own card in place. */}
+      <PushSettingsCard />
+      <ReportBrandingCard />
+      <WidgetSettingsCard />
+      <ExtensionTokenCard />
 
       {/* Alert rules */}
       {alerts && (

@@ -99,6 +99,21 @@ type Tpl = {
   mentionsNotifyTitle: (site: string) => string;
   mentionsNotifyMsg: (site: string, n: number, lines: string) => string;
   notifyTestMsg: (channel: string) => string;
+  // wave-nov (CONTRACT.md §5) — backlink toxicity (N2, event "alert"), GBP reviews + map-pack
+  // changes (N3/N4, event "local"), rising queries (N5, event "trend" + the digest section),
+  // widget leads (N9, event "lead"), report sending (N8, event "digest").
+  toxicNewTitle: (site: string) => string;
+  toxicNewMsg: (site: string, n: number, lines: string) => string;
+  gbpReviewTitle: (site: string, rating: number) => string;
+  gbpReviewMsg: (site: string, author: string, rating: number, text: string) => string;
+  localPackTitle: (site: string) => string;
+  localPackMsg: (site: string, lines: string) => string;
+  trendsTitle: (site: string) => string;
+  trendsMsg: (site: string, lines: string) => string;
+  digestTrends: string;
+  leadNewTitle: (domain: string) => string;
+  leadNewMsg: (domain: string, email: string, score: number, top: string) => string;
+  reportSentMsg: (title: string, to: string) => string;
 };
 
 // Downtime formatting for push messages: the two most significant non-zero units of
@@ -225,6 +240,18 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     mentionsNotifyTitle: site => `\u{1F4F0} New mentions of ${site}`,
     mentionsNotifyMsg: (site, n, lines) => `*${site}* \u2014 ${n} new mention(s):\n${lines}`,
     notifyTestMsg: channel => `\u2705 OpenGSC test message via ${channel}.`,
+    toxicNewTitle: site => `\u2623\uFE0F ${site}: new toxic backlinks`,
+    toxicNewMsg: (site, n, lines) => `*${site}* \u2014 ${n} new toxic referring domain(s):\n${lines}`,
+    gbpReviewTitle: (site, rating) => `\u2B50 ${site}: new ${rating}\u2605 review`,
+    gbpReviewMsg: (site, author, rating, text) => `*${site}* \u2014 ${author}, ${rating}\u2605:\n${text}`,
+    localPackTitle: site => `\u{1F4CD} ${site}: map pack changes`,
+    localPackMsg: (site, lines) => `*${site}*:\n${lines}`,
+    trendsTitle: site => `\u{1F4C8} ${site}: rising queries`,
+    trendsMsg: (site, lines) => `*${site}*:\n${lines}`,
+    digestTrends: "Rising queries",
+    leadNewTitle: domain => `\u{1F4E5} New lead: ${domain}`,
+    leadNewMsg: (domain, email, score, top) => `*${domain}* \u00B7 ${email}\nScore ${score}/100\nTop issues: ${top}`,
+    reportSentMsg: (title, to) => `\u{1F4C4} Report \u201C${title}\u201D sent to ${to}.`,
   },
   ru: {
     rankDropTitle: kw => `📉 Падение позиции: ${kw}`,
@@ -320,6 +347,18 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     mentionsNotifyTitle: site => `\u{1F4F0} Новые упоминания ${site}`,
     mentionsNotifyMsg: (site, n, lines) => `*${site}* \u2014 новых упоминаний: ${n}\n${lines}`,
     notifyTestMsg: channel => `\u2705 Тестовое сообщение OpenGSC через ${channel}.`,
+    toxicNewTitle: site => `\u2623\uFE0F ${site}: новые токсичные ссылки`,
+    toxicNewMsg: (site, n, lines) => `*${site}* \u2014 новых токсичных доноров: ${n}\n${lines}`,
+    gbpReviewTitle: (site, rating) => `\u2B50 ${site}: новый отзыв ${rating}\u2605`,
+    gbpReviewMsg: (site, author, rating, text) => `*${site}* \u2014 ${author}, ${rating}\u2605:\n${text}`,
+    localPackTitle: site => `\u{1F4CD} ${site}: изменения в local pack`,
+    localPackMsg: (site, lines) => `*${site}*:\n${lines}`,
+    trendsTitle: site => `\u{1F4C8} ${site}: растущие запросы`,
+    trendsMsg: (site, lines) => `*${site}*:\n${lines}`,
+    digestTrends: "Растущие запросы",
+    leadNewTitle: domain => `\u{1F4E5} Новый лид: ${domain}`,
+    leadNewMsg: (domain, email, score, top) => `*${domain}* \u00B7 ${email}\nОценка ${score}/100\nГлавные проблемы: ${top}`,
+    reportSentMsg: (title, to) => `\u{1F4C4} Отчёт «${title}» отправлен: ${to}.`,
   },
   uk: {
     rankDropTitle: kw => `📉 Падіння позиції: ${kw}`,
@@ -415,6 +454,18 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     mentionsNotifyTitle: site => `\u{1F4F0} Нові згадки ${site}`,
     mentionsNotifyMsg: (site, n, lines) => `*${site}* \u2014 нових згадок: ${n}\n${lines}`,
     notifyTestMsg: channel => `\u2705 Тестове повідомлення OpenGSC через ${channel}.`,
+    toxicNewTitle: site => `\u2623\uFE0F ${site}: нові токсичні посилання`,
+    toxicNewMsg: (site, n, lines) => `*${site}* \u2014 нових токсичних донорів: ${n}\n${lines}`,
+    gbpReviewTitle: (site, rating) => `\u2B50 ${site}: новий відгук ${rating}\u2605`,
+    gbpReviewMsg: (site, author, rating, text) => `*${site}* \u2014 ${author}, ${rating}\u2605:\n${text}`,
+    localPackTitle: site => `\u{1F4CD} ${site}: зміни в local pack`,
+    localPackMsg: (site, lines) => `*${site}*:\n${lines}`,
+    trendsTitle: site => `\u{1F4C8} ${site}: запити, що зростають`,
+    trendsMsg: (site, lines) => `*${site}*:\n${lines}`,
+    digestTrends: "Запити, що зростають",
+    leadNewTitle: domain => `\u{1F4E5} Новий лід: ${domain}`,
+    leadNewMsg: (domain, email, score, top) => `*${domain}* \u00B7 ${email}\nОцінка ${score}/100\nГоловні проблеми: ${top}`,
+    reportSentMsg: (title, to) => `\u{1F4C4} Звіт «${title}» надіслано: ${to}.`,
   },
   fr: {
     rankDropTitle: kw => `📉 Chute de position : ${kw}`,
@@ -510,6 +561,18 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     mentionsNotifyTitle: site => `\u{1F4F0} Nouvelles mentions de ${site}`,
     mentionsNotifyMsg: (site, n, lines) => `*${site}* \u2014 ${n} nouvelle(s) mention(s) :\n${lines}`,
     notifyTestMsg: channel => `\u2705 Message de test OpenGSC via ${channel}.`,
+    toxicNewTitle: site => `\u2623\uFE0F ${site} : nouveaux backlinks toxiques`,
+    toxicNewMsg: (site, n, lines) => `*${site}* \u2014 ${n} nouveau(x) domaine(s) référent(s) toxique(s) :\n${lines}`,
+    gbpReviewTitle: (site, rating) => `\u2B50 ${site} : nouvel avis ${rating}\u2605`,
+    gbpReviewMsg: (site, author, rating, text) => `*${site}* \u2014 ${author}, ${rating}\u2605 :\n${text}`,
+    localPackTitle: site => `\u{1F4CD} ${site} : changements dans le pack local`,
+    localPackMsg: (site, lines) => `*${site}* :\n${lines}`,
+    trendsTitle: site => `\u{1F4C8} ${site} : requêtes en hausse`,
+    trendsMsg: (site, lines) => `*${site}* :\n${lines}`,
+    digestTrends: "Requêtes en hausse",
+    leadNewTitle: domain => `\u{1F4E5} Nouveau lead : ${domain}`,
+    leadNewMsg: (domain, email, score, top) => `*${domain}* \u00B7 ${email}\nScore ${score}/100\nPrincipaux problèmes : ${top}`,
+    reportSentMsg: (title, to) => `\u{1F4C4} Rapport \u00AB ${title} \u00BB envoyé à ${to}.`,
   },
   es: {
     rankDropTitle: kw => `📉 Caída de posición: ${kw}`,
@@ -605,6 +668,18 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     mentionsNotifyTitle: site => `\u{1F4F0} Nuevas menciones de ${site}`,
     mentionsNotifyMsg: (site, n, lines) => `*${site}* \u2014 ${n} mención(es) nueva(s):\n${lines}`,
     notifyTestMsg: channel => `\u2705 Mensaje de prueba de OpenGSC vía ${channel}.`,
+    toxicNewTitle: site => `\u2623\uFE0F ${site}: nuevos backlinks tóxicos`,
+    toxicNewMsg: (site, n, lines) => `*${site}* \u2014 nuevos dominios referentes tóxicos: ${n}\n${lines}`,
+    gbpReviewTitle: (site, rating) => `\u2B50 ${site}: nueva reseña de ${rating}\u2605`,
+    gbpReviewMsg: (site, author, rating, text) => `*${site}* \u2014 ${author}, ${rating}\u2605:\n${text}`,
+    localPackTitle: site => `\u{1F4CD} ${site}: cambios en el pack local`,
+    localPackMsg: (site, lines) => `*${site}*:\n${lines}`,
+    trendsTitle: site => `\u{1F4C8} ${site}: consultas en ascenso`,
+    trendsMsg: (site, lines) => `*${site}*:\n${lines}`,
+    digestTrends: "Consultas en ascenso",
+    leadNewTitle: domain => `\u{1F4E5} Nuevo lead: ${domain}`,
+    leadNewMsg: (domain, email, score, top) => `*${domain}* \u00B7 ${email}\nPuntuación ${score}/100\nProblemas principales: ${top}`,
+    reportSentMsg: (title, to) => `\u{1F4C4} Informe \u00AB${title}\u00BB enviado a ${to}.`,
   },
   de: {
     rankDropTitle: kw => `📉 Positionsverlust: ${kw}`,
@@ -700,6 +775,18 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     mentionsNotifyTitle: site => `\u{1F4F0} Neue Erwähnungen von ${site}`,
     mentionsNotifyMsg: (site, n, lines) => `*${site}* \u2014 ${n} neue Erwähnung(en):\n${lines}`,
     notifyTestMsg: channel => `\u2705 OpenGSC-Testnachricht über ${channel}.`,
+    toxicNewTitle: site => `\u2623\uFE0F ${site}: neue toxische Backlinks`,
+    toxicNewMsg: (site, n, lines) => `*${site}* \u2014 neue toxische verweisende Domains: ${n}\n${lines}`,
+    gbpReviewTitle: (site, rating) => `\u2B50 ${site}: neue Bewertung ${rating}\u2605`,
+    gbpReviewMsg: (site, author, rating, text) => `*${site}* \u2014 ${author}, ${rating}\u2605:\n${text}`,
+    localPackTitle: site => `\u{1F4CD} ${site}: Änderungen im Local Pack`,
+    localPackMsg: (site, lines) => `*${site}*:\n${lines}`,
+    trendsTitle: site => `\u{1F4C8} ${site}: aufstrebende Suchanfragen`,
+    trendsMsg: (site, lines) => `*${site}*:\n${lines}`,
+    digestTrends: "Aufstrebende Suchanfragen",
+    leadNewTitle: domain => `\u{1F4E5} Neuer Lead: ${domain}`,
+    leadNewMsg: (domain, email, score, top) => `*${domain}* \u00B7 ${email}\nScore ${score}/100\nTop-Probleme: ${top}`,
+    reportSentMsg: (title, to) => `\u{1F4C4} Bericht \u201E${title}\u201C wurde an ${to} gesendet.`,
   },
   zh: {
     rankDropTitle: kw => `📉 排名下降：${kw}`,
@@ -795,5 +882,17 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     mentionsNotifyTitle: site => `\u{1F4F0} ${site} 的新提及`,
     mentionsNotifyMsg: (site, n, lines) => `*${site}* \u2014 新提及 ${n} 条：\n${lines}`,
     notifyTestMsg: channel => `\u2705 OpenGSC 通过 ${channel} 发送的测试消息。`,
+    toxicNewTitle: site => `\u2623\uFE0F ${site}：新增 toxic 外链`,
+    toxicNewMsg: (site, n, lines) => `*${site}* \u2014 新增 toxic 引荐域名：${n} 个\n${lines}`,
+    gbpReviewTitle: (site, rating) => `\u2B50 ${site}：收到 ${rating}\u2605 新评价`,
+    gbpReviewMsg: (site, author, rating, text) => `*${site}* \u2014 ${author}，${rating}\u2605：\n${text}`,
+    localPackTitle: site => `\u{1F4CD} ${site}：地图包发生变化`,
+    localPackMsg: (site, lines) => `*${site}*：\n${lines}`,
+    trendsTitle: site => `\u{1F4C8} ${site}：上升的搜索词`,
+    trendsMsg: (site, lines) => `*${site}*：\n${lines}`,
+    digestTrends: "上升的搜索词",
+    leadNewTitle: domain => `\u{1F4E5} 新线索：${domain}`,
+    leadNewMsg: (domain, email, score, top) => `*${domain}* \u00B7 ${email}\n评分 ${score}/100\n主要问题：${top}`,
+    reportSentMsg: (title, to) => `\u{1F4C4} 报告「${title}」已发送给 ${to}。`,
   },
 };

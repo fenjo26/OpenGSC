@@ -48,9 +48,12 @@ const smallBtn: React.CSSProperties = {
 // Event multi-select shared by every channel row (and by the Telegram/Slack blocks on the page).
 export function EventPicker({ events, onToggle }: { events: NotifyEvent[]; onToggle: (e: NotifyEvent) => void }) {
   const { t } = useLanguage();
+  // wave-nov (N0): lead (N9), local (N3/N4), trend (N5) widened NotifyEvent — minimal labels
+  // so the exhaustive Record compiles; N10 restyles this card together with the push row.
   const labelFor: Record<NotifyEvent, string> = {
     alert: t("notifyEv_alert"), digest: t("notifyEv_digest"), uptime: t("notifyEv_uptime"),
     index: t("notifyEv_index"), mention: t("notifyEv_mention"), test: "",
+    lead: t("notifyEv_lead"), local: t("notifyEv_local"), trend: t("notifyEv_trend"),
   };
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
@@ -274,7 +277,6 @@ export default function NotifyChannelsCard() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState("");
   const [msgs, setMsgs] = useState<Record<string, { ok: boolean; text: string }>>({});
-
   const load = () => fetch("/api/settings/notify-channels")
     .then(r => r.json())
     .then(d => {
@@ -372,24 +374,53 @@ export default function NotifyChannelsCard() {
       {views === null ? (
         <div style={{ fontSize: "13px", color: "var(--color-text-secondary)" }}>…</div>
       ) : (
-        ROWS.map(id => {
-          const view = views.find(v => v.id === id)
-            ?? { id, configured: false, on: false, events: [] as NotifyEvent[], target: null, lastOkAt: null, lastError: null };
-          return (
-            <ChannelRow
-              key={id}
-              view={view}
-              draft={drafts[id] ?? seedDraft(view)}
-              setDraft={setDraft(id)}
-              busy={busyId === `save:${id}` ? "save" : busyId === `test:${id}` ? "test" : ""}
-              msg={msgs[id]}
-              onSave={() => save(id)}
-              onTest={() => test(id)}
-              onToggleOpen={() => expand(id)}
-              open={openId === id}
-            />
-          );
-        })
+        <>
+          {ROWS.map(id => {
+            const view = views.find(v => v.id === id)
+              ?? { id, configured: false, on: false, events: [] as NotifyEvent[], target: null, lastOkAt: null, lastError: null };
+            return (
+              <ChannelRow
+                key={id}
+                view={view}
+                draft={drafts[id] ?? seedDraft(view)}
+                setDraft={setDraft(id)}
+                busy={busyId === `save:${id}` ? "save" : busyId === `test:${id}` ? "test" : ""}
+                msg={msgs[id]}
+                onSave={() => save(id)}
+                onTest={() => test(id)}
+                onToggleOpen={() => expand(id)}
+                open={openId === id}
+              />
+            );
+          })}
+          {/* wave-nov (N10): the push channel. Its config is per-device (PushSettingsCard
+              right below in Settings), so this row only reports state and links there. */}
+          {(() => {
+            const view = views.find(v => v.id === "webpush");
+            if (!view) return null;
+            return (
+              <div style={{ border: "1px solid var(--color-border)", borderRadius: "10px", padding: "11px 14px", display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                <span style={{ fontSize: "13px", fontWeight: 600, color: "var(--color-text-primary)" }}>{t("pwaPushChannel")}</span>
+                {view.configured ? (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "12px", color: "#10B981", fontWeight: 600 }}>
+                    <CheckCircle size={13} /> {t("pwaPushCount").replace("{n}", view.target ?? "0")}
+                  </span>
+                ) : (
+                  <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>{t("apiKeyNotConfigured")}</span>
+                )}
+                {view.configured && !view.lastError && view.lastOkAt && (
+                  <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", fontWeight: 400 }}>
+                    {t("notifyChLastOk").replace("{time}", new Date(view.lastOkAt).toLocaleString())}
+                  </span>
+                )}
+                <span style={{ flex: 1 }} />
+                <a href="#push-settings" style={{ fontSize: "12px", fontWeight: 600, color: "var(--color-accent-blue)" }}>
+                  {t("pwaPushDevices")} →
+                </a>
+              </div>
+            );
+          })()}
+        </>
       )}
     </div>
   );

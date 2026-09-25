@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   mentionsOf, latestPerQuestionEngine, buildSovReport, buildCitedDomains, questionLike, isoWeek,
+  sentimentDistribution,
   type SovAnswer,
 } from "./sov";
 import { parseGeminiGrounding } from "@/lib/seo/aeo";
@@ -339,4 +340,66 @@ test("parseGeminiGrounding: text, citations from groundingChunks, searched flag"
   assert.equal(bare.text, "plain");
   assert.equal(bare.searched, false);
   assert.equal(bare.citations.length, 0);
+});
+
+// ─── no_overview (N7): a pair Google stopped showing an overview for leaves the report ──
+
+const NO_OVERVIEW_BASE = { question: "q", citations: [] as SovAnswer["citations"], rank: null, sentiment: null as string | null };
+
+test("latestPerQuestionEngine: newest no_overview retires the pair entirely", () => {
+  const answers: SovAnswer[] = [
+    { ...NO_OVERVIEW_BASE, questionId: "q1", engine: "ai_overview", checkedAt: d("2026-09-10T10:00:00Z"), status: "cited", answerText: "Acme is great, MySite too." },
+    // Google still served the SERP, but no AI Overview for this question — status no_overview,
+    // no answer text. This is the pair's CURRENT state, so the Sep-10 answer must not survive.
+    { ...NO_OVERVIEW_BASE, questionId: "q1", engine: "ai_overview", checkedAt: d("2026-09-20T10:00:00Z"), status: "no_overview", answerText: null },
+    // An errored newest row must NOT retire anything — a rate limit is not evidence.
+    { ...NO_OVERVIEW_BASE, questionId: "q2", engine: "chatgpt", checkedAt: d("2026-09-10T10:00:00Z"), status: "cited", answerText: "MySite mention." },
+    { ...NO_OVERVIEW_BASE, questionId: "q2", engine: "chatgpt", checkedAt: d("2026-09-25T10:00:00Z"), status: null, answerText: null },
+  ];
+  const latest = latestPerQuestionEngine(answers, FROM, TO);
+  assert.equal(latest.length, 1);
+  assert.equal(latest[0]!.questionId, "q2");
+  assert.equal(latest[0]!.answerText, "MySite mention.");
+});
+
+test("buildSovReport: no_overview pairs are outside every denominator", () => {
+  const answers: SovAnswer[] = [
+    { ...NO_OVERVIEW_BASE, questionId: "q1", engine: "ai_overview", checkedAt: d("2026-09-10T10:00:00Z"), status: "cited", answerText: "MySite is the best transfer." },
+    { ...NO_OVERVIEW_BASE, questionId: "q1", engine: "ai_overview", checkedAt: d("2026-09-20T10:00:00Z"), status: "no_overview", answerText: null },
+    { ...NO_OVERVIEW_BASE, questionId: "q2", engine: "chatgpt", checkedAt: d("2026-09-15T10:00:00Z"), status: "mentioned", answerText: "MySite is okay, Acme is cheaper." },
+  ];
+  const r = buildSovReport(answers, { host: "mysite.com", terms: ["MySite"] }, RIVALS, FROM, TO);
+  // Only q2/chatgpt counts: 1 answer, 1 question — q1's superseded citation must not leak in.
+  assert.equal(r.answers, 1);
+  assert.equal(r.questions, 1);
+  assert.equal(r.shareOfVoice[0]!.mentions, 1);
+  assert.equal(r.citationShare[0]!.citations, 0);
+});
+
+// ─── sentimentDistribution (N7) ───────────────────────────────────────────────
+
+test("sentimentDistribution: counts per verdict, notAnalysed for the rest", () => {
+  const mk = (id: string, status: string, text: string, sentiment: string | null): SovAnswer => ({
+    questionId: id, question: "q", engine: "chatgpt", checkedAt: d("2026-09-10T10:00:00Z"),
+    status, rank: null, citations: [], answerText: text, sentiment,
+  });
+  const answers: SovAnswer[] = [
+    mk("q1", "cited", "MySite praised.", "positive"),
+    mk("q2", "mentioned", "MySite named.", "neutral"),
+    mk("q3", "cited", "MySite trashed.", "negative"),
+    mk("q4", "cited", "MySite mixed bag.", "mixed"),
+    mk("q5", "mentioned", "MySite named again.", null),   // pass not run / garbage reply
+    mk("q6", "absent", "No brand at all.", "positive"),   // not a mention → not counted at all
+  ];
+  const s = sentimentDistribution(answers, ["MySite"])!;
+  assert.deepEqual(s, { positive: 1, neutral: 1, negative: 1, mixed: 1, notAnalysed: 1 });
+});
+
+test("sentimentDistribution: no mentions → null (\"no data\", not zeros)", () => {
+  const answers: SovAnswer[] = [{
+    questionId: "q1", question: "q", engine: "chatgpt", checkedAt: d("2026-09-10T10:00:00Z"),
+    status: "absent", rank: null, citations: [], answerText: "Nothing branded.", sentiment: "positive",
+  }];
+  assert.equal(sentimentDistribution(answers, ["MySite"]), null);
+  assert.equal(sentimentDistribution([], ["MySite"]), null);
 });

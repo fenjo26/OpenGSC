@@ -7,7 +7,7 @@
 import { prisma } from "@/lib/prisma";
 import { hostOf, brandTermsFor } from "@/lib/seo/aeo";
 import { parseBrandTerms } from "@/lib/aeoTracker";
-import { buildSovReport, buildCitedDomains, latestPerQuestionEngine, questionLike, type SovAnswer } from "./sov";
+import { buildSovReport, buildCitedDomains, latestPerQuestionEngine, questionLike, sentimentDistribution, type SovAnswer, type SentimentSlice } from "./sov";
 import type { AiCompetitor, CitedDomainRow, SovReport, SuggestedQuestion } from "./types";
 
 const SOV_ROW_CAP = 5000;       // answerText is up to 12 kB a row — the window is bounded in rows
@@ -64,7 +64,7 @@ export function sanitizeCompetitors(list: unknown): AiCompetitor[] {
 
 export async function sovForSite(
   userId: string, siteDbId: string, days: number,
-): Promise<{ report: SovReport; cited: CitedDomainRow[] } | null> {
+): Promise<{ report: SovReport; cited: CitedDomainRow[]; sentiment: { us: SentimentSlice | null } } | null> {
   const site = await prisma.site.findFirst({
     where: { id: siteDbId, userId }, select: { url: true, brandedKeywords: true },
   });
@@ -75,19 +75,20 @@ export async function sovForSite(
   const from = new Date(to.getTime() - windowDays * 86_400_000);
 
   // One query, only the columns the aggregation reads. `error: null` keeps failed calls out —
-  // a rate limit is not evidence that a brand stopped being mentioned.
+  // a rate limit is not evidence that a brand stopped being mentioned. Rows WITHOUT answer text
+  // are loaded too: a no_overview row stores none, and it must be able to retire its pair in
+  // latestPerQuestionEngine. Everything else hollow is dropped there.
   const checks = await prisma.aeoCheck.findMany({
     where: {
       question: { siteId: siteDbId },
       checkedAt: { gte: from, lte: to },
       error: null,
-      answerText: { not: null },
     },
     orderBy: { checkedAt: "desc" },
     take: SOV_ROW_CAP,
     select: {
       questionId: true, engine: true, checkedAt: true, answerText: true,
-      citations: true, rank: true, status: true,
+      citations: true, rank: true, status: true, sentiment: true,
       question: { select: { question: true } },
     },
   });
@@ -101,6 +102,7 @@ export async function sovForSite(
     citations: parseCitations(c.citations),
     rank: c.rank,
     status: c.status,
+    sentiment: c.sentiment,
   }));
 
   // At the row cap the window shrinks to what actually fits; the oldest surviving row is the
@@ -115,8 +117,13 @@ export async function sovForSite(
 
   const report = buildSovReport(answers, { host, terms }, rivals, actualFrom, to);
   // buildSovReport applies latest-per-pair itself; the cited rating takes the same filtered list.
-  const cited = buildCitedDomains(latestPerQuestionEngine(answers, actualFrom, to), { host }, rivals, 50);
-  return { report, cited };
+  const latest = latestPerQuestionEngine(answers, actualFrom, to);
+  const cited = buildCitedDomains(latest, { host }, rivals, 50);
+  // Sentiment of OUR brand across the same windowed answers — free by construction: it reads
+  // the columns the sentiment pass already wrote. Competitor sentiment has no column and is
+  // therefore NOT here; it exists only in a paid run's response (see sentimentStore).
+  const sentiment = { us: sentimentDistribution(latest, terms) };
+  return { report, cited, sentiment };
 }
 
 // ─── competitors ──────────────────────────────────────────────────────────────

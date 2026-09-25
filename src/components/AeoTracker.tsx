@@ -19,6 +19,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Plus, RefreshCw, Trash2, ChevronDown, ChevronUp, ChevronsUpDown, Search,
   Sparkles, Check, Minus, Settings2, ExternalLink, Globe, AlertTriangle, MessageSquareQuote,
+  EyeOff, Smile, Meh, Frown, Scale, Gauge,
 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { usePrivacy } from "@/lib/PrivacyContext";
@@ -26,18 +27,25 @@ import { COUNTRIES, LANGUAGES } from "@/lib/seo/regions";
 import { getOpenAiKey, getOpenAiBaseUrl } from "@/lib/seo/geoClient";
 import { rankModels, OPENAI_FALLBACK_MODELS, type ModelOpt } from "@/lib/seo/models";
 
-const ENGINES = ["chatgpt", "perplexity", "claude", "grok", "gemini"] as const;
+const ENGINES = ["chatgpt", "perplexity", "claude", "grok", "gemini", "ai_overview"] as const;
 type Engine = typeof ENGINES[number];
-const ENGINE_LABEL: Record<Engine, string> = { chatgpt: "ChatGPT", perplexity: "Perplexity", claude: "Claude", grok: "Grok", gemini: "Gemini" };
-const ENGINE_COLOR: Record<Engine, string> = { chatgpt: "#10A37F", perplexity: "#20808D", claude: "#CF6B4A", grok: "#6B7280", gemini: "#4285F4" };
+// ai_overview's label is a locale key, so it resolves through engineLabel(e, t) instead.
+const ENGINE_LABEL: Record<Exclude<Engine, "ai_overview">, string> = { chatgpt: "ChatGPT", perplexity: "Perplexity", claude: "Claude", grok: "Grok", gemini: "Gemini" };
+const ENGINE_COLOR: Record<Engine, string> = { chatgpt: "#10A37F", perplexity: "#20808D", claude: "#CF6B4A", grok: "#6B7280", gemini: "#4285F4", ai_overview: "#E8710A" };
 
 const GREEN = "#10B981";
 const AMBER = "#F59E0B";
 const RED = "#EF4444";
 const VIOLET = "#8B5CF6";
+const BLUE = "#60A5FA";
 
+// ai_overview's label is a locale key, so call sites pass the translated string in.
+function engineLabel(e: Engine, tAiOverview: string): string {
+  return e === "ai_overview" ? tAiOverview : ENGINE_LABEL[e as Exclude<Engine, "ai_overview">];
+}
 
-type Status = "cited" | "mentioned" | "absent";
+type Status = "cited" | "mentioned" | "absent" | "no_overview";
+type Sentiment = "positive" | "neutral" | "negative" | "mixed";
 
 type EngineResult = {
   cited: boolean; status: Status; url: string | null; rank: number | null;
@@ -52,7 +60,7 @@ type AeoRow = {
 
 type Settings = {
   model: string; country: string | null; inheritedCountry: string | null;
-  city: string | null; language: string | null; auto: boolean;
+  city: string | null; language: string | null; auto: boolean; sentimentAuto: boolean;
 };
 
 type Citation = { url: string; domain: string; title: string };
@@ -60,6 +68,7 @@ type Check = {
   id: string; engine: Engine; checkedAt: string; cited: boolean; status: Status | null;
   url: string | null; snippet: string | null; rank: number | null; model: string | null;
   searched: boolean | null; error: string | null;
+  sentiment: Sentiment | null; sentimentScore: number | null; sentimentNote: string | null;
 };
 
 type SortKey = "question" | "score" | "checked";
@@ -89,11 +98,16 @@ function statusOf(r: NonNullable<EngineResult>): Status {
   return r.status ?? (r.cited ? "cited" : "absent");
 }
 
-function EngineCell({ result, configured, blurStyle }: {
-  result: EngineResult; configured: boolean; blurStyle: React.CSSProperties;
+function EngineCell({ result, configured, engine, blurStyle }: {
+  result: EngineResult; configured: boolean; engine: Engine; blurStyle: React.CSSProperties;
 }) {
   const { t } = useLanguage();
-  if (!configured) return <span title={t("aeoEngineOff")} style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>—</span>;
+  if (!configured) {
+    // The two unconfigured states say different things: every other engine wants a key in
+    // Settings; ai_overview wants a SERP supplier (DataForSEO key or A-Parser connection).
+    const hint = engine === "ai_overview" ? t("aeoAioNeedsProvider") : t("aeoEngineOff");
+    return <span title={hint} style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>—</span>;
+  }
   if (!result) return <span style={{ color: "var(--color-text-secondary)", fontSize: "12px" }}>…</span>;
   if (result.error) return <span title={result.error} style={{ color: RED, fontSize: "11px", fontWeight: 600 }}>error</span>;
 
@@ -105,6 +119,12 @@ function EngineCell({ result, configured, blurStyle }: {
   ) : st === "mentioned" ? (
     <span title={t("aeoMentionedHint")} style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "12px", fontWeight: 700, color: AMBER }}>
       <MessageSquareQuote size={13} /> {t("aeoMentioned")}
+    </span>
+  ) : st === "no_overview" ? (
+    // Not "not cited": Google served the SERP but never showed an overview for this question —
+    // a different claim, and the tracker says which one it is.
+    <span title={t("aeoStatus_no_overview")} style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "11.5px", fontWeight: 700, color: BLUE, lineHeight: 1.35 }}>
+      <EyeOff size={13} style={{ flexShrink: 0 }} /> {t("aeoStatus_no_overview")}
     </span>
   ) : (
     <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "12px", fontWeight: 700, color: "var(--color-text-secondary)" }}>
@@ -176,6 +196,7 @@ function SettingsPanel({ siteDbId, settings, onChange }: {
         body: JSON.stringify({
           siteId: siteDbId, model: next.model, country: next.country ?? "",
           city: next.city ?? "", language: next.language ?? "", auto: next.auto,
+          sentimentAuto: next.sentimentAuto,
         }),
       });
       if (r.ok) { setSaved(true); setTimeout(() => setSaved(false), 1600); }
@@ -250,6 +271,15 @@ function SettingsPanel({ siteDbId, settings, onChange }: {
         </label>
       </div>
 
+      {/* N7 — off by default: every new answer is one paid LLM call on the user's own key. */}
+      <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", marginTop: "10px" }}>
+        <input id="aeo-sent-auto" type="checkbox" checked={settings.sentimentAuto} onChange={e => save({ sentimentAuto: e.target.checked })}
+          style={{ marginTop: "2px", cursor: "pointer", accentColor: VIOLET }} />
+        <label htmlFor="aeo-sent-auto" style={{ cursor: "pointer" }}>
+          <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--color-text-primary)" }}>{t("aiSentAuto")}</div>
+        </label>
+      </div>
+
       <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.55, marginTop: "10px" }}>
         {t("aeoSettingsGeoHint")}
       </div>
@@ -258,6 +288,32 @@ function SettingsPanel({ siteDbId, settings, onChange }: {
 }
 
 // ─── Expanded row: the evidence ──────────────────────────────────────────────
+
+// The sentiment badge: colour carries the glance-read, the icon shape and the text label carry
+// the meaning without it (dark theme, light theme, colour-blind — all get the same fact), and
+// the model's own note rides in the tooltip.
+function SentimentBadge({ sentiment, score, note, blurStyle }: {
+  sentiment: Sentiment; score: number | null; note: string | null; blurStyle: React.CSSProperties;
+}) {
+  const { t } = useLanguage();
+  const label: Record<Sentiment, string> = {
+    positive: t("aiSent_positive"), neutral: t("aiSent_neutral"),
+    negative: t("aiSent_negative"), mixed: t("aiSent_mixed"),
+  };
+  const icon: Record<Sentiment, React.ReactNode> = {
+    positive: <Smile size={13} />, neutral: <Meh size={13} />,
+    negative: <Frown size={13} />, mixed: <Scale size={13} />,
+  };
+  const color: Record<Sentiment, string> = { positive: GREEN, neutral: "var(--color-text-secondary)", negative: RED, mixed: AMBER };
+  const tooltip = [t("aiSentTitle"), label[sentiment], score !== null ? `${score.toFixed(2)}` : null, note || null]
+    .filter(Boolean).join(" · ");
+  return (
+    <span title={tooltip} aria-label={tooltip}
+      style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "11.5px", fontWeight: 700, color: color[sentiment], ...blurStyle }}>
+      {icon[sentiment]} {t("aiSentTitle")}: {label[sentiment]}{score !== null ? <span style={{ opacity: 0.7, fontWeight: 600 }}> {score.toFixed(2)}</span> : null}
+    </span>
+  );
+}
 
 function EngineHistoryStrip({ checks }: { checks: Check[] }) {
   const { t } = useLanguage();
@@ -268,12 +324,18 @@ function EngineHistoryStrip({ checks }: { checks: Check[] }) {
       <div style={{ display: "flex", gap: "2px", alignItems: "center" }}>
         {recent.map((c, i) => {
           const st = c.status ?? (c.cited ? "cited" : "absent");
+          const label = c.error ? "error"
+            : st === "cited" ? t("aeoCited")
+            : st === "mentioned" ? t("aeoMentioned")
+            : st === "no_overview" ? t("aeoStatus_no_overview")
+            : t("aeoNotCited");
           return (
             <span key={i}
-              title={`${new Date(c.checkedAt).toLocaleDateString()} — ${c.error ? "error" : st === "cited" ? t("aeoCited") : st === "mentioned" ? t("aeoMentioned") : t("aeoNotCited")}`}
+              title={`${new Date(c.checkedAt).toLocaleDateString()} — ${label}`}
+              aria-label={`${new Date(c.checkedAt).toLocaleDateString()} — ${label}`}
               style={{
                 width: "8px", height: "8px", borderRadius: "2px", flexShrink: 0,
-                background: c.error ? RED : st === "cited" ? GREEN : st === "mentioned" ? AMBER : "var(--color-border)",
+                background: c.error ? RED : st === "cited" ? GREEN : st === "mentioned" ? AMBER : st === "no_overview" ? BLUE : "var(--color-border)",
               }} />
           );
         })}
@@ -327,7 +389,7 @@ function DetailPanel({ questionId, host, configured, blurStyle }: {
   questionId: string; host: string; configured: Engine[]; blurStyle: React.CSSProperties;
 }) {
   const { t } = useLanguage();
-  const [data, setData] = useState<{ checks: Check[]; latest: Record<string, { answerText: string | null; citations: Citation[] }> } | null>(null);
+  const [data, setData] = useState<{ checks: Check[]; latest: Record<string, { answerText: string | null; citations: Citation[]; sentiment: Sentiment | null; sentimentScore: number | null; sentimentNote: string | null }> } | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Engine | null>(null);
 
@@ -365,7 +427,7 @@ function DetailPanel({ questionId, host, configured, blurStyle }: {
               background: active === e ? `${ENGINE_COLOR[e]}1A` : "transparent",
               color: active === e ? ENGINE_COLOR[e] : "var(--color-text-secondary)",
             }}>
-            {ENGINE_LABEL[e]}
+            {engineLabel(e, t("aeoEngineAiOverview"))}
           </button>
         ))}
       </div>
@@ -383,6 +445,9 @@ function DetailPanel({ questionId, host, configured, blurStyle }: {
           <b style={{ color: latest?.searched ? GREEN : AMBER }}>{latest?.searched ? t("aeoDetailSearchYes") : t("aeoDetailSearchNo")}</b>
         </span>
         {latest?.rank && <span>{t("aeoDetailRank")}: <b style={{ color: "var(--color-text-secondary)" }}>#{latest.rank}</b></span>}
+        {detail?.sentiment && (
+          <SentimentBadge sentiment={detail.sentiment} score={detail.sentimentScore} note={detail.sentimentNote} blurStyle={blurStyle} />
+        )}
         <EngineHistoryStrip checks={checks.filter(c => c.engine === active)} />
       </div>
 
@@ -582,12 +647,15 @@ export default function AeoTracker({ siteDbId }: { siteDbId: string; domain?: st
   const [showSettings, setShowSettings] = useState(false);
   const [loading, setLoading] = useState(true);
   const [qText, setQText] = useState("");
-  const [busy, setBusy] = useState<null | "add" | "check">(null);
+  const [busy, setBusy] = useState<null | "add" | "check" | "sent">(null);
   const [progress, setProgress] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("score");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  // N7: what a sentiment run would cost — loaded before the button is ever clicked, so the
+  // price is visible up front, not discovered in the confirm dialog.
+  const [sentEstimate, setSentEstimate] = useState<{ pending: number; tokens: number } | null>(null);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir(d => (d === "asc" ? "desc" : "asc"));
@@ -615,6 +683,23 @@ export default function AeoTracker({ siteDbId }: { siteDbId: string; domain?: st
     fetch(`/api/aeo/settings?siteId=${encodeURIComponent(siteDbId)}`)
       .then(r => r.json()).then(d => { if (d && !d.error) setSettings(d); }).catch(() => {});
   }, [siteDbId]);
+
+  // .then chains, not an async body: the set-state-in-effect lint allows setState inside a
+  // .then callback (the settings effect above) and disallows it in a function called
+  // synchronously from the effect — same fetch, shaped the way the rule can prove safe.
+  const loadSentEstimate = useCallback(() => {
+    if (!siteDbId) return;
+    fetch(`/api/aeo/sentiment?siteId=${encodeURIComponent(siteDbId)}&days=30`)
+      .then(r => r.json())
+      .then(d => {
+        if (d && !d.error && !d.notMigrated) {
+          setSentEstimate({ pending: Number(d.us?.pending ?? 0), tokens: Number(d.us?.tokens ?? 0) });
+        }
+      })
+      .catch(() => { /* the button degrades to "unknown price" rather than disappearing */ });
+  }, [siteDbId]);
+
+  useEffect(() => { loadSentEstimate(); }, [loadSentEstimate]);
 
   // Run /api/aeo/check in a loop until nothing remains (5 questions per call).
   const runChecks = useCallback(async (body: Record<string, unknown>) => {
@@ -663,6 +748,32 @@ export default function AeoTracker({ siteDbId }: { siteDbId: string; domain?: st
     if (busy) return;
     setBusy("check");
     try { await runChecks({ questionId: id }); } finally { setBusy(null); }
+  };
+
+  // N7 — sentiment of the answers in the last 30 days (scope "us": rows where our brand is
+  // cited/mentioned and not analysed yet). The price is one LLM call per pending answer; it is
+  // shown in the confirm dialog before a single call runs.
+  const runSentimentAll = async () => {
+    if (busy) return;
+    const pending = sentEstimate?.pending ?? 0;
+    const cost = `≈${pending} × LLM`;
+    if (!confirm(t("aiSentEstimate").replace("{n}", String(pending)).replace("{cost}", cost))) return;
+    setBusy("sent");
+    setProgress(t("aiSentRun"));
+    try {
+      for (let i = 0; i < 20; i++) {
+        const r = await fetch("/api/aeo/sentiment", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ siteId: siteDbId, days: 30, scope: "us" }),
+        });
+        const d = await r.json();
+        if (!r.ok) { setProgress(d?.error === "no_ai_key" ? t("aeoNoKey") : (d?.error || "error")); return; }
+        if (!d.remaining) break;
+        setProgress(`${t("aiSentRun")} ${d.remaining}…`);
+      }
+      await load();
+      loadSentEstimate(); // fire-and-forget refresh of the price tag; the response sets state
+    } finally { setBusy(null); setProgress(""); }
   };
 
   const del = async (id: string) => {
@@ -723,16 +834,23 @@ export default function AeoTracker({ siteDbId }: { siteDbId: string; domain?: st
           </h2>
           <p style={{ fontSize: "13px", color: "var(--color-text-secondary)", margin: 0 }}>{t("aeoSubtitle")}</p>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
           <a href="/settings?tab=api-keys" title={t("aeoEnginesHint")}
             style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)", padding: "6px 12px", borderRadius: "999px", border: "1px solid var(--color-border)", background: "var(--color-card)", textDecoration: "none" }}>
             {ENGINES.map(e => (
-              <span key={e} style={{ width: "7px", height: "7px", borderRadius: "50%", background: configuredEngines.includes(e) ? ENGINE_COLOR[e] : "var(--color-border)" }} title={ENGINE_LABEL[e]} />
+              <span key={e} style={{ width: "7px", height: "7px", borderRadius: "50%", background: configuredEngines.includes(e) ? ENGINE_COLOR[e] : "var(--color-border)" }}
+                title={engineLabel(e, t("aeoEngineAiOverview"))} />
             ))}
             {configuredEngines.length}/{ENGINES.length}
           </a>
           <button onClick={() => setShowSettings(s => !s)} style={ghostBtn}>
             <Settings2 size={13} /> {t("aeoSettings")}
+          </button>
+          <button onClick={runSentimentAll} disabled={!!busy || !rows.length || (sentEstimate !== null && sentEstimate.pending === 0)}
+            title={sentEstimate ? t("aiSentEstimate").replace("{n}", String(sentEstimate.pending)).replace("{cost}", `≈${sentEstimate.pending} × LLM`) : t("aiSentRun")}
+            style={{ ...ghostBtn, cursor: busy || !rows.length ? "not-allowed" : "pointer", opacity: busy || !rows.length ? 0.6 : 1 }}>
+            <Gauge size={13} style={{ animation: busy === "sent" ? "spin 1.2s linear infinite" : "none" }} />
+            {busy === "sent" ? (progress || t("aiSentRun")) : t("aiSentRun")}
           </button>
           <button onClick={checkAll} disabled={!!busy || !rows.length}
             style={{ ...(rows.length ? primaryBtn : ghostBtn), cursor: busy || !rows.length ? "not-allowed" : "pointer", opacity: busy || !rows.length ? 0.6 : 1 }}>
@@ -774,7 +892,7 @@ export default function AeoTracker({ siteDbId }: { siteDbId: string; domain?: st
           {stats.perEngine.map(({ engine, cited }) => (
             <div key={engine}>
               <div style={{ fontSize: "22px", fontWeight: 700, color: ENGINE_COLOR[engine], lineHeight: 1.2 }}>{cited}/{stats.total}</div>
-              <div style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>{ENGINE_LABEL[engine]}</div>
+              <div style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>{engineLabel(engine, t("aeoEngineAiOverview"))}</div>
             </div>
           ))}
         </div>
@@ -832,7 +950,7 @@ export default function AeoTracker({ siteDbId }: { siteDbId: string; domain?: st
                 <SortableTh label={t("aeoColQuestion")} align="left" active={sortKey === "question"} dir={sortDir} onClick={() => toggleSort("question")} />
                 {ENGINES.map(e => (
                   <th key={e} style={{ textAlign: "center", padding: "10px 12px", color: "var(--color-text-secondary)", fontWeight: 600, fontSize: "11px", letterSpacing: "0.05em", textTransform: "uppercase", whiteSpace: "nowrap" }}>
-                    {ENGINE_LABEL[e]}
+                    {engineLabel(e, t("aeoEngineAiOverview"))}
                   </th>
                 ))}
                 <SortableTh label={t("aeoColChecked")} active={sortKey === "checked"} dir={sortDir} onClick={() => toggleSort("checked")} />
@@ -857,7 +975,7 @@ export default function AeoTracker({ siteDbId }: { siteDbId: string; domain?: st
                     </td>
                     {ENGINES.map(e => (
                       <td key={e} style={{ padding: "10px 12px", textAlign: "center" }}>
-                        <EngineCell result={r.results[e]} configured={configuredEngines.includes(e)} blurStyle={blurStyle} />
+                        <EngineCell result={r.results[e]} configured={configuredEngines.includes(e)} engine={e} blurStyle={blurStyle} />
                       </td>
                     ))}
                     <td style={{ padding: "10px 12px", color: "var(--color-text-secondary)", fontSize: "11px", whiteSpace: "nowrap" }}>

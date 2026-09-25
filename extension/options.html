@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>OpenGSC — options</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="options.css" />
+</head>
+<body>
+  <main class="wrap">
+    <h1>OpenGSC</h1>
+    <p class="sub" data-i18n="optionsIntro"></p>
+
+    <section class="card">
+      <h2 data-i18n="optionsConnection"></h2>
+
+      <label class="field">
+        <span data-i18n="optionsInstanceUrl"></span>
+        <input id="baseUrl" type="url" placeholder="https://opengsc.example.com" spellcheck="false" autocomplete="off" />
+      </label>
+
+      <label class="field">
+        <span data-i18n="optionsToken"></span>
+        <input id="token" type="password" placeholder="ogscext_…" spellcheck="false" autocomplete="off" />
+        <button id="reveal" type="button" class="ghost" data-i18n="optionsReveal"></button>
+      </label>
+
+      <div class="row">
+        <button id="save" type="button" class="primary" data-i18n="optionsSave"></button>
+        <button id="test" type="button" class="ghost" data-i18n="optionsTest"></button>
+        <span id="status" class="status" role="status"></span>
+      </div>
+      <p class="hint" data-i18n="optionsTestHint"></p>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="optionsCORS"></h2>
+      <p class="hint" data-i18n="optionsCorsHint"></p>
+      <div class="row">
+        <code id="extId" class="mono"></code>
+        <button id="copyId" type="button" class="ghost" data-i18n="optionsCopy"></button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="optionsPrivacy"></h2>
+      <p class="hint" data-i18n="optionsPrivacyText"></p>
+    </section>
+  </main>
+  <script src="lib/api.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

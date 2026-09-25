@@ -3,16 +3,20 @@
 // «Доля голоса» sub-tab (T7): how often AI answer engines name us vs the competitors the user
 // listed — computed entirely from answers the AEO tracker already stored. The demo this panel
 // exists for: add a competitor, the whole history recomputes instantly, and the provider log
-// stays empty. Every element here therefore reads; only the competitor list writes (local row).
+// stays empty. Every element here therefore reads; only the competitor list writes (local row),
+// plus the one paid action — the sentiment pass (N7), whose price is shown before it runs.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Trash2, TrendingUp } from "lucide-react";
+import { Plus, Trash2, TrendingUp, Gauge } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { DrSparkline } from "@/components/DrSparkline";
 import type { AiCompetitor, SovReport } from "@/lib/visibility/types";
+import type { SentimentSlice } from "@/lib/visibility/sov";
 
 const GREEN = "#10B981";
+const AMBER = "#F59E0B";
+const RED = "#EF4444";
 const VIOLET = "#8B5CF6";
 
 const WINDOWS = [7, 30, 90] as const;
@@ -26,13 +30,14 @@ const labelStyle: React.CSSProperties = {
   color: "var(--color-text-tertiary)", marginBottom: "4px", display: "block",
 };
 
-function engineName(e: string): string {
+function engineName(e: string, t: (k: "aeoEngineAiOverview") => string): string {
   const known: Record<string, string> = { chatgpt: "ChatGPT", perplexity: "Perplexity", claude: "Claude", grok: "Grok", gemini: "Gemini" };
-  return known[e] ?? e;
+  return known[e] ?? (e === "ai_overview" ? t("aeoEngineAiOverview") : e);
 }
 
 // One fetch for the panel: the aggregated report and the competitor list it was built against.
-async function fetchSov(siteDbId: string, days: number): Promise<{ report: SovReport | null; competitors: AiCompetitor[] }> {
+// `sentiment.us` rides along — free, from the columns the sentiment pass already wrote.
+async function fetchSov(siteDbId: string, days: number): Promise<{ report: SovReport | null; competitors: AiCompetitor[]; sentimentUs: SentimentSlice | null }> {
   const [sovR, compR] = await Promise.all([
     fetch(`/api/aeo/sov?siteId=${encodeURIComponent(siteDbId)}&days=${days}`),
     fetch(`/api/aeo/competitors?siteId=${encodeURIComponent(siteDbId)}`),
@@ -42,6 +47,7 @@ async function fetchSov(siteDbId: string, days: number): Promise<{ report: SovRe
   return {
     report: sov?.report ? (sov.report as SovReport) : null,
     competitors: Array.isArray(comp?.competitors) ? (comp.competitors as AiCompetitor[]) : [],
+    sentimentUs: sov?.sentiment?.us ?? null,
   };
 }
 
@@ -94,6 +100,55 @@ function ShareBars({ rows }: {
   );
 }
 
+// ─── Sentiment distribution (N7) ──────────────────────────────────────────────
+
+// Same philosophy as ShareBars: the stacked bar is the shape, the numbers in the title/aria
+// are the fact. Grey = mentions the pass has not measured (null ≠ 0 ≠ neutral).
+function SentimentRow({ name, slice, isUs, blurStyle, t }: {
+  name: string; slice: SentimentSlice; isUs: boolean; blurStyle: React.CSSProperties;
+  t: (k: "aiSent_positive" | "aiSent_neutral" | "aiSent_negative" | "aiSent_mixed" | "aiSentTitle") => string;
+}) {
+  const total = slice.positive + slice.neutral + slice.negative + slice.mixed;
+  const parts = [
+    { n: slice.positive, color: GREEN, label: t("aiSent_positive") },
+    { n: slice.neutral, color: "#94A3B8", label: t("aiSent_neutral") },
+    { n: slice.negative, color: RED, label: t("aiSent_negative") },
+    { n: slice.mixed, color: AMBER, label: t("aiSent_mixed") },
+  ];
+  const title = `${t("aiSentTitle")}: ${name} — ${parts.map(p => `${p.label} ${p.n}`).join(", ")}`
+    + (slice.notAnalysed ? ` · ? ${slice.notAnalysed}` : "");
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "10px" }} title={title} aria-label={title}>
+      <span style={{
+        width: "150px", flexShrink: 0, fontSize: "12px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        fontWeight: isUs ? 700 : 600, color: isUs ? "var(--color-text-primary)" : "var(--color-text-secondary)", ...blurStyle,
+      }}>
+        {name}
+      </span>
+      <div style={{ flex: 1, height: "16px", borderRadius: "4px", background: "var(--color-bg)", overflow: "hidden", display: "flex", minWidth: 0 }}>
+        {total > 0 && parts.map((p, i) => (
+          p.n > 0 ? <div key={i} style={{ width: `${(p.n / total) * 100}%`, height: "100%", background: p.color, opacity: 0.85, minWidth: "3px" }} /> : null
+        ))}
+      </div>
+      <span style={{ width: "72px", textAlign: "right", flexShrink: 0, fontSize: "11px", color: "var(--color-text-tertiary)", fontVariantNumeric: "tabular-nums" }}>
+        {total}{slice.notAnalysed ? ` +?${slice.notAnalysed}` : ""}
+      </span>
+    </div>
+  );
+}
+
+function addSlices(a: SentimentSlice, b: SentimentSlice): SentimentSlice {
+  return {
+    positive: a.positive + b.positive,
+    neutral: a.neutral + b.neutral,
+    negative: a.negative + b.negative,
+    mixed: a.mixed + b.mixed,
+    notAnalysed: a.notAnalysed + b.notAnalysed,
+  };
+}
+
+const EMPTY_SLICE: SentimentSlice = { positive: 0, neutral: 0, negative: 0, mixed: 0, notAnalysed: 0 };
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function AiShareOfVoice({ siteDbId, domain, readOnly = false }: { siteDbId: string; domain: string; readOnly?: boolean }) {
@@ -107,6 +162,13 @@ export default function AiShareOfVoice({ siteDbId, domain, readOnly = false }: {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  // N7 sentiment: the free slice from the stored columns, the price of a full run, and the
+  // result of the last paid run (competitor verdicts have no column — they live here only).
+  const [sentimentUs, setSentimentUs] = useState<SentimentSlice | null>(null);
+  const [sentEstimate, setSentEstimate] = useState<number | null>(null);
+  const [sentBusy, setSentBusy] = useState(false);
+  const [sentCompetitors, setSentCompetitors] = useState<Record<string, SentimentSlice> | null>(null);
+
   // add-competitor form
   const [name, setName] = useState("");
   const [compDomain, setCompDomain] = useState("");
@@ -118,11 +180,55 @@ export default function AiShareOfVoice({ siteDbId, domain, readOnly = false }: {
   useEffect(() => {
     let cancelled = false;
     fetchSov(siteDbId, days)
-      .then(d => { if (!cancelled) { setReport(d.report); setCompetitors(d.competitors); } })
+      .then(d => { if (!cancelled) { setReport(d.report); setCompetitors(d.competitors); setSentimentUs(d.sentimentUs); } })
       .catch(() => { /* leave the last good report in place */ })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [siteDbId, days]);
+
+  // The price tag for the sentiment button — how many answers a scope="all" run would examine.
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/aeo/sentiment?siteId=${encodeURIComponent(siteDbId)}&days=${days}`)
+      .then(r => r.json())
+      .then(d => { if (!cancelled && d && !d.error && !d.notMigrated) setSentEstimate(Number(d.all?.answers ?? 0)); })
+      .catch(() => { if (!cancelled) setSentEstimate(null); });
+    return () => { cancelled = true; };
+  }, [siteDbId, days, competitors.length]);
+
+  // The paid pass: one LLM call per answer that names us or any competitor, verdicts per brand
+  // from that one call. Loops while the server reports more candidates.
+  const runSentiment = useCallback(async () => {
+    if (sentBusy || readOnly) return;
+    const n = sentEstimate ?? 0;
+    if (!confirm(t("aiSentEstimate").replace("{n}", String(n)).replace("{cost}", `≈${n} × LLM`))) return;
+    setSentBusy(true);
+    try {
+      let acc: Record<string, SentimentSlice> | null = null;
+      let us: SentimentSlice | null = null;
+      for (let i = 0; i < 20; i++) {
+        const r = await fetch("/api/aeo/sentiment", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ siteId: siteDbId, days, scope: "all" }),
+        });
+        const d = await r.json();
+        if (!r.ok) break;
+        us = d.us ?? us;
+        const comps = (d.competitors ?? {}) as Record<string, SentimentSlice>;
+        // Competitor verdicts have no column: slices from earlier POSTs of this loop are
+        // accumulated client-side, brand by brand.
+        const merged: Record<string, SentimentSlice> = { ...(acc ?? {}), ...comps };
+        acc = Object.fromEntries(Object.keys(merged).map(k => [k, addSlices(merged[k] ?? EMPTY_SLICE, comps[k] ?? EMPTY_SLICE)]));
+        if (!d.remaining) break;
+      }
+      if (us) setSentimentUs(us);
+      setSentCompetitors(acc ?? {});
+      // The next run's price: everything it just covered is still "all" scope (competitor
+      // verdicts are not persisted), so the count stays — refreshed for the new window state.
+      fetch(`/api/aeo/sentiment?siteId=${encodeURIComponent(siteDbId)}&days=${days}`)
+        .then(r => r.json()).then(d => { if (d && !d.error && !d.notMigrated) setSentEstimate(Number(d.all?.answers ?? 0)); }).catch(() => {});
+    } finally { setSentBusy(false); }
+  }, [sentBusy, readOnly, sentEstimate, siteDbId, days, t]);
 
   const saveList = useCallback(async (next: AiCompetitor[]) => {
     setSaving(true);
@@ -241,7 +347,7 @@ export default function AiShareOfVoice({ siteDbId, domain, readOnly = false }: {
                     const best = [...row.competitors].sort((a, b) => b.mentioned - a.mentioned)[0];
                     return (
                       <tr key={row.engine} style={{ borderBottom: "1px solid var(--color-border)" }}>
-                        <td style={{ padding: "7px 10px", fontWeight: 700, color: "var(--color-text-primary)" }}>{engineName(row.engine)}</td>
+                        <td style={{ padding: "7px 10px", fontWeight: 700, color: "var(--color-text-primary)" }}>{engineName(row.engine, t)}</td>
                         <td style={{ padding: "7px 10px", textAlign: "center", color: "var(--color-text-secondary)", fontVariantNumeric: "tabular-nums" }}>{row.answers}</td>
                         <td style={{ padding: "7px 10px", textAlign: "center", color: "var(--color-text-primary)", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{row.us.mentioned}</td>
                         <td style={{ padding: "7px 10px", textAlign: "center", color: GREEN, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{row.us.cited}</td>
@@ -279,6 +385,43 @@ export default function AiShareOfVoice({ siteDbId, domain, readOnly = false }: {
                 </span>
               )}
             </div>
+          </div>
+
+          {/* N7: sentiment, us vs competitors. Our slice is free (stored columns); competitor
+              verdicts exist only after the paid pass — the button, with its price up front. */}
+          <div style={{ borderTop: "1px solid var(--color-border)", paddingTop: "12px" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", flexWrap: "wrap", marginBottom: "8px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <Gauge size={13} color={VIOLET} />
+                <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--color-text-primary)" }}>{t("aiSentDistribution")}</span>
+              </div>
+              {!readOnly && (
+                <button
+                  onClick={runSentiment}
+                  disabled={sentBusy || !competitors.length || sentEstimate === 0}
+                  title={sentEstimate !== null ? t("aiSentEstimate").replace("{n}", String(sentEstimate)).replace("{cost}", `≈${sentEstimate} × LLM`) : t("aiSentRun")}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: "6px", padding: "5px 12px", borderRadius: "8px",
+                    border: "1px solid var(--color-border)", background: "var(--color-bg)", color: VIOLET,
+                    fontSize: "11.5px", fontWeight: 600,
+                    cursor: sentBusy || sentEstimate === 0 ? "not-allowed" : "pointer",
+                    opacity: sentBusy || sentEstimate === 0 ? 0.6 : 1,
+                  }}>
+                  <Gauge size={12} style={{ animation: sentBusy ? "spin 1.2s linear infinite" : "none" }} />
+                  {sentBusy ? "…" : t("aiSentRun")}
+                </button>
+              )}
+            </div>
+            {sentimentUs ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <SentimentRow name={`${t("aiSovUs")} · ${domain}`} slice={sentimentUs} isUs blurStyle={blurStyle} t={t} />
+                {Object.entries(sentCompetitors ?? {}).map(([name, slice]) => (
+                  <SentimentRow key={name} name={name} slice={slice} isUs={false} blurStyle={blurStyle} t={t} />
+                ))}
+              </div>
+            ) : (
+              <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", padding: "4px 0" }}>{t("aiSovNoData")}</div>
+            )}
           </div>
         </>
       )}

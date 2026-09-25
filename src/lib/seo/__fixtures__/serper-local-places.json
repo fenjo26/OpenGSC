@@ -1,0 +1,66 @@
+{
+  "_comment": "Shape of a Serper.dev /search answer for a geolocated query with a map pack, per https://serper.dev docs (Playground response, keys and session noise removed, business names changed). The `places` block is what the local-pack parse reads; a fourth entry is included on purpose — the pack is the TOP THREE only.",
+  "searchParameters": {
+    "q": "taxi thessaloniki airport",
+    "gl": "gr",
+    "hl": "en",
+    "num": 10,
+    "page": 1,
+    "location": "Thessaloniki, Greece"
+  },
+  "organic": [
+    { "title": "Sky Taxi — Thessaloniki airport transfers", "link": "https://skytaxi.gr/", "snippet": "Fixed price airport transfers, 24/7.", "position": 1 },
+    { "title": "Thessaloniki Airport Taxi Guide", "link": "https://www.example-travel-blog.gr/taxi-guide", "snippet": "Everything about taxis at SKG.", "position": 2 },
+    { "title": "Welcome Pickups Thessaloniki", "link": "https://welcomepickups.com/gr/thessaloniki", "snippet": "Pre-booked airport pickup.", "position": 3 }
+  ],
+  "places": [
+    {
+      "position": 1,
+      "title": "Sky Taxi Thessaloniki",
+      "address": "Airport Road, Thessaloniki 546 03",
+      "latitude": 40.5197,
+      "longitude": 22.9709,
+      "rating": 4.8,
+      "ratingCount": 321,
+      "category": "Taxi service",
+      "phoneNumber": "+30 2310 000000",
+      "website": "https://www.skytaxi.gr/",
+      "cid": "1234567890",
+      "placeId": "ChIJexample"
+    },
+    {
+      "position": 2,
+      "title": "Taxi Thessaloniki Airport 24h",
+      "address": "Egnatia 1, Thessaloniki",
+      "latitude": 40.6401,
+      "longitude": 22.9444,
+      "rating": 4.5,
+      "ratingCount": 87,
+      "category": "Airport transfer service",
+      "phoneNumber": "+30 2310 111111"
+    },
+    {
+      "position": 3,
+      "title": "Welcome Pickups",
+      "latitude": 40.5212,
+      "longitude": 22.9751,
+      "rating": 4.2,
+      "ratingCount": 1580,
+      "category": "Taxi service",
+      "website": "https://welcomepickups.com",
+      "placeId": "ChIJexample3"
+    },
+    {
+      "position": 4,
+      "title": "Fourth Business That Must Be Cut",
+      "rating": 4.0
+    }
+  ],
+  "peopleAlsoAsk": [
+    { "question": "How much is a taxi from Thessaloniki airport to the centre?", "snippet": "Around €25–30.", "title": "Taxi fare" }
+  ],
+  "relatedSearches": [
+    { "query": "thessaloniki airport taxi price" },
+    { "query": "taxi thessaloniki airport to halkidiki" }
+  ]
+}

@@ -172,18 +172,32 @@ export default function OutlinePage() {
     else if (v.type === "text") { setArticle(typeof v.data === "string" ? v.data : v.data?.article || ""); if (v.keyword) setKeyword(v.keyword); }
   }, []);
 
-  // A cluster handed over from the Cluster tool: main keyword + the rest as additional.
+  // Handover into the form — two channels, one effect. The Cluster tool smuggles a seed
+  // through sessionStorage (consumed and removed here); Local service areas and the browser
+  // extension arrive by plain link: ?keyword=… (+ optional &note=…, &gl=…). A note is a build
+  // instruction ("local landing: NAP and map are mandatory"), so it is appended to the
+  // structure rules rather than dropped; gl preselects the market like the seed does. After
+  // mount for the same hydration reason as the restorers above, a no-op on a plain visit.
   useEffect(() => {
     try {
       const raw = sessionStorage.getItem("seoClusterSeed");
-      if (!raw) return;
-      sessionStorage.removeItem("seoClusterSeed");
-      const s = JSON.parse(raw);
-      if (s?.keyword) setKeyword(String(s.keyword));
-      if (s?.additional) setAddKeywords(String(s.additional));
-      if (s?.gl) setCountry(String(s.gl));
-      if (s?.hl) setLanguage(String(s.hl));
+      if (raw) {
+        sessionStorage.removeItem("seoClusterSeed");
+        const s = JSON.parse(raw);
+        if (s?.keyword) setKeyword(String(s.keyword));
+        if (s?.additional) setAddKeywords(String(s.additional));
+        if (s?.gl) setCountry(String(s.gl));
+        if (s?.hl) setLanguage(String(s.hl));
+      }
     } catch { /* ignore */ }
+    const q = new URLSearchParams(window.location.search);
+    const kw = (q.get("keyword") || "").trim();
+    const note = (q.get("note") || "").trim();
+    const gl = (q.get("gl") || "").trim().toLowerCase();
+    if (!kw && !note && !gl) return;
+    if (kw) setKeyword(kw);
+    if (gl && COUNTRIES.some(c => c.code === gl)) setCountry(gl);
+    if (note) setStructureRules(prev => prev.includes(note) ? prev : (prev ? `${prev}\n${note}` : note));
   }, []);
 
   const stepNum = outline ? 3 : serp.length > 0 ? 2 : 1;
