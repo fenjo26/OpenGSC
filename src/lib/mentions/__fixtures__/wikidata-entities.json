@@ -1,0 +1,162 @@
+{
+ "entities": {
+  "Q21708200": {
+   "id": "Q21708200",
+   "lastrevid": 2549069534,
+   "labels": {
+    "en": {
+     "language": "en",
+     "value": "OpenAI"
+    }
+   },
+   "descriptions": {
+    "en": {
+     "language": "en",
+     "value": "American artificial intelligence research organization"
+    }
+   },
+   "claims": {
+    "P856": [
+     {
+      "mainsnak": {
+       "snaktype": "value",
+       "property": "P856",
+       "hash": "fe43687c8465a1c79c4dc0223089d0a57a1baf5e",
+       "datavalue": {
+        "value": "https://openai.com/",
+        "type": "string"
+       },
+       "datatype": "url"
+      },
+      "type": "statement",
+      "qualifiers": {
+       "P407": [
+        {
+         "snaktype": "value",
+         "property": "P407",
+         "hash": "daf1c4fcb58181b02dff9cc89deb084004ddae4b",
+         "datavalue": {
+          "value": {
+           "entity-type": "item",
+           "numeric-id": 1860,
+           "id": "Q1860"
+          },
+          "type": "wikibase-entityid"
+         },
+         "datatype": "wikibase-item"
+        }
+       ],
+       "P408": [
+        {
+         "snaktype": "value",
+         "property": "P408",
+         "hash": "2c33eb63903f84033e63475e1ce1bafccd53777a",
+         "datavalue": {
+          "value": {
+           "entity-type": "item",
+           "numeric-id": 56062435,
+           "id": "Q56062435"
+          },
+          "type": "wikibase-entityid"
+         },
+         "datatype": "wikibase-item"
+        },
+        {
+         "snaktype": "value",
+         "property": "P408",
+         "hash": "997d3cdd3c91adc159d190c9199f61a9ece3836e",
+         "datavalue": {
+          "value": {
+           "entity-type": "item",
+           "numeric-id": 56069184,
+           "id": "Q56069184"
+          },
+          "type": "wikibase-entityid"
+         },
+         "datatype": "wikibase-item"
+        }
+       ]
+      },
+      "qualifiers-order": [
+       "P407",
+       "P408"
+      ],
+      "id": "Q21708200$468718da-4189-f867-f1f7-34efe927e132",
+      "rank": "normal"
+     }
+    ]
+   }
+  },
+  "Q96237091": {
+   "id": "Q96237091",
+   "lastrevid": 2425601553,
+   "labels": {
+    "en": {
+     "language": "en",
+     "value": "OpenAI API"
+    }
+   },
+   "descriptions": {
+    "en": {
+     "language": "en",
+     "value": "various AI APIs, products of OpenAI"
+    }
+   },
+   "claims": {
+    "P856": [
+     {
+      "mainsnak": {
+       "snaktype": "value",
+       "property": "P856",
+       "hash": "2d17c06b5ac0889e69b216a4c4ebeb451f814dd4",
+       "datavalue": {
+        "value": "https://beta.openai.com/",
+        "type": "string"
+       },
+       "datatype": "url"
+      },
+      "type": "statement",
+      "qualifiers": {
+       "P407": [
+        {
+         "snaktype": "value",
+         "property": "P407",
+         "hash": "daf1c4fcb58181b02dff9cc89deb084004ddae4b",
+         "datavalue": {
+          "value": {
+           "entity-type": "item",
+           "numeric-id": 1860,
+           "id": "Q1860"
+          },
+          "type": "wikibase-entityid"
+         },
+         "datatype": "wikibase-item"
+        }
+       ]
+      },
+      "qualifiers-order": [
+       "P407"
+      ],
+      "id": "Q96237091$0db29874-4fea-3866-aa06-53233bb85127",
+      "rank": "deprecated"
+     },
+     {
+      "mainsnak": {
+       "snaktype": "value",
+       "property": "P856",
+       "hash": "a42ebc0932f061967d6a805a8a6ae34917d40654",
+       "datavalue": {
+        "value": "https://platform.openai.com/docs/overview",
+        "type": "string"
+       },
+       "datatype": "url"
+      },
+      "type": "statement",
+      "id": "Q96237091$9c731e75-4381-4e0e-f939-a060bcbf5885",
+      "rank": "preferred"
+     }
+    ]
+   }
+  }
+ }
+}
