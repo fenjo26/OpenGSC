@@ -228,6 +228,9 @@ export async function POST(req: Request) {
           quotaDead = true;
           break;
         }
+        // The attempt happened — Google likely counts it even on a 5xx; at least the error
+        // side of the ledger should (the `used` side stays conservative until an answer).
+        await recordInspections(site.siteId, 0, { auto: false, errors: 1 }).catch(() => {});
         continue;
       }
     }

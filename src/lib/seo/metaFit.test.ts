@@ -245,3 +245,16 @@ test("a cut that would drop a keyword WORD is still refused", () => {
   assert.equal(ok.method, "trimmed");
   assert.equal(ok.length, 55);
 });
+
+test("keyword words that were never in the title do not block the free trim", () => {
+  // The same 80-char golden title; the query carries a word the French title never had —
+  // "slot", or an English "strategy". The trim cannot be blamed for a word the model never
+  // wrote; requiring it just forced a paid LLM repair for a deterministic cut.
+  const v = "Stratégie Golden Crown Extreme Booster : Bankroll et Mises — Que Faut-il Faire ?";
+  for (const kw of ["golden crown extreme booster slot", "golden crown extreme booster strategy"]) {
+    const r = fitMetaLocal("title", v, [], kw);
+    assert.equal(r.method, "trimmed", kw);
+    assert.equal(r.after, "Stratégie Golden Crown Extreme Booster : Bankroll et Mises");
+    assert.equal(r.length, 58);
+  }
+});

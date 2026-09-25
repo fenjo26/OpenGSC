@@ -119,13 +119,16 @@ const endsTerminated = (s: string): boolean => TERMINATORS.has(s.slice(-1));
 function trimTitle(value: string, keyword: string, brand: string | undefined, min: number, max: number): string | null {
   // The keyword survives when none of its WORDS are gone — not necessarily as the exact
   // phrase. A query often arrives in a different word order than the title ("golden crown
-  // extreme booster stratégie" vs "Stratégie Golden Crown…"); a phrase check would refuse
-  // the free deterministic trim and jump straight to a paid LLM repair. Word-boundary match
-  // so "crown" does not count as surviving inside "crowning"; tokens under 2 chars are noise.
+  // extreme booster stratégie" vs "Stratégie Golden Crown…"), and may carry a word the title
+  // never had ("slot", an English "strategy" under a French title). The trim's job is only to
+  // not DELETE what was there: guard exactly the keyword words the ORIGINAL title contains,
+  // and don't blame the trim for one the model never wrote — requiring it just forced a paid
+  // LLM repair. Word-boundary match so "crown" does not count as surviving inside "crowning";
+  // tokens under 2 chars are noise.
   const kwTokens = [...new Set(
     fold(String(keyword ?? "").trim()).split(/[^\p{L}\p{N}]+/u).filter(t => t.length >= 2),
-  )];
-  const kwRes = kwTokens.map(t => new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(t)}(?![\\p{L}\\p{N}])`, "u"));
+  )].map(t => new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(t)}(?![\\p{L}\\p{N}])`, "u"));
+  const kwRes = kwTokens.filter(re => re.test(fold(value)));
   const hasKeyword = (s: string) => {
     if (!kwRes.length) return true;
     const f = fold(s);
