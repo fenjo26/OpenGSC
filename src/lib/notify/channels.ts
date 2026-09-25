@@ -17,6 +17,7 @@ import { rawQuery, rawExec } from "@/lib/db/raw";
 import { getTelegramCreds, getSlackWebhook, sendTelegram, sendSlack } from "@/lib/notify";
 import { getAlertSettings } from "@/lib/alertScheduler";
 import { NOTIFY_L, normalizeLang } from "@/lib/notifyI18n";
+import { pushChannelSummary, sendWorkspacePush } from "@/lib/push";
 import {
   toDiscordChunks, discordBody, toTeamsCard, toEmail, toWebhookBody, signWebhook,
   isDiscordWebhookUrl, isTeamsWebhookUrl, isHttpsUrl,
@@ -132,12 +133,26 @@ function storedView(id: StoredChannelId, cfg: NotifyChannelsConfig): NotifyChann
 
 export async function channelViews(userId: string): Promise<NotifyChannelView[]> {
   const cfg = await readChannels(userId);
-  const [tg, slack] = await Promise.all([getTelegramCreds(userId), getSlackWebhook(userId)]);
+  const [tg, slack, push] = await Promise.all([
+    getTelegramCreds(userId), getSlackWebhook(userId), pushChannelSummary(userId),
+  ]);
   return [
     // Telegram/Slack credentials stay in their own User columns; only the event filter lives here.
     { id: "telegram" as const, configured: !!tg, on: !!tg, events: cfg.telegramEvents ?? [], target: tg ? `chat ${tg.chatId}` : null, lastOkAt: null, lastError: null },
     { id: "slack" as const, configured: !!slack, on: !!slack, events: cfg.slackEvents ?? [], target: slack ? maskWebhookUrl(slack) : null, lastOkAt: null, lastError: null },
     ...STORED_IDS.map(id => storedView(id, cfg)),
+    // wave-nov (N10): the push row. Its config is not stored JSON but PushSubscription rows —
+    // one event filter per device, so the card links to PushSettingsCard instead of editing
+    // here. `target` carries the device count; lastOkAt is the newest accepted delivery.
+    {
+      id: "webpush" as const,
+      configured: push.count > 0,
+      on: push.count > 0,
+      events: [],
+      target: push.count > 0 ? `${push.count}` : null,
+      lastOkAt: push.lastOkAt,
+      lastError: null,
+    },
   ];
 }
 
@@ -407,7 +422,7 @@ export async function deliverStoredChannel(
 
 const CHANNEL_LABEL: Record<NotifyChannelId, string> = {
   telegram: "Telegram", slack: "Slack", discord: "Discord", teams: "Microsoft Teams", email: "E-mail", webhook: "Webhook",
-  webpush: "Web Push", // wave-nov (N0): label for the widened union; N10 owns the real channel row
+  webpush: "Web Push", // wave-nov (N10): real channel since N10 — see sendWorkspacePush
 };
 
 export async function testChannel(userId: string, id: NotifyChannelId): Promise<NotifyDelivery> {
@@ -429,11 +444,14 @@ export async function testChannel(userId: string, id: NotifyChannelId): Promise<
       r = url ? await sendSlack(url, text) : { ok: false, error: "not_configured" };
       break;
     }
-    // wave-nov (N0): webpush subscriptions live in PushSubscription (N10), not in the
-    // notifyChannels JSON, so there is no stored config to deliver through. Stub until N10.
-    case "webpush":
-      r = { ok: false, error: "not_implemented" };
+    // wave-nov (N10): real delivery — one test push to every device of the workspace. No
+    // stored config exists to deliver through; the subscriptions themselves ARE the channel.
+    case "webpush": {
+      const report = await sendWorkspacePush(userId, title, text, "test", { url: "/" });
+      if (report.sent === 0) r = { ok: false, error: "not_configured" };
+      else r = report.ok > 0 ? { ok: true } : { ok: false, error: report.error ?? `delivered ${report.ok}/${report.sent}` };
       break;
+    }
     default:
       // A channel being tried out is testable even while its `on` switch is off.
       r = await deliverStoredChannel(cfg, id, "test", title, text);
