@@ -62,6 +62,26 @@ export function siteHostOf(url: string): string {
     .toLowerCase();
 }
 
+/**
+ * Site resolution shared by the read routes: the owner's own id, or a valid share token for
+ * exactly this site (the /api/backlinks/sync convention). Guests get reads only; every write
+ * route resolves the site by userId alone.
+ */
+export async function siteForRead(
+  userId: string | null,
+  siteId: string,
+  shareToken: string,
+): Promise<{ id: string } | null> {
+  if (userId) {
+    return db.site.findFirst({ where: { id: siteId, userId }, select: { id: true } });
+  }
+  if (!shareToken) return null;
+  return db.site.findFirst({
+    where: { id: siteId, shareToken, shareEnabled: true },
+    select: { id: true },
+  });
+}
+
 // ─── niche ─────────────────────────────────────────────────────────────────────
 
 export async function readNiche(siteId: string): Promise<string[]> {
