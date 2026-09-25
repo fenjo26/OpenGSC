@@ -10,7 +10,7 @@
 
 import {
   Boxes, Globe, FileText, LayoutTemplate, PenLine, RefreshCw, Fingerprint, Search, Bot,
-  Quote, Link2, ScrollText, History, Compass, Users, Workflow, type LucideIcon,
+  Quote, Link2, ScrollText, History, Compass, Users, Workflow, Languages, CopyX, type LucideIcon,
 } from "lucide-react";
 
 export interface SeoTool {
@@ -35,7 +35,13 @@ export const SEO_TOOLS: SeoTool[] = [
   { href: "/seo-tools/landing",   key: "seoTabLanding",   desc: "seoTileLanding",   icon: LayoutTemplate, color: "#ff9f0a" },
   { href: "/seo-tools/text",      key: "seoTabText",      desc: "seoTileText",      icon: PenLine,       color: "#34c759" },
   { href: "/seo-tools/rewrite",   key: "seoTabRewrite",   desc: "seoTileRewrite",   icon: RefreshCw,     color: "#30d158" },
+  // Quality passes on the finished text, in the order a text meets them: write it, humanize it,
+  // then ask whether it is original (plagiarism) and whether its language versions are wired up
+  // (hreflang). N6 owns this file's additions for both tools (CONTRACT.md §3) — plagiarism is
+  // its own feature, hreflang is N1's page listed here so both land in one order.
   { href: "/seo-tools/humanize",  key: "seoTabHumanize",  desc: "seoTileHumanize",  icon: Fingerprint,   color: "#ff6482" },
+  { href: "/seo-tools/plagiarism", key: "plgTitle",       desc: "plgHint",          icon: CopyX,         color: "#ff453a" },
+  { href: "/seo-tools/hreflang",  key: "hlTitle",         desc: "hlHint",           icon: Languages,     color: "#64d2ff" },
   { href: "/seo-tools/analysis",  key: "seoTabAnalysis",  desc: "seoTileAnalysis",  icon: Search,        color: "#10A37F" },
   { href: "/seo-tools/googlebot", key: "seoTabGooglebot", desc: "seoTileGooglebot", icon: Bot,           color: "#4285F4" },
   { href: "/seo-tools/citations", key: "seoTabCitations", desc: "seoTileCitations", icon: Quote,         color: "#ff375f" },
