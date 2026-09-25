@@ -9,7 +9,7 @@
 
 import { LEAD_STRINGS } from "./i18n";
 import { FINDING_CATEGORIES, type FindingCode, type LeadFinding, type LeadLang } from "./types";
-import { topFindings } from "./liteAudit";
+import { topFindings } from "./findings";
 
 /** Markers that must never appear in a generated proposal (checked case-insensitively). */
 export const NO_FORECAST_MARKERS = [

@@ -131,24 +131,11 @@ const KEPT_RULE_IDS = new Set<string>([
   "jsonld_invalid", "open_graph_incomplete", "mixed_content", "security_headers_missing",
 ]);
 
-export const SEVERITY_WEIGHT: Record<FindingSeverity, number> = { critical: 12, warning: 5, info: 1 };
-
-export const SEVERITY_RANK: Record<FindingSeverity, number> = { critical: 0, warning: 1, info: 2 };
-
-/** 100 minus the penalty of every DISTINCT finding code — the same idea as the scanner. */
-export function scoreFromFindings(findings: RawFinding[]): number {
-  const penalty = findings.reduce((sum, f) => sum + SEVERITY_WEIGHT[f.severity], 0);
-  return Math.max(0, 100 - Math.min(100, penalty));
-}
-
-/** Findings ordered critical → warning → info, stable; the widget's "top N" list. */
-export function topFindings<T extends { severity: FindingSeverity }>(findings: T[], n: number): T[] {
-  return [...findings]
-    .map((f, i) => ({ f, i }))
-    .sort((a, b) => SEVERITY_RANK[a.f.severity] - SEVERITY_RANK[b.f.severity] || a.i - b.i)
-    .slice(0, n)
-    .map(x => x.f);
-}
+// The pure helpers moved to ./findings — client components import them without pulling
+// safeFetch (and its node:dns) into the browser bundle. Re-exported here so the existing
+// server-side importers (routes, store, the barrel) keep their import paths.
+export { SEVERITY_WEIGHT, SEVERITY_RANK, scoreFromFindings, topFindings } from "./findings";
+import { scoreFromFindings, topFindings } from "./findings";
 
 // ─── evidence builders (language-neutral: numbers, limits, paths) ─────────────
 
