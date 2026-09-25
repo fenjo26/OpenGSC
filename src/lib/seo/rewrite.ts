@@ -15,6 +15,8 @@ import {
   checkMechanics, placeholdersFromInstruction, linksFromInstruction,
   type MechanicsIssue,
 } from "@/lib/seo/mechanics";
+import { META_LIMITS, type MetaFitResult } from "@/lib/seo/metaLimits";
+import { fitMeta, fitMetaLocal, readMetaBlock, writeMetaBlock } from "@/lib/seo/metaFit";
 
 export interface RewriteBody {
   text?: string;
@@ -109,6 +111,12 @@ export interface RewriteVariant {
    * shape consumers already parse.
    */
   marksScrub?: { total: number; byClass: Record<string, number> };
+  /**
+   * Meta-tag length fitting (metaFit.ts, wave-oct T1): what was done to the head block's
+   * Title/Description to bring them inside the audit band. Present only when the source page
+   * carried a meta block and at least one field needed work — `kept` needs no reporting.
+   */
+  metaFit?: MetaFitResult[];
 }
 
 /** Refreshed search snippet alongside the current one, so the change is judged by comparison. */
@@ -235,9 +243,26 @@ function checkStructure(source: string, out: string): StructureCheck {
 const MAX_CHARS = 14_000;
 const MAX_CHARS_URL = 40_000;
 
-// Search-result truncation points. Shared with the UI counters so one number governs both.
-export const SNIPPET_TITLE_MAX = 60;
-export const SNIPPET_DESC_MAX = 160;
+// Search-result truncation points. Shared with the UI counters so one number governs both —
+// and derived from META_LIMITS (wave-oct T1) so the snippet ask and the meta band can never
+// drift apart again.
+export const SNIPPET_TITLE_MAX = META_LIMITS.title.targetMax;
+export const SNIPPET_DESC_MAX = META_LIMITS.description.targetMax;
+
+// The rewrite body takes a language NAME ("Greek"); the meta fitter wants an ISO code for its
+// stop-word lists and repair prompt. A tiny mapping table beats guessing: the fitter's lists
+// cover the languages below, everything else falls back to English stop-words.
+const LANG_NAME_TO_CODE: Record<string, string> = {
+  english: "en", french: "fr", spanish: "es", german: "de", italian: "it",
+  portuguese: "pt", russian: "ru", ukrainian: "uk", greek: "el", polish: "pl",
+  turkish: "tr", dutch: "nl", romanian: "ro", czech: "cs", bulgarian: "bg",
+  arabic: "ar", japanese: "ja", korean: "ko", chinese: "zh", hebrew: "he", hindi: "hi",
+};
+function langCode(name: unknown): string {
+  const n = String(name ?? "").trim().toLowerCase();
+  if (/^[a-z]{2}(-[a-z]+)?$/.test(n)) return n.slice(0, 2);
+  return LANG_NAME_TO_CODE[n] ?? "en";
+}
 
 /**
  * The rewrite prompt, as a pure function.
@@ -532,6 +557,35 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
       forbiddenBrands: Array.isArray(b.forbiddenBrands) ? b.forbiddenBrands.map(String) : undefined,
     });
     content = mech.text;
+
+    // META FIT (wave-oct T1): when the source page carried a ```Title:``` head block, the
+    // rewrite ships it back — hold it to the same length band the generators enforce, with the
+    // same code. Local fitting first (deterministic trim / option pick); a repair pass only
+    // when a field is still out of band (the job is already paid, the provider is known).
+    // Best-effort by design: a fitting failure never costs the page its rewrite.
+    let variantMetaFit: MetaFitResult[] | undefined;
+    try {
+      const block = readMetaBlock(content);
+      if (block) {
+        const fitted = await fitMeta({
+          // No explicit targets → NO keyword guard: guarding on the title itself would veto
+          // every trim (each candidate shorter than the full title "loses the keyword").
+          keyword: targets[0]?.keyword || "",
+          language: langCode(b.language),
+          title: block.title,
+          description: block.description,
+        }, { allow: true, provider, apiKey, model: b.model || undefined, baseUrl: b.aiBaseUrl || undefined });
+        const t = fitted.title;
+        const d = fitted.description;
+        const patch: { title?: string; description?: string } = {};
+        if (t && t.after && t.after !== block.title) patch.title = t.after;
+        if (d && d.after && d.after !== block.description) patch.description = d.after;
+        if (patch.title != null || patch.description != null) content = writeMetaBlock(content, patch);
+        const results = [t, d].filter((r): r is MetaFitResult => !!r && r.method !== "kept");
+        if (results.length) variantMetaFit = results;
+      }
+    } catch { /* keep the unfitted block — the audit will flag it, nothing is lost */ }
+
     let judged: RewriteVariant["judge"];
     if (b.judge !== false) {
       judged = await judgeVariant(content);
@@ -545,6 +599,7 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
       drift, structure, repaired, coverage, judge: judged,
       ...(marks ? { marksScrub: marks } : {}),
       ...(mech.issues.length ? { mechanics: mech.issues } : {}),
+      ...(variantMetaFit ? { metaFit: variantMetaFit } : {}),
     };
   });
 
@@ -564,8 +619,8 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
       const sPrompt =
         `You are an SEO specialist. Rewrite this page's search snippet so it reads freshly and earns clicks, ` +
         `keeping the same search intent, the same primary keyword and every factual claim (prices, guarantees, coverage). ` +
-        `${langLine} Title: 50-${SNIPPET_TITLE_MAX} characters, counted exactly. ` +
-        `Meta description: 150-${SNIPPET_DESC_MAX} characters, counted exactly — never exceed ${SNIPPET_DESC_MAX}. ` +
+        `${langLine} Title: ${META_LIMITS.title.targetMin}-${SNIPPET_TITLE_MAX} characters, counted exactly. ` +
+        `Meta description: ${META_LIMITS.description.targetMin}-${SNIPPET_DESC_MAX} characters, counted exactly — never exceed ${SNIPPET_DESC_MAX}. ` +
         `Do not invent facts that are absent from the current snippet or the page. ` +
         `Return STRICT JSON and nothing else: {"title":"...","description":"..."}\n\n` +
         `CURRENT TITLE: ${title || "(none)"}\nCURRENT DESCRIPTION: ${description || "(none)"}\n\n` +
@@ -596,6 +651,16 @@ export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
               String(t2.description).length <= String(j.description || "").length) j = t2;
         } catch { /* keep the first attempt; the UI flags the overage in red */ }
       }
+
+      // META FIT (wave-oct T1): the final word on the snippet's length belongs to code, not to
+      // the model's counting — measure and deterministically fit whatever survived the retry
+      // above. Local fitting only (the retry already had its paid second chance); a value that
+      // cannot be fitted locally stays as-is and the UI keeps flagging the overage in red.
+      const kwForSnippet = targets[0]?.keyword || "";
+      const fitT = fitMetaLocal("title", String(j?.title ?? ""), [], kwForSnippet);
+      if (fitT.inBand) j.title = fitT.after;
+      const fitD = fitMetaLocal("description", String(j?.description ?? ""), [], kwForSnippet);
+      if (fitD.inBand) j.description = fitD.after;
 
       if (j?.title || j?.description) {
         snippet = {
