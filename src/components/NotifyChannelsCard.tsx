@@ -48,9 +48,12 @@ const smallBtn: React.CSSProperties = {
 // Event multi-select shared by every channel row (and by the Telegram/Slack blocks on the page).
 export function EventPicker({ events, onToggle }: { events: NotifyEvent[]; onToggle: (e: NotifyEvent) => void }) {
   const { t } = useLanguage();
+  // wave-nov (N0): lead (N9), local (N3/N4), trend (N5) widened NotifyEvent — minimal labels
+  // so the exhaustive Record compiles; N10 restyles this card together with the push row.
   const labelFor: Record<NotifyEvent, string> = {
     alert: t("notifyEv_alert"), digest: t("notifyEv_digest"), uptime: t("notifyEv_uptime"),
     index: t("notifyEv_index"), mention: t("notifyEv_mention"), test: "",
+    lead: t("notifyEv_lead"), local: t("notifyEv_local"), trend: t("notifyEv_trend"),
   };
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>

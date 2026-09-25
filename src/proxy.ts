@@ -72,6 +72,27 @@ export default withAuth(
         if (pathname === "/join" || pathname === "/api/team/accept") return true;
         if (pathname.startsWith("/share/")) return true;
         if (pathname.startsWith("/api/") && searchParams.has("shareToken")) return true;
+        // ─── wave-nov public prefixes (CONTRACT.md §4) ────────────────────────────────
+        // Each route below checks access ITSELF; letting it past the session gate only moves
+        // the check, it never removes it. Same bargain as /share/ and /api/mcp above.
+        // N9: the embeddable audit widget page — enforces widgetKey + rate limit + Turnstile
+        // in the page and /api/public/**.
+        if (pathname.startsWith("/embed/")) return true;
+        // N9: the widget's public audit + lead intake — rate limited by IP and widgetKey,
+        // Turnstile-verified when keys are configured; reads nothing but WidgetSettings.
+        if (pathname.startsWith("/api/public/")) return true;
+        // N11: the browser extension's API — Bearer User.extToken, checked in the route
+        // (constant-time compare, CORS restricted to allowed extension ids, 60 req/min).
+        if (pathname.startsWith("/api/ext/")) return true;
+        // N8: a client report's public snapshot link — the token is compared in constant time
+        // against ClientReport.shareToken; it opens exactly one report and nothing else.
+        if (pathname.startsWith("/api/reports/share/")) return true;
+        // N8: the client-facing report page (/share/report/<token>) — same token check as
+        // above; covered by "/share/" too but named so the intent survives refactors.
+        if (pathname.startsWith("/share/report/")) return true;
+        // N10: PWA assets must load before any session exists — the service worker fetches
+        // them itself; no data inside.
+        if (pathname === "/manifest.webmanifest" || pathname === "/sw.js" || pathname.startsWith("/icons/")) return true;
         return !!token;
       },
     },

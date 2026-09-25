@@ -41,5 +41,20 @@ export async function register() {
     // Brand mentions: Google News RSS + Wikipedia/Wikidata once a day per opted-in site.
     const { startMentionsScheduler } = await import('@/lib/mentions/scheduler');
     startMentionsScheduler();
+    // ─── wave-nov schedulers (CONTRACT.md §3), after the mentions block ─────────────
+    // All four start as empty no-op stubs from the foundation commit; their owning tasks
+    // (N2/N4/N5/N8) fill the tick bodies. Signatures follow serpmon/scheduler.ts.
+    // Backlink toxicity: hourly recalculation of sites with new donors + toxic_new alerts (N2).
+    const { startBacklinkToxScheduler } = await import('@/lib/backlinks/scheduler');
+    startBacklinkToxScheduler();
+    // Local SEO: GBP posts due for publishing, reviews every 6 h, citations weekly (N4).
+    const { startLocalScheduler } = await import('@/lib/local/scheduler');
+    startLocalScheduler();
+    // Trend radar: gsc_rising / gsc_new / suggest once a day per site (N5).
+    const { startTrendsScheduler } = await import('@/lib/trends/scheduler');
+    startTrendsScheduler();
+    // Client reports: render + mail reports whose nextSendAt has passed, hourly (N8).
+    const { startReportsScheduler } = await import('@/lib/reports/scheduler');
+    startReportsScheduler();
   }
 }

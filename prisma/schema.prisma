@@ -117,6 +117,15 @@ model User {
   geoAudits           GeoAudit[]
   memberships         Membership[] @relation("MembershipMember")
   workspaceMembers    Membership[] @relation("MembershipOwner")
+
+  // ─── wave-nov (N8/N9/N11/N1/N4) — see docs/tasks/wave-nov/CONTRACT.md §1 ─────
+  reportBranding  String?          // JSON: ReportBranding (N8)
+  widgetKey       String? @unique  // public id of the workspace's audit widget (N9)
+  widgetSettings  String?          // JSON: WidgetSettings (N9)
+  extToken        String? @unique  // browser-extension bearer token (N11), separate from mcpToken so it can be revoked alone
+  footprintIgnore String?          // JSON: string[] — footprint skeletons the operator marked as fine (N1)
+  extAllowedIds   String?          // newline-separated extension ids allowed by CORS (N11)
+  gbpToken        String?          // JSON: { refresh_token, access_token, expires_at, scope } — Business Profile OAuth (N4), server-only
 }
 
 // One person's access to one workspace. Rows exist only for members — the owner's access comes
@@ -255,6 +264,18 @@ model Site {
   shareEnabled          Boolean   @default(false)
   shareToken            String?   @unique
 
+  // ─── wave-nov — see docs/tasks/wave-nov/CONTRACT.md §1 ──────────────────────
+  // Backlink toxicity (N2). JSON: { ownNiche: string[] } — marker-group codes from
+  // src/lib/drops/toxicity/markers.ts that are NOT toxic for this site (e.g. ["gambling"]).
+  backlinkNiche   String?
+  localProfile    LocalProfile?
+  localCitations  LocalCitation[]
+  gbpPosts        GbpPost[]
+  gbpReviews      GbpReview[]
+  trendSeeds      TrendSeed[]
+  trendItems      TrendItem[]
+  clientReports   ClientReport[]
+
   @@unique([userId, siteId])
   @@index([userId, archivedAt])
 }
@@ -312,6 +333,11 @@ model SitemapUrl {
   neuralStatus   String?  // "submitted"
   neuralAt       DateTime?
   neuralQueue    String?
+
+  // ─── wave-nov (N6): index estimate from a site: SERP query, NOT Google's own verdict ──
+  serpIndexStatus   String?   // indexed | not_indexed | error — from a site: query (N6), NOT Google's own verdict
+  serpIndexChecked  DateTime?
+  serpIndexProvider String?
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -483,6 +509,14 @@ model SiteBacklink {
   priceNote String   @default("")
   note      String   @default("")
 
+  // --- toxicity of the donor, for THIS site's niche (N2) ---
+  toxLevel      String    @default("unknown") // unknown|clean|suspicious|toxic
+  toxScore      Int?                          // 0..100
+  toxSignals    String?                       // JSON: string[] — KNOWN_TOX_SIGNALS codes
+  toxCheckedAt  DateTime?
+  disavow       Boolean   @default(false)     // operator decision, never set automatically
+  disavowNote   String    @default("")
+
   addedAt   DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -496,6 +530,7 @@ model SiteBacklink {
   @@index([siteId, favorite])
   @@index([siteId, domainFrom])
   @@index([siteId, addedAt])
+  @@index([siteId, toxLevel])
 }
 
 // Append-only history of what changed on a link. Kept separate from SiteBacklink because the row
@@ -601,10 +636,17 @@ model TrackedKeyword {
   bestPosition  Int?
   lastUrl       String?   // ranking URL found on the last check
 
+  // ─── wave-nov (N3): local rank. `location` changes the keyword's identity — the same query
+  // from Thessaloniki and from Athens is two different tracked keywords — so it joins the
+  // unique constraint. "" (the default) is the country-level keyword every existing row
+  // already is, which is why replacing the old 4-column unique below needs no data change.
+  location      String    @default("")  // "" = country-level (as before) | city name | "lat,lng"
+  lastLocalPack Int?                    // 1..3 = place in the map pack, null = not in pack / no pack
+
   site   Site        @relation(fields: [siteId], references: [id], onDelete: Cascade)
   checks RankCheck[]
 
-  @@unique([siteId, keyword, device, country])
+  @@unique([siteId, keyword, device, country, location])
   @@index([siteId])
   @@index([lastCheckedAt])
 }
@@ -706,11 +748,17 @@ model RankCheck {
   id        String   @id @default(cuid())
   keywordId String
   checkedAt DateTime @default(now())
-  position  Int?     // null = not found
+  position  Int?     // null = not found — ORGANIC only. Never write a map-pack place here:
+                     // position feeds graphs, bestPosition and the rank_drop alert (wave-nov §0.2)
   url       String?
   depth     Int?     // how many results were scanned
   error     String?
   provider  String?  // SERP provider whose answer was stored (fallback id when it stepped in)
+
+  // ─── wave-nov (N3): the map pack is a separate number, never folded into `position` ──
+  localPack      Int?     // 1..3, null = not in pack
+  localPackTitle String?  // business name Google showed at that place
+  hasLocalPack   Boolean? // the SERP had a map pack at all; null = provider does not say
 
   keyword TrackedKeyword @relation(fields: [keywordId], references: [id], onDelete: Cascade)
 
@@ -761,6 +809,11 @@ model AeoCheck {
   searched   Boolean? // the engine ran a live web search rather than answering from weights
   answerText String?  // full answer text
   citations  String?  // JSON: [{ url, domain, title }]
+
+  // ─── wave-nov (N7): HOW the answer talks about the brand, not just whether it does ──
+  sentiment      String?  // positive | neutral | negative | mixed; null = not analysed
+  sentimentScore Float?   // -1..1
+  sentimentNote  String?  // ≤ 300 chars, what the answer says about the brand
 
   question TrackedQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
   @@index([questionId, checkedAt])
@@ -2160,4 +2213,218 @@ model BrandMention {
   @@unique([siteId, source, urlKey])
   @@index([siteId, firstSeenAt])
   @@index([siteId, dismissed, reviewed])
+}
+
+// ─── wave-nov: all models below are added verbatim from docs/tasks/wave-nov/CONTRACT.md §1.2 ──
+
+// ─── Local SEO (N4) ──────────────────────────────────────────────────────────
+model LocalProfile {
+  id            String   @id @default(cuid())
+  siteId        String   @unique
+  name          String
+  businessType  String   @default("LocalBusiness") // schema.org type: TaxiService, DaySpa, Restaurant…
+  street        String   @default("")
+  locality      String   @default("")
+  region        String   @default("")
+  postalCode    String   @default("")
+  country       String   @default("")   // ISO-3166 alpha-2
+  phone         String   @default("")   // E.164
+  email         String   @default("")
+  lat           Float?
+  lng           Float?
+  hours         String?                 // JSON: { day: "Mo".."Su", opens: "09:00", closes: "21:00" }[]
+  priceRange    String   @default("")
+  sameAs        String   @default("")   // newline-separated profile URLs
+  serviceAreas  String   @default("")   // newline-separated cities/areas
+  gbpAccount    String?                 // "accounts/123"
+  gbpLocation   String?                 // "locations/456"
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+}
+
+model LocalCitation {
+  id         String    @id @default(cuid())
+  siteId     String
+  url        String
+  directory  String    @default("")          // human label, e.g. "Yelp", "Xo.gr"
+  status     String    @default("unchecked") // unchecked|consistent|mismatch|missing|unreachable
+  found      String?                         // JSON: { name?, phone?, address? } as seen on the page
+  diffs      String?                         // JSON: NapDiff[]
+  checkedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  @@unique([siteId, url])
+}
+
+model GbpPost {
+  id           String    @id @default(cuid())
+  siteId       String
+  summary      String
+  ctaType      String?                        // BOOK | ORDER | LEARN_MORE | CALL | SIGN_UP
+  ctaUrl       String?
+  mediaUrl     String?                        // public https image URL
+  scheduledAt  DateTime
+  status       String    @default("scheduled") // draft|scheduled|published|failed
+  gbpName      String?                        // resource name returned by the API
+  error        String?
+  createdAt    DateTime  @default(now())
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  @@index([status, scheduledAt])
+}
+
+model GbpReview {
+  id         String    @id @default(cuid())
+  siteId     String
+  reviewId   String
+  author     String    @default("")
+  rating     Int                              // 1..5
+  comment    String    @default("")
+  createTime DateTime
+  replyText  String?
+  replyTime  DateTime?
+  fetchedAt  DateTime  @default(now())
+  notifiedAt DateTime?
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  @@unique([siteId, reviewId])
+  @@index([siteId, createTime])
+}
+
+// ─── Trend radar (N5) ────────────────────────────────────────────────────────
+model TrendSeed {
+  id        String   @id @default(cuid())
+  siteId    String
+  seed      String
+  lang      String   @default("")
+  country   String   @default("")
+  createdAt DateTime @default(now())
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  @@unique([siteId, seed])
+}
+
+model TrendItem {
+  id              String   @id @default(cuid())
+  siteId          String
+  source          String   // gsc_rising | gsc_new | suggest
+  query           String
+  score           Float    // source-specific, higher = hotter; see src/lib/trends
+  impressions     Int?
+  prevImpressions Int?
+  seed            String?
+  firstSeenAt     DateTime @default(now())
+  lastSeenAt      DateTime @default(now())
+  dismissed       Boolean  @default(false)
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  @@unique([siteId, source, query])
+  @@index([siteId, lastSeenAt])
+}
+
+// ─── Plagiarism (N6) ─────────────────────────────────────────────────────────
+model PlagiarismCheck {
+  id         String    @id @default(cuid())
+  userId     String
+  historyId  String?                  // SeoHistory id when checking a generated text
+  textHash   String                   // sha1 of the normalised text
+  provider   String                   // serper | dataforseo | aparser | …
+  status     String    @default("running") // running | done | failed
+  queries    Int       @default(0)
+  costUsd    Float?
+  result     String?                  // JSON: PlagiarismResult
+  error      String?
+  createdAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  @@index([userId, createdAt])
+  @@index([userId, textHash])
+}
+
+// ─── Client reports (N8) ─────────────────────────────────────────────────────
+model ClientReport {
+  id          String    @id @default(cuid())
+  userId      String
+  siteId      String
+  title       String
+  template    String    @default("executive") // executive | detailed | technical | local
+  sections    String                           // JSON: ReportSectionId[]
+  periodDays  Int       @default(30)
+  schedule    String    @default("off")        // off | weekly | monthly
+  sendDay     Int       @default(1)            // weekday 1..7 or day of month 1..28
+  recipients  String    @default("")           // comma-separated e-mails
+  notes       String    @default("")           // operator's "what we did" text, markdown
+  shareToken  String?   @unique                  // client link /share/report/<token> (N8); null = link off
+  lastSentAt  DateTime?
+  nextSendAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  site Site             @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  runs ClientReportRun[]
+  @@index([userId])
+  @@index([nextSendAt])
+}
+
+model ClientReportRun {
+  id         String    @id @default(cuid())
+  reportId   String
+  periodFrom DateTime
+  periodTo   DateTime
+  html       String                // frozen rendered snapshot — never re-rendered
+  pdfPath    String?               // under data/reports/, when a PDF was produced
+  sentTo     String?
+  error      String?
+  createdAt  DateTime  @default(now())
+
+  report ClientReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  @@index([reportId, createdAt])
+}
+
+// ─── Leads from the embeddable audit widget (N9) ─────────────────────────────
+model Lead {
+  id        String   @id @default(cuid())
+  userId    String                        // workspace owner the widget belongs to
+  domain    String
+  email     String
+  name      String   @default("")
+  message   String   @default("")
+  score     Int                           // 0..100, the lite audit's score
+  findings  String                        // JSON: LeadFinding[]
+  source    String   @default("widget")   // widget | manual
+  status    String   @default("new")      // new | contacted | won | lost | client
+  ipHash    String                        // salted sha256 — never the raw IP
+  origin    String   @default("")         // page the widget was embedded on
+  proposal  String?                       // markdown, generated by N9
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([userId, status])
+}
+
+// ─── Web push (N10) ──────────────────────────────────────────────────────────
+model PushSubscription {
+  id        String    @id @default(cuid())
+  userId    String
+  endpoint  String    @unique
+  p256dh    String
+  auth      String
+  userAgent String    @default("")
+  events    String    @default("")   // comma-separated NotifyEvent; "" = all
+  failures  Int       @default(0)
+  lastOkAt  DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// Instance-wide key/value for generated secrets that must survive restarts (VAPID keys, N10).
+model InstanceSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
 }

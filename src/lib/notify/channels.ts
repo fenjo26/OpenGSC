@@ -26,8 +26,10 @@ import type {
 } from "./types";
 import { NOTIFY_EVENTS } from "./types";
 
-/** The four channels whose whole config (secrets included) lives in User.notifyChannels. */
-export type StoredChannelId = Exclude<NotifyChannelId, "telegram" | "slack">;
+/** The four channels whose whole config (secrets included) lives in User.notifyChannels.
+ *  wave-nov (N0): webpush widened NotifyChannelId but is NOT a stored channel — its
+ *  subscriptions live in the PushSubscription table (N10) — so it is excluded here. */
+export type StoredChannelId = Exclude<NotifyChannelId, "telegram" | "slack" | "webpush">;
 const STORED_IDS: readonly StoredChannelId[] = ["discord", "teams", "email", "webhook"];
 
 const HTTP_TIMEOUT_MS = 10_000;
@@ -405,6 +407,7 @@ export async function deliverStoredChannel(
 
 const CHANNEL_LABEL: Record<NotifyChannelId, string> = {
   telegram: "Telegram", slack: "Slack", discord: "Discord", teams: "Microsoft Teams", email: "E-mail", webhook: "Webhook",
+  webpush: "Web Push", // wave-nov (N0): label for the widened union; N10 owns the real channel row
 };
 
 export async function testChannel(userId: string, id: NotifyChannelId): Promise<NotifyDelivery> {
@@ -426,6 +429,11 @@ export async function testChannel(userId: string, id: NotifyChannelId): Promise<
       r = url ? await sendSlack(url, text) : { ok: false, error: "not_configured" };
       break;
     }
+    // wave-nov (N0): webpush subscriptions live in PushSubscription (N10), not in the
+    // notifyChannels JSON, so there is no stored config to deliver through. Stub until N10.
+    case "webpush":
+      r = { ok: false, error: "not_implemented" };
+      break;
     default:
       // A channel being tried out is testable even while its `on` switch is off.
       r = await deliverStoredChannel(cfg, id, "test", title, text);

@@ -1,8 +1,13 @@
-export type NotifyEvent = "alert" | "digest" | "uptime" | "index" | "mention" | "test";
+// wave-nov (CONTRACT.md §2): "lead" (new lead from the audit widget, N9), "local" (map-pack
+// changes + GBP reviews, N3/N4), "trend" (rising queries, N5). "test" stays a filter-only
+// value and deliberately not in NOTIFY_EVENTS (types.test.ts asserts this).
+export type NotifyEvent = "alert" | "digest" | "uptime" | "index" | "mention" | "lead" | "local" | "trend" | "test";
 
-export const NOTIFY_EVENTS: NotifyEvent[] = ["alert", "digest", "uptime", "index", "mention"];
+export const NOTIFY_EVENTS: NotifyEvent[] = ["alert", "digest", "uptime", "index", "mention", "lead", "local", "trend"];
 
-export type NotifyChannelId = "telegram" | "slack" | "discord" | "teams" | "email" | "webhook";
+// wave-nov (CONTRACT.md §2): "webpush" is the PWA push channel (N10). N0 only widens the union
+// and patches the exhaustive switches it breaks with a not_implemented stub; N10 owns delivery.
+export type NotifyChannelId = "telegram" | "slack" | "discord" | "teams" | "email" | "webhook" | "webpush";
 
 export interface NotifyChannelBase {
   on: boolean;
