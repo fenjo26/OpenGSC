@@ -19,8 +19,9 @@ import { prisma } from "@/lib/prisma";
 import { runSerp } from "@/lib/seo/serp";
 import { resolveBaseUrl, setAparserConcurrency } from "@/lib/seo/aparser";
 import { aparserRankPosition } from "@/lib/seo/aparserPositionRun";
-import { checkWithFallback, type RankAttempt } from "@/lib/rankFallback";
+import { checkWithFallback, fallbackForLocation, type RankAttempt } from "@/lib/rankFallback";
 import { resolveAparserPassword } from "@/lib/seo/aparserServerCreds";
+import { brandNamesFromHost, matchLocalPack, type LocalPackEntry } from "@/lib/seo/localPack";
 import { rawQuery } from "@/lib/db/raw";
 
 export const RANK_STALE_MS = 20 * 60 * 60 * 1000; // ~daily, resilient to restarts
@@ -165,34 +166,59 @@ export interface CheckResult {
   error?: string;
   /** Provider whose answer was stored (the fallback's id when it stepped in). */
   provider?: string;
+  /**
+   * wave-nov N3: the SERP's map pack, as the answering provider reported it. Present only on
+   * geolocated checks; `position` above stays ORGANIC ONLY — the pack place never lands there
+   * (CONTRACT.md §0.2: position feeds graphs, bestPosition and the rank_drop alert).
+   */
+  localPack?: LocalPackEntry[];
+  /** true/false = provider said pack/no pack; null = it does not say. Local checks only. */
+  hasLocalPack?: boolean | null;
+  /**
+   * Our place in the pack after matching (domain, then name): 1..3 + the title Google showed.
+   * null = we are not in the pack; undefined = not computed (country keyword or failed check).
+   */
+  packPlace?: { position: number; title: string } | null;
 }
 
 // One SERP scan pass at the given depth.
 async function scan(
-  creds: SerpCreds, keyword: string, gl: string, hl: string, depth: number, siteHost: string,
+  creds: SerpCreds, keyword: string, gl: string, hl: string, depth: number, siteHost: string, location = "",
 ): Promise<CheckResult> {
   const serp = await runSerp(creds.provider, creds.apiKey, keyword, {
     gl, hl, num: depth, baseUrl: creds.baseUrl, ...(creds.configPreset ? { configPreset: creds.configPreset } : {}),
+    ...(location ? { location } : {}),
   });
   if (serp.error) return { position: null, url: null, depth, error: serp.error };
-  for (const r of serp.results) {
-    if (matchesSite(r.domain, siteHost)) return { position: r.position, url: r.url, depth };
-  }
-  return { position: null, url: null, depth };
+  const found = serp.results.find((r) => matchesSite(r.domain, siteHost)) ?? null;
+  return {
+    position: found?.position ?? null,
+    url: found?.url ?? null,
+    depth,
+    ...(location ? { hasLocalPack: serp.hasLocalPack ?? null } : {}),
+    ...(location && serp.localPack?.length ? { localPack: serp.localPack } : {}),
+  };
 }
 
 /**
  * One provider's answer for one keyword. Metered providers: the smart window, escalated once to
  * full depth. A-Parser: one SE::Google::Position call at full depth ("Stop when found" keeps it
  * short), its detail line stored as the error so the cause is visible in the tracker.
+ *
+ * wave-nov N3: a LOCAL keyword on A-Parser cannot take the Position parser — it accepts no
+ * location (nothing passes one through) and returns no SERP to read a pack from, so it would
+ * answer the country's organic position and we would file it under a city keyword. Local
+ * checks go through the ordinary SE::Google scan instead: one scan answers both the organic
+ * position and the pack, at the price of losing "stop when found".
  */
 async function providerScan(
   creds: SerpCreds,
-  kw: { keyword: string; country: string; lang: string; lastPosition: number | null },
+  kw: { keyword: string; country: string; lang: string; location?: string; lastPosition: number | null },
   siteHost: string,
 ): Promise<CheckResult> {
   const max = MAX_DEPTH[creds.provider] ?? 50;
-  if (creds.provider === "aparser") {
+  const location = kw.location ?? "";
+  if (creds.provider === "aparser" && !location) {
     const r = await aparserRankPosition(
       { baseUrl: creds.baseUrl ?? "", password: creds.apiKey, ...(creds.configPreset ? { configPreset: creds.configPreset } : {}) },
       { keyword: kw.keyword, gl: kw.country, hl: kw.lang, siteHost, depth: max },
@@ -208,28 +234,49 @@ async function providerScan(
   const depth = kw.lastPosition
     ? Math.min(max, Math.ceil((kw.lastPosition + SMART_BUFFER) / 10) * 10)
     : max;
-  let res = await scan(creds, kw.keyword, kw.country, kw.lang, depth, siteHost);
+  let res = await scan(creds, kw.keyword, kw.country, kw.lang, depth, siteHost, location);
   // Not found in the smart window → escalate once to max depth.
   if (!res.error && res.position === null && depth < max) {
-    res = await scan(creds, kw.keyword, kw.country, kw.lang, max, siteHost);
+    res = await scan(creds, kw.keyword, kw.country, kw.lang, max, siteHost, location);
   }
   return res;
 }
 
+/**
+ * The names a map-pack entry may carry for "us": the LocalProfile business name (N4; read by
+ * the caller, once per site) plus the brand words folded out of the host. An unmigrated
+ * LocalProfile table is not an error — brand words still match, same convention as
+ * `schemaMissing()`.
+ */
+export function localMatchNames(siteHost: string, profileNames: readonly string[] = []): string[] {
+  return [...profileNames.filter(Boolean), ...brandNamesFromHost(siteHost)];
+}
+
 // Check one tracked keyword (smart depth), persist RankCheck + denormalized state.
 export async function checkTrackedKeyword(
-  kw: { id: string; keyword: string; country: string; lang: string; lastPosition: number | null; bestPosition: number | null; siteUrl: string },
+  kw: {
+    id: string; keyword: string; country: string; lang: string;
+    /** wave-nov N3: "" = country-level (as before) | city name | "lat,lng". */
+    location?: string;
+    lastPosition: number | null; bestPosition: number | null; siteUrl: string;
+    /** LocalProfile name(s) of the site, for pack matching by business name. */
+    localNames?: string[];
+  },
   creds: SerpCreds,
 ): Promise<CheckResult> {
   const siteHost = hostOf(kw.siteUrl);
+  const location = kw.location ?? "";
   const unsupported = RANK_UNSUPPORTED[creds.provider];
   if (unsupported) return { position: null, url: null, depth: 0, error: unsupported };
+  // The fallback only answers a local keyword when it can geolocate one too; otherwise the
+  // primary's error is stored as-is rather than "answered" at the wrong geography.
+  const fallbackId = fallbackForLocation(creds.fallback?.provider, location);
   const run = (provider: string): Promise<RankAttempt> => {
     const c = provider === creds.provider ? creds : creds.fallback;
     if (!c) return Promise.resolve({ position: null, url: null, depth: 0, error: `no_serp_key (${provider})`, provider });
     return providerScan(c, kw, siteHost).then((r) => ({ ...r, provider }));
   };
-  const outcome = await checkWithFallback(run, creds.provider, creds.fallback?.provider);
+  const outcome = await checkWithFallback(run, creds.provider, fallbackId);
   if (outcome.primaryError) {
     console.warn(`[rank] "${kw.keyword}": ${creds.provider} failed (${outcome.primaryError.slice(0, 160)}); answered by ${outcome.provider}`);
   }
@@ -238,16 +285,34 @@ export async function checkTrackedKeyword(
     ...(outcome.error ? { error: outcome.error } : {}), provider: outcome.provider,
   };
 
+  // ── wave-nov N3: the pack is matched and stored SEPARATELY from the organic position ──
+  const pack = res.error || !location
+    ? undefined
+    : {
+        hasLocalPack: outcome.hasLocalPack ?? null,
+        match: (outcome.localPack?.length
+          ? matchLocalPack(outcome.localPack, { host: siteHost, names: localMatchNames(siteHost, kw.localNames) })
+          : null),
+      };
+  if (!res.error && location) {
+    res.hasLocalPack = pack?.hasLocalPack ?? null;
+    if (outcome.localPack?.length) res.localPack = outcome.localPack;
+    res.packPlace = pack?.match ?? null;
+  }
+
   const now = new Date();
   await prisma.rankCheck.create({
     data: {
       keywordId: kw.id,
       checkedAt: now,
-      position: res.error ? null : res.position,
+      position: res.error ? null : res.position, // organic only — never a pack place
       url: res.url,
       depth: res.depth,
       error: res.error ? res.error.slice(0, 1000) : null,
       provider: res.provider ?? null,
+      localPack: pack ? (pack.match?.position ?? null) : null,
+      localPackTitle: pack ? (pack.match?.title ?? null) : null,
+      hasLocalPack: pack ? (pack.hasLocalPack ?? null) : null,
     },
   });
 
@@ -270,10 +335,31 @@ export async function checkTrackedKeyword(
         lastPosition: res.position,
         lastUrl: res.url,
         bestPosition: best,
+        lastLocalPack: pack ? (pack.match?.position ?? null) : null,
       },
     });
   }
   return res;
+}
+
+/** wave-nov N3: a place in a site's pack that changed between two checks (for the daily digest). */
+export interface PackChange {
+  keywordId: string;
+  keyword: string;
+  location: string;
+  from: number | null;
+  to: number | null;
+}
+
+// The LocalProfile business name of a site, when N4's card has created one. Read once per
+// site-batch, not per keyword; a missing table degrades to brand-word matching alone.
+async function localProfileNames(siteId: string): Promise<string[]> {
+  try {
+    const p = await prisma.localProfile.findUnique({ where: { siteId }, select: { name: true } });
+    return p?.name ? [p.name] : [];
+  } catch {
+    return [];
+  }
 }
 
 // Check up to `limit` keywords of a site that are stale (or all when force=true).
@@ -281,7 +367,7 @@ export async function checkTrackedKeyword(
 export async function checkSiteKeywords(
   siteId: string, siteUrl: string, creds: SerpCreds,
   opts: { force?: boolean; limit?: number; onlyIds?: string[]; before?: Date } = {},
-): Promise<{ checked: number; remaining: number; errors: number }> {
+): Promise<{ checked: number; remaining: number; errors: number; packChanges: PackChange[] }> {
   const limit = opts.limit ?? 20;
   const staleBefore = new Date(Date.now() - RANK_STALE_MS);
   const where: any = { siteId };
@@ -297,13 +383,28 @@ export async function checkSiteKeywords(
     orderBy: [{ lastCheckedAt: "asc" }],
   });
   const batch = all.slice(0, limit);
+  const localNames = await localProfileNames(siteId);
   let errors = 0;
+  const packChanges: PackChange[] = [];
   const one = async (kw: (typeof batch)[number]) => {
     const res = await checkTrackedKeyword(
-      { id: kw.id, keyword: kw.keyword, country: kw.country, lang: kw.lang, lastPosition: kw.lastPosition, bestPosition: kw.bestPosition, siteUrl },
+      {
+        id: kw.id, keyword: kw.keyword, country: kw.country, lang: kw.lang, location: kw.location,
+        lastPosition: kw.lastPosition, bestPosition: kw.bestPosition, siteUrl, localNames,
+      },
       creds,
     );
     if (res.error) errors++;
+    // A pack change is a move between two CHECKS — the first check of a keyword is its
+    // baseline, not a change, so a freshly added local keyword never announces itself. Only
+    // the PLACE matters (left / entered / moved): a title Google reworded at the same place
+    // is not a change the digest should announce.
+    else if (kw.location && kw.lastCheckedAt) {
+      const to = res.packPlace?.position ?? null;
+      if ((kw.lastLocalPack ?? null) !== to) {
+        packChanges.push({ keywordId: kw.id, keyword: kw.keyword, location: kw.location, from: kw.lastLocalPack ?? null, to });
+      }
+    }
   };
   if (creds.provider === "aparser") {
     // Self-hosted: no rate limit to be kind to, and a Position call takes seconds to minutes.
@@ -317,5 +418,5 @@ export async function checkSiteKeywords(
       await new Promise(r => setTimeout(r, 800));
     }
   }
-  return { checked: batch.length, remaining: Math.max(0, all.length - batch.length), errors };
+  return { checked: batch.length, remaining: Math.max(0, all.length - batch.length), errors, packChanges };
 }
