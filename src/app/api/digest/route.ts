@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { authOptions } from "@/lib/auth";
 import { workspaceUserId } from "@/lib/team/workspace";
 import type { Capability } from "@/lib/team/roles";
 import { prisma } from "@/lib/prisma";
@@ -29,7 +28,7 @@ export async function GET() {
   const userId = await uid();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let digests: any[] = [];
+  let digests: Awaited<ReturnType<typeof prisma.digest.findMany>> = [];
   try {
     digests = await prisma.digest.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 20 });
   } catch { /* not migrated */ }
@@ -43,7 +42,7 @@ export async function GET() {
     if (!s.tags) continue;
     try {
       const arr = JSON.parse(s.tags);
-      if (Array.isArray(arr)) { arr.forEach((t: any) => tags.add(String(t))); continue; }
+      if (Array.isArray(arr)) { arr.forEach((t: unknown) => tags.add(String(t))); continue; }
     } catch { /* comma fallback */ }
     s.tags.split(",").map(x => x.trim()).filter(Boolean).forEach(t => tags.add(t));
   }
@@ -52,7 +51,7 @@ export async function GET() {
   // "telegram" flag historically gates the Send button — true when ANY channel works.
   let telegram = false;
   try {
-    const rows: any[] = await rawQuery(
+    const rows = await rawQuery<{ telegramBotToken?: string; telegramChatId?: string; slackWebhook?: string }[]>(
       `SELECT telegramBotToken, telegramChatId, slackWebhook FROM "User" WHERE id = ?`, userId);
     telegram = !!((rows?.[0]?.telegramBotToken && rows?.[0]?.telegramChatId) || rows?.[0]?.slackWebhook);
   } catch { /* not migrated */ }

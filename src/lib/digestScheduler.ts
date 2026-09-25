@@ -24,7 +24,7 @@ export async function sendDigestNow(userId: string, tag: string, days: number, a
   
   let sentToVal: string | null = null;
   if (sent) {
-    const creds = await rawQuery<any[]>(`SELECT telegramBotToken, telegramChatId, slackWebhook FROM "User" WHERE id = ?`, userId).then(rows => rows?.[0]).catch(() => null);
+    const creds = await rawQuery<{ telegramBotToken?: string; telegramChatId?: string; slackWebhook?: string }[]>(`SELECT telegramBotToken, telegramChatId, slackWebhook FROM "User" WHERE id = ?`, userId).then(rows => rows?.[0]).catch(() => null);
     const hasTg = !!(creds?.telegramBotToken && creds?.telegramChatId);
     const hasSlack = !!creds?.slackWebhook;
     if (hasTg && hasSlack) sentToVal = "telegram, slack";
@@ -39,9 +39,9 @@ export async function sendDigestNow(userId: string, tag: string, days: number, a
 }
 
 async function tick() {
-  let users: any[] = [];
+  let users: { id: string }[] = [];
   try {
-    users = await rawQuery(
+    users = await rawQuery<{ id: string }[]>(
       `SELECT id, digestSettings FROM "User"
        WHERE (telegramBotToken IS NOT NULL AND telegramChatId IS NOT NULL OR slackWebhook IS NOT NULL) AND digestSettings IS NOT NULL`);
   } catch { return; } // not migrated yet
