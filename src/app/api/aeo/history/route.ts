@@ -19,14 +19,26 @@ export async function GET(req: Request) {
   if (!q || q.site.userId !== userId) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const since = new Date(Date.now() - days * 86400000);
-  const checks = await prisma.aeoCheck.findMany({
-    where: { questionId, checkedAt: { gte: since } },
-    orderBy: { checkedAt: "asc" },
-    select: {
-      id: true, engine: true, checkedAt: true, cited: true, status: true, url: true,
-      snippet: true, rank: true, model: true, searched: true, error: true,
-    },
-  });
+  let checks;
+  try {
+    checks = await prisma.aeoCheck.findMany({
+      where: { questionId, checkedAt: { gte: since } },
+      orderBy: { checkedAt: "asc" },
+      select: {
+        id: true, engine: true, checkedAt: true, cited: true, status: true, url: true,
+        snippet: true, rank: true, model: true, searched: true, error: true,
+        sentiment: true, sentimentScore: true, sentimentNote: true,
+      },
+    });
+  } catch (e) {
+    // The sentiment columns are new in this wave; an instance without `db push` keeps its
+    // history readable rather than 500ing on the badge data it cannot have.
+    const v = e as { code?: string; message?: string };
+    if (v?.code === "P2022" || /sentiment(Score|Note)?\b.*(does not exist|no such column)/i.test(String(v?.message ?? ""))) {
+      return NextResponse.json({ notMigrated: true });
+    }
+    throw e;
+  }
 
   // The heavy columns (full answer, citation list) are fetched only for the newest check per
   // engine. The history strip renders dozens of dots; shipping a 12k answer behind each one
@@ -36,15 +48,15 @@ export async function GET(req: Request) {
   const detail = latestIds.size
     ? await prisma.aeoCheck.findMany({
         where: { id: { in: [...latestIds.values()] } },
-        select: { id: true, engine: true, answerText: true, citations: true },
+        select: { id: true, engine: true, answerText: true, citations: true, sentiment: true, sentimentScore: true, sentimentNote: true },
       })
     : [];
 
-  const latest: Record<string, { answerText: string | null; citations: unknown[] }> = {};
+  const latest: Record<string, { answerText: string | null; citations: unknown[]; sentiment: string | null; sentimentScore: number | null; sentimentNote: string | null }> = {};
   for (const d of detail) {
     let citations: unknown[] = [];
     try { citations = d.citations ? JSON.parse(d.citations) : []; } catch { citations = []; }
-    latest[d.engine] = { answerText: d.answerText, citations };
+    latest[d.engine] = { answerText: d.answerText, citations, sentiment: d.sentiment, sentimentScore: d.sentimentScore, sentimentNote: d.sentimentNote };
   }
 
   return NextResponse.json({

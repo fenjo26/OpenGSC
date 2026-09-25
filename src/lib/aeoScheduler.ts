@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { getUserAeoCreds, hasAnyAeoCreds, siteAeoConfig, checkSiteQuestions, AEO_STALE_MS } from '@/lib/aeoTracker';
+import { runAutoSentiment } from '@/lib/visibility/sentimentStore';
 import { resolveCaptureBodies } from '@/lib/providerLog/bodies';
 import { withCallContext } from '@/lib/providerLog/context';
 
@@ -52,6 +53,7 @@ async function tick() {
       const captureBodies = await resolveCaptureBodies(site.userId);
       await withCallContext({ userId: site.userId, feature: "aeo-cron", captureBodies }, async () => {
         try {
+          const siteTickStart = new Date();
           if (!credsByUser.has(site.userId)) {
             credsByUser.set(site.userId, await getUserAeoCreds(site.userId));
           }
@@ -60,6 +62,14 @@ async function tick() {
 
           const r = await checkSiteQuestions(site.id, siteAeoConfig(site), creds, { limit: PER_SITE_CAP });
           if (r.checked > 0) console.log(`[aeo-cron] ${site.url}: checked ${r.checked}, remaining ${r.remaining}`);
+
+          // Sentiment of the answers this tick just wrote — only where the operator switched
+          // the toggle on (runAutoSentiment re-reads it; default is off). Marked from before
+          // the checks so exactly the new rows qualify.
+          const sent = await runAutoSentiment(site.userId, site.id, siteTickStart);
+          if (sent.ran && (sent.analysed || sent.failed)) {
+            console.log(`[aeo-cron] ${site.url}: sentiment ${sent.analysed} analysed, ${sent.failed} failed`);
+          }
         } catch (e) {
           console.warn(`[aeo-cron] site ${site.id} failed:`, e);
         }
