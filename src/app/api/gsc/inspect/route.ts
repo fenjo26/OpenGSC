@@ -4,6 +4,7 @@ import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from '@/lib/prisma';
 import { google } from 'googleapis';
 import { safeFetch } from '@/lib/security/safeFetch';
+import { quotaToday, recordInspections } from '@/lib/indexing/quota';
 
 function makeOAuth2(account: {
   id: string;
@@ -156,10 +157,28 @@ export async function POST(req: Request) {
         return !e || new Date(e.lastInspect) < staleThreshold;
       });
 
+  // ── Quota ledger (wave-oct): this route draws on the same 2,000/day-per-property URL
+  // Inspection pool as the Indexing button, the auto queue and MCP inspect_url. Fail fast
+  // when the Pacific day is already spent instead of collecting guaranteed 429s. Ledger
+  // problems (table missing before db push) must not break the route — proceed uncounted.
+  if (needsInspection.length) {
+    try {
+      const quota = await quotaToday(site.siteId);
+      if (quota.exhausted) {
+        return NextResponse.json({
+          error: 'quota_exhausted',
+          detail: `Google URL Inspection quota exhausted for this property (${quota.used}/2000 today) — resets at midnight Pacific time.`,
+        }, { status: 429 });
+      }
+    } catch { /* ledger unavailable */ }
+  }
+
   // ── Call URL Inspection API for stale/missing URLs ────────────────────────────
   const freshResults: any[] = [];
 
+  let quotaDead = false; // a 429 from Google ends the run: every later call would 429 too
   for (const url of needsInspection) {
+    if (quotaDead) break;
     let inspected = false;
     for (const account of accounts) {
       try {
@@ -169,6 +188,8 @@ export async function POST(req: Request) {
         const res = await sc.urlInspection.index.inspect({
           requestBody: { inspectionUrl: url, siteUrl: site.siteId },
         });
+
+        await recordInspections(site.siteId, 1, { auto: false }).catch(() => {});
 
         const idx = res.data.inspectionResult?.indexStatusResult;
         const rich = res.data.inspectionResult?.richResultsResult;
@@ -201,6 +222,12 @@ export async function POST(req: Request) {
         inspected = true;
         break;
       } catch (_e) {
+        const msg = String((_e as { message?: unknown })?.message ?? _e ?? '');
+        if (/quota|429/i.test(msg)) {
+          await recordInspections(site.siteId, 0, { auto: false, errors: 1, exhausted: true }).catch(() => {});
+          quotaDead = true;
+          break;
+        }
         continue;
       }
     }

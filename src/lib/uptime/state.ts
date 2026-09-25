@@ -109,3 +109,20 @@ export function isCheckerOffline(results: { ok: boolean; cause?: string | null }
   ).length;
   return networkFails / results.length >= UPTIME_OFFLINE_RATIO;
 }
+
+/**
+ * Would applying this answer move the monitor INTO "down" (from up, degraded or unknown)?
+ * Those are exactly the transitions a checker-side network outage can manufacture, so they are
+ * the ones the scheduler's witness gate may hold back: with checks deliberately spread across
+ * time, a dead server uplink usually lands in ticks of 1–5 monitors — too few for the batch
+ * heuristic above to fire.
+ */
+export function confirmsDown(
+  prev: Pick<MonitorState, "status" | "consecutiveFails">,
+  result: { ok: boolean },
+  failThreshold: number,
+): boolean {
+  if (result.ok) return false;
+  if (prev.status === "down") return false; // already down: the streak just continues
+  return prev.consecutiveFails + 1 >= Math.max(1, Math.floor(failThreshold));
+}

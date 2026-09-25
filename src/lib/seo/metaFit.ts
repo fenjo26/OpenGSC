@@ -117,8 +117,20 @@ const endsTerminated = (s: string): boolean => TERMINATORS.has(s.slice(-1));
 
 /** Smallest-cut-first ladder for titles: last separator, then parenthesized group. */
 function trimTitle(value: string, keyword: string, brand: string | undefined, min: number, max: number): string | null {
-  const kw = fold(String(keyword ?? "").trim());
-  const hasKeyword = (s: string) => !kw || fold(s).includes(kw);
+  // The keyword survives when none of its WORDS are gone — not necessarily as the exact
+  // phrase. A query often arrives in a different word order than the title ("golden crown
+  // extreme booster stratégie" vs "Stratégie Golden Crown…"); a phrase check would refuse
+  // the free deterministic trim and jump straight to a paid LLM repair. Word-boundary match
+  // so "crown" does not count as surviving inside "crowning"; tokens under 2 chars are noise.
+  const kwTokens = [...new Set(
+    fold(String(keyword ?? "").trim()).split(/[^\p{L}\p{N}]+/u).filter(t => t.length >= 2),
+  )];
+  const kwRes = kwTokens.map(t => new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(t)}(?![\\p{L}\\p{N}])`, "u"));
+  const hasKeyword = (s: string) => {
+    if (!kwRes.length) return true;
+    const f = fold(s);
+    return kwRes.every(re => re.test(f));
+  };
   let cur = value;
 
   // The brand drops first: it is the one segment a title can lose without losing meaning.

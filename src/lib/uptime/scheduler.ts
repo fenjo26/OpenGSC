@@ -10,7 +10,11 @@
 //   4. due monitors (enabled, nextCheckAt ≤ now, ≤ 50) checked at parallelism 8;
 //   5. if the tick smells like the server's own network died (state.ts isCheckerOffline), the
 //      results are recorded but move nothing, alert nothing, and every monitor shows
-//      checker_offline until the first normal tick;
+//      checker_offline until the first normal tick. The batch heuristic needs ≥ 3 monitors in
+//      one tick, and checks are deliberately spread — so before ANY monitor moves into "down"
+//      the scheduler also probes two witness endpoints (check.ts witnessesReachable); if both
+//      are unreachable the confirmation is held the same way. Healthy servers never pay for
+//      this: the probe runs only when a down-confirmation is actually pending;
 //   6. otherwise each result goes through nextState + the incident lifecycle + UptimeDaily;
 //   7. alerts that failed to deliver get retried (≤ 3 attempts).
 //
@@ -25,8 +29,8 @@ import { NOTIFY_L, formatDuration, type NotifyLang } from "@/lib/notifyI18n";
 import { safeFetch } from "@/lib/security/safeFetch";
 import { withCallContext } from "@/lib/providerLog/context";
 import { getAlertSettings } from "@/lib/alertScheduler";
-import { runUptimeCheck } from "./check";
-import { isCheckerOffline, nextState, type MonitorState } from "./state";
+import { runUptimeCheck, witnessesReachable } from "./check";
+import { confirmsDown, isCheckerOffline, nextState, type MonitorState } from "./state";
 import {
   UptimeInputError, clearCheckerOffline, getUptimeSettings,
   markCheckerOffline, siteRootUrl, utcDay, uptimeSchemaMissing,
@@ -50,8 +54,11 @@ let kickQueued = false;
 let disabled = false;
 let lastAutoEnrollAt = 0;
 let lastRetentionAt = 0;
-/** siteIds whose owner opted out of autoEnroll, so the auto-enroll query stops re-fetching them. */
-const autoEnrollSkipped = new Set<string>();
+/** siteIds whose owner opted out of autoEnroll, with when that was learned. Timestamped, not
+ *  forever: flipping the workspace setting back on must enroll the site within one TTL without
+ *  a server restart (the skip only saves the settings re-read, it must not become policy). */
+const autoEnrollSkipped = new Map<string, number>();
+const AUTOENROLL_SKIP_TTL_MS = 10 * 60_000;
 /** Last heartbeat ping per URL — one ping a minute is the dead-man contract. */
 const heartbeatLast = new Map<string, number>();
 /** Delivery attempts per unsent AlertEvent id (in memory; the 30-min window bounds restarts). */
@@ -336,40 +343,51 @@ async function processResult(
 
 /** One monitor for every live (not archived, not hidden) site of an autoEnroll workspace.
  *  First checks spread randomly inside the interval so 60 fresh monitors do not fire in one
- *  second. */
+ *  second. Cursor-paginated: a portfolio can hold far more monitor-less sites than one page,
+ *  and a single take(100) would leave the tail unenrolled forever. */
 async function autoEnroll(): Promise<void> {
-  const sites: { id: string; userId: string; siteId: string; url: string }[] = await db.site.findMany({
-    where: { archivedAt: null, hidden: false, uptimeMonitor: null },
-    take: 100,
-    select: { id: true, userId: true, siteId: true, url: true },
-  });
-  if (!sites.length) return;
   const owners = new OwnerCache();
-  for (const site of sites) {
-    if (autoEnrollSkipped.has(site.id)) continue;
-    const settings = await owners.settingsOf(site.userId);
-    if (!settings?.autoEnroll) {
-      autoEnrollSkipped.add(site.id);
-      continue;
-    }
-    const intervalMs = Math.max(60_000, settings.defaultIntervalMin * 60_000);
-    const spread = Math.floor(Math.random() * intervalMs);
-    try {
-      await db.uptimeMonitor.create({
-        data: {
-          siteId: site.id,
-          url: siteRootUrl(site),
-          intervalMin: settings.defaultIntervalMin,
-          nextCheckAt: new Date(Date.now() + spread),
-          status: "unknown",
-        },
-      });
-    } catch (e) {
-      if (!uptimeSchemaMissing(e) && !/unique/i.test(String((e as { message?: string })?.message ?? ""))) {
-        console.warn("[uptime-cron] auto-enroll failed:", e);
+  let cursor: string | null = null;
+  for (let page = 0; page < 50; page++) { // hard bound: 5,000 sites per pass; the rest next pass
+    const sites: { id: string; userId: string; siteId: string; url: string }[] = await db.site.findMany({
+      where: {
+        archivedAt: null, hidden: false, uptimeMonitor: null,
+        ...(cursor ? { id: { gt: cursor } } : {}),
+      },
+      orderBy: { id: "asc" },
+      take: 100,
+      select: { id: true, userId: true, siteId: true, url: true },
+    });
+    if (!sites.length) return;
+    cursor = sites[sites.length - 1].id;
+    for (const site of sites) {
+      const skippedAt = autoEnrollSkipped.get(site.id);
+      if (skippedAt !== undefined && Date.now() - skippedAt < AUTOENROLL_SKIP_TTL_MS) continue;
+      const settings = await owners.settingsOf(site.userId);
+      if (!settings?.autoEnroll) {
+        autoEnrollSkipped.set(site.id, Date.now());
+        continue;
       }
+      const intervalMs = Math.max(60_000, settings.defaultIntervalMin * 60_000);
+      const spread = Math.floor(Math.random() * intervalMs);
+      try {
+        await db.uptimeMonitor.create({
+          data: {
+            siteId: site.id,
+            url: siteRootUrl(site),
+            intervalMin: settings.defaultIntervalMin,
+            nextCheckAt: new Date(Date.now() + spread),
+            status: "unknown",
+          },
+        });
+      } catch (e) {
+        if (!uptimeSchemaMissing(e) && !/unique/i.test(String((e as { message?: string })?.message ?? ""))) {
+          console.warn("[uptime-cron] auto-enroll failed:", e);
+        }
+      }
+      autoEnrollSkipped.delete(site.id); // it has a monitor now; nothing to skip
     }
-    autoEnrollSkipped.delete(site.id); // it has a monitor now; nothing to skip
+    if (sites.length < 100) return;
   }
 }
 
@@ -457,8 +475,21 @@ async function tick(): Promise<void> {
     }
 
     // The whole tick is judged together: if ≥80% of ≥3 monitors failed with network causes,
-    // it is the server's network, not fifty sites.
-    const offline = isCheckerOffline(answers.map(a => ({ ok: a.result.ok, cause: a.result.cause })));
+    // it is the server's network, not fifty sites. Spread-out checks defeat that quorum —
+    // hence the witness gate: a would-be down confirmation is only believed when the checker
+    // can still reach the internet at all.
+    const batchOffline = isCheckerOffline(answers.map(a => ({ ok: a.result.ok, cause: a.result.cause })));
+    let witnessesOk: boolean | null = null; // null = not probed (nothing pending)
+    if (!batchOffline) {
+      const pendingDown = answers.some(({ monitor, result }) =>
+        confirmsDown(
+          { status: monitor.status as MonitorState["status"], consecutiveFails: monitor.consecutiveFails },
+          result,
+          monitor.failThreshold,
+        ));
+      if (pendingDown) witnessesOk = await witnessesReachable();
+    }
+    const offline = batchOffline || witnessesOk === false;
     if (offline) markCheckerOffline();
     else clearCheckerOffline();
 

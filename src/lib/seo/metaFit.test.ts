@@ -217,3 +217,31 @@ test("fitMeta without llm.allow keeps unfixable values untouched and reports zer
   assert.equal(r.title?.method, "unfixable");
   assert.equal(r.title?.after, v); // no forced cut on the free path
 });
+
+// ── keyword guard is per-WORD, not per-phrase (review fix: word order must not force an LLM call) ──
+
+test("a keyword in a different word order than the title still trims for free", () => {
+  // Same 80-char golden title, but the query arrived as "golden crown extreme booster
+  // stratégie" — not a substring of the title in this order. The free trim must still work:
+  // every keyword WORD survives the cut, only the order differs.
+  const r = fitMetaLocal("title",
+    "Stratégie Golden Crown Extreme Booster : Bankroll et Mises — Que Faut-il Faire ?",
+    [], "golden crown extreme booster stratégie");
+  assert.equal(r.method, "trimmed");
+  assert.equal(r.after, "Stratégie Golden Crown Extreme Booster : Bankroll et Mises");
+  assert.equal(r.length, 58);
+});
+
+test("a cut that would drop a keyword WORD is still refused", () => {
+  // 64-char title, over the 60 target: the " — Review" cut lands at 55, inside the band —
+  // but "review" is a word of the keyword, so the guard refuses and the value stays as is.
+  const v = "Golden Crown Extreme Booster Deluxe : Bankroll et Mises — Review";
+  const r = fitMetaLocal("title", v, [], "golden crown review");
+  assert.equal(r.method, "unfixable");
+  assert.equal(r.after, v);
+  // Control: same title, keyword without "review" — the identical cut is fine, proving the
+  // refusal above was the keyword guard and not the band.
+  const ok = fitMetaLocal("title", v, [], "golden crown bankroll");
+  assert.equal(ok.method, "trimmed");
+  assert.equal(ok.length, 55);
+});

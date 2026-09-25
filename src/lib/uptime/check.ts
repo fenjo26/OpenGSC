@@ -170,3 +170,22 @@ export async function runUptimeCheck(
     );
   }
 }
+
+// ─── witness gate ───────────────────────────────────────────────────────────────
+
+/** Endpoints asked before any monitor may move INTO "down": the most reliably reachable hosts
+ *  there are. safeFetch resolves on ANY http status (it throws only when the network path
+ *  fails), so a fulfilled request — even a 3xx/5xx — proves the checker still has an uplink. */
+export const WITNESS_URLS = [
+  "https://www.google.com/generate_204",
+  "https://www.cloudflare.com/cdn-cgi/trace",
+] as const;
+
+/** True when at least one witness answered — i.e. the server's own network works. Probed at
+ *  most once per tick and only when a down-confirmation is actually pending (scheduler.ts). */
+export async function witnessesReachable(timeoutMs = 5_000): Promise<boolean> {
+  const answers = await Promise.allSettled(
+    WITNESS_URLS.map(url => safeFetch(url, { method: "GET", timeoutMs, maxBytes: 10_000 })),
+  );
+  return answers.some(a => a.status === "fulfilled");
+}

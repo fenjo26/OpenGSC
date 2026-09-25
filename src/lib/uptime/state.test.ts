@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isCheckerOffline, nextState, type MonitorState } from "./state";
+import { confirmsDown, isCheckerOffline, nextState, type MonitorState } from "./state";
 import type { UptimeCheckResult } from "./types";
 
 const ok = (status: "up" | "degraded" = "up", latencyMs = 100): UptimeCheckResult =>
@@ -166,4 +166,23 @@ test("exactly the 80% boundary counts as offline", () => {
 
 test("a failure without a cause does not join the offline set", () => {
   assert.equal(isCheckerOffline([{ ok: false }, { ok: false }, { ok: false }]), false);
+});
+
+// ── witness gate helper (review fix: spread-out checks defeat the ≥3 quorum) ────────────
+
+test("confirmsDown fires only on the answer that would move a monitor INTO down", () => {
+  const ok = { ok: true };
+  const fail = { ok: false };
+  // up + 2nd consecutive failure with threshold 2 → the confirming answer
+  assert.equal(confirmsDown({ status: "up", consecutiveFails: 1 }, fail, 2), true);
+  // up + first failure → only confirm_pending, nothing to hold
+  assert.equal(confirmsDown({ status: "up", consecutiveFails: 0 }, fail, 2), false);
+  // unknown reaching the threshold moves to down too (silently) — hold it as well
+  assert.equal(confirmsDown({ status: "unknown", consecutiveFails: 1 }, fail, 2), true);
+  // already down: the streak continues, nothing new is manufactured
+  assert.equal(confirmsDown({ status: "down", consecutiveFails: 5 }, fail, 2), false);
+  // a success never confirms down
+  assert.equal(confirmsDown({ status: "up", consecutiveFails: 1 }, ok, 2), false);
+  // failThreshold=1: the very first failure confirms
+  assert.equal(confirmsDown({ status: "up", consecutiveFails: 0 }, fail, 1), true);
 });
