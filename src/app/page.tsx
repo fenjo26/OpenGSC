@@ -1146,7 +1146,11 @@ function PortfolioPageContent() {
   // One warning line over the whole list when the checker itself could not reach the network —
   // gray dots above sites the server could not honestly judge.
   const checkerOffline = Object.values(uptimeMap).some(b => b.status === "checker_offline");
-  const uptimeDownCount = Object.values(uptimeMap).filter(b => b.status === "down").length;
+  // The offline badge sits in the accounts bar, next to the "All sites" chip — it qualifies
+  // SITES, never accounts, so it counts only live, non-hidden sites and names them in the
+  // tooltip. A bare "1 offline" pill beside the account chips reads as "an account is down".
+  const uptimeDownSites = sites.filter(s => !isArchived(s) && !hidden.has(s.id) && uptimeMap[s.id]?.status === "down");
+  const uptimeDownCount = uptimeDownSites.length;
 
   // ─── Totals from visible (filtered) sites — respects search/tag/market/branded filters ──
   // When a tag or market is active, totals are computed only over sites matching it. The
@@ -1909,8 +1913,8 @@ function PortfolioPageContent() {
             {t("allSitesSection")} (<span style={{filter:blur?"blur(5px)":"none",transition:"filter 0.25s"}}>{sites.length}</span>)
           </div>
           {uptimeDownCount > 0 && (
-            <div title={t("uptimeStatus_down")} style={{display:"flex",alignItems:"center",gap:"6px",padding:"4px 12px",borderRadius:"20px",fontSize:"12px",fontWeight:700,cursor:"default",border:"1px solid rgba(255,69,58,0.4)",background:"rgba(255,69,58,0.12)",color:"var(--color-accent-red)",whiteSpace:"nowrap"}}>
-              ● {t("uptimeDownCount").replace("{n}", String(uptimeDownCount))}
+            <div title={uptimeDownSites.map(s => getDomain(s.url)).join("\n")} style={{display:"flex",alignItems:"center",gap:"6px",padding:"4px 12px",borderRadius:"20px",fontSize:"12px",fontWeight:700,cursor:"default",border:"1px solid rgba(255,69,58,0.4)",background:"rgba(255,69,58,0.12)",color:"var(--color-accent-red)",whiteSpace:"nowrap"}}>
+              {t("uptimeDownCount").replace("{n}", String(uptimeDownCount))}
             </div>
           )}
           {accounts.map(acc => (

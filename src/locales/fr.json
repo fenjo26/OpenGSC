@@ -4403,7 +4403,7 @@
   "uptimeAlerts": "Envoyer des alertes",
   "uptimeEnabled": "Surveiller ce site",
   "uptimeNeedsAttention": "À surveiller",
-  "uptimeDownCount": "{n} hors ligne",
+  "uptimeDownCount": "Sites hors ligne : {n}",
   "uptimeFilter": "Statut",
   "uptimeFilterAll": "Tous",
   "uptimeFilterIssues": "Hors ligne ou lent",

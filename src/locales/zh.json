@@ -4403,7 +4403,7 @@
   "uptimeAlerts": "发送告警",
   "uptimeEnabled": "监控此站点",
   "uptimeNeedsAttention": "需要关注",
-  "uptimeDownCount": "{n} 离线",
+  "uptimeDownCount": "离线网站：{n}",
   "uptimeFilter": "状态",
   "uptimeFilterAll": "全部",
   "uptimeFilterIssues": "离线或缓慢",

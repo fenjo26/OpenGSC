@@ -4403,7 +4403,7 @@
   "uptimeAlerts": "Send alerts",
   "uptimeEnabled": "Monitor this site",
   "uptimeNeedsAttention": "Needs attention",
-  "uptimeDownCount": "{n} offline",
+  "uptimeDownCount": "Sites offline: {n}",
   "uptimeFilter": "Status",
   "uptimeFilterAll": "All",
   "uptimeFilterIssues": "Offline or slow",

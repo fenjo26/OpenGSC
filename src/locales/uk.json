@@ -4403,7 +4403,7 @@
   "uptimeAlerts": "Надсилати алерти",
   "uptimeEnabled": "Моніторити сайт",
   "uptimeNeedsAttention": "Потребують уваги",
-  "uptimeDownCount": "{n} офлайн",
+  "uptimeDownCount": "Сайтів офлайн: {n}",
   "uptimeFilter": "Статус",
   "uptimeFilterAll": "Усі",
   "uptimeFilterIssues": "Офлайн або повільно",

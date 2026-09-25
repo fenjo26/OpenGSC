@@ -4403,7 +4403,7 @@
   "uptimeAlerts": "Enviar alertas",
   "uptimeEnabled": "Supervisar este sitio",
   "uptimeNeedsAttention": "Requieren atención",
-  "uptimeDownCount": "{n} sin conexión",
+  "uptimeDownCount": "Sitios caídos: {n}",
   "uptimeFilter": "Estado",
   "uptimeFilterAll": "Todos",
   "uptimeFilterIssues": "Sin conexión o lento",
