@@ -174,6 +174,24 @@ create new data, and it is the one that costs money.
 | `get_backlink_profile` | local | A site's referring domains, live and lost, with stored history |
 | `research_keywords` | **paid** | Discovers a market from one seed via DataForSEO and verdicts every row against your GSC. ~$0.03 per call at 150 rows. Check `get_keyword_demand` first — a seed researched in the last 14 days is free |
 
+### Footprints, backlink toxicity, local SEO, trends, reports, leads
+
+The wave-«November» surfaces. The two paid ones bill your SERP key one query at a time and
+refuse to run without `confirm: true`, price stated up front.
+
+| Tool | Tier | Returns |
+|---|---|---|
+| `get_footprints` | local | Network footprint report: title/description/H1 templates repeated across several sites of the portfolio (reads the last audit of every live site + generation history; free) |
+| `get_backlink_toxicity` | local | Toxicity of the site's own backlink profile judged for **its own niche** (`Site.backlinkNiche` marker groups are not toxic here); donor distribution, worst donors with signal codes |
+| `get_disavow_file` | local | The Google Disavow file built **only** from links marked by hand, with reasons as comments |
+| `get_local_profile` | local | The Local business card (NAP in E.164, hours, price range, sameAs, service areas, GBP account/location) plus the generated LocalBusiness JSON-LD with Google-requirements validation |
+| `check_nap` | net | NAP check of the site's own pages against the profile: homepage, contact pages, footer — phones by digits, addresses by folded-string similarity |
+| `get_trends` | local | Trend radar for one site: rising GSC queries (7 days vs the previous 28), queries new to it, and Google-suggest discoveries for the operator's seeds |
+| `check_plagiarism` | **paid** | Searches the web for exact fragments of a text through the configured SERP provider and reports the sources |
+| `serp_index_check` | **paid** | `site:` SERP estimation of whether URLs are in Google's index — for URLs the URL Inspection quota cannot reach (sites outside GSC, drop domains) |
+| `list_reports` | local | White-label client reports with schedule, recipients, client-link state and the last sent snapshots |
+| `list_leads` | local | Inbound leads from the embeddable audit widget: domain, contact, score, top issues, pipeline status |
+
 ### Health, indexing and infrastructure (local)
 
 | Tool | Returns |

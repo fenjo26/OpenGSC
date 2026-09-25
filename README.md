@@ -105,6 +105,14 @@ experimental porting guide with no promise of feature parity — see [`docs/TEST
   - [Drops Catalogue — Expired Domain Funnel](#drops-catalogue--expired-domain-funnel-drops)
   - [SERP Monitor — Whole-SERP Watching (`/serp-monitor`)](#serp-monitor--whole-serp-watching-serp-monitor)
   - [Drops Activation — Reviving Acquired Domains](#drops-activation--reviving-acquired-domains-drops)
+  - [Footprints — Network Template Fingerprint](#footprints--network-template-fingerprint)
+  - [Backlink Toxicity, Disavow & Recovery](#backlink-toxicity-disavow--recovery)
+  - [Local SEO — Business Profile, NAP, Local Positions, GBP](#local-seo--business-profile-nap-local-positions-gbp)
+  - [Trend Radar](#trend-radar)
+  - [Client Reports — White-Label](#client-reports--white-label)
+  - [Audit Widget & Leads](#audit-widget--leads)
+  - [PWA & Push Notifications](#pwa--push-notifications)
+  - [Browser Extension](#browser-extension)
 - [🧠 AI SEO Content Suite (`/seo-tools`)](#-ai-seo-content-suite-seo-tools)
   - Keyword Clustering · Outline Generator · Text Generator · Content Rewriter · **AI-Fingerprint Lab** · Googlebot View · Content Gap · Landing Builder · GEO Audit · Citations · Link Monitor · Editorial Policy · History
 - [🕸️ Private Indexer Network](#-private-indexer-network)
@@ -171,9 +179,11 @@ Link a GA4 property to any site (sessions, engagement, key events, revenue with 
 
 Track keyword rankings (country/language/device-aware) via your configured SERP provider (Serper, DataForSEO, or ScrapingRobot), checked on demand or daily, overlaid against real GSC average position, clicks, and impressions for the same query — so you can see whether a rank change actually moved traffic.
 
+A keyword can also carry a **city or coordinates** (`Thessaloniki, Greece` or `40.5197,22.9709`): the check runs geolocated, and the **local pack** place (the map three-pack) is tracked as its own number next to the organic position — it never leaks into `position`, so graphs, `bestPosition` and the rank-drop alert keep their meaning (see [Local SEO](#local-seo--business-profile-nap-local-positions-gbp)).
+
 ### AEO Tracker — AI Answer Engine Visibility
 
-"Answer Engine Optimization": tracks whether **your site gets cited when real questions are asked to AI assistants**. All five engines — ChatGPT, Perplexity, Claude, Grok and Gemini — are asked with **live web search on**, because an answer from a model's weights is not evidence about search visibility. Needs the API key(s) of whichever engines you want to track.
+"Answer Engine Optimization": tracks whether **your site gets cited when real questions are asked to AI assistants**. All five engines — ChatGPT, Perplexity, Claude, Grok and Gemini — are asked with **live web search on**, because an answer from a model's weights is not evidence about search visibility. Needs the API key(s) of whichever engines you want to track. Every brand mention in an answer also carries a **sentiment** (auto-assessment is off by default — it is a billed call on your key), and **Google AI Overviews** joins as a sixth engine: the question goes through Google's live SERP and the overview block's sources become the citations (your DataForSEO key or your A-Parser; an overview-less SERP is its own `no_overview` state, not "not cited").
 
 The check **shows its work**, which matters because you can always open ChatGPT in another tab and disagree with it. Expanding a question gives you the full answer the engine produced, every domain it cited with yours highlighted, your rank among them, the model that ran and whether a live search actually happened — so "not cited" is something you can read rather than a claim to take on faith. Verdicts are three-state: **cited** (linked), **mentioned** (named in the prose, no link) and absent. **"Cited instead of you"** counts the domains that came back across all your tracked questions — the pages your answer has to displace.
 
@@ -239,7 +249,7 @@ Share a site's dashboard with a client without giving them an account: **site �
 
 ### MCP Server — Connect AI Agents
 
-OpenGSC ships a built-in **MCP (Model Context Protocol) server** at `/api/mcp` with **73 tools**, so Claude Code, Claude Desktop, Cursor, Codex, or any MCP client can work with your SEO data directly: sites, search performance, striking-distance keywords, cannibalization, content decay, CTR benchmarks, content groups, rank tracking and history, AEO visibility and share of voice vs competitors, GEO audits, brand mentions (Google News, Wikipedia, Wikidata), backlinks, Link Monitor mentions and the manual Outreach Workspace, stored Source Audit findings, keyword demand and difficulty, competitor gaps, site health, uptime status, indexing status with automatic index-check coverage on Google's free URL Inspection quota, audit results, GA4, Clarity, Bing/Yandex portfolios, the indexer network, SERP Monitor projects, markets, storms and domain catalogues, fired alerts, digests, generation history, meta-tag fitting, and arbitrary read-only SQL. Generate a token under **Settings → API & MCP**, then:
+OpenGSC ships a built-in **MCP (Model Context Protocol) server** at `/api/mcp` with **83 tools**, so Claude Code, Claude Desktop, Cursor, Codex, or any MCP client can work with your SEO data directly: sites, search performance, striking-distance keywords, cannibalization, content decay, CTR benchmarks, content groups, rank tracking and history, AEO visibility and share of voice vs competitors, GEO audits, brand mentions (Google News, Wikipedia, Wikidata), backlinks, Link Monitor mentions and the manual Outreach Workspace, stored Source Audit findings, keyword demand and difficulty, competitor gaps, site health, uptime status, indexing status with automatic index-check coverage on Google's free URL Inspection quota, audit results, GA4, Clarity, Bing/Yandex portfolios, the indexer network, SERP Monitor projects, markets, storms and domain catalogues, fired alerts, digests, generation history, meta-tag fitting, network footprints, backlink toxicity and the disavow file, the local business profile and NAP checks, trend radar, plagiarism and `site:` index checks, client reports and inbound leads, and arbitrary read-only SQL. Generate a token under **Settings → API & MCP**, then:
 
 ```bash
 claude mcp add --transport http opengsc https://your-domain.com/api/mcp \
@@ -248,7 +258,7 @@ claude mcp add --transport http opengsc https://your-domain.com/api/mcp \
 
 Agents can also **optimize pages**, not just read about them. `get_optimization_brief` returns everything known about one URL in a single call — its queries, striking-distance keywords, CTR gaps, decay trend, cannibalization conflicts, audit issues and current content — the agent writes the new version itself, and `analyze_text` verifies it deterministically: uniqueness, heading-structure drift, and any number or brand that appears in the draft but not the source. No model is called for that check, so it costs nothing and always returns the same answer.
 
-Every tool declares what calling it costs, and `get_capabilities` reports the grouping: **local** (free and instant, 54 of the 73; four Outreach actions are explicitly marked as local writes), **quota** (calls Google on your own OAuth), **net** (fetches a page), and **paid** (spends your own credits). The seven paid tools — the app's own Content Rewriter, the full article pipeline, keyword discovery, and the drops enrichments and AI history pass that spend Ahrefs/Majestic/AI units — refuse to run without an explicit `confirm: true`, so an agent exploring the registry can never bill you by accident (`fit_meta` counts as local, but its optional `allow_llm` repair calls are gated by the same confirmation). The two AI ones are asynchronous: they return a job id and save each finished page as it completes, so a client timeout or a server restart can never discard work you have already paid for. Keyword discovery is synchronous because it does not need to be — it writes its result to the cache before returning, so an abandoned call still leaves a search that replays for free.
+Every tool declares what calling it costs, and `get_capabilities` reports the grouping: **local** (free and instant, 61 of the 83; four Outreach actions are explicitly marked as local writes), **quota** (calls Google on your own OAuth), **net** (fetches a page), and **paid** (spends your own credits). The nine paid tools — the app's own Content Rewriter, the full article pipeline, keyword discovery, the plagiarism and `site:` index checks, and the drops enrichments and AI history pass that spend Ahrefs/Majestic/AI units — refuse to run without an explicit `confirm: true`, so an agent exploring the registry can never bill you by accident (`fit_meta` counts as local, but its optional `allow_llm` repair calls are gated by the same confirmation). The two AI ones are asynchronous: they return a job id and save each finished page as it completes, so a client timeout or a server restart can never discard work you have already paid for. Keyword discovery is synchronous because it does not need to be — it writes its result to the cache before returning, so an abandoned call still leaves a search that replays for free.
 
 The repo also ships ready-made **agent skills** in [`.agents/skills/`](.agents/skills/) (performance review, page optimization, article production, link prospecting, AEO review, site triage) — copy them into your agent's skills folder for guided SEO workflows. Details: [`docs/MCP-SETUP.md`](docs/MCP-SETUP.md).
 
@@ -308,6 +318,42 @@ Runbook with the nginx ordering trap, doorway numbers and the footprint rule: [d
 
 <br/>
 
+
+### Footprints — Network Template Fingerprint
+
+The same title template with a slot name swapped in, standing on four sites of your portfolio, is a footprint: visible to a manual check and linkable by an algorithm. The `/footprint` report reads only your local data — zero external calls, free — and lists the title/H1/meta-description templates shared across your sites, with the sites carrying each one. The found templates become a guard in the Outline generator (banned from being reproduced in new content), and SEO Tools gains a **Hreflang generator**: the `<link rel="alternate">` block, the sitemap `xhtml:link` variant and the HTTP-header variant from a URL+language list. Doc: [`docs/FOOTPRINT.md`](docs/FOOTPRINT.md). MCP: `get_footprints`.
+
+### Backlink Toxicity, Disavow & Recovery
+
+Three questions about your own link profile: which donors are toxic **for this site** — the score knows the site's own niche, so a gambling site's casino anchors are not toxic while pharma and adult are; what goes into the Google Disavow file — only links you marked by hand, never automatic, each with its reason as a comment; and which lost link to win back first — a recovery list ranked by value. Free: local math over the rows you imported; deep checks are plain HTTP from your own server. Doc: [`docs/BACKLINK-TOXICITY.md`](docs/BACKLINK-TOXICITY.md). MCP: `get_backlink_toxicity`, `get_disavow_file`.
+
+### Local SEO — Business Profile, NAP, Local Positions, GBP
+
+The **Local** menu is the source of truth for everything local. The business profile (schema.org type, address, E.164 phone, hours, coordinates, service areas; "fill from site" parses the homepage's JSON-LD and meta) feeds a free **NAP check** against your own site (homepage + contact pages + footer; phones compared by digits, addresses by folded-string similarity), weekly **citation checks** against the directories you list, and a **LocalBusiness JSON-LD generator** validated against Google's requirements and diffed against what the site actually serves. Service areas hand over to the Outline generator as local landing briefs (keyword + "NAP and map are mandatory" note, by link).
+
+**Google Business Profile**: separate OAuth scope, reviews synced every 6 hours with replies from the UI, scheduled posts, photos by public URL. GBP API access is granted by Google upon request — until approved (quota 0) the card says exactly that instead of erroring. Local positions in the Rank Tracker are covered under [Rank Tracker](#rank-tracker). Doc: [`docs/LOCAL-SEO.md`](docs/LOCAL-SEO.md). MCP: `get_local_profile`, `check_nap`.
+
+### Trend Radar
+
+Traffic comes in waves: a new slot, a provider release, a law change — whoever writes the page first collects the impressions. The Trend Radar catches these waves with two free sources no paid trends API has: your own Search Console (rising queries, 7 days vs 28) and Google autocomplete (what people start typing, per seed; up to 20 seeds per site). A line in the digest, CSV export, and the `get_trends` MCP tool. Doc: [`docs/TRENDS.md`](docs/TRENDS.md).
+
+### Client Reports — White-Label
+
+Per-site client reports: toggle the sections (summary, traffic, queries, pages, positions, local positions, indexing, audit, uptime, backlinks, AI visibility, reviews, work done, next steps), brand them (company name, accent color, logo) — and every send **freezes an HTML snapshot** (plus PDF when the server has a browser) that never re-renders: not when branding changes, not when data changes. Scheduled weekly/monthly delivery by e-mail over the workspace SMTP channel, or a client-facing link (`/share/report/<token>`) that can be rotated or revoked. MCP: `list_reports`. Doc: [`docs/REPORTS.md`](docs/REPORTS.md).
+
+### Audit Widget & Leads
+
+An embeddable "check your website" iframe for your agency site: the visitor types a domain, gets a score and the top problems from the same audit rules, and leaves an e-mail — you receive a **lead with the findings attached**, the material for the first letter, and a one-click **proposal document** drafted from the audit. The public contour is rate-limited per IP, Turnstile-gated, SSRF-guarded (private addresses refused, `allowPrivate: false`) and stores only a salted IP hash. MCP: `list_leads`. Doc: [`docs/LEADS.md`](docs/LEADS.md).
+
+### PWA & Push Notifications
+
+OpenGSC installs on the phone as an app and keeps the last dashboard data readable offline. **Web Push** becomes a notification channel in its own right: VAPID keys in Settings, a per-device event filter, and every alert, digest, uptime and lead event already flows to it — no Telegram needed. Push requires HTTPS; on `http://` the UI explains why instead of showing the button. Doc: [`docs/PWA.md`](docs/PWA.md).
+
+### Browser Extension
+
+Chrome/Edge (MV3), installed unpacked — no store, by design: it talks to your self-hosted instance and there is nothing for a store to sign. **"This page in OpenGSC"** shows, for any portfolio URL, its clicks/impressions/position, top queries, index status, audit issues and ranks; a **quick audit** runs inside the extension on the tab's DOM (title/description lengths, H1, canonical, robots, hreflang, JSON-LD validity, Open Graph, link count, images without alt — nothing leaves the browser); **"Send to OpenGSC"** routes by context: a portfolio URL becomes an index-check priority, a foreign URL an Outreach prospect, selected text opens the outline pre-filled, a table selection downloads CSV. Token-authenticated API (401 without one) and an extension-ID allowlist on your side. Doc: [`docs/EXTENSION.md`](docs/EXTENSION.md).
+
+<br/>
 
 ## 🧠 AI SEO Content Suite (`/seo-tools`)
 
@@ -408,6 +454,13 @@ The same SERP → select → scrape research flow as Outline, aimed at conversio
 </details>
 
 <details open>
+<summary><b>Hreflang Generator</b> — cluster annotations from a URL list</summary>
+<br/>
+
+Paste URLs with their languages and get the ready-to-paste <code>&lt;link rel="alternate"&gt;</code> block, the sitemap <code>xhtml:link</code> variant and the HTTP-header variant. Part of the footprints tooling — see <a href="docs/FOOTPRINT.md">docs/FOOTPRINT.md</a>.
+</details>
+
+<details open>
 <summary><b>GEO Audit</b> — Generative Engine Optimization</summary>
 <br/>
 
@@ -419,6 +472,13 @@ Traditional rank tracking tells you nothing about whether an AI assistant recomm
 <br/>
 
 Not to be confused with GEO's AI-citation tracking — this tracks classic web-wide brand/keyword mentions and their sentiment, via DataForSEO's Content Analysis API: polarity (positive/neutral/negative), six emotion dimensions (anger, happiness, love, sadness, share, fun), a monthly mention trend, and the top citing domains. Needs only a DataForSEO key.
+</details>
+
+<details open>
+<summary><b>Plagiarism Check & <code>site:</code> Index Estimation</b> — exact-quote verification on the open web</summary>
+<br/>
+
+Paste text (or open it straight from a finished article — the "Check plagiarism" button in its toolbar) and OpenGSC picks exact-quote fragments, runs them as exact queries through your configured SERP provider, and reports which sources carry them. The sibling <code>site:</code> tool estimates indexation for sites that are not in Search Console at all — up to 200 URLs per call, handy for drop domains. Both bill your own key one query at a time, the price is shown before the run, and a provider failure is an error — never a quiet empty result. MCP: <code>check_plagiarism</code>, <code>serp_index_check</code>. Doc: <a href="docs/PLAGIARISM.md">docs/PLAGIARISM.md</a>.
 </details>
 
 <details open>
@@ -843,6 +903,15 @@ docs/
 - **[docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md)** — the version, migration, tag and GitHub Release gate.
 - **[docs/DOCKER-SETUP.md](docs/DOCKER-SETUP.md)** — running OpenGSC with Docker instead of the VPS installer.
 - **[docs/INDEXER-SETUP.md](docs/INDEXER-SETUP.md)** — deploying and operating the private indexer network.
+- **[docs/FOOTPRINT.md](docs/FOOTPRINT.md)** — the network footprint report and the hreflang generator.
+- **[docs/BACKLINK-TOXICITY.md](docs/BACKLINK-TOXICITY.md)** — backlink toxicity with your own niche, the disavow file, lost-link recovery.
+- **[docs/LOCAL-SEO.md](docs/LOCAL-SEO.md)** — local positions and the local pack in Rank Tracker; business profile, NAP, citations, LocalBusiness schema and Google Business Profile.
+- **[docs/TRENDS.md](docs/TRENDS.md)** — trend radar: rising GSC queries and Google autocomplete hints.
+- **[docs/PLAGIARISM.md](docs/PLAGIARISM.md)** — exact-quote plagiarism checks and `site:` index estimation.
+- **[docs/REPORTS.md](docs/REPORTS.md)** — white-label client reports: snapshots, PDF, schedule, client links.
+- **[docs/LEADS.md](docs/LEADS.md)** — the embeddable audit widget, inbound leads and proposals.
+- **[docs/PWA.md](docs/PWA.md)** — installing OpenGSC as an app and web-push notifications.
+- **[docs/EXTENSION.md](docs/EXTENSION.md)** — the Chrome/Edge browser extension.
 
 <br/>
 
