@@ -2,6 +2,7 @@
 // plus a JSON extraction helper for parsing strict-JSON LLM responses.
 
 import { renderPolicy, EditorialPolicy } from "./policy";
+import { META_LIMITS } from "./metaLimits";
 
 // Local currency hint by country (so prices match the target region, not USD by default).
 const EUR = ["gr", "de", "fr", "it", "es", "pt", "nl", "be", "at", "ie", "fi", "sk", "si", "lt", "lv", "ee", "cy", "mt", "lu", "hr"];
@@ -220,9 +221,9 @@ ${args.lightSections
 - язык/страна: ${args.language}/${args.country}${toneBlock}${personaBlock}${narrationBlock}${addKw}${lsiKw}${twc}${paaBlock}${relBlock}
 - топ-конкуренты (типы + структура): ${JSON.stringify(args.competitors.map(({ text_sample, ...c }) => { void text_sample; return c; }))}${manual}${kwData}${customTplBlock}${structRulesBlock}${authorBlock}${factsBlock}${ragBlock}
 
-МЕТА-ТЕГИ (title/description/slug) — по правилам Google и Bing, проработай ТЩАТЕЛЬНО (это готовые к публикации варианты):
-- title_options (3 шт.): 50–60 символов (под ~600px, иначе обрежется в выдаче). Главный ключ — в САМОМ НАЧАЛЕ. Если бренд известен — в конце через « | » или « - ». Формула: [Главный ключ] - [Вторичный ключ/УТП] | [Бренд]. Коммерческие — продающий хук (Buy/Best/от €X/Free shipping); информационные — «How to / Guide / Число + …»; числа и скобки повышают CTR. Bing любит точное вхождение ключа.
-- description_options (2 шт.): ~150–155 символов (влезает и в Google ≤160, и в Bing). Ценность с ключами + конкретная выгода/деталь + явный CTA для коммерции (Shop now / Book / Get a quote); для информационных — что внутри, без продаж. Формула: [Ценность с ключами]. [Выгода/деталь]. [CTA].
+МЕТА-ТЕГИ (title/description/slug) — по правилам Google и Bing, проработай ТЩАТЕЛЬНО (это готовые к публикации варианты; длину title/description код затем проверит по символам и подрежет/перепишет то, что выйдет за границы):
+- title_options (3 шт.): ${META_LIMITS.title.targetMin}–${META_LIMITS.title.targetMax} символов (под ~600px, иначе обрежется в выдаче). Главный ключ — в САМОМ НАЧАЛЕ. Если бренд известен — в конце через « | » или « - ». Формула: [Главный ключ] - [Вторичный ключ/УТП] | [Бренд]. Коммерческие — продающий хук (Buy/Best/от €X/Free shipping); информационные — «How to / Guide / Число + …»; числа и скобки повышают CTR. Bing любит точное вхождение ключа.
+- description_options (2 шт.): ${META_LIMITS.description.targetMin}–${META_LIMITS.description.targetMax} символов. Ценность с ключами + конкретная выгода/деталь + явный CTA для коммерции (Shop now / Book / Get a quote); для информационных — что внутри, без продаж. Формула: [Ценность с ключами]. [Выгода/деталь]. [CTA].
 - slug_options (2 шт.): 3–5 слов, ТОЛЬКО строчные латинские буквы и дефисы, БЕЗ стоп-слов (a, an, the, in, on, of, and, for…), без подчёркиваний, пробелов, года и спецсимволов. Не-латиницу транслитерируй. Примеры: "ergonomic-office-chairs", "start-vegetable-garden-beginners", "best-project-management-software".
 Текст title/description — на языке ${args.language}; slug — всегда латиницей. Всё — под главный ключ и dominant_intent.
 
@@ -404,7 +405,7 @@ export function buildHeadingLocalizePrompt(args: {
 - НЕ меняй порядок, НЕ добавляй и НЕ удаляй секции. Одно переименование на заголовок. Без дублей.
 - "from" — ТОЧНАЯ текущая формулировка заголовка.
 
-- МЕТА-ТЕГИ: если Title/Description ниже не на языке ${args.language} — перепиши их на языке ${args.language} по правилам выдачи: Title 50-60 символов, главный ключ в начале, бренд в конце через « | »; Description ~150-155 символов, ценность + конкретика + CTA (для коммерческих). Если уже на языке и хороши — верни пустые массивы.
+- МЕТА-ТЕГИ: если Title/Description ниже не на языке ${args.language} — перепиши их на языке ${args.language} по правилам выдачи: Title ${META_LIMITS.title.targetMin}-${META_LIMITS.title.targetMax} символов, главный ключ в начале, бренд в конце через « | »; Description ${META_LIMITS.description.targetMin}-${META_LIMITS.description.targetMax} символов, ценность + конкретика + CTA (для коммерческих). Если уже на языке и хороши — верни пустые массивы.
 
 H1 СЕЙЧАС: ${args.h1 || "—"}
 TITLE СЕЙЧАС: ${JSON.stringify(args.titleOptions || [])}
@@ -730,7 +731,7 @@ export function buildTextPrompt(args: {
   const metaH1 = pick(m.h1);
   const h1Line = metaH1 ? `\nЗаголовок H1 статьи: «${metaH1}» — используй ИМЕННО его как H1 (он ОТЛИЧАЕТСЯ от Title: H1 — для читателя, Title — для выдачи). НЕ копируй Title в H1.` : "";
   const metaBlock = (metaTitle || metaDesc || metaSlug)
-    ? `\nМЕТА-ТЕГИ (вставь их В САМОЕ НАЧАЛО статьи отдельным блоком ДО заголовка H1, ровно в таком виде, заполнив значения):\n\`\`\`\nTitle: ${metaTitle}\nMeta Description: ${metaDesc}\nURL Slug: ${metaSlug}\n\`\`\`\nЗатем с новой строки начни саму статью с H1.${h1Line} Title должен быть 50–60 символов, Meta Description ~155, Slug — латиницей в нижнем регистре через дефисы. Если значение пустое — допиши подходящее по правилам.\n`
+    ? `\nМЕТА-ТЕГИ (вставь их В САМОЕ НАЧАЛО статьи отдельным блоком ДО заголовка H1, ровно в таком виде):\n\`\`\`\nTitle: ${metaTitle}\nMeta Description: ${metaDesc}\nURL Slug: ${metaSlug}\n\`\`\`\nЗатем с новой строки начни саму статью с H1.${h1Line} НЕ ИЗМЕНЯЙ значения Title и Meta Description из блока выше — перенеси их ДОСЛОВНО (пустые значения заполняются автоматически после генерации; длина Title ${META_LIMITS.title.targetMin}–${META_LIMITS.title.targetMax} символов и Meta Description ${META_LIMITS.description.targetMin}–${META_LIMITS.description.targetMax} символов контролируются кодом). Slug — латиницей в нижнем регистре через дефисы.\n`
     : "";
 
   // Knowledge-base (RAG) facts block — verified entity attributes, no links needed.

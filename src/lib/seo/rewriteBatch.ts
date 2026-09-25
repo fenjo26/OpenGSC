@@ -21,6 +21,7 @@
 import { prisma } from "@/lib/prisma";
 import { rewriteContent, type RewriteBody } from "./rewrite";
 import { driftSeverity } from "./factDrift";
+import type { MetaFitResult } from "./metaLimits";
 
 const jobs = () => (prisma as any).seoJob;
 
@@ -56,6 +57,12 @@ export interface RewritePageResult {
   repaired?: boolean;
   /** QA judge outcome for the saved draft; "unavailable" = the judge call itself failed. */
   judge?: "publish" | "reject" | "unavailable" | null;
+  /**
+   * Meta-tag length fitting (wave-oct T1): per-field report of what was done to the head
+   * block's Title/Description. Present only when the page carried a meta block and something
+   * needed work; a `forced_cut` or `unfixable` entry means the field still needs a human.
+   */
+  metaFit?: MetaFitResult[];
   snippet?: unknown;
   content?: string;
   finishedAt: string;
@@ -175,6 +182,7 @@ export async function runRewriteBatch(
           ...(v.mechanics?.some(m => !m.fixed)
             ? { mechanics: v.mechanics.filter(m => !m.fixed).map(m => ({ code: m.code, detail: m.detail })) }
             : {}),
+          ...(v.metaFit?.length ? { metaFit: v.metaFit } : {}),
           snippet: r.data.snippet ?? null,
           content: v.content,
           finishedAt: new Date().toISOString(),
