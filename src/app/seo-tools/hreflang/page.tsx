@@ -15,10 +15,6 @@ import {
   type HreflangInput, type PrefixRule,
 } from "@/lib/hreflang";
 
-// Extra/dynamic i18n keys (string-typed): the tab labels come from the array below, so the
-// dictionary key type cannot follow. One typed alias instead of `any` at each call site.
-const tt = (key: string) => t(key as never);
-
 interface VerifyRow {
   url: string;
   httpStatus: number;
@@ -59,6 +55,9 @@ function parseRows(text: string): HreflangInput[] {
 
 export default function HreflangPage() {
   const { t } = useLanguage();
+  // Dynamic i18n keys (the tab labels come from an array, so the dictionary key type cannot
+  // follow) — one typed alias instead of `any` at each call site.
+  const tt = (key: string) => t(key as never);
   // input mode A: explicit rows; mode B: URL list + prefix rules
   const [mode, setMode] = useState<"rows" | "prefix">("rows");
   const [rowsText, setRowsText] = useState("");

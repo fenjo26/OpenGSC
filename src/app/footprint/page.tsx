@@ -37,11 +37,6 @@ interface Report {
   notMigrated?: boolean;
 }
 
-// t() is keyed by the dictionary; the extra N1 keys below are not in the locales yet (wave
-// rule: use them in code, list them in the report, R adds them after review). One typed alias
-// keeps every call site honest without `any`.
-const tt = (key: string) => t(key as never);
-
 const TABS: Array<{ id: Kind; key: string }> = [
   { id: "title", key: "fpTabTitle" },
   { id: "description", key: "fpTabDescription" },
@@ -61,6 +56,9 @@ const pill: React.CSSProperties = {
 
 export default function FootprintPage() {
   const { t } = useLanguage();
+  // Extra N1 i18n keys not in the locales yet (wave rule: use them in code, list them in the
+  // report, R adds them after review) — one typed alias per call site, no `any`.
+  const tt = (key: string) => t(key as never);
   const [kind, setKind] = useState<Kind>("title");
   const [publishedOnly, setPublishedOnly] = useState(false);
   const [showIgnored, setShowIgnored] = useState(false);
