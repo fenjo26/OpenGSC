@@ -20,8 +20,20 @@ import { loadSyncedAt, rememberSyncedAt, fetchSyncState, watchSync, type SyncSta
 import { marketFor } from "@/lib/seo/market";
 import { usePersistedState, isGscPeriod, isIsoDate, isSearchType } from "@/lib/usePersistedState";
 import { getAhrefsDrKey } from "@/lib/seo/keys";
-import UptimeDot from "@/components/uptime/UptimeDot";
+import UptimeDot, { uptimeBadgeLabel } from "@/components/uptime/UptimeDot";
 import type { UptimeBadge } from "@/lib/uptime/types";
+
+// The uptime status reads as one more site tag (online/offline) in the card footer, next
+// to market and tags. The tint pairs with the status word, so colour is never the only
+// carrier of meaning — the tooltip holds the full story (status · since · 24h).
+const UPTIME_CHIP_LOOK: Record<UptimeBadge["status"], { bg: string; fg: string }> = {
+  up: { bg: "rgba(16,185,129,0.14)", fg: "#10B981" },
+  degraded: { bg: "rgba(245,158,11,0.16)", fg: "#F59E0B" },
+  down: { bg: "rgba(239,68,68,0.16)", fg: "#EF4444" },
+  unknown: { bg: "rgba(255,255,255,0.06)", fg: "var(--color-text-secondary)" },
+  paused: { bg: "rgba(255,255,255,0.06)", fg: "var(--color-text-secondary)" },
+  checker_offline: { bg: "rgba(255,255,255,0.06)", fg: "var(--color-text-secondary)" },
+};
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Metric = "clicks" | "impressions" | "ctr" | "position";
@@ -603,7 +615,7 @@ const DashBingIcon = ({ s = 14 }) => (<svg width={s} height={s} viewBox="0 0 512
 const DashYandexIcon = ({ s = 14 }) => (<svg width={s} height={s} viewBox="0 0 32 32"><path d="M21.88,2h-4c-4,0-8.07,3-8.07,9.62a8.33,8.33,0,0,0,4.14,7.66L9,28.13A1.25,1.25,0,0,0,9,29.4a1.21,1.21,0,0,0,1,.6h2.49a1.24,1.24,0,0,0,1.2-.75l4.59-9h.34v8.62A1.14,1.14,0,0,0,19.82,30H22a1.12,1.12,0,0,0,1.16-1.06V3.22A1.19,1.19,0,0,0,22,2ZM18.7,16.28h-.59c-2.3,0-3.66-1.87-3.66-5,0-3.9,1.73-5.29,3.34-5.29h.94Z" fill="#d61e3b"/></svg>);
 
 function PortfolioPageContent() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const router = useRouter();
   const searchParams = useSearchParams();
   // Legacy: the striking/cannibalization/decay views moved to their own routes
@@ -1634,9 +1646,8 @@ function PortfolioPageContent() {
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={`/api/favicon?domain=${domain}`} width={16} height={16} alt=""
                 style={{borderRadius:"3px",flexShrink:0,filter:blur?"blur(5px)":"none",transition:"filter 0.25s"}} onError={e=>((e.target as HTMLImageElement).style.display="none")} />
-              {/* Uptime status dot — absent when the site has no monitor: no check is not a
-                  status, and a colored dot would invent one. */}
-              <UptimeDot badge={uptimeMap[site.id] ?? null} />
+              {/* Uptime status lives in the footer chips now — an online/offline tag next
+                  to market and tags, not a dot squeezing the name. */}
               <span style={{fontWeight:500,fontSize:"13px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",filter:blur?"blur(5px)":"none",transition:"filter 0.25s"}}>
                 {domain}
               </span>
@@ -1769,6 +1780,23 @@ function PortfolioPageContent() {
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             {/* Tags display */}
             <div style={{display:"flex",gap:"4px",flexWrap:"wrap",flex:1,minWidth:0,marginRight:"8px",alignItems:"center"}}>
+              {/* Uptime status — an online/offline tag beside market and tags. Same rule the
+                  dot had: absent when the site has no monitor, because an unchecked site
+                  has no status to show. */}
+              {(() => {
+                const badge = uptimeMap[site.id] ?? null;
+                if (!badge) return null;
+                const look = UPTIME_CHIP_LOOK[badge.status];
+                return (
+                  <span
+                    title={uptimeBadgeLabel(badge, t, language)}
+                    style={{display:"inline-flex",alignItems:"center",gap:"5px",fontSize:"10px",fontWeight:700,padding:"2px 6px",borderRadius:"4px",whiteSpace:"nowrap",background:look.bg,color:look.fg}}
+                  >
+                    <UptimeDot badge={badge} size={7} />
+                    {t(`uptimeStatus_${badge.status}` as Parameters<typeof t>[0])}
+                  </span>
+                );
+              })()}
               {(() => {
                 // The market chip: a resolved gl code (from override or ccTLD) shows muted; an
                 // unknown market shows amber, because keyword data will be filed under the wrong

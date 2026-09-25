@@ -20,11 +20,13 @@ const COLORS: Record<UptimeStatus, string> = {
   checker_offline: "var(--color-text-muted)",
 };
 
-export default function UptimeDot({ badge, size = 8 }: { badge: UptimeBadge | null; size?: number }) {
-  const { t, language } = useLanguage();
-  if (!badge) return null;
-
-  const label = [
+// The tooltip/aria text of a badge, shared by the dot and the site-card status chip.
+export function uptimeBadgeLabel(
+  badge: UptimeBadge,
+  t: ReturnType<typeof useLanguage>["t"],
+  language: string
+): string {
+  return [
     t(`uptimeStatus_${badge.status}` as Parameters<typeof t>[0]),
     badge.since && ["down", "degraded", "up"].includes(badge.status)
       ? t("uptimeSince").replace("{time}", new Date(badge.since).toLocaleString(language, { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" }))
@@ -32,6 +34,13 @@ export default function UptimeDot({ badge, size = 8 }: { badge: UptimeBadge | nu
     badge.status === "down" && badge.lastError ? badge.lastError : null,
     badge.uptime24h != null ? `${t("uptime24h")} · ${badge.uptime24h.toFixed(1)}%` : null,
   ].filter(Boolean).join(" · ");
+}
+
+export default function UptimeDot({ badge, size = 8 }: { badge: UptimeBadge | null; size?: number }) {
+  const { t, language } = useLanguage();
+  if (!badge) return null;
+
+  const label = uptimeBadgeLabel(badge, t, language);
 
   return (
     <>
