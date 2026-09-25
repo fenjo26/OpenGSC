@@ -3,7 +3,7 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
-## [Unreleased]
+## [1.8.0] — 2026-09-25
 
 ### Added — wave «Октябрь»: monitoring, indexing, visibility, audit, meta tags
 
