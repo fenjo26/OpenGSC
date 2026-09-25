@@ -24,6 +24,13 @@ type KwRow = {
   createdAt: string; lastCheckedAt: string | null;
   position: number | null; prevPosition: number | null; bestPosition: number | null;
   url: string | null; lastError: string | null; lastProvider?: string | null;
+  // wave-nov N3: "" = country-level keyword (as before) | city name | "lat,lng"
+  location: string;
+  // Our place in the map pack (1..3), SEPARATE from `position`; null = not in pack
+  localPack: number | null;
+  // What the last check said about the pack: true = pack on the SERP, we are not in it;
+  // false = no pack; null = provider does not report packs
+  lastHasLocalPack: boolean | null;
   history: { date: string; position: number | null }[];
   gsc: { pos: number; clicks: number; impressions: number } | null;
 };
@@ -94,6 +101,11 @@ function SortableTh({ label, active, dir, align = "center", onClick }: {
   );
 }
 
+// The chart value for "checked, not in the pack" — drawn on the pack axis below place 3 so
+// the step line stays continuous on days the keyword was outside the pack; days the provider
+// said nothing about stay gaps (null), never drawn as "outside".
+const PACK_OUT = 4;
+
 function HistoryChart({ keywordId }: { keywordId: string }) {
   const { t } = useLanguage();
   const [data, setData] = useState<any>(null);
@@ -110,8 +122,10 @@ function HistoryChart({ keywordId }: { keywordId: string }) {
 
   const series = useMemo(() => (data?.series ?? []).map((s: any) => ({
     ...s,
+    packChart: s.pack != null ? s.pack : s.hasPack === true ? PACK_OUT : null,
     label: new Date(s.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
   })), [data]);
+  const hasPackData = series.some((s: { packChart?: number | null }) => s.packChart != null);
 
   if (loading) return <div style={{ padding: "24px", fontSize: "13px", color: "var(--color-text-secondary)" }}>Loading…</div>;
   if (!series.length) return <div style={{ padding: "24px", fontSize: "13px", color: "var(--color-text-secondary)" }}>{t("wlNoData")}</div>;
@@ -122,14 +136,26 @@ function HistoryChart({ keywordId }: { keywordId: string }) {
         <ComposedChart data={series} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" />
           <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "var(--color-text-secondary)" }} />
-          <YAxis reversed domain={[1, "dataMax"]} allowDecimals={false} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "var(--color-text-secondary)" }} />
+          <YAxis yAxisId="org" reversed domain={[1, "dataMax"]} allowDecimals={false} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "var(--color-text-secondary)" }} />
+          {hasPackData && (
+            // The pack axis: 1..3 are places, PACK_OUT reads as "outside". Reversed like the
+            // organic one, so up is better on both lines.
+            <YAxis yAxisId="pack" reversed domain={[1, PACK_OUT]} ticks={[1, 2, 3, PACK_OUT]}
+              tickFormatter={(v: number) => (v === PACK_OUT ? "×" : `#${v}`)}
+              orientation="right" width={34} allowDecimals={false} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#8B5CF6" }} />
+          )}
           <Tooltip
             contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: "8px", fontSize: "12px" }}
             labelStyle={{ color: "var(--color-text-secondary)" }}
+            formatter={(value, name) =>
+              name === t("lrPackHistory") ? [value === PACK_OUT ? t("lrPackNotIn") : `#${value}`, name] : [value, name]}
           />
           <Legend wrapperStyle={{ fontSize: "11px" }} />
-          <Line name={t("rankSerp")} type="monotone" dataKey="serp" stroke="#3B82F6" strokeWidth={2} dot={{ r: 2 }} connectNulls />
-          <Line name={t("rankGsc")} type="monotone" dataKey="gsc" stroke="#F59E0B" strokeWidth={1.5} strokeDasharray="4 3" dot={false} connectNulls />
+          <Line yAxisId="org" name={t("rankSerp")} type="monotone" dataKey="serp" stroke="#3B82F6" strokeWidth={2} dot={{ r: 2 }} connectNulls />
+          <Line yAxisId="org" name={t("rankGsc")} type="monotone" dataKey="gsc" stroke="#F59E0B" strokeWidth={1.5} strokeDasharray="4 3" dot={false} connectNulls />
+          {hasPackData && (
+            <Line yAxisId="pack" name={t("lrPackHistory")} type="stepAfter" dataKey="packChart" stroke="#8B5CF6" strokeWidth={1.5} dot={{ r: 2 }} connectNulls={false} />
+          )}
         </ComposedChart>
       </ResponsiveContainer>
     </div>
@@ -162,6 +188,10 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
   const [progress, setProgress] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  // wave-nov N3: location for newly added keywords + the "local only" table filter.
+  const [locText, setLocText] = useState("");
+  const [onlyLocal, setOnlyLocal] = useState(false);
+  const [addError, setAddError] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("position");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
@@ -264,12 +294,21 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
     try {
       const r = await fetch("/api/rank/keywords", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ siteId: siteDbId, keywords: list, country, lang }),
+        // `location` applies to every line; a line may carry its own as "keyword,location".
+        body: JSON.stringify({ siteId: siteDbId, keywords: list, country, lang, location: locText.trim() }),
       });
+      const d = r.ok ? null : await r.json().catch(() => ({}));
       if (r.ok) {
+        setAddError("");
         setKwText("");
         await load();
         await runChecks({}); // check new (never-checked) keywords right away
+      } else if (d?.error === "location_too_long" || d?.error === "location_bad_coordinates") {
+        // Additional wave-nov key (report §additional i18n); `as never` is the established
+        // pattern for keys R adds at merge time (see FactDriftPanel's fd* keys).
+        setAddError(t("lrErr_location_invalid" as never));
+      } else {
+        setAddError(String(d?.error || "error"));
       }
     } finally { setBusy(null); }
   };
@@ -307,9 +346,10 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
 
   const visible = useMemo(() => {
     let list = rows;
+    if (onlyLocal) list = list.filter(r => !!r.location);
     if (search.trim()) {
       const q = search.toLowerCase();
-      list = list.filter(r => r.keyword.toLowerCase().includes(q));
+      list = list.filter(r => r.keyword.toLowerCase().includes(q) || r.location.toLowerCase().includes(q));
     }
     const dir = sortDir === "asc" ? 1 : -1;
     return [...list].sort((a, b) => {
@@ -345,7 +385,7 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
           return 0;
       }
     });
-  }, [rows, search, sortKey, sortDir, weights]);
+  }, [rows, search, onlyLocal, sortKey, sortDir, weights]);
 
   // Summary stats (dashboard-style)
   const stats = useMemo(() => {
@@ -394,6 +434,13 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
           <p style={{ fontSize: "13px", color: "var(--color-text-secondary)", margin: 0 }}>{t("rankSubtitle")}</p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          {/* Price before the click, like every other paid action: what a check costs is a
+              property of the provider, and A-Parser (own proxies) is free per request. */}
+          {provider && !guest && (
+            <span className="metric-cost" title={provider === "aparser" ? t("seoSetRankAparserNote") : t("lrCostPaid" as never)}>
+              {provider === "aparser" ? t("serpmonCostNote") : t("lrCostPaid" as never)}
+            </span>
+          )}
           {provider && !guest && (
             <div ref={menuRef} style={{ position: "relative" }}>
               <button type="button" onClick={() => setMenuOpen(o => !o)} title={t("rankProviderSwitchHint")}
@@ -501,6 +548,13 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
                 {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
               </select>
             </div>
+            {/* wave-nov N3: the city/coordinates a keyword is checked FROM. Empty = whole
+                country (the keyword every existing row already is). */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+              <span style={{ fontSize: "10px", color: "var(--color-text-secondary)", paddingLeft: "2px" }}>{t("lrLocation")}</span>
+              <input value={locText} onChange={e => setLocText(e.target.value)} placeholder="Thessaloniki, Greece"
+                title={t("lrLocationHint")} style={{ ...inputStyle, height: "40px", width: "190px" }} />
+            </div>
             <button onClick={addKeywords} disabled={!kwText.trim() || !!busy}
               style={{ ...primaryBtn, height: "40px", opacity: kwText.trim() && !busy ? 1 : 0.5, cursor: kwText.trim() && !busy ? "pointer" : "not-allowed" }}>
               <Plus size={13} /> {busy === "add" ? "…" : t("rankAddBtn")}
@@ -508,16 +562,27 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
           </div>
         </div>
         <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginTop: "8px", lineHeight: 1.5 }}>
-          💡 {t("rankHintAdd")}
+          💡 {t("rankHintAdd")} {t("lrLocationCsv" as never)}
         </div>
+        {addError && (
+          <div style={{ marginTop: "8px", fontSize: "12px", color: "#EF4444" }}>⚠ {addError}</div>
+        )}
       </div>}
 
-      {/* ── Search ── */}
+      {/* ── Search + local-only filter ── */}
       {rows.length > 8 && (
-        <div style={{ position: "relative", maxWidth: "280px" }}>
-          <Search size={13} style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", color: "var(--color-text-secondary)" }} />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…"
-            style={{ ...inputStyle, width: "100%", paddingLeft: "30px", boxSizing: "border-box" }} />
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+          <div style={{ position: "relative", maxWidth: "280px" }}>
+            <Search size={13} style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", color: "var(--color-text-secondary)" }} />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…"
+              style={{ ...inputStyle, width: "100%", paddingLeft: "30px", boxSizing: "border-box" }} />
+          </div>
+          {rows.some(r => r.location) && (
+            <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--color-text-secondary)", cursor: "pointer" }}>
+              <input type="checkbox" checked={onlyLocal} onChange={e => setOnlyLocal(e.target.checked)} />
+              <MapPin size={12} /> {t("lrOnlyLocal")}
+            </label>
+          )}
         </div>
       )}
 
@@ -545,6 +610,7 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
                 <SortableTh label={t("rankColKeyword")} align="left" active={sortKey === "keyword"} dir={sortDir} onClick={() => toggleSort("keyword")} />
                 <SortableTh label={t("rankColPos")} active={sortKey === "position"} dir={sortDir} onClick={() => toggleSort("position")} />
                 <SortableTh label={t("rankColBest")} active={sortKey === "best"} dir={sortDir} onClick={() => toggleSort("best")} />
+                <th title={t("lrLocalPack")} style={{ textAlign: "center", padding: "10px 12px", color: "var(--color-text-secondary)", fontWeight: 600, fontSize: "11px", letterSpacing: "0.05em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{t("lrLocalPack")}</th>
                 <SortableTh label={t("rankColGsc")} active={sortKey === "gsc"} dir={sortDir} onClick={() => toggleSort("gsc")} />
                 <SortableTh label={t("kwColVolume")} active={sortKey === "volume"} dir={sortDir} onClick={() => toggleSort("volume")} />
                 <th style={{ textAlign: "center", padding: "10px 12px", color: "var(--color-text-secondary)", fontWeight: 600, fontSize: "11px", letterSpacing: "0.05em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{t("kwColKd")}</th>
@@ -571,11 +637,18 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
                         <span style={{ fontSize: "10px", fontWeight: 600, color: "var(--color-text-secondary)", border: "1px solid var(--color-border)", borderRadius: "4px", padding: "1px 5px", flexShrink: 0 }}>
                           {r.country.toUpperCase()}
                         </span>
+                        {r.location && (
+                          // City badge: what makes this keyword a DIFFERENT identity from the
+                          // same query checked country-wide.
+                          <span title={r.location} style={{ display: "inline-flex", alignItems: "center", gap: "3px", fontSize: "10px", fontWeight: 600, color: "#8B5CF6", border: "1px solid rgba(139,92,246,0.4)", borderRadius: "4px", padding: "1px 5px", flexShrink: 0, maxWidth: "130px", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
+                            <MapPin size={9} style={{ flexShrink: 0 }} /> {r.location}
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td style={{ padding: "10px 12px", whiteSpace: "nowrap", textAlign: "center" }}>
                       {r.lastError ? (
-                        <span title={r.lastError} style={{ color: "#EF4444", fontSize: "12px" }}>error</span>
+                        <span title={r.lastError.startsWith("location_") ? t(`lrErr_${r.lastError}` as never) : r.lastError} style={{ color: "#EF4444", fontSize: "12px" }}>error</span>
                       ) : r.lastCheckedAt === null ? (
                         <span style={{ color: "var(--color-text-secondary)" }}>…</span>
                       ) : r.position === null ? (
@@ -588,6 +661,30 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
                       )}
                     </td>
                     <td style={{ padding: "10px 12px", color: "var(--color-text-secondary)", textAlign: "center" }}>{r.bestPosition ?? "—"}</td>
+                    {/* Map pack — a SEPARATE number from the position cell (wave-nov §0.2).
+                        Four states, four looks: in pack / not in pack / no pack on the SERP /
+                        provider does not say. Country keywords carry no pack at all. */}
+                    <td style={{ padding: "10px 12px", whiteSpace: "nowrap", textAlign: "center" }}>
+                      {!r.location ? (
+                        <span style={{ color: "var(--color-text-secondary)" }}>—</span>
+                      ) : r.lastError === "location_unsupported" || r.lastError === "location_unknown" ? (
+                        <span title={t(`lrErr_${r.lastError}`)} style={{ color: "#EF4444", fontSize: "12px" }}>error</span>
+                      ) : r.lastError ? (
+                        // Some other failure: the pack is simply unknown this check — an em
+                        // dash with the cause, never "not in pack" (that would be an answer).
+                        <span title={r.lastError} style={{ color: "var(--color-text-secondary)" }}>—</span>
+                      ) : r.lastCheckedAt === null ? (
+                        <span style={{ color: "var(--color-text-secondary)" }}>…</span>
+                      ) : r.localPack != null ? (
+                        <span title={t("lrPackHistory")} style={{ fontWeight: 700, fontSize: "13px", color: r.localPack === 1 ? "#10B981" : "#8B5CF6" }}>#{r.localPack}</span>
+                      ) : r.lastHasLocalPack === true ? (
+                        <span title={t("lrPackNotIn")} style={{ color: "var(--color-text-secondary)", fontSize: "11px", padding: "2px 8px", borderRadius: "20px", background: "rgba(128,128,128,0.08)" }}>{t("lrPackNotIn")}</span>
+                      ) : r.lastHasLocalPack === false ? (
+                        <span title={t("lrPackNone")} style={{ color: "var(--color-text-secondary)", fontSize: "11px" }}>{t("lrPackNone")}</span>
+                      ) : (
+                        <span title={t("lrPackUnknown")} style={{ color: "var(--color-text-secondary)" }}>—</span>
+                      )}
+                    </td>
                     <td style={{ padding: "10px 12px", whiteSpace: "nowrap", textAlign: "center" }}>
                       {r.gsc ? (
                         <span title={`${r.gsc.clicks} clicks / ${r.gsc.impressions} impressions (7d)`} style={{ color: "#F59E0B", fontWeight: 600 }}>{r.gsc.pos}</span>
@@ -627,7 +724,7 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
                   </tr>
                   {expanded === r.id && (
                     <tr>
-                      <td colSpan={10} style={{ padding: 0, borderBottom: "1px solid var(--color-border)", background: "rgba(59,130,246,0.02)" }}>
+                      <td colSpan={11} style={{ padding: 0, borderBottom: "1px solid var(--color-border)", background: "rgba(59,130,246,0.02)" }}>
                         <HistoryChart keywordId={r.id} />
                       </td>
                     </tr>
