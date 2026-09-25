@@ -25,12 +25,11 @@ import { usePrivacy } from "@/lib/PrivacyContext";
 import { COUNTRIES, LANGUAGES } from "@/lib/seo/regions";
 import { getOpenAiKey, getOpenAiBaseUrl } from "@/lib/seo/geoClient";
 import { rankModels, OPENAI_FALLBACK_MODELS, type ModelOpt } from "@/lib/seo/models";
-import BrandVisibility from "@/components/BrandVisibility";
 
-const ENGINES = ["chatgpt", "perplexity", "claude", "grok"] as const;
+const ENGINES = ["chatgpt", "perplexity", "claude", "grok", "gemini"] as const;
 type Engine = typeof ENGINES[number];
-const ENGINE_LABEL: Record<Engine, string> = { chatgpt: "ChatGPT", perplexity: "Perplexity", claude: "Claude", grok: "Grok" };
-const ENGINE_COLOR: Record<Engine, string> = { chatgpt: "#10A37F", perplexity: "#20808D", claude: "#CF6B4A", grok: "#6B7280" };
+const ENGINE_LABEL: Record<Engine, string> = { chatgpt: "ChatGPT", perplexity: "Perplexity", claude: "Claude", grok: "Grok", gemini: "Gemini" };
+const ENGINE_COLOR: Record<Engine, string> = { chatgpt: "#10A37F", perplexity: "#20808D", claude: "#CF6B4A", grok: "#6B7280", gemini: "#4285F4" };
 
 const GREEN = "#10B981";
 const AMBER = "#F59E0B";
@@ -491,6 +490,83 @@ function SortableTh({ label, active, dir, align = "center", onClick }: {
   );
 }
 
+// ─── Question ideas from Search Console (T7) ─────────────────────────────────
+
+type Suggestion = { question: string; impressions28d: number; clicks28d: number; page: string | null };
+
+// Free by construction: reads the site's own synced GSC rows, filters question-shaped queries,
+// minus what is already tracked. Adding one goes through the same POST as the manual textarea —
+// paying for a check stays a separate, explicit decision (the button with the confirm dialog).
+function SuggestBlock({ siteDbId, onAdded }: { siteDbId: string; onAdded: () => Promise<void> }) {
+  const { t } = useLanguage();
+  const [items, setItems] = useState<Suggestion[] | null>(null);
+  const [adding, setAdding] = useState<string | null>(null);
+
+  // setState only in promise callbacks, never synchronously in the effect body (react-hooks
+  // rule). `null` items = still loading → the block renders nothing at all.
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/aeo/suggest-questions?siteId=${encodeURIComponent(siteDbId)}&limit=20`)
+      .then(r => r.json())
+      .then(d => { if (!cancelled) setItems(Array.isArray(d?.items) ? d.items : []); })
+      .catch(() => { if (!cancelled) setItems([]); });
+    return () => { cancelled = true; };
+  }, [siteDbId]);
+
+  if (items === null) return null; // still loading — no block at all rather than an empty shell
+  if (!items.length) {
+    return (
+      <div style={{ fontSize: "11.5px", color: "var(--color-text-tertiary)", marginTop: "10px", paddingTop: "10px", borderTop: "1px dashed var(--color-border)" }}>
+        {t("aiSuggestTitle")} — {t("aiSuggestEmpty")}
+      </div>
+    );
+  }
+
+  const add = async (q: string) => {
+    setAdding(q);
+    try {
+      const r = await fetch("/api/aeo/questions", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ siteId: siteDbId, questions: [q] }),
+      });
+      if (r.ok) {
+        setItems(list => (list ?? []).filter(x => x.question !== q));
+        await onAdded();
+      }
+    } finally { setAdding(null); }
+  };
+
+  return (
+    <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px dashed var(--color-border)" }}>
+      <div style={{ fontSize: "10.5px", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--color-text-tertiary)", marginBottom: "8px" }}>
+        {t("aiSuggestTitle")}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "4px", maxHeight: "220px", overflowY: "auto" }}>
+        {items.map(s => (
+          <div key={s.question} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <span style={{ flex: 1, minWidth: 0, fontSize: "12px", color: "var(--color-text-primary)", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+              title={s.page ? `${s.question}\n${s.page}` : s.question}>
+              {s.question}
+            </span>
+            <span style={{ flexShrink: 0, fontSize: "11px", color: "var(--color-text-tertiary)", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}
+              title={`${s.impressions28d} / 28 d`}>
+              {s.impressions28d}
+            </span>
+            <button onClick={() => add(s.question)} disabled={adding !== null}
+              style={{
+                flexShrink: 0, display: "inline-flex", alignItems: "center", gap: "4px", padding: "3px 10px", borderRadius: "6px",
+                border: "1px solid var(--color-border)", background: "var(--color-bg)", color: "var(--color-text-secondary)",
+                fontSize: "11px", fontWeight: 600, cursor: adding !== null ? "not-allowed" : "pointer", whiteSpace: "nowrap",
+              }}>
+              {adding === s.question ? "…" : t("aiSuggestAdd")}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 export default function AeoTracker({ siteDbId }: { siteDbId: string; domain?: string }) {
@@ -653,7 +729,7 @@ export default function AeoTracker({ siteDbId }: { siteDbId: string; domain?: st
             {ENGINES.map(e => (
               <span key={e} style={{ width: "7px", height: "7px", borderRadius: "50%", background: configuredEngines.includes(e) ? ENGINE_COLOR[e] : "var(--color-border)" }} title={ENGINE_LABEL[e]} />
             ))}
-            {configuredEngines.length}/4
+            {configuredEngines.length}/{ENGINES.length}
           </a>
           <button onClick={() => setShowSettings(s => !s)} style={ghostBtn}>
             <Settings2 size={13} /> {t("aeoSettings")}
@@ -725,6 +801,7 @@ export default function AeoTracker({ siteDbId }: { siteDbId: string; domain?: st
         <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginTop: "8px", lineHeight: 1.5 }}>
           💡 {t("aeoHintAdd")}
         </div>
+        <SuggestBlock siteDbId={siteDbId} onAdded={load} />
       </div>
 
       {/* ── Search ── */}
@@ -812,11 +889,6 @@ export default function AeoTracker({ siteDbId }: { siteDbId: string; domain?: st
       )}
 
       {rows.length > 0 && <Competitors rows={rows} host={host} configured={configuredEngines} blurStyle={blurStyle} />}
-
-      {/* Second source, deliberately below the live checks rather than merged into them. The
-          table above is today's answer to questions you chose; this is an index of what models
-          have been answering generally, including questions you never thought to track. */}
-      <BrandVisibility siteDbId={siteDbId} />
     </div>
   );
 }

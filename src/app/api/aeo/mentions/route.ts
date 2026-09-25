@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { authOptions } from "@/lib/auth";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import {
@@ -76,7 +75,7 @@ export async function POST(req: Request) {
 
   const readCache = async () => {
     try {
-      const rows: any[] = await rawQuery(
+      const rows = await rawQuery<{ rows: string; createdAt: string }[]>(
         `SELECT rows, createdAt FROM "DemandSearch" WHERE userId = ? AND cacheKey = ?`,
         userId, cacheKey,
       );
