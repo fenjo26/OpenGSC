@@ -1,5 +1,11 @@
-// N2 (docs/tasks/wave-nov/N2-backlink-toxicity.md) owns src/lib/backlinks/** — donor toxicity
-// with the site's own niche, the disavow file, lost-link recovery. Stub from the wave
-// foundation (CONTRACT.md §3).
+// N2 — backlink toxicity, disavow and recovery for a site's own profile
+// (docs/tasks/wave-nov/N2-backlink-toxicity.md, docs/BACKLINK-TOXICITY.md).
+//
+// Layout:
+//   toxicity.ts / disavow.ts / recovery.ts — pure logic, no Prisma, covered by node:test
+//   store.ts      — the run, the niche, the disavow file, the recovery table (Prisma)
+//   scheduler.ts  — the hourly tick that keeps profiles fresh and fires toxic_new
 
-export const NOT_IMPLEMENTED = "N2";
+export * from "./toxicity";
+export * from "./disavow";
+export * from "./recovery";
