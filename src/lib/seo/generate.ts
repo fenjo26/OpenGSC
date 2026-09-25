@@ -25,6 +25,7 @@ import { decodeHtmlEntities } from "@/lib/seo/outlineFormat";
 import { scrubMarks } from "@/lib/seo/marksScrub";
 import { META_LIMITS, metaLength, type MetaFitItem, type MetaFitResult } from "@/lib/seo/metaLimits";
 import { fitMeta, readMetaBlock, writeMetaBlock } from "@/lib/seo/metaFit";
+import { guardOutlineFootprint } from "@/lib/footprint/guard";
 
 // Language-agnostic "this heading is a FAQ section" test — templates carry "H2: FAQ" and the
 // localization pass renames it («FAQ : Tout savoir…», «Часто задаваемые вопросы»…).
@@ -813,6 +814,16 @@ export async function genOutline(b: any): Promise<GenResult> {
       keyword, language: String(b.language ?? "en"), provider, apiKey, model, baseUrl,
     });
     if (metaFitDiag.length) outline._metaFit = metaFitDiag;
+  } catch { /* best-effort */ }
+  // FOOTPRINT GUARD (wave-nov N1), right after META FIT so it judges the final strings: the
+  // title/description options are skeletonized against the portfolio's occupied constructions
+  // and free variants move to the front. Best-effort by the same rule — an unavailable
+  // portfolio must never cost the user the outline.
+  try {
+    const footprintConcerns = await guardOutlineFootprint(outline, {
+      keyword, language: String(b.language ?? "en"), provider, apiKey, model, baseUrl,
+    });
+    if (footprintConcerns.length) outline._footprint = footprintConcerns;
   } catch { /* best-effort */ }
   for (const q of (Array.isArray((outline as any).faq) ? (outline as any).faq : [])) {
     if (q?.question) q.question = fixYear(q.question);

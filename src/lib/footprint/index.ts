@@ -1,5 +1,7 @@
-// N1 (docs/tasks/wave-nov/N1-footprint-hreflang.md) owns src/lib/footprint/** — skeleton
-// extraction, portfolio grouping, the /footprint report. Stub from the wave foundation
-// (CONTRACT.md §3): the marker export below is replaced by the real module in N1.
+// Network footprints (wave-nov N1) — templates repeated across the portfolio's sites.
+//
+// Public entry: everything in store.ts (the report, the collection, the generator's occupied-
+// skeleton set). skeleton.ts holds the pure string work and is re-exported through store for
+// the tests' convenience.
 
-export const NOT_IMPLEMENTED = "N1";
+export * from "./store";
