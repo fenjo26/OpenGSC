@@ -25,14 +25,17 @@ import type { UptimeBadge } from "@/lib/uptime/types";
 
 // The uptime status reads as one more site tag (online/offline) in the card footer, next
 // to market and tags. The tint pairs with the status word, so colour is never the only
-// carrier of meaning — the tooltip holds the full story (status · since · 24h).
+// carrier of meaning — the tooltip holds the full story (status · since · 24h). Colours
+// go through the theme vars so both light and dark stay readable, and the word matches
+// the dot inside (the dot reads the same vars).
+const UPTIME_MUTED = { bg: "color-mix(in srgb, var(--color-text-secondary) 12%, transparent)", fg: "var(--color-text-secondary)" };
 const UPTIME_CHIP_LOOK: Record<UptimeBadge["status"], { bg: string; fg: string }> = {
-  up: { bg: "rgba(16,185,129,0.14)", fg: "#10B981" },
-  degraded: { bg: "rgba(245,158,11,0.16)", fg: "#F59E0B" },
-  down: { bg: "rgba(239,68,68,0.16)", fg: "#EF4444" },
-  unknown: { bg: "rgba(255,255,255,0.06)", fg: "var(--color-text-secondary)" },
-  paused: { bg: "rgba(255,255,255,0.06)", fg: "var(--color-text-secondary)" },
-  checker_offline: { bg: "rgba(255,255,255,0.06)", fg: "var(--color-text-secondary)" },
+  up: { bg: "color-mix(in srgb, var(--color-accent-green) 14%, transparent)", fg: "var(--color-accent-green)" },
+  degraded: { bg: "color-mix(in srgb, var(--color-accent-orange) 16%, transparent)", fg: "var(--color-accent-orange)" },
+  down: { bg: "color-mix(in srgb, var(--color-accent-red) 16%, transparent)", fg: "var(--color-accent-red)" },
+  unknown: UPTIME_MUTED,
+  paused: UPTIME_MUTED,
+  checker_offline: UPTIME_MUTED,
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1792,7 +1795,7 @@ function PortfolioPageContent() {
                     title={uptimeBadgeLabel(badge, t, language)}
                     style={{display:"inline-flex",alignItems:"center",gap:"5px",fontSize:"10px",fontWeight:700,padding:"2px 6px",borderRadius:"4px",whiteSpace:"nowrap",background:look.bg,color:look.fg}}
                   >
-                    <UptimeDot badge={badge} size={7} />
+                    <UptimeDot badge={badge} size={7} decorative />
                     {t(`uptimeStatus_${badge.status}` as Parameters<typeof t>[0])}
                   </span>
                 );

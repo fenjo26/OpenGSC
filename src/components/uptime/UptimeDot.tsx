@@ -36,11 +36,13 @@ export function uptimeBadgeLabel(
   ].filter(Boolean).join(" · ");
 }
 
-export default function UptimeDot({ badge, size = 8 }: { badge: UptimeBadge | null; size?: number }) {
+export default function UptimeDot({ badge, size = 8, decorative = false }: { badge: UptimeBadge | null; size?: number; decorative?: boolean }) {
   const { t, language } = useLanguage();
   if (!badge) return null;
 
-  const label = uptimeBadgeLabel(badge, t, language);
+  // Inside the site-card status chip the word beside the dot already says the status —
+  // a second label on the dot would make screen readers read it twice.
+  const label = decorative ? undefined : uptimeBadgeLabel(badge, t, language);
 
   return (
     <>
@@ -50,7 +52,7 @@ export default function UptimeDot({ badge, size = 8 }: { badge: UptimeBadge | nu
         @media (prefers-reduced-motion: reduce) { .uptime-dot-down { animation: none; } }
       `}</style>
       <span
-        role="img"
+        role={decorative ? "presentation" : "img"}
         aria-label={label}
         title={label}
         className={badge.status === "down" ? "uptime-dot-down" : undefined}
