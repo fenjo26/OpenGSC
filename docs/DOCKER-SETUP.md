@@ -56,6 +56,15 @@ your-domain.com {
 Remember: `NEXTAUTH_URL` must exactly match the Authorized redirect URI configured in Google
 Cloud Console (`https://your-domain.com/api/auth/callback/google`), including the scheme.
 
+## Other platforms (Railway, Fly.io, …)
+
+The image keeps all state in `/data/prod.db` and deliberately declares no Docker `VOLUME` —
+on PaaS platforms anonymous volumes are either unsupported or silently lose the database
+between deploys (each deploy starts a fresh container). If you deploy the image outside
+Compose, attach a volume to `/data` through the platform's own mechanism (on Railway:
+service → Volumes → new volume, mount path `/data`). Without a mounted `/data` the database
+lives in the container's writable layer and is wiped on every redeploy.
+
 ## Backups
 
 Everything lives in one SQLite file on the volume:
