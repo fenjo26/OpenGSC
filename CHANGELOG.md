@@ -3,6 +3,12 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
+## [Unreleased]
+
+### Fixed
+
+- **Drops — «Recount data + AI» decided only the first of the selected rows and capped the selection at 5.** Root cause: the whole selection went into one request covered by a single 40-second deadline; the first domain (CDX + three archived pages + one model call) ate the budget and every remaining row came back "did not fit into the time budget". The pass now walks the whole selection in batches of 5 — each batch is its own request with a fresh budget and all its rows in parallel — so every selected row gets a verdict. The ≤5 selection cap is gone: how many domains to spend LLM credits on is the operator's decision, behind one confirm that shows the count. While the walk runs the button becomes a Stop button, a transport-dead batch is reported by name instead of aborting the walk, and progress shows decided/total. MCP `drops_history_ai` mirrors the semantics: up to 25 domains per call (was 5), sequential, same free-classifier gate.
+
 ## [1.8.1] — 2026-09-25
 
 Волна «Ноябрь»: весь бэклог одним релизом. На деплое: `npm i` (новая зависимость `web-push`),

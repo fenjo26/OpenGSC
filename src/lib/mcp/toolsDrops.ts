@@ -577,12 +577,12 @@ export const DROPS_TOOLS: McpTool[] = [
     cost: "paid",
     idempotent: false,
     description:
-      "PAID: run the AI history pass over up to 5 hand-picked domains — fetches three Wayback snapshots across the domain's life and asks the configured LLM what the site was about, whether the topic shifted and whether a spam period shows. Writes historyVerdict (clean | topic_shift | spam_period | unknown) + a factual note, and re-scores the row (spam_period vetoes). Uses the dedicated drops-history AI slot (Settings → per-task AI) and falls back to the main AI provider; an explicit aiProvider/aiApiKey argument wins over both. Needs confirm: true — it spends LLM credits. Never run this for whole lists.",
+      "PAID: run the AI history pass over hand-picked domains (up to 25 per call) — fetches three Wayback snapshots across the domain's life and asks the configured LLM what the site was about, whether the topic shifted and whether a spam period shows. Writes historyVerdict (clean | topic_shift | spam_period | unknown) + a factual note, and re-scores the row (spam_period vetoes). Domains run sequentially, several seconds each — a full list takes minutes. Uses the dedicated drops-history AI slot (Settings → per-task AI) and falls back to the main AI provider; an explicit aiProvider/aiApiKey argument wins over both. Needs confirm: true — it spends LLM credits. Still a vetting tool for shortlists, not a bulk sweep over whole runs.",
     inputSchema: {
       type: "object",
       required: ["domains", "confirm"],
       properties: {
-        domains: { type: "array", items: { type: "string" }, description: "up to 5 hand-picked domains" },
+        domains: { type: "array", items: { type: "string" }, description: "up to 25 hand-picked domains" },
         confirm: { type: "boolean", description: "must be true — this spends LLM credits" },
         aiProvider: { type: "string", description: "override the AI provider for this call" },
         aiApiKey: { type: "string", description: "override the AI key for this call" },
@@ -591,7 +591,7 @@ export const DROPS_TOOLS: McpTool[] = [
     },
     handler: async (userId, args) => {
       assertConfirmed(args, "drops_history_ai spends LLM credits");
-      const domains = domainsArg(args).slice(0, 5);
+      const domains = domainsArg(args).slice(0, 25);
       if (!domains.length) throw new Error("domains required");
       // The free classifier first: most verdicts are decided deterministically by
       // drops_toxicity at zero cost, and burning LLM credits on an obvious Chinese casino

@@ -12,10 +12,12 @@ export const dynamic = "force-dynamic";
 /**
  * The AI history pass ("Пересчитать данные + AI") for hand-picked rows.
  *
- * Deliberately small and synchronous: at most five rows per call, two in flight, one model call
- * each — the whole request keeps the ~45s budget every long drops operation lives under. Bulk
- * AI verdicts over a whole run are exactly what the plan refuses to build: this pass spends the
- * owner's LLM credits, so it runs on rows a person chose, behind a confirm, and never on a list.
+ * One request is one bounded batch: at most MAX_ROWS rows, all in flight at once, one model call
+ * each — the whole request keeps the ~45s budget every long drops operation lives under. How
+ * many rows to spend credits on is the operator's decision: the UI confirms the count once and
+ * then walks the whole selection in MAX_ROWS batches, each with its own fresh budget, so a
+ * 100-row selection no longer dies at row one the way it did when the deadline covered the
+ * entire request.
  */
 const MAX_ROWS = 5;
 const DEADLINE_MS = 40_000;
@@ -77,7 +79,10 @@ export async function POST(req: Request) {
         }
       }
     }
-    await Promise.all(Array.from({ length: Math.min(2, rows.length) }, () => worker(userId)));
+    // The whole batch in parallel: with rows ≤ MAX_ROWS every row starts at once, so the
+    // deadline below can no longer skip a row the client explicitly asked for — it stays as a
+    // safety net for callers that ignore the batch size, not a silent row-dropper.
+    await Promise.all(Array.from({ length: Math.min(rows.length, MAX_ROWS) }, () => worker(userId)));
     // Rows the deadline never let start sit at the tail of the list; they are reported, not
     // silently dropped — a silent gap would read as "the AI decided nothing was wrong".
     for (let i = results.length; i < rows.length; i++) {

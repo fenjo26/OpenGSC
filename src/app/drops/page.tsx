@@ -1068,39 +1068,60 @@ export default function DropsPage() {
   });
 
   // The AI history pass: the reference tool's "Пересчитать данные + AI". Runs on hand-picked
-  // rows only — it spends LLM credits, so five at a time behind a confirm, never on a list.
+  // rows only — it spends LLM credits, so it asks once for the whole selection and then walks it
+  // in server-sized batches. How many rows to burn credits on is the operator's decision, not a
+  // cap's: a 100-row selection is one confirm and a progress bar, not twenty manual clicks.
+  // Must match MAX_ROWS in /api/drops/history — each batch is one request with its own ~45s
+  // budget, which is what keeps every selected row decided instead of "deadline"-dropped.
+  const HISTORY_SLICE = 5;
   async function enrichHistory() {
     if (enrichBusy) return;
-    // Selected rows on this page, whichever way the selection is expressed. The ≤5 guard below
-    // is what keeps a filter-wide selection from turning into a credit-burning sweep.
     const targets = rows.filter(r => isRowSelected(r.id));
-    if (!targets.length || targets.length > 5) { setNotice(tr("dropsEnrichHistoryPick")); return; }
+    if (!targets.length) { setNotice(tr("dropsEnrichHistoryPick")); return; }
     if (!window.confirm(tr("dropsEnrichHistoryConfirm").replace("{n}", String(targets.length)))) { setNotice(tr("dropsEnrichCancelled")); return; }
+    enrichStop.current = false;
     setEnrichBusy("history"); setError(""); setNotice("");
     setEnrichProgress({ done: 0, total: targets.length, updated: 0 });
+    let decided = 0;
+    const failed: string[] = [];
     try {
-      const res = await fetch("/api/drops/history", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: targets.map(r => r.id) }),
-      });
-      const body = await res.json();
-      if (!res.ok) {
-        if (body?.error === "no_ai_creds") throw new Error(tr("dropsHistoryNoCreds"));
-        throw new Error(body?.error || "history_failed");
-      }
-      const done = (body.results as { domain?: string; verdict?: string; error?: string }[] | undefined) ?? [];
-      const decided = done.filter(r => r.verdict).length;
-      // The route reports a per-row reason for every row that came back without a verdict —
-      // a bare "0/1" with the reason still in the response is what made this notice exist.
-      const failed = done.filter(r => !r.verdict);
-      const failPart = failed.length
-        ? " — " + failed.map(r => {
+      for (let i = 0; i < targets.length; i += HISTORY_SLICE) {
+        if (enrichStop.current) break;
+        const slice = targets.slice(i, i + HISTORY_SLICE);
+        try {
+          const res = await fetch("/api/drops/history", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ids: slice.map(r => r.id) }),
+          });
+          const body = await res.json();
+          if (!res.ok) {
+            if (body?.error === "no_ai_creds") throw new Error(tr("dropsHistoryNoCreds"));
+            throw new Error(body?.error || "history_failed");
+          }
+          const done = (body.results as { domain?: string; verdict?: string; error?: string }[] | undefined) ?? [];
+          decided += done.filter(r => r.verdict).length;
+          // The route reports a per-row reason for every row that came back without a verdict —
+          // a bare "0/1" with the reason still in the response is what made this notice exist.
+          for (const r of done.filter(r => !r.verdict)) {
             const code = r.error ?? "";
             const reason = HISTORY_ERRORS[code] ? tr(HISTORY_ERRORS[code]) : (code || "?");
-            return `${r.domain ?? "?"}: ${reason}`;
-          }).join("; ")
-        : "";
-      setNotice(tr("dropsEnrichHistoryDone").replace("{n}", `${decided}/${done.length}`) + failPart);
+            failed.push(`${r.domain ?? "?"}: ${reason}`);
+          }
+        } catch (e) {
+          // A transport-level death (request never answered, body truncated by a proxy timeout)
+          // must not abort the walk: the remaining batches are still worth their credits, and
+          // re-running one failed slice later beats re-running — and re-billing — the selection.
+          // Structured API errors (no creds, not migrated) stay fatal.
+          if (e instanceof TypeError || e instanceof SyntaxError) {
+            failed.push(`${slice.map(r => r.domain).join(", ")}: ${tr("dropsHistoryErrTransport")}`);
+          } else throw e;
+        }
+        setEnrichProgress({ done: Math.min(i + HISTORY_SLICE, targets.length), total: targets.length, updated: decided });
+      }
+      const failPart = failed.length ? " — " + failed.join("; ") : "";
+      setNotice(enrichStop.current
+        ? tr("dropsEnrichStopped").replace("{n}", String(decided)) + failPart
+        : tr("dropsEnrichHistoryDone").replace("{n}", `${decided}/${targets.length}`) + failPart);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -1899,10 +1920,13 @@ export default function DropsPage() {
         {enrichBusy === "refs" ? <Loader2 className="spin" size={13} /> : <Database size={13} />}
         {enrichBusy === "refs" ? tr("dropsEnrichRefsBusy") : tr("dropsEnrichRefs")}
       </button>
-      <button onClick={() => void enrichHistory()} disabled={enrichBusy !== ""} style={ghostBtnDisabled(enrichBusy !== "")}
-        title={tr("dropsEnrichHistoryPick")}>
-        {enrichBusy === "history" ? <Loader2 className="spin" size={13} /> : <Sparkles size={13} />}
-        {enrichBusy === "history" ? tr("dropsEnrichHistoryBusy") : tr("dropsEnrichHistory")}
+      {/* The AI pass walks the whole selection batch by batch, so while it runs this is its
+          Stop button — same pattern as the DR sweep above it. */}
+      <button onClick={enrichBusy === "history" ? () => { enrichStop.current = true; } : () => void enrichHistory()}
+        disabled={enrichBusy !== "" && enrichBusy !== "history"} style={ghostBtnDisabled(enrichBusy !== "" && enrichBusy !== "history")}
+        title={tr("dropsEnrichHistoryHint")}>
+        {enrichBusy === "history" ? <Square size={13} /> : <Sparkles size={13} />}
+        {enrichBusy === "history" ? tr("dropsDnsStop") : tr("dropsEnrichHistory")}
       </button>
       {enrichBusy && enrichProgress && <span style={{ color: "var(--color-text-secondary)" }}>
         {enrichProgress.done.toLocaleString()} / {enrichProgress.total.toLocaleString()} · <b>{enrichProgress.updated.toLocaleString()}</b> {tr("dropsEnrichUpdated")}
