@@ -4976,5 +4976,12 @@
   "mlCardInstr": "FieldLink : token depuis votre cabinet. 369Team : clés via Telegram @links_369.",
   "mlMarker": "{n}×{p}",
   "mlPurchaseRow": "Achat de liens · {n} liens · {p}",
-  "mlOrderLabel": "commande"
+  "mlOrderLabel": "commande",
+  "mlAnchorMode": "Ancres",
+  "mlAnchorExact": "Exacte",
+  "mlAnchorDiluted": "Diluée",
+  "mlAnchorUrl": "URL",
+  "mlAnchorBrand": "Domaine",
+  "mlAnchorRequired": "Chaque ligne doit avoir une ancre — une ancre vide n'est pas envoyée.",
+  "mlAnchorHint": "ancre"
 }

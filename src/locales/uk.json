@@ -4976,5 +4976,12 @@
   "mlCardInstr": "FieldLink: токен із кабінету. 369Team: ключі в телеграмі @links_369.",
   "mlMarker": "{n}×{p}",
   "mlPurchaseRow": "Купівля посилань · {n} посилань · {p}",
-  "mlOrderLabel": "замовлення"
+  "mlOrderLabel": "замовлення",
+  "mlAnchorMode": "Анкори",
+  "mlAnchorExact": "Точний",
+  "mlAnchorDiluted": "Розбавлений",
+  "mlAnchorUrl": "URL",
+  "mlAnchorBrand": "Домен",
+  "mlAnchorRequired": "Кожен рядок має мати анкор — порожній не піде в замовлення.",
+  "mlAnchorHint": "анкор"
 }

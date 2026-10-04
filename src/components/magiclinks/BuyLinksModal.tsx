@@ -39,6 +39,10 @@ export interface BuyRow {
   siteId?: string;
 }
 
+/** The four anchor shapes link buyers rotate between. Mechanical on purpose: no invented
+ *  words, nothing language-dependent — every row stays editable after a preset lands. */
+type AnchorMode = "exact" | "diluted" | "url" | "domain";
+
 const hostOf = (url: string) => { try { return new URL(url).host.replace(/^www\./, ""); } catch { return ""; } };
 const money = (minor: number | null | undefined) =>
   minor == null ? "—" : `${(minor / 100).toFixed(minor % 100 === 0 ? 0 : 2)}`;
@@ -58,6 +62,10 @@ export default function BuyLinksModal({ siteId, rows, onClose, onDone }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState<{ orderId: string } | null>(null);
+  // Per-row anchors, keyed by row index (the selection is fixed while the window is open).
+  // Default = the query itself; the presets refill the whole set, hand edits win afterwards.
+  const [anchors, setAnchors] = useState<Record<number, string>>({});
+  const [anchorMode, setAnchorMode] = useState<AnchorMode>("exact");
 
   const hosts = useMemo(() => [...new Set(rows.map(r => hostOf(r.targetUrl)).filter(Boolean))], [rows]);
   // TLD hint where it says something; the operator finishes the choice — a silent English
@@ -65,6 +73,28 @@ export default function BuyLinksModal({ siteId, rows, onClose, onDone }: {
   useEffect(() => {
     setLangs(Object.fromEntries(hosts.map(h => [h, defaultLanguageForHost(h) ?? ""])));
   }, [hosts]);
+
+  useEffect(() => {
+    setAnchors(Object.fromEntries(rows.map((r, i) => [i, r.query])));
+    setAnchorMode("exact");
+  }, [rows]);
+
+  // A batch of identical exact-match commercial anchors is an over-optimization footprint;
+  // the presets exist so diversity is one click, and the DEFAULT is a choice, not a habit.
+  const anchorForMode = (r: BuyRow, mode: AnchorMode): string =>
+    mode === "exact" ? r.query
+    : mode === "diluted" ? `${r.query} – ${hostOf(r.targetUrl)}`
+    : mode === "url" ? r.targetUrl
+    : hostOf(r.targetUrl);
+
+  const applyAnchorMode = (mode: AnchorMode) => {
+    setAnchorMode(mode);
+    setAnchors(Object.fromEntries(rows.map((r, i) => [i, anchorForMode(r, mode)])));
+    setQuote(null);
+  };
+
+  const anchorOf = (i: number) => String(anchors[i] ?? rows[i]?.query ?? "");
+  const emptyAnchors = rows.length > 0 && rows.some((_, i) => !anchorOf(i).trim());
 
   useEffect(() => {
     fetch("/api/magiclinks/status")
@@ -84,18 +114,18 @@ export default function BuyLinksModal({ siteId, rows, onClose, onDone }: {
 
   const missingLang = hosts.filter(h => !langs[h]);
   const provider = providers?.find(p => p.id === providerId) ?? null;
-  const context = rows.map(r => ({ siteId: r.siteId ?? siteId ?? "", targetUrl: r.targetUrl, query: r.query }));
+  const context = rows.map((r, i) => ({ siteId: r.siteId ?? siteId ?? "", targetUrl: r.targetUrl, query: r.query, anchor: anchorOf(i) }));
 
   async function doQuote() {
-    if (!providerId || missingLang.length) return;
+    if (!providerId || missingLang.length || emptyAnchors) return;
     setBusy(true); setError(""); setQuote(null);
     try {
       const res = await fetch("/api/magiclinks/quote", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           provider: providerId,
-          items: rows.map(r => ({
-            targetUrl: r.targetUrl, query: r.query, language: langs[hostOf(r.targetUrl)] ?? "", count,
+          items: rows.map((r, i) => ({
+            targetUrl: r.targetUrl, query: r.query, anchor: anchorOf(i), language: langs[hostOf(r.targetUrl)] ?? "", count,
           })),
         }),
       });
@@ -118,8 +148,8 @@ export default function BuyLinksModal({ siteId, rows, onClose, onDone }: {
           expectedMinor: quote.amountMinor,
           siteId: siteId ?? "",
           context,
-          items: rows.map(r => ({
-            targetUrl: r.targetUrl, query: r.query, language: langs[hostOf(r.targetUrl)] ?? "", count,
+          items: rows.map((r, i) => ({
+            targetUrl: r.targetUrl, query: r.query, anchor: anchorOf(i), language: langs[hostOf(r.targetUrl)] ?? "", count,
             siteId: r.siteId ?? siteId ?? "",
           })),
         }),
@@ -226,13 +256,41 @@ export default function BuyLinksModal({ siteId, rows, onClose, onDone }: {
               {missingLang.length > 0 && (
                 <div style={{ fontSize: "11px", color: "#F59E0B" }}>{t("mlLangRequired")}</div>
               )}
+              {emptyAnchors && (
+                <div style={{ fontSize: "11px", color: "#F59E0B" }}>{t("mlAnchorRequired")}</div>
+              )}
 
-              {/* Rows */}
-              <div style={{ border: "1px solid var(--color-border)", borderRadius: "10px", maxHeight: "180px", overflowY: "auto" }}>
+              {/* Anchor presets — refill every row; each stays editable afterwards. The separator
+                  form of "diluted" (query – domain) is language-neutral on purpose. */}
+              <div>
+                <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "8px" }}>{t("mlAnchorMode")}</div>
+                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                  {([["exact", "mlAnchorExact"], ["diluted", "mlAnchorDiluted"], ["url", "mlAnchorUrl"], ["domain", "mlAnchorBrand"]] as const).map(([mode, key]) => (
+                    <button key={mode} onClick={() => applyAnchorMode(mode)}
+                      style={{
+                        padding: "5px 11px", borderRadius: "7px", fontSize: "11.5px", fontWeight: 600, cursor: "pointer",
+                        border: `1px solid ${anchorMode === mode ? "#7C3AED" : "var(--color-border)"}`,
+                        background: anchorMode === mode ? "rgba(124,58,237,0.1)" : "var(--color-bg)",
+                        color: anchorMode === mode ? "#7C3AED" : "var(--color-text-secondary)",
+                      }}>
+                      {t(key)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Rows — query, editable anchor (placeholder = the query), count */}
+              <div style={{ border: "1px solid var(--color-border)", borderRadius: "10px", maxHeight: "200px", overflowY: "auto" }}>
                 {rows.map((r, i) => (
                   <div key={`${r.targetUrl}-${i}`} style={{ display: "flex", gap: "8px", alignItems: "center", padding: "7px 12px", borderBottom: i < rows.length - 1 ? "1px solid var(--color-border)" : "none", fontSize: "12px" }}>
                     <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600, color: "var(--color-text-primary)" }} title={r.query}>{r.query}</span>
-                    <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--color-text-secondary)" }} title={r.targetUrl}>{hostOf(r.targetUrl)}</span>
+                    <input
+                      value={anchorOf(i)}
+                      onChange={e => { setAnchors(p => ({ ...p, [i]: e.target.value })); setQuote(null); }}
+                      placeholder={r.query}
+                      title={`${r.targetUrl} · ${t("mlAnchorHint")}`}
+                      style={{ flex: 1.2, minWidth: 0, padding: "4px 8px", borderRadius: "6px", border: "1px solid var(--color-border)", background: "var(--color-bg)", color: "var(--color-text-primary)", fontSize: "11.5px", fontFamily: "monospace", outline: "none" }}
+                    />
                     <span style={{ fontFamily: "monospace", color: "var(--color-text-secondary)", flexShrink: 0 }}>×{count}</span>
                   </div>
                 ))}
@@ -269,7 +327,7 @@ export default function BuyLinksModal({ siteId, rows, onClose, onDone }: {
               <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
                 <button onClick={onClose} style={{ padding: "9px 14px", borderRadius: "9px", border: "1px solid var(--color-border)", background: "none", color: "var(--color-text-secondary)", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>{t("mlCancel")}</button>
                 {!quote ? (
-                  <button onClick={doQuote} disabled={busy || !providerId || missingLang.length > 0}
+                  <button onClick={doQuote} disabled={busy || !providerId || missingLang.length > 0 || emptyAnchors}
                     style={{ padding: "9px 16px", borderRadius: "9px", border: "none", background: busy ? "rgba(124,58,237,0.25)" : "#7C3AED", color: "#fff", fontSize: "12px", fontWeight: 700, cursor: busy ? "wait" : "pointer", display: "flex", alignItems: "center", gap: "6px" }}>
                     <RefreshCw size={12} style={{ animation: busy ? "spin 1s linear infinite" : undefined }} /> {busy ? t("mlCalculating") : t("mlCalculate")}
                   </button>

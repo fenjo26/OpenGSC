@@ -4976,5 +4976,12 @@
   "mlCardInstr": "FieldLink：从控制台获取 token。369Team：通过 Telegram @links_369 获取密钥。",
   "mlMarker": "{n}×{p}",
   "mlPurchaseRow": "链接购买 · {n} 条 · {p}",
-  "mlOrderLabel": "订单"
+  "mlOrderLabel": "订单",
+  "mlAnchorMode": "锚文本",
+  "mlAnchorExact": "精确",
+  "mlAnchorDiluted": "稀释",
+  "mlAnchorUrl": "URL",
+  "mlAnchorBrand": "域名",
+  "mlAnchorRequired": "每行都必须有锚文本 —— 空锚不会提交。",
+  "mlAnchorHint": "锚文本"
 }

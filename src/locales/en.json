@@ -4976,5 +4976,12 @@
   "mlCardInstr": "FieldLink: token from your cabinet. 369Team: keys via Telegram @links_369.",
   "mlMarker": "{n}×{p}",
   "mlPurchaseRow": "Link purchase · {n} links · {p}",
-  "mlOrderLabel": "order"
+  "mlOrderLabel": "order",
+  "mlAnchorMode": "Anchors",
+  "mlAnchorExact": "Exact",
+  "mlAnchorDiluted": "Diluted",
+  "mlAnchorUrl": "URL",
+  "mlAnchorBrand": "Domain",
+  "mlAnchorRequired": "Every row needs an anchor — an empty one is not sent.",
+  "mlAnchorHint": "anchor"
 }

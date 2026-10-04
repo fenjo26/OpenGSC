@@ -53,6 +53,20 @@ test("idempotencyKeyFor is stable per payload and differs across payloads", () =
   assert.ok(a.startsWith("ogsc-"));
 });
 
+test("validateBrief accepts a custom anchor distinct from the query — the ledger pair stays keyed by the query", () => {
+  // Anchor presets (exact / diluted / URL / domain) send anchors that differ from the query;
+  // the query (titleKeyword) is what the striking-side bought-pair marking matches on.
+  const b = validateBrief(brief({ anchor: "https://example.com/page" }));
+  assert.equal(b.anchor, "https://example.com/page");
+  assert.equal(b.titleKeyword, "casino bonus");
+  const d = validateBrief(brief({ anchor: "casino bonus – example.com" }));
+  assert.equal(d.anchor, "casino bonus – example.com");
+});
+
+test("validateBrief caps anchors at 300 characters and names the row", () => {
+  assert.throws(() => validateBrief(brief({ anchor: "x".repeat(301) }), 2), /row 3: anchor must be 1-300/);
+});
+
 // fetch mock: enough of Response for the client's error paths.
 function res(status: number, body: unknown, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {

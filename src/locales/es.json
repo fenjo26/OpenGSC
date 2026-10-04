@@ -4976,5 +4976,12 @@
   "mlCardInstr": "FieldLink: token de tu panel. 369Team: claves por Telegram @links_369.",
   "mlMarker": "{n}×{p}",
   "mlPurchaseRow": "Compra de enlaces · {n} enlaces · {p}",
-  "mlOrderLabel": "pedido"
+  "mlOrderLabel": "pedido",
+  "mlAnchorMode": "Anclas",
+  "mlAnchorExact": "Exacta",
+  "mlAnchorDiluted": "Diluida",
+  "mlAnchorUrl": "URL",
+  "mlAnchorBrand": "Dominio",
+  "mlAnchorRequired": "Cada fila necesita un ancla — una vacía no se envía.",
+  "mlAnchorHint": "ancla"
 }
