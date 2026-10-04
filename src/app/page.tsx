@@ -8,12 +8,12 @@ import {
   ArrowUpDown, SlidersHorizontal, Sparkles, Percent, MoveUp,
   Globe, Monitor, FileText, ChevronDown, Check,
   Image, Video, Newspaper, Compass,
-  Download, Tag, X, Loader2, RefreshCw, AlertTriangle,
+  Download, Tag, X, Loader2, RefreshCw,
 } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer, Tooltip } from "recharts";
 import { buildCandleRows } from "@/lib/chartCandles";
 import { CandlePanes, useChartTypePref } from "@/components/CandleChartParts";
-import { DrSparkline, drSeriesText, type DrPoint } from "@/components/DrSparkline";
+import { drSeriesText, type DrPoint } from "@/components/DrSparkline";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { useHealthStatus } from "@/components/SiteHealthPanel";
@@ -1709,27 +1709,33 @@ function PortfolioPageContent() {
                 <div style={{display:"flex",gap:"4px",alignSelf:"flex-start",marginLeft:"22px",flexWrap:"wrap"}}>
                   {/* DR is the free, always-available number and keeps its own styling. The
                       optional paid metrics sit beside it in a muted chip so their absence
-                      reads as "not loaded" rather than "broken". The sparkline is the
-                      accumulated monthly series behind the number — same shape as the site
-                      page's header: falling red, triangle when the ≥5-point penalty rule
-                      fires, months in the tooltip. Absent until the second point exists. */}
+                      reads as "not loaded" rather than "broken". The delta chip is the
+                      accumulated monthly series behind the number, compressed to what fits
+                      beside a 10px chip: ↓n red / ↑n green over the stored window (a
+                      polyline this small reads as noise, not a trend). The months and the
+                      ≥5-point penalty rule live in the tooltip; no chip until the delta
+                      actually rounds to something. */}
                   {dr != null && (() => {
                     const pts = drHist[key];
                     const drop = pts && pts.length >= 2 ? pts[pts.length - 1].dr - pts[0].dr : 0;
-                    const title = pts && pts.length >= 2
-                      ? `${t("drHistHint")}\n\n${drSeriesText(pts)}` + (drop <= -5 ? `\n\n${t("drHistFlag").replace("{n}", String(Math.abs(drop)))}` : "")
-                      : undefined;
+                    const shown = Math.round(Math.abs(drop));
+                    if (!shown) return (
+                      <span title="Domain Rating by Ahrefs (ahrefs.com)" style={{...chip,background:"rgba(58,87,252,0.12)",color:"#3A57FC"}}>
+                        DR {Math.round(dr)}
+                      </span>
+                    );
+                    const title = `${t("drHistHint")}\n\n${drSeriesText(pts!)}`
+                      + (drop <= -5 ? `\n\n${t("drHistFlag").replace("{n}", String(shown))}` : "");
                     return (
                       <>
                         <span title="Domain Rating by Ahrefs (ahrefs.com)" style={{...chip,background:"rgba(58,87,252,0.12)",color:"#3A57FC"}}>
                           DR {Math.round(dr)}
                         </span>
-                        {pts && pts.length >= 2 && (
-                          <span title={title} style={{display:"flex",alignItems:"center",gap:3,cursor:"help",filter:blur?"blur(4px)":"none",transition:"filter 0.25s"}}>
-                            <DrSparkline points={pts} width={40} height={14} />
-                            {drop <= -5 && <AlertTriangle size={11} color="#ff6b62" />}
-                          </span>
-                        )}
+                        <span title={title} style={{...chip,cursor:"help",
+                          background: drop < 0 ? "rgba(239,68,68,0.12)" : "rgba(16,185,129,0.12)",
+                          color: drop < 0 ? "#F87171" : "#34D399"}}>
+                          {drop < 0 ? "↓" : "↑"}{shown}
+                        </span>
                       </>
                     );
                   })()}
