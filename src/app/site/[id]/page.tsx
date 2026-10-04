@@ -4046,22 +4046,30 @@ function renderAlgoMarkers(updates: AlgoMarker[], t: (k: never) => string, label
  * to shade. Deliberately one flat colour rather than the per-type palette updates use, because
  * the first thing to read off the chart is whose event it was, and only then which one.
  */
-function renderNoteMarkers(notes: { id: string; title: string; x: string }[]) {
-  return notes.map(n => (
-    <ReferenceLine key={n.id} x={n.x} yAxisId="left"
-      stroke="var(--color-text-secondary)" strokeWidth={1.2} strokeOpacity={0.55}
-      label={<NoteMarkerLabel title={n.title} />} />
-  ));
+function renderNoteMarkers(notes: { id: string; title: string; x: string; kind?: "note" | "purchase"; label?: string }[]) {
+  return notes.map(n => {
+    // Purchases keep the notes' solid-line language but claim their own colour: the first
+    // thing to read off the chart is whose event it was, and "money left here" is a third
+    // voice next to the operator's notes and Google's rollouts.
+    const purchase = n.kind === "purchase";
+    const color = purchase ? "#7C3AED" : "var(--color-text-secondary)";
+    return (
+      <ReferenceLine key={n.id} x={n.x} yAxisId="left"
+        stroke={color} strokeWidth={purchase ? 1.5 : 1.2} strokeOpacity={0.65}
+        label={<NoteMarkerLabel title={n.title} text={n.label} color={purchase ? "#7C3AED" : undefined} />} />
+    );
+  });
 }
 
-function NoteMarkerLabel({ viewBox, title }: { viewBox?: { x?: number; y?: number }; title?: string }) {
+function NoteMarkerLabel({ viewBox, title, text, color }: { viewBox?: { x?: number; y?: number }; title?: string; text?: string; color?: string }) {
   const x = viewBox?.x ?? 0;
   const y = (viewBox?.y ?? 0) - 6;
   // Truncated rather than wrapped: a note title can be a sentence, and the chart has one line of
   // headroom. The full text is in the native tooltip and in the row below.
-  const short = (title ?? "").length > 22 ? `${(title ?? "").slice(0, 21)}…` : title ?? "";
+  const raw = text ?? title ?? "";
+  const short = raw.length > 22 ? `${raw.slice(0, 21)}…` : raw;
   return (
-    <text x={x} y={y} textAnchor="middle" fontSize={9} fontWeight={600} fill="var(--color-text-secondary)">
+    <text x={x} y={y} textAnchor="middle" fontSize={9} fontWeight={600} fill={color ?? "var(--color-text-secondary)"}>
       <title>{title}</title>
       {short}
     </text>
@@ -4247,13 +4255,20 @@ type SeriesPoint = {
 interface AnnotationNote {
   id?: string;
   date: string; title: string; scope: string;
-  /** Where the row came from: an operator's own note, or a Google ranking update. The two live on
-   *  one timeline and differ only in how they are drawn. */
-  kind: "note" | "update";
+  /** Where the row came from: an operator's own note, a Google ranking update, or a link
+   *  purchase derived from the magic-links ledger. The three live on one timeline and differ
+   *  only in how they are drawn. */
+  kind: "note" | "update" | "purchase";
   /** Update type, for the band colour. Null on notes. */
   updateType?: AlgoUpdateType | null;
   /** Last day of a rollout, for the band's closing edge. Null on notes. */
   endDate?: string | null;
+  /** Link purchases only: how many placements the order bought. */
+  mlQuantity?: number | null;
+  /** Link purchases only: provider id ("fieldlink" | "magic369"). */
+  mlProvider?: string | null;
+  /** Link purchases only: the provider's order id, linking to /magiclinks. */
+  orderId?: string | null;
   /** Free text under the title. For Google updates this carries the rollout length, which is the
    *  one fact a bare date does not give you: a 2-day spam update and a 3-week core update leave
    *  very different shapes in the data. */
@@ -4274,7 +4289,8 @@ interface AnnotationNote {
 // Shape returned by /api/annotations, flattened into the row shape this table renders.
 type ApiNote = {
   id: string; date: string; title: string; description?: string | null;
-  kind: "note" | "update"; updateType?: AlgoUpdateType | null; endDate?: string | null;
+  kind: "note" | "update" | "purchase"; updateType?: AlgoUpdateType | null; endDate?: string | null;
+  mlQuantity?: number | null; mlProvider?: string | null; orderId?: string | null;
   scope: string; dateRange: string; hasAfter: boolean;
   clicks: { before: number; after: number; pct: number | null };
   impressions: { before: number; after: number; pct: number | null };
@@ -4292,6 +4308,9 @@ function mapApiNote(n: ApiNote): AnnotationNote {
     kind: n.kind ?? "note",
     updateType: n.updateType ?? null,
     endDate: n.endDate ?? null,
+    mlQuantity: n.mlQuantity ?? null,
+    mlProvider: n.mlProvider ?? null,
+    orderId: n.orderId ?? null,
     description: n.description || undefined,
     scope: n.scope === "pages" ? "Specific pages" : "All Pages",
     hasAfter: n.hasAfter,
@@ -4394,9 +4413,19 @@ function AnnotationsTab({ period, setPeriod, periodOptions, customDays, onSetupB
   const noteMarkers = useMemo(() => {
     if (!chartData?.length) return [];
     return ownNotes
-      .map((n, i) => ({ id: n.id ?? `note-${i}`, title: n.title, x: snapToChartLabel(chartData, n.date) }))
-      .filter((n): n is { id: string; title: string; x: string } => n.x !== null);
-  }, [ownNotes, chartData]);
+      .map((n, i): { id: string; title: string; x: string | null; kind?: "note" | "purchase"; label?: string } => ({
+        id: n.id ?? `note-${i}`,
+        title: n.title,
+        x: snapToChartLabel(chartData, n.date),
+        kind: n.kind === "purchase" ? ("purchase" as const) : undefined,
+        // Purchases carry their own short label — quantity × provider — instead of the server's
+        // English fallback title.
+        label: n.kind === "purchase"
+          ? t("mlMarker").replace("{n}", String(n.mlQuantity ?? "?")).replace("{p}", n.mlProvider === "magic369" ? "369" : "FL")
+          : undefined,
+      }))
+      .filter((n): n is { id: string; title: string; x: string; kind?: "note" | "purchase"; label?: string } => n.x !== null);
+  }, [ownNotes, chartData, t]);
   // The onboarding panel is an absolutely-positioned overlay covering everything below the
   // sub-header, so it can only appear when there is genuinely nothing underneath. Keying it on
   // "no notes of your own" would hide the Google-update timeline the moment a fresh instance
@@ -4524,11 +4553,18 @@ function AnnotationsTab({ period, setPeriod, periodOptions, customDays, onSetupB
           // page a scroll where the useful part — the date and the deltas — was the smallest thing
           // on it.
           <div key={idx} style={{ display: "grid", gridTemplateColumns: "320px 1fr auto", gap: "0", borderBottom: "1px solid var(--color-border)", alignItems: "center", padding: "0 32px" }}>
-            {/* Left: date + title + scope */}
+            {/* Left: date + title + scope. Purchases render their localized label (quantity ×
+                provider) instead of the server's English fallback, and link to the order. */}
             <div style={{ padding: "18px 24px 18px 0" }}>
-              <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--color-text-primary)", marginBottom: "4px" }}>{note.title}</div>
+              <div style={{ fontSize: "13px", fontWeight: 700, color: note.kind === "purchase" ? "#7C3AED" : "var(--color-text-primary)", marginBottom: "4px" }}>
+                {note.kind === "purchase"
+                  ? t("mlPurchaseRow").replace("{n}", String(note.mlQuantity ?? "?")).replace("{p}", note.mlProvider === "magic369" ? "369Team" : "FieldLink")
+                  : note.title}
+              </div>
               <div style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
-                {note.date} · {note.kind === "update" ? (note.description || t("annUpdates")) : note.scope}
+                {note.date} · {note.kind === "update" ? (note.description || t("annUpdates")) : note.kind === "purchase"
+                  ? <span>{t("mlOrderLabel")} <a href="/magiclinks" style={{ color: "var(--color-accent-purple)", fontFamily: "monospace" }}>{note.orderId}</a></span>
+                  : note.scope}
               </div>
             </div>
 
@@ -5412,6 +5448,40 @@ export default function SitePage({
     return out;
   }, [candleMode, visibleAlgoUpdates, candleData]);
 
+  // ── Link purchases: one purple marker per order, derived from the purchase ledger ──
+  // The date is the ORDER day (UTC), not a claim the placements are live — publications follow
+  // days later, and the annotations tab's before/after figures are where the effect question
+  // is actually answered.
+  const [purchaseOrders, setPurchaseOrders] = useState<{ orderId: string; provider: string; date: string; quantity: number }[]>([]);
+  useEffect(() => {
+    if (readOnly || !siteDbId) return;
+    fetch(getUrl(`/api/magiclinks/purchases?siteId=${encodeURIComponent(siteDbId)}`))
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (Array.isArray(d?.markers)) setPurchaseOrders(d.markers); })
+      .catch(() => {});
+  }, [siteDbId, readOnly, shareToken]);
+
+  // Snapped for whichever axis mode is active — same reason as the algo markers above.
+  const purchaseMarkersForMode = useMemo(() => {
+    const chart = (candleMode ? candleData : siteData?.chartData) as unknown as { date: string; dateIso: string }[] | undefined;
+    if (!chart?.length) return [];
+    const out: { id: string; title: string; x: string; kind: "purchase"; label: string }[] = [];
+    for (const p of purchaseOrders) {
+      const x = snapToChartLabel(chart, p.date);
+      if (!x) continue;
+      out.push({
+        id: `purchase-${p.orderId}`,
+        title: `${p.quantity} links · ${p.provider === "magic369" ? "369Team" : "FieldLink"} · ${p.orderId}`,
+        x,
+        kind: "purchase",
+        label: `${p.quantity}×${p.provider === "magic369" ? "369" : "FL"}`,
+      });
+    }
+    return out;
+  }, [candleMode, candleData, siteData, purchaseOrders]);
+
+  const hasChartMarkers = (googleUpdates && algoMarkersForMode.length > 0) || purchaseMarkersForMode.length > 0;
+
   // ── Rank tracker: which queries are already tracked (for Track buttons) ──────
   const [trackedKws, setTrackedKws] = useState<Set<string>>(new Set());
   useEffect(() => {
@@ -5744,8 +5814,11 @@ export default function SitePage({
                 }))}
               showPrev={candleData.some(r => ["clicks", "impressions", "ctr", "position"].some(k => (r[k] as any)?.prev))}
               height={activeMetrics.size > 2 ? 360 : 300}
-              topMargin={googleUpdates && algoMarkersForMode.length > 0 ? 26 : 6}
-              renderMarkers={top => (googleUpdates ? renderAlgoMarkers(algoMarkersForMode, t as never, top) : null)}
+              topMargin={hasChartMarkers ? 26 : 6}
+              renderMarkers={top => [
+                ...(googleUpdates ? renderAlgoMarkers(algoMarkersForMode, t as never, top) : []),
+                ...renderNoteMarkers(purchaseMarkersForMode),
+              ]}
             />
           ) : (
           <ResponsiveContainer width="100%" height={300}>
@@ -5755,7 +5828,7 @@ export default function SitePage({
                 keeps its full height the rest of the time. */}
             <ComposedChart
               data={aioMode ? aioChartData : chartData}
-              margin={{ top: googleUpdates && visibleAlgoUpdates.length > 0 ? 26 : 8, right: 0, left: 0, bottom: 0 }}
+              margin={{ top: hasChartMarkers ? 26 : 8, right: 0, left: 0, bottom: 0 }}
             >
               <defs>
                 {(["clicks", "impressions", "ctr", "position"] as const).map(m => (
@@ -5799,6 +5872,8 @@ export default function SitePage({
               )}
               {/* Google algorithm update markers (core / spam / discover) */}
               {googleUpdates && renderAlgoMarkers(algoMarkersForMode, t as never)}
+              {/* Link purchase markers — one per order, purple, from the purchase ledger */}
+              {renderNoteMarkers(purchaseMarkersForMode)}
             </ComposedChart>
           </ResponsiveContainer>
           )}

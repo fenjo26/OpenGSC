@@ -234,6 +234,7 @@ model Site {
   trackedKeywords       TrackedKeyword[]
   trackedQuestions      TrackedQuestion[]
   annotations           Annotation[]
+  magicPurchases        MagicPurchase[]
 
   // Microsoft Clarity integration
   clarityToken          String?   // Data Export API token (per-project in Clarity)
@@ -1365,6 +1366,30 @@ model Annotation {
   site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
 
   @@index([siteId, date])
+}
+
+// Magic-links purchase ledger (src/lib/magiclinks/purchases.ts) — one row per accepted brief
+// of a PAID order, written only after the provider accepted it. A created-but-unpaid task is
+// not a purchase. Chart markers and the annotations timeline derive from this table on read
+// (one event per order), so nothing duplicates and old orders appear retroactively. Accessed
+// through raw SQL like Annotation, with the same graceful degradation before db push.
+model MagicPurchase {
+  id        String   @id @default(cuid())
+  siteId    String
+  provider  String   // "fieldlink" | "magic369"
+  orderId   String
+  taskId    String?  // FieldLink only; 369Team has tasks nowhere, only orders
+  query     String   // the striking-distance query this row was bought for
+  targetUrl String
+  anchor    String?
+  language  String
+  quantity  Int
+  createdAt DateTime @default(now())
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([siteId, createdAt])
+  @@index([orderId])
 }
 
 // ─── Third-party metric cache (Ahrefs / Semrush) ──────────────────────────────

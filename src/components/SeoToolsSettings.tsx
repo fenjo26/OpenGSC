@@ -228,8 +228,107 @@ function AparserCard() {
   );
 }
 
-function ModelSelector() {
+/**
+ * Magic links — the two link-purchase providers (FieldLink, 369Team).
+ *
+ * One card, two tokens, same lifecycle as the A-Parser one: the test button checks what was
+ * TYPED against the live provider before anything is persisted, and the stored values live in
+ * the ordinary settings mirror (`seoKey_fieldlink` / `seoKey_magic369`), so server routes
+ * resolve them through the same fallback chain as every other credential.
+ */
+function MagicLinksCard() {
   const { t } = useLanguage();
+  const [flToken, setFlToken] = useState("");
+  const [mToken, setMToken] = useState("");
+  const [flVisible, setFlVisible] = useState(false);
+  const [mVisible, setMVisible] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => {
+    setFlToken(localStorage.getItem("seoKey_fieldlink") || "");
+    setMToken(localStorage.getItem("seoKey_magic369") || "");
+  }, []);
+
+  const persist = (fl: string, m: string) => {
+    if (fl) localStorage.setItem("seoKey_fieldlink", fl); else localStorage.removeItem("seoKey_fieldlink");
+    if (m) localStorage.setItem("seoKey_magic369", m); else localStorage.removeItem("seoKey_magic369");
+  };
+
+  async function check() {
+    setBusy(true); setStatus(null);
+    try {
+      const res = await fetch("/api/magiclinks/status", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fieldlinkToken: flToken.trim(), magic369Token: mToken.trim() }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setStatus({ ok: false, text: String(d?.error || res.status) }); setBusy(false); return; }
+      persist(flToken.trim(), mToken.trim());
+      const money = (minor: number | null) => (minor == null ? "—" : `${(minor / 100).toFixed(2)}`);
+      const parts: string[] = [];
+      if (d?.fieldlink?.tested) parts.push(`FieldLink: ${d.fieldlink.ok ? `✓ ${money(d.fieldlink.balanceMinor)}` : `✕ ${d.fieldlink.message ?? ""}`}`);
+      if (d?.magic369?.tested) parts.push(`369Team: ${d.magic369.ok ? `✓ ${money(d.magic369.balanceMinor)}` : `✕ ${d.magic369.message ?? ""}`}`);
+      setStatus({ ok: parts.every(p => p.includes("✓")), text: parts.join(" · ") || t("mlNothingToTest") });
+    } catch (e: any) {
+      setStatus({ ok: false, text: String(e?.message ?? e) });
+    }
+    setBusy(false);
+  }
+
+  const configured = !!flToken.trim() || !!mToken.trim();
+  const inp: React.CSSProperties = { width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-primary)", fontSize: "12px", outline: "none", boxSizing: "border-box", fontFamily: "monospace" };
+
+  return (
+    <div style={{ padding: "16px", borderRadius: "10px", border: `1px solid ${configured ? "rgba(124,58,237,0.35)" : "var(--color-border)"}`, background: configured ? "rgba(124,58,237,0.05)" : "rgba(255,255,255,0.02)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
+        <div style={{ width: "30px", height: "30px", borderRadius: "8px", background: "rgba(124,58,237,0.14)", border: "1px solid rgba(124,58,237,0.3)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "13px", fontWeight: 700, color: "#7C3AED", flexShrink: 0 }}>⬡</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--color-text-primary)" }}>{t("mlCardTitle")}</div>
+          <div style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>{t("mlCardRole")}</div>
+        </div>
+        <span style={{ fontSize: "11px", fontWeight: 600, color: configured ? "#10B981" : "var(--color-text-secondary)" }}>
+          {configured ? t("mlConfigured") : "Not set"}
+        </span>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "8px" }}>
+        <div style={{ position: "relative" }}>
+          <input style={{ ...inp, paddingRight: "36px" }} type={flVisible ? "text" : "password"} placeholder={t("mlFlToken")} value={flToken} onChange={e => setFlToken(e.target.value)} />
+          <button onClick={() => setFlVisible(v => !v)} style={{ position: "absolute", right: "8px", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", padding: 0, display: "flex" }}>
+            <Eye size={14} style={{ opacity: flVisible ? 1 : 0.5 }} />
+          </button>
+        </div>
+        <div style={{ position: "relative" }}>
+          <input style={{ ...inp, paddingRight: "36px" }} type={mVisible ? "text" : "password"} placeholder={t("ml369Token")} value={mToken} onChange={e => setMToken(e.target.value)} />
+          <button onClick={() => setMVisible(v => !v)} style={{ position: "absolute", right: "8px", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", padding: 0, display: "flex" }}>
+            <Eye size={14} style={{ opacity: mVisible ? 1 : 0.5 }} />
+          </button>
+        </div>
+        <div style={{ display: "flex", gap: "8px" }}>
+          <button onClick={check} disabled={busy || !configured}
+            style={{ padding: "8px 14px", borderRadius: "8px", border: "none", background: busy ? "rgba(255,255,255,0.06)" : "rgba(124,58,237,0.15)", color: busy ? "var(--color-text-secondary)" : "#7C3AED", fontSize: "12px", fontWeight: 600, cursor: busy ? "wait" : "pointer", display: "flex", alignItems: "center", gap: "5px" }}>
+            <RefreshCw size={12} style={{ animation: busy ? "spin 1s linear infinite" : undefined }} /> {busy ? t("aparserChecking") : t("aparserTest")}
+          </button>
+          <a href="/magiclinks" style={{ padding: "8px 14px", borderRadius: "8px", border: "1px solid var(--color-border)", color: "var(--color-text-secondary)", fontSize: "12px", fontWeight: 600, textDecoration: "none", display: "flex", alignItems: "center" }}>{t("mlOpenOrders")}</a>
+        </div>
+      </div>
+
+      {status && (
+        <div style={{ fontSize: "11px", fontFamily: "monospace", color: status.ok ? "#10B981" : "#f87171", marginBottom: "6px", wordBreak: "break-all" }}>
+          {status.ok ? "✓ " : "✕ "}{status.text}
+        </div>
+      )}
+
+      <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.5, marginBottom: "6px" }}>{t("mlCardHint")}</div>
+      <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>
+        📍 {t("mlCardInstr")}
+      </div>
+    </div>
+  );
+}
+
+function ModelSelector() {  const { t } = useLanguage();
   const [groups, setGroups] = useState<{ provider: string; name: string; models: { id: string; label: string }[] }[]>([]);
   const [loading, setLoading] = useState(false);
   const [fetchErr, setFetchErr] = useState(false);
@@ -639,6 +738,7 @@ export function SeoProviderKeysSection() {
       <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
         {SEO_PROVIDERS.map(p => <SeoKeyCard key={p.id} provider={p} />)}
         <AparserCard />
+        <MagicLinksCard />
       </div>
       <div style={{ marginTop: "14px", padding: "11px 14px", borderRadius: "8px", background: "rgba(16,163,127,0.06)", border: "1px solid rgba(16,163,127,0.18)", fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
         💡 {t("seoSetTip")}

@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, ShoppingCart } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { withShare, isGuestView } from "@/lib/shareParam";
 import { usePersistedState, isReportDays } from "@/lib/usePersistedState";
 import KeywordWeightsBar from "@/components/KeywordWeightsBar";
+import BuyLinksModal, { type BuyRow } from "@/components/magiclinks/BuyLinksModal";
 import { useKeywordWeights, type KeywordWeight, type UseKeywordWeights } from "@/lib/seo/useKeywordWeights";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -148,8 +149,9 @@ function InfoBlock({
 
 // Two more numeric columns than before (volume, KD, potential). They are always present, even
 // with no data behind them: a column that appears only once you have paid for it is a feature
-// nobody discovers.
-const GRID = "1.3fr 0.9fr 92px 78px 68px 62px 74px 82px 54px 80px";
+// nobody discovers. The leading checkbox and the trailing buy button belong to the link
+// purchase flow — both hidden for guests on share links, like the Track buttons.
+const GRID = "34px 1.3fr 0.9fr 92px 78px 68px 62px 74px 82px 54px 80px 44px";
 
 // ─── Table ─────────────────────────────────────────────────────────────────────
 function KeywordsTable({ data, loading, siteDbId, weights, country }: {
@@ -209,6 +211,62 @@ function KeywordsTable({ data, loading, siteDbId, weights, country }: {
     return [...rows].sort((a, b) => sortKey === "position" ? a[sortKey] - b[sortKey] : b[sortKey] - a[sortKey]);
   }, [data, search, sortKey, weights, country]);
 
+  // ── Link purchases ──────────────────────────────────────────────────────────
+  // The pair key is query + full URL: exactly the unit a purchase covers, so the badge means
+  // "this pair has money on it", not "this keyword was bought for some other page".
+  const rowKey = (k: StrikingKeyword) => `${k.query}\n${k.fullUrl}`;
+
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [buyRows, setBuyRows] = useState<BuyRow[] | null>(null);
+  const [bought, setBought] = useState<Map<string, { quantity: number; lastAt: string }>>(new Map());
+
+  const loadPurchases = useCallback(() => {
+    if (!siteDbId || isGuestView()) return;
+    fetch(`/api/magiclinks/purchases?siteId=${encodeURIComponent(siteDbId)}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        const map = new Map<string, { quantity: number; lastAt: string }>();
+        for (const s of Array.isArray(d?.summaries) ? d.summaries : []) {
+          map.set(`${String(s.query)}\n${String(s.targetUrl)}`, { quantity: Number(s.quantity) || 0, lastAt: String(s.lastAt ?? "") });
+        }
+        setBought(map);
+      })
+      .catch(() => {});
+  }, [siteDbId]);
+  useEffect(() => { loadPurchases(); }, [loadPurchases]);
+
+  const toggleRowSel = (k: StrikingKeyword) => {
+    const key = rowKey(k);
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every(k => selected.has(rowKey(k)));
+  const toggleAllFiltered = () => {
+    setSelected(prev => {
+      if (allFilteredSelected) {
+        const next = new Set(prev);
+        for (const k of filtered) next.delete(rowKey(k));
+        return next;
+      }
+      const next = new Set(prev);
+      for (const k of filtered) next.add(rowKey(k));
+      return next;
+    });
+  };
+
+  const selectedRows = useMemo(
+    () => filtered.filter(k => selected.has(rowKey(k))),
+    [filtered, selected],
+  );
+
+  const openBuy = (rows: StrikingKeyword[]) => {
+    setBuyRows(rows.map(k => ({ query: k.query, targetUrl: k.fullUrl, siteId: k.siteId || siteDbId })));
+  };
+
   const SortBtn = ({ k, label }: { k: SortKey; label: string }) => (
     <button onClick={() => setSortKey(k)} style={{
       padding: "4px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: 600,
@@ -248,10 +306,21 @@ function KeywordsTable({ data, loading, siteDbId, weights, country }: {
       </div>
 
       {/* Summary badge */}
-      <div style={{ marginBottom: "16px" }}>
+      <div style={{ marginBottom: "16px", display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
         <div style={{ display: "inline-block", padding: "4px 12px", borderRadius: "20px", background: "rgba(245,158,11,0.1)", fontSize: "12px", fontWeight: 600, color: "#F59E0B" }}>
           {filtered.length} {t("sdkBadge")}
         </div>
+        {/* Bulk buy bar — appears only with a selection; the label says exactly what will be
+            ordered (N pairs), never a silent subset of it. */}
+        {!isGuestView() && selectedRows.length > 0 && (
+          <div style={{ display: "inline-flex", alignItems: "center", gap: "10px", padding: "4px 6px 4px 12px", borderRadius: "20px", background: "rgba(124,58,237,0.1)", fontSize: "12px", fontWeight: 600, color: "#7C3AED" }}>
+            <span>{t("mlSelected").replace("{n}", String(selectedRows.length))}</span>
+            <button onClick={() => openBuy(selectedRows)}
+              style={{ display: "flex", alignItems: "center", gap: "5px", padding: "4px 11px", borderRadius: "14px", border: "none", background: "#7C3AED", color: "#fff", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}>
+              <ShoppingCart size={12} /> {t("mlBuy")}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Table header */}
@@ -262,6 +331,11 @@ function KeywordsTable({ data, loading, siteDbId, weights, country }: {
         fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)",
         textTransform: "uppercase", letterSpacing: "0.05em", gap: "10px",
       }}>
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <input type="checkbox" checked={allFilteredSelected} onChange={toggleAllFiltered}
+            title={t("mlSelectAll")}
+            style={{ width: "14px", height: "14px", accentColor: "#7C3AED", cursor: "pointer" }} />
+        </div>
         <div>{t("sdkColQuery")}</div>
         <div>{t("cdmPage")}</div>
         <div>Proximity</div>
@@ -291,14 +365,22 @@ function KeywordsTable({ data, loading, siteDbId, weights, country }: {
             const prox = proximityLabel(item.position);
             const w = weights.get(item.query, country);
             const potential = potentialOf(item, w);
+            const key = rowKey(item);
+            const isSel = selected.has(key);
+            const purchase = bought.get(key);
             return (
               <div key={`${item.query}-${item.page}-${i}`} style={{
                 display: "grid", gridTemplateColumns: GRID,
                 padding: "11px 14px", gap: "10px",
                 borderBottom: i < filtered.length - 1 ? "1px solid var(--color-border)" : "none",
-                background: i % 2 === 0 ? "var(--color-card)" : "rgba(255,255,255,0.02)",
+                background: isSel ? "rgba(124,58,237,0.06)" : i % 2 === 0 ? "var(--color-card)" : "rgba(255,255,255,0.02)",
                 alignItems: "center", fontSize: "13px",
-              }}>
+                }}>
+                {/* Select for bulk buy */}
+                <div style={{ display: "flex", alignItems: "center" }}>
+                  <input type="checkbox" checked={isSel} onChange={() => toggleRowSel(item)}
+                    style={{ width: "14px", height: "14px", accentColor: "#7C3AED", cursor: "pointer" }} />
+                </div>
                 {/* Query */}
                 <div style={{ display: "flex", alignItems: "center", gap: "6px", overflow: "hidden" }}>
                   {tracked.has(item.query.toLowerCase()) ? (
@@ -312,6 +394,14 @@ function KeywordsTable({ data, loading, siteDbId, weights, country }: {
                   <span style={{ fontWeight: 600, color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={item.query}>
                     {item.query}
                   </span>
+                  {/* Already-bought mark: this exact query+URL pair has paid links behind it —
+                      the badge says how many, so buying round two is a decision, not an accident. */}
+                  {purchase && (
+                    <span title={t("mlBoughtN").replace("{n}", String(purchase.quantity)) + ` · ${purchase.lastAt.slice(0, 10)}`}
+                      style={{ flexShrink: 0, fontSize: "10px", fontWeight: 700, color: "#7C3AED", background: "rgba(124,58,237,0.12)", padding: "2px 6px", borderRadius: "10px", marginLeft: "4px", whiteSpace: "nowrap" }}>
+                      ✦ {purchase.quantity}
+                    </span>
+                  )}
                   {item.siteName && (
                     <span style={{ fontSize: "10px", color: "var(--color-text-secondary)", background: "rgba(255,255,255,0.06)", padding: "2px 6px", borderRadius: "4px", marginLeft: "4px", flexShrink: 0 }} title={item.siteName}>
                       {item.siteName}
@@ -354,10 +444,30 @@ function KeywordsTable({ data, loading, siteDbId, weights, country }: {
                 <div style={{ textAlign: "right", fontWeight: 600, color: potential != null && potential > 0 ? "var(--color-success)" : "var(--color-text-tertiary)" }}>
                   {potential != null ? `+${fmtK(potential)}` : "—"}
                 </div>
+                {/* Buy one pair */}
+                {!isGuestView() && (
+                  <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                    <button onClick={() => openBuy([item])} title={t("mlBuyOne")}
+                      style={{ width: "26px", height: "26px", borderRadius: "7px", border: "1px solid rgba(124,58,237,0.35)", background: "rgba(124,58,237,0.08)", color: "#7C3AED", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
+                      <ShoppingCart size={12} />
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
+      )}
+
+      {/* The buy window — mounted from this table so both the single-row and bulk paths share
+          one component and one money flow. */}
+      {buyRows && (
+        <BuyLinksModal
+          siteId={siteDbId}
+          rows={buyRows}
+          onClose={() => setBuyRows(null)}
+          onDone={loadPurchases}
+        />
       )}
     </div>
   );

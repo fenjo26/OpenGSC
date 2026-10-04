@@ -4,6 +4,7 @@ import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { getAlgoUpdates } from "@/lib/algoUpdatesServer";
 import { rawQuery, rawExec, dayExpr } from "@/lib/db/raw";
+import { purchaseOrderEvents, providerName } from "@/lib/magiclinks/purchases";
 
 // Annotations — dated notes about site changes, scored against real Search Console data.
 //
@@ -192,6 +193,27 @@ export async function GET(req: Request) {
     // Only updates the site could have lived through, and only as far back as the selected period.
     // Yesterday's update would report a confident nothing, so the newest day is excluded too.
     const oldest = iso(addDays(new Date(), -lookback));
+
+    // Link purchases ride the same timeline: dated events scored against the same traffic,
+    // with each order's target pages scoping its before/after exactly like a page-scoped
+    // note. Derived from the purchase ledger on every read — nothing is copied into the
+    // Annotation table, so a replayed submit or a re-import cannot fork the row.
+    const purchaseEvents = await purchaseOrderEvents(siteId, oldest).catch(() => []);
+    const purchaseEventRows = purchaseEvents.map(p => ({
+      id: `purchase:${p.orderId}`,
+      date: new Date(`${p.dayUtc}T00:00:00Z`),
+      title: `Link purchase · ${p.quantity} · ${providerName(p.provider)}`,
+      description: p.orderId,
+      scope: "pages",
+      urls: p.targetUrls.join("\n"),
+      kind: "purchase" as const,
+      updateType: null,
+      endDate: null,
+      mlQuantity: p.quantity,
+      mlProvider: p.provider,
+      orderId: p.orderId,
+    }));
+
     const updateRows = updates
       .filter(u => u.date >= oldest && u.date <= iso(addDays(new Date(), -1)))
       .map(u => ({
@@ -208,6 +230,7 @@ export async function GET(req: Request) {
 
     const rows = [
       ...noteRows.map(r => ({ ...r, kind: "note" as const, updateType: null, endDate: null })),
+      ...purchaseEventRows,
       ...updateRows,
     ].sort((a, b) => +new Date(b.date as any) - +new Date(a.date as any));
 
@@ -239,6 +262,12 @@ export async function GET(req: Request) {
         // end, and a note has neither.
         updateType: r.updateType,
         endDate: r.endDate,
+        // Only set on purchases: quantity and provider for the localized row label, orderId for
+        // the jump to the order. FieldLink briefs are re-read from the service, so this is the
+        // paid truth, not the browser's draft.
+        mlQuantity: (r as { mlQuantity?: number }).mlQuantity ?? null,
+        mlProvider: (r as { mlProvider?: string }).mlProvider ?? null,
+        orderId: (r as { orderId?: string }).orderId ?? null,
         date: iso(d),
         title: r.title,
         description: r.description || "",
