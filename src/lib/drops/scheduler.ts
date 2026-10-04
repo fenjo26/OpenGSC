@@ -52,9 +52,12 @@ async function refreshWatchedDr() {
     if (!byUser.has(r.userId)) byUser.set(r.userId, []);
     byUser.get(r.userId)!.push(r.domain);
   }
-  for (const [userId, domains] of byUser) {
-    try {
-      const { ratings, keyFound } = await drForDomains(userId, domains);
+    for (const [userId, domains] of byUser) {
+      try {
+        // force: these rows are here because the month flipped, and the 7-day value cache
+        // would otherwise delay the new point by up to its whole TTL (a row measured on the
+        // 29th waits until the 6th for a point October already owes it).
+        const { ratings, keyFound } = await drForDomains(userId, domains, { force: true });
       if (keyFound && Object.keys(ratings).length) {
         console.log(`[drops-watch] DR series refreshed for ${Object.keys(ratings).length} watched domain(s)`);
       }

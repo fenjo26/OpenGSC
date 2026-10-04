@@ -56,8 +56,17 @@ export interface DrResult {
  *
  * `keyFound: false` means nothing could be fetched and nothing new will arrive — the caller
  * must say so out loud rather than show "Обновлено: 0", which reads as a broken button.
+ *
+ * `force` is the monthly-walk semantics: the caller knows this domain owes a new month's
+ * DrSnapshot point, and the 7-day value cache must not delay that point by up to its whole
+ * TTL. Cached values still seed `ratings` (a failed fetch then leaves the old number rather
+ * than nothing), but nothing is treated as fresh — every domain is re-measured.
  */
-export async function drForDomains(userId: string, domains: string[]): Promise<DrResult> {
+export async function drForDomains(
+  userId: string,
+  domains: string[],
+  opts: { force?: boolean } = {},
+): Promise<DrResult> {
   const unique = [...new Set(domains.map(d => d.trim().toLowerCase().replace(/^www\./, "")))].filter(Boolean);
   if (!unique.length) return { ratings: {}, keyFound: false };
 
@@ -69,8 +78,8 @@ export async function drForDomains(userId: string, domains: string[]): Promise<D
   } catch { /* table missing until prisma db push */ }
   const fresh = new Set<string>();
   for (const r of cached) {
-    if (Date.now() - new Date(r.checkedAt).getTime() < TTL_MS) {
-      ratings[r.domain] = Number(r.dr);
+    ratings[r.domain] = Number(r.dr);
+    if (!opts.force && Date.now() - new Date(r.checkedAt).getTime() < TTL_MS) {
       fresh.add(r.domain);
     }
   }

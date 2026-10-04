@@ -20,6 +20,11 @@ export async function register() {
     // calls only, and a tick with nothing due is a single indexed query.
     const { startDropsScheduler } = await import('@/lib/drops/scheduler');
     startDropsScheduler();
+    // The monthly DR walk: one fresh Ahrefs DR point per site domain per month, so the DR
+    // sparklines on the site page and dashboard have a series to draw without anyone having
+    // to open every site after each cache expiry. Free public endpoint, capped per tick.
+    const { startDrSiteScheduler } = await import('@/lib/seo/drSiteScheduler');
+    startDrSiteScheduler();
     // SERP Monitor: resumes running checks, starts scheduled ones, then enriches new hosts.
     // A-Parser only, so no per-request bill; idle ticks are one indexed query.
     const { startSerpmonScheduler } = await import('@/lib/serpmon/scheduler');

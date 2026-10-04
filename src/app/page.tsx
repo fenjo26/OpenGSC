@@ -8,11 +8,12 @@ import {
   ArrowUpDown, SlidersHorizontal, Sparkles, Percent, MoveUp,
   Globe, Monitor, FileText, ChevronDown, Check,
   Image, Video, Newspaper, Compass,
-  Download, Tag, X, Loader2, RefreshCw,
+  Download, Tag, X, Loader2, RefreshCw, AlertTriangle,
 } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer, Tooltip } from "recharts";
 import { buildCandleRows } from "@/lib/chartCandles";
 import { CandlePanes, useChartTypePref } from "@/components/CandleChartParts";
+import { DrSparkline, drSeriesText, type DrPoint } from "@/components/DrSparkline";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { useHealthStatus } from "@/components/SiteHealthPanel";
@@ -643,6 +644,10 @@ function PortfolioPageContent() {
   // Ahrefs Domain Rating per domain (free public API, server-cached). License requires
   // visible "Domain Rating by Ahrefs" attribution wherever DR is shown.
   const [drMap, setDrMap] = useState<Record<string, number>>({});
+  // The panel's own monthly DR series per domain (DrSnapshot) — what turns each card's "DR 12"
+  // chip into "12, and it fell from 24 three months ago". Grown by the monthly DR walk, read
+  // here as a pure local fetch: free, keyless, absent until the second point exists.
+  const [drHist, setDrHist] = useState<Record<string, DrPoint[]>>({});
   // True while the background DR backfill (below) is still working through the site list —
   // lets cards distinguish "still checking" from "checked, nothing found" instead of just
   // popping in whenever their chunk finishes, which reads as broken rather than loading.
@@ -1008,6 +1013,26 @@ function PortfolioPageContent() {
         // Whatever is still missing after this is a real "no rating", not a pending one — cards
         // stop pulsing and fall back to showing nothing, same as before this loading state existed.
         setDrLoading(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sites.length]);
+
+  // The monthly DR series behind those chips (DrSnapshot) — the same one-ask-per-session
+  // batch shape as the DR backfill above. The route is a pure local read, so it neither
+  // spends anything nor needs a key; domains with no stored series are simply absent.
+  useEffect(() => {
+    if (!sites.length) return;
+    const domains = [...new Set(sites.map(s => getDomain(s.url).toLowerCase().replace(/^www\./, "")).filter(d => d.includes(".")))];
+    (async () => {
+      for (let i = 0; i < domains.length; i += 250) {
+        try {
+          const res = await fetch(`/api/dr/history?domains=${encodeURIComponent(domains.slice(i, i + 250).join(","))}`);
+          if (!res.ok) continue;
+          const d = await res.json();
+          const hist = (d?.history ?? {}) as Record<string, DrPoint[]>;
+          if (Object.keys(hist).length) setDrHist(prev => ({ ...prev, ...hist }));
+        } catch { /* decorative until it exists */ }
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1684,12 +1709,30 @@ function PortfolioPageContent() {
                 <div style={{display:"flex",gap:"4px",alignSelf:"flex-start",marginLeft:"22px",flexWrap:"wrap"}}>
                   {/* DR is the free, always-available number and keeps its own styling. The
                       optional paid metrics sit beside it in a muted chip so their absence
-                      reads as "not loaded" rather than "broken". */}
-                  {dr != null && (
-                    <span title="Domain Rating by Ahrefs (ahrefs.com)" style={{...chip,background:"rgba(58,87,252,0.12)",color:"#3A57FC"}}>
-                      DR {Math.round(dr)}
-                    </span>
-                  )}
+                      reads as "not loaded" rather than "broken". The sparkline is the
+                      accumulated monthly series behind the number — same shape as the site
+                      page's header: falling red, triangle when the ≥5-point penalty rule
+                      fires, months in the tooltip. Absent until the second point exists. */}
+                  {dr != null && (() => {
+                    const pts = drHist[key];
+                    const drop = pts && pts.length >= 2 ? pts[pts.length - 1].dr - pts[0].dr : 0;
+                    const title = pts && pts.length >= 2
+                      ? `${t("drHistHint")}\n\n${drSeriesText(pts)}` + (drop <= -5 ? `\n\n${t("drHistFlag").replace("{n}", String(Math.abs(drop)))}` : "")
+                      : undefined;
+                    return (
+                      <>
+                        <span title="Domain Rating by Ahrefs (ahrefs.com)" style={{...chip,background:"rgba(58,87,252,0.12)",color:"#3A57FC"}}>
+                          DR {Math.round(dr)}
+                        </span>
+                        {pts && pts.length >= 2 && (
+                          <span title={title} style={{display:"flex",alignItems:"center",gap:3,cursor:"help",filter:blur?"blur(4px)":"none",transition:"filter 0.25s"}}>
+                            <DrSparkline points={pts} width={40} height={14} />
+                            {drop <= -5 && <AlertTriangle size={11} color="#ff6b62" />}
+                          </span>
+                        )}
+                      </>
+                    );
+                  })()}
                   {drPending && (
                     <span title="Domain Rating by Ahrefs — checking…" className="dr-pulse" style={{...chip,background:"rgba(58,87,252,0.06)",color:"var(--color-text-tertiary)"}}>
                       DR
