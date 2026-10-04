@@ -30,7 +30,7 @@ import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { usePersistedState, isGscPeriod, isIsoDate } from "@/lib/usePersistedState";
 import { getTaskCreds, getAhrefsDrKey } from "@/lib/seo/keys";
 import TrafficChip from "@/components/TrafficChip";
-import { DrSparkline, drSeriesText, type DrPoint } from "@/components/DrSparkline";
+import { drSeriesText, type DrPoint } from "@/components/DrSparkline";
 import BacklinkProfile from "@/components/BacklinkProfile";
 import BacklinkImportDialog from "@/components/BacklinkImportDialog";
 import type { BacklinkRow, BacklinkListStats } from "@/lib/seo/backlinkTypes";
@@ -39,7 +39,7 @@ import {
   SlidersHorizontal, ChevronDown, Smartphone, Monitor, Tablet,
   Users, Activity, Zap, DollarSign, Link2, Check, Star,
   FileText, Globe, Search, ArrowLeftRight, BookmarkCheck, Calendar, X, Download,
-  ChevronLeft, ChevronRight, ExternalLink, Pencil, Trash2, AlertTriangle,
+  ChevronLeft, ChevronRight, ExternalLink, Pencil, Trash2,
 } from "lucide-react";
 import {
   ComposedChart, LineChart, AreaChart, Area, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -5590,15 +5590,19 @@ export default function SitePage({
               <span style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0 }}>
                 <span style={{ fontSize: "11px", fontWeight: 700, padding: "2px 7px", borderRadius: "6px", background: "rgba(58,87,252,0.12)", color: "#3A57FC", ...blurStyle }}>DR {Math.round(drValue)}</span>
                 {/* The accumulated monthly series next to the number it qualifies: a chip that
-                    reads "DR 12" reads very differently with 24→12 under it. The tooltip carries
-                    the months and the ≥5-point penalty rule; the triangle repeats the verdict. */}
+                    reads "DR 12" reads very differently with ↓12 beside it. Same arrow-delta
+                    shape as the dashboard cards — the tooltip carries the months and the
+                    ≥5-point penalty rule; no chip until the delta rounds to something. */}
                 {drHist.length >= 2 && (() => {
                   const drop = drHist[drHist.length - 1].dr - drHist[0].dr;
+                  const shown = Math.round(Math.abs(drop));
+                  if (!shown) return null;
                   const title = `${t("drHistHint")}\n\n${drSeriesText(drHist)}`
-                    + (drop <= -5 ? `\n\n${t("drHistFlag").replace("{n}", String(Math.abs(drop)))}` : "");
-                  return <span title={title} style={{ display: "flex", alignItems: "center", gap: 3, cursor: "help" }}>
-                    <DrSparkline points={drHist} width={44} height={16} />
-                    {drop <= -5 && <AlertTriangle size={12} color="#ff6b62" />}
+                    + (drop <= -5 ? `\n\n${t("drHistFlag").replace("{n}", String(shown))}` : "");
+                  return <span title={title} style={{ fontSize: "11px", fontWeight: 700, padding: "2px 7px", borderRadius: "6px", cursor: "help",
+                    background: drop < 0 ? "rgba(239,68,68,0.12)" : "rgba(16,185,129,0.12)",
+                    color: drop < 0 ? "#F87171" : "#34D399", ...blurStyle }}>
+                    {drop < 0 ? "↓" : "↑"}{shown}
                   </span>;
                 })()}
                 <a href="https://ahrefs.com/" target="_blank" rel="noreferrer" style={{ fontSize: "10px", color: "var(--color-text-tertiary)", textDecoration: "none" }} title={t("drByAhrefs")}>{t("byAhrefs")}</a>
