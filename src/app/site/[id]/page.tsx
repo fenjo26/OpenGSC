@@ -5679,7 +5679,15 @@ export default function SitePage({
       {activeTab === "optimize" && <OptimizeTab siteDbId={siteDbId} />}
 
       {/* ── Health tab ── */}
-      {activeTab === "health" && <><UptimePanel siteDbId={siteDbId} /><SiteHealthPanel siteDbId={siteDbId} /></>}
+      {/* UptimePanel renders a bare .card in every state — it doesn't carry the tab's outer
+          padding the way SiteHealthPanel does, so it gets wrapped here (same as BacklinkProfile
+          above). Bottom padding is 0: the panel below brings its own 28px top. */}
+      {activeTab === "health" && (
+        <>
+          <div style={{ padding: "28px 32px 0" }}><UptimePanel siteDbId={siteDbId} /></div>
+          <SiteHealthPanel siteDbId={siteDbId} />
+        </>
+      )}
 
       {activeTab === "audit" && <SiteAuditPanel siteDbId={siteDbId} />}
 

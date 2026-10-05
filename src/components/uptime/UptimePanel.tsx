@@ -62,13 +62,18 @@ function LatencySparkline({ days, downDays }: { days: UptimeSummary["latency"]; 
   });
   if (current.length > 1) segments.push(current);
   const down = days.map((d, i) => ({ day: d.day, i })).filter(({ day }) => downDays.has(day));
+  // Fixed pixel height + preserveAspectRatio="none": an SVG with only width="100%" grows its
+  // height with the card width (aspect-locked viewBox), turning a 46px sparkline into a
+  // ~200px near-empty chart on a wide screen. Non-uniform scale means strokes need
+  // vector-effect to stay 1.5px, and down-markers are vertical ticks, not circles (a
+  // circle would squish into a wide ellipse).
   return (
-    <svg width="100%" viewBox={`0 0 ${width} ${height + 6}`} style={{ display: "block" }} role="img" aria-label={down.length ? `latency, 30 d, ${down.length} down` : "latency, 30 d"}>
+    <svg width="100%" height={height + 6} viewBox={`0 0 ${width} ${height + 6}`} preserveAspectRatio="none" style={{ display: "block" }} role="img" aria-label={down.length ? `latency, 30 d, ${down.length} down` : "latency, 30 d"}>
       {segments.map((seg, i) => (
-        <polyline key={i} points={seg.join(" ")} fill="none" stroke="var(--color-accent-blue)" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+        <polyline key={i} points={seg.join(" ")} fill="none" stroke="var(--color-accent-blue)" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
       ))}
       {down.map(({ day, i }) => (
-        <circle key={day} cx={xOf(i)} cy={height - 1} r="2" fill="var(--color-accent-red)" />
+        <line key={day} x1={xOf(i)} x2={xOf(i)} y1={height - 4} y2={height + 3} stroke="var(--color-accent-red)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
       ))}
     </svg>
   );
