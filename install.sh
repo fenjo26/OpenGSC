@@ -135,18 +135,11 @@ else
   success "PM2 installed"
 fi
 
-# ─── App dependencies ─────────────────────────────────────────────────────────
-header "App dependencies"
-info "Running npm install..."
-# --include=dev for the same reason as update.sh: the build needs Tailwind, its PostCSS plugin
-# and TypeScript, all of which are devDependencies that npm skips when NODE_ENV=production is
-# set in the environment this script happens to inherit.
-npm install --include=dev --silent
-# A successful npm install is not the same as a usable one — see the comment in update.sh.
-node scripts/check-native-deps.mjs || error "Dependencies installed but not usable — see above."
-success "Dependencies installed"
-
 # ─── .env ─────────────────────────────────────────────────────────────────────
+# This must exist BEFORE `npm install`, not after: the package's postinstall runs
+# `prisma generate`, prisma.config.ts resolves env("DATABASE_URL") while loading, and on a
+# fresh machine with no .env the whole install dies with PrismaConfigEnvError. Existing
+# installs never saw this because their .env was already on disk.
 header ".env"
 if [ -f ".env" ]; then
   warn ".env already exists — skipping. Edit manually if needed."
@@ -197,6 +190,17 @@ EOF
 
   success ".env created (NEXTAUTH_URL=${NEXTAUTH_URL})"
 fi
+
+# ─── App dependencies ─────────────────────────────────────────────────────────
+header "App dependencies"
+info "Running npm install..."
+# --include=dev for the same reason as update.sh: the build needs Tailwind, its PostCSS plugin
+# and TypeScript, all of which are devDependencies that npm skips when NODE_ENV=production is
+# set in the environment this script happens to inherit.
+npm install --include=dev --silent
+# A successful npm install is not the same as a usable one — see the comment in update.sh.
+node scripts/check-native-deps.mjs || error "Dependencies installed but not usable — see above."
+success "Dependencies installed"
 
 # ─── Build ────────────────────────────────────────────────────────────────────
 header "Database & Build"
