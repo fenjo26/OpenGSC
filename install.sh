@@ -319,7 +319,19 @@ echo -e "${GREEN}║          ✔ Installation complete!        ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════╝${NC}"
 echo ""
 
-if [[ "${INSTALL_NGINX^^}" == "Y" ]]; then
+# The closing URL is the one thing the operator will act on, so it must not lie. With a real
+# domain it is the address to open in a browser. With localhost it is NOT reachable from the
+# operator's machine on a headless VPS — printing it as "Open:" invites a dead link, so that
+# case gets the SSH-tunnel recipe and the reinstall command instead.
+if [[ "$DOMAIN" == "localhost" ]]; then
+  echo -e "  ${YELLOW}Installed without a domain — the app answers on this server only:${NC}"
+  echo -e "  ${CYAN}http://localhost:${APP_PORT}${NC}"
+  echo ""
+  echo -e "  From your own machine it is reachable through an SSH tunnel:"
+  echo -e "    ${CYAN}ssh -L ${APP_PORT}:localhost:${APP_PORT} root@<this-server>${NC}"
+  echo -e "  For normal use reinstall with your domain (Google login is bound to its redirect URI):"
+  echo -e "    ${CYAN}rm .env && bash install.sh${NC} — answer with the domain at the first prompt."
+elif [[ "${INSTALL_NGINX^^}" == "Y" ]]; then
   if [[ "${SETUP_SSL^^}" == "Y" ]]; then
     echo -e "  Open: ${CYAN}https://${DOMAIN}${NC}"
   else
