@@ -71,7 +71,23 @@ fi
 # ─── Collect config ───────────────────────────────────────────────────────────
 header "Configuration"
 
-ask DOMAIN    "Domain or server IP (e.g. seo.example.com or 1.2.3.4): " "localhost"
+# The domain is not a label: Nginx server_name, the SSL certificate and the Google OAuth
+# redirect URI are all derived from it. Google Console must list exactly
+# https://<domain>/api/auth/callback/google under "Authorized redirect URIs", so a domain
+# left at the localhost default by mistake builds an app nobody can log into — the OAuth
+# client redirects to the real domain while the app announces itself as localhost.
+# Hence the explanation before the prompt and the confirmation loop when the default is kept.
+echo -e "  ${YELLOW}Enter the domain you will open the dashboard at in the browser.${NC}"
+echo -e "  For Google login to work, Google Console must list this exact redirect URI"
+echo -e "  under Authorized redirect URIs:"
+echo -e "  ${CYAN}https://<your-domain>/api/auth/callback/google${NC}"
+echo ""
+while :; do
+  ask DOMAIN "Domain or server IP (e.g. seo.example.com or 1.2.3.4): " "localhost"
+  if [[ "$DOMAIN" != "localhost" ]]; then break; fi
+  ask KEEP_LOCALHOST "No domain given — keep localhost? Google login works for local testing only [y/N]: " "N"
+  if [[ "${KEEP_LOCALHOST^^}" == "Y" ]]; then break; fi
+done
 ask INSTALL_NGINX "Install Nginx reverse proxy? [Y/n]: " "Y"
 ask SETUP_SSL "Setup SSL with Let's Encrypt? (only if real domain) [y/N]: " "N"
 APP_PORT=3000
@@ -167,7 +183,8 @@ else
   echo -e "${YELLOW}  Google OAuth credentials are required for login.${NC}"
   echo -e "  Create them at: ${CYAN}https://console.cloud.google.com${NC}"
   echo -e "  APIs & Services → Credentials → Create OAuth 2.0 Client ID"
-  echo -e "  Redirect URI: ${CYAN}${NEXTAUTH_URL}/api/auth/callback/google${NC}"
+  echo -e "  Add this exact URI to the client's ${BOLD}Authorized redirect URIs${NC}:"
+  echo -e "  ${CYAN}${NEXTAUTH_URL}/api/auth/callback/google${NC}"
   echo ""
   ask        GOOGLE_CLIENT_ID     "Google Client ID: " ""
   ask_secret GOOGLE_CLIENT_SECRET "Google Client Secret: "
