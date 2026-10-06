@@ -558,12 +558,14 @@ A self-hosted **doorway-domain network** for operators who need pages indexed fa
 |---|---|---|
 | **OS** | Ubuntu 22.04 LTS | Ubuntu 22.04 / 24.04 LTS |
 | **CPU** | 1 vCPU | 2 vCPU |
-| **RAM** | 1 GB | 2 GB |
+| **RAM** | 1 GB + swap (see below) | 2 GB |
 | **Disk** | 10 GB SSD | 20 GB SSD |
 | **Domain** | **Required** | With SSL (Let's Encrypt) |
 | **Node.js** | 22 LTS | 24 LTS (installed for you) |
 
 > Node.js, PM2, Nginx, and every dependency are installed **automatically** by the script — nothing to set up by hand.
+
+> 💡 **Why swap on a small VPS:** the production build (Turbopack) peaks at ~2.4 GB of memory — on a 2 GB box with no swap the kernel kills `next build` with a bare `Killed` ([#21](https://github.com/fenjo26/OpenGSC/issues/21)). Running the app needs far less than building it. `install.sh` and `update.sh` check for this themselves: when RAM + swap combined is under ~3 GB, they create a 4 GB swapfile before building (2 GB when disk is tight; inside containers, where swap can't be enabled, they warn and continue). Updating by hand (`git pull && npm run build && pm2 restart`) needs the same swap — add it once: `fallocate -l 4G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile`.
 
 > ⚠️ **A domain is required.** Google OAuth does not work against a bare IP address. Point a domain at your server's IP before installing.
 

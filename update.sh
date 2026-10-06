@@ -81,6 +81,12 @@ fi
 echo "[update] prisma db push..."
 npx prisma db push --skip-generate || npx prisma db push || { echo "[update] prisma db push FAILED"; echo "___OPENGSC_UPDATE_FAIL___"; exit 1; }
 
+# The Turbopack build peaks around 2.4 GB of memory (issue #21) — updates hit the same
+# OOM wall as installs on small boxes, so swap is ensured here too. The reset above has
+# already delivered this file to the working tree.
+source scripts/ensure-build-swap.sh
+ensure_build_swap
+
 echo "[update] npm run build..."
 npm run build || { echo "[update] build FAILED"; echo "___OPENGSC_UPDATE_FAIL___"; exit 1; }
 

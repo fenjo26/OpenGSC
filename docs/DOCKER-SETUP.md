@@ -13,6 +13,11 @@ process management differs (Docker instead of PM2/Nginx).
 > ⚠️ The domain requirement still applies for anything internet-facing: Google OAuth does not
 > accept bare IPs. For local use, `http://localhost:3000` works fine as the OAuth origin.
 
+> ⚠️ The **build** stage compiles the app with Turbopack, which peaks around 2.4 GB of memory —
+> and a container cannot add swap to paper over a shortage, so the memory has to be real
+> (Docker Desktop: check the VM's allocation). The running container is far lighter; a 1 GB
+> limit works fine once the image is built.
+
 ## Quickstart
 
 ```bash

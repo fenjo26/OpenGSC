@@ -230,6 +230,12 @@ npx prisma db push 2>/dev/null
 info "Seeding Casino RAG knowledge base..."
 node scripts/seed-rag.mjs || warn "RAG seed skipped (non-fatal) — run 'node scripts/seed-rag.mjs' manually"
 
+# The Turbopack build peaks around 2.4 GB of memory; on a small VPS that only ends one
+# way — the OOM killer and a bare "Killed" (issue #21). Swap is ensured before the
+# build starts, not diagnosed after it dies.
+source scripts/ensure-build-swap.sh
+ensure_build_swap
+
 info "Building Next.js..."
 npm run build
 
