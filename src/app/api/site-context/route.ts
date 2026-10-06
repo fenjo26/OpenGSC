@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { getSiteContext, applyContextUpdates } from "@/lib/siteContext/store";
+import { contextIsEmpty, bootstrapSuggestions } from "@/lib/siteContext/bootstrap";
 
 // The Context card's backend — the same store the MCP tools use (get_site_context /
 // update_site_context), so the operator's edits and the agent's write-backs land on one
@@ -21,7 +22,11 @@ export async function GET(req: Request) {
   const siteId = new URL(req.url).searchParams.get("siteId");
   const site = await ownSite(userId, siteId);
   if (!site) return NextResponse.json({ error: "Site not found" }, { status: 404 });
-  return NextResponse.json(await getSiteContext(site.id));
+  const ctx = await getSiteContext(site.id);
+  // Empty context → attach the same bootstrap proposals the MCP tool returns, so the card and
+  // the agent see (and confirm) identical suggestions — never two different proposal sets.
+  const bootstrap = contextIsEmpty(ctx) ? await bootstrapSuggestions(site.id) : undefined;
+  return NextResponse.json({ ...ctx, ...(bootstrap ? { bootstrap } : {}) });
 }
 
 export async function POST(req: Request) {

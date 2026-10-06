@@ -14,9 +14,12 @@ interface Section { key: string; title: string; content: string; updatedBy: stri
 interface Competitor { name: string; domain: string; terms: string[]; notes?: string; }
 interface KeyPage { id: string; url: string; role: string; topic: string; notes: string; updatedBy: string; updatedAt: string; }
 interface LogEntry { id: string; entryDate: string; summary: string; createdBy: string; }
+interface SuggestedKeyPage { url: string; role: string; clicks: number; impressions: number; }
+interface SuggestedCompetitor { domain: string; keywords: number; }
 interface Context {
   sections: Section[]; missingSections: string[]; competitors: Competitor[];
   keyPages: KeyPage[]; researchLog: LogEntry[];
+  bootstrap?: { suggestedKeyPages: SuggestedKeyPage[]; suggestedCompetitors: SuggestedCompetitor[]; sitemapUrls: number };
 }
 
 type SectionLabelKey = "scxSectionBusiness" | "scxSectionGoal" | "scxSectionPositioning" | "scxSectionWriting";
@@ -103,6 +106,42 @@ export default function SiteContextCard({ siteDbId }: { siteDbId: string }) {
             .map(k => TYPED.find(x => x.key === k))
             .filter((x): x is { key: string; label: SectionLabelKey } => !!x)
             .map(x => t(x.label)).join(", ")}
+        </div>
+      )}
+
+      {/* Bootstrap proposals on an empty context: the site's own top GSC pages and stored
+          competitor scans, offered as one-click adds. Proposals, not writes — they land only
+          when confirmed here or by the agent through update_site_context. */}
+      {ctx?.bootstrap && (ctx.bootstrap.suggestedKeyPages.length > 0 || ctx.bootstrap.suggestedCompetitors.length > 0) && (
+        <div style={{ marginTop: "12px", padding: "12px 14px", borderRadius: "10px", border: "1px dashed var(--color-border)", background: "var(--color-bg)" }}>
+          <div style={{ fontSize: "11.5px", fontWeight: 700, color: "var(--color-text-primary)", marginBottom: "2px" }}>{t("scxSuggestTitle")}</div>
+          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "8px" }}>{t("scxSuggestNote")}</div>
+          {ctx.bootstrap.suggestedKeyPages.length > 0 && (
+            <>
+              <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)", margin: "6px 0 4px" }}>{t("scxSuggestPages")}:</div>
+              {ctx.bootstrap.suggestedKeyPages.map(p => (
+                <div key={p.url} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "3px 0", fontSize: "11.5px" }}>
+                  <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "monospace", color: "var(--color-text-primary)" }} title={p.url}>{p.url}</span>
+                  <span style={{ color: "var(--color-text-tertiary)", flexShrink: 0 }}>{p.clicks.toLocaleString()} clicks</span>
+                  <button onClick={() => send([{ addKeyPages: [{ url: p.url, role: p.role }] }])} disabled={saving}
+                    title={t("scxSuggestAdd")} style={{ ...miniBtn, borderColor: "rgba(16,185,129,0.4)", color: "#10B981" }}><Plus size={12} /></button>
+                </div>
+              ))}
+            </>
+          )}
+          {ctx.bootstrap.suggestedCompetitors.length > 0 && (
+            <>
+              <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)", margin: "8px 0 4px" }}>{t("scxSuggestComps")}:</div>
+              {ctx.bootstrap.suggestedCompetitors.map(c => (
+                <div key={c.domain} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "3px 0", fontSize: "11.5px" }}>
+                  <span style={{ flex: 1, fontFamily: "monospace", color: "var(--color-text-primary)" }}>{c.domain}</span>
+                  <span style={{ color: "var(--color-text-tertiary)", flexShrink: 0 }}>{c.keywords.toLocaleString()} kw</span>
+                  <button onClick={() => send([{ addCompetitors: [{ name: c.domain, domain: c.domain }] }])} disabled={saving}
+                    title={t("scxSuggestAdd")} style={{ ...miniBtn, borderColor: "rgba(16,185,129,0.4)", color: "#10B981" }}><Plus size={12} /></button>
+                </div>
+              ))}
+            </>
+          )}
         </div>
       )}
 

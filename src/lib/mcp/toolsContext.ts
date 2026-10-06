@@ -9,6 +9,7 @@
 import { type McpTool, type Json } from "./shared";
 import { resolveSite } from "./shared";
 import { getSiteContext, renderContextMarkdown, applyContextUpdates } from "@/lib/siteContext/store";
+import { contextIsEmpty, bootstrapSuggestions } from "@/lib/siteContext/bootstrap";
 
 const PATCH_OPS_DESC = `updates: an array of patch ops —
 { section, content, title? } — set a typed section (business_overview | current_goal | positioning | writing_preferences) or a custom one (key "custom:<slug>"; empty content deletes it)
@@ -26,7 +27,7 @@ export const CONTEXT_TOOLS: McpTool[] = [
     cost: "local",
     readOnly: true,
     description:
-      "The site's shared AI context (Project Memory): business overview, current goal, positioning, writing preferences, custom sections, the competitor list (same as AI share of voice), key pages (money/hub/spoke) and the research log. Call this FIRST for any site work — it grounds every workflow and its missingSections list tells you what to fill instead of re-interviewing the user. The research log's rule: if the same research ran within the last 30 days, reuse that result and say so — do not re-buy it. Free, local; empty (not an error) before the context tables are migrated.",
+      "The site's shared AI context (Project Memory): business overview, current goal, positioning, writing preferences, custom sections, the competitor list (same as AI share of voice), key pages (money/hub/spoke) and the research log. Call this FIRST for any site work — it grounds every workflow and its missingSections list tells you what to fill instead of re-interviewing the user. The research log's rule: if the same research ran within the last 30 days, reuse that result and say so — do not re-buy it. On an EMPTY context the response carries `bootstrap`: key pages suggested from the site's own top GSC pages, competitors from stored gap scans, the sitemap size — proposals to confirm with the operator and write via update_site_context, never to write unreviewed. Free, local; empty (not an error) before the context tables are migrated.",
     inputSchema: {
       type: "object",
       properties: {
@@ -38,6 +39,7 @@ export const CONTEXT_TOOLS: McpTool[] = [
       const site = await resolveSite(userId, args.site);
       if (!site) return { error: "site_not_found" };
       const ctx = await getSiteContext(site.id);
+      const bootstrap = contextIsEmpty(ctx) ? await bootstrapSuggestions(site.id) : undefined;
       return {
         siteId: ctx.siteId,
         siteDomain: ctx.siteDomain,
@@ -46,6 +48,7 @@ export const CONTEXT_TOOLS: McpTool[] = [
         competitors: ctx.competitors,
         keyPages: ctx.keyPages,
         researchLog: ctx.researchLog,
+        ...(bootstrap ? { bootstrap } : {}),
         markdown: renderContextMarkdown(ctx),
       };
     },
