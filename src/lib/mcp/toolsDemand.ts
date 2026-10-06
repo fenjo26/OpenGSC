@@ -29,6 +29,7 @@ import { defaultLanguageFor } from "@/lib/seo/regions";
 import { writeKeywordCache, normalizeKeyword, recordUsage } from "@/lib/seo/metricsStore";
 import { runUpsert } from "@/lib/db/upsert";
 import { rawQuery } from "@/lib/db/raw";
+import { applyContextUpdates } from "@/lib/siteContext/store";
 
 /** Mirrors `/api/demand/keywords`, which owns the canonical values. */
 const SEARCH_TTL_DAYS = 14;
@@ -396,6 +397,23 @@ export const DEMAND_TOOLS: McpTool[] = [
       // hardcoded "dataforseo" and make an Ahrefs purchase look like a DataForSEO one.
 
       const rows = decorate(res.rows, site ? await ourQueries(site.id) : new Map());
+
+      // Research log (Project Memory): the paid call just happened, so the entry is written by
+      // the tool, not left to the caller's discipline. Next session's 30-day rule has something
+      // to check even if the agent forgets the preamble. No-op before the context tables exist.
+      if (site) {
+        try {
+          const verdicts = countVerdicts(rows);
+          await applyContextUpdates(site.id, [{
+            appendResearchLog: {
+              summary:
+                `Keyword research: seed "${seed}" (${country}/${language}, mode ${mode}, ${limit} rows). ` +
+                `Verdict: ${verdicts.reach ?? 0} reach / ${verdicts.wrong_page ?? 0} wrong_page / ${verdicts.none ?? 0} none — ` +
+                `${res.source}, $${(Math.round(res.usd * 10000) / 10000).toFixed(4)}`,
+            },
+          }], "mcp");
+        } catch { /* context tables not migrated — the research itself already succeeded */ }
+      }
 
       return {
         seed, country, language, mode,

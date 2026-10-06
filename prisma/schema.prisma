@@ -235,6 +235,9 @@ model Site {
   trackedQuestions      TrackedQuestion[]
   annotations           Annotation[]
   magicPurchases        MagicPurchase[]
+  contextSections       SiteContextSection[]
+  keyPages              SiteKeyPage[]
+  researchLog           SiteResearchLog[]
 
   // Microsoft Clarity integration
   clarityToken          String?   // Data Export API token (per-project in Clarity)
@@ -2422,6 +2425,66 @@ model ClientReportRun {
 
   report ClientReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
   @@index([reportId, createdAt])
+}
+
+// ─── Site context (Project Memory) ────────────────────────────────────────────
+// The shared AI context per site: what the business is, the current goal, positioning,
+// writing preferences, the curated competitor list, key pages and a research log. The
+// point of the store is that an agent's FIRST call for a site is this context — not a
+// re-interview of the user — and that the operator can inspect and correct everything
+// the AI believes (updatedBy provenance on every row).
+//
+// Competitors deliberately have no table here: Site.aeoCompetitors (AiCompetitor[]) is
+// already the site's competitor list, shared with AI share of voice — one list, edited
+// from two surfaces (the Context card and the AEO tracker), never two lists drifting.
+//
+// Access degrades the same way the rest of the post-initial-schema models do: before
+// `prisma db push` every read returns the empty context and every write is skipped.
+
+model SiteContextSection {
+  id         String    @id @default(cuid())
+  siteId     String
+  // business_overview | current_goal | positioning | writing_preferences — the typed
+  // vocabulary shared with the skills' "required sections" — or custom:<slug> for anything
+  // that does not fit yet (the pressure valve that tells us which key to promote next).
+  key        String
+  title      String    @default("")     // custom sections only; typed keys carry their own label
+  content    String    @default("")     // markdown, capped (see the store)
+  updatedBy  String    @default("user") // user | mcp — who last wrote it, shown in the UI
+  updatedAt  DateTime  @updatedAt
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@unique([siteId, key])
+}
+
+model SiteKeyPage {
+  id         String    @id @default(cuid())
+  siteId     String
+  url        String    // normalized (see the store); a curated shortlist, NOT a sitemap inventory
+  role       String    @default("other") // money | hub | spoke | other
+  topic      String    @default("")      // the topic/keyword this page is meant to win
+  notes      String    @default("")
+  updatedBy  String    @default("user")
+  updatedAt  DateTime  @updatedAt
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@unique([siteId, url])
+  @@index([siteId])
+}
+
+model SiteResearchLog {
+  id         String    @id @default(cuid())
+  siteId     String
+  entryDate  String    // YYYY-MM-DD, stamped by the server on append
+  summary    String    // "<what>: <inputs>. Verdict: <conclusion>" — enough to decide NOT to re-buy it
+  createdBy  String    @default("user") // user | mcp
+  createdAt  DateTime  @default(now())
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([siteId, createdAt])
 }
 
 // ─── Leads from the embeddable audit widget (N9) ─────────────────────────────

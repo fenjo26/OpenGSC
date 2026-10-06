@@ -51,3 +51,20 @@ Close with anything that needs the user's judgment (e.g. two cannibalizing pages
 - Do not invent metrics or queries. If a tool returns no data, say so and suggest the user syncs the site in OpenGSC first.
 - Positions are averages over the window — call them "avg position", not "rank".
 - Do not recommend deleting pages; recommend merge/redirect/differentiate and let the user decide.
+
+## Site context — read first, free
+
+`get_site_context` is this skill's step zero. It returns the site's shared memory — business
+overview, current goal, positioning, writing preferences, the competitor list, key pages and
+the research log — and grounds every decision below in what the operator already told us.
+
+1. Call it before any other tool. If it errors or comes back empty, continue without it; never
+   block the workflow on missing context.
+2. This skill especially needs: `current_goal`, `key pages`. If a needed section is
+   empty, do a minimal inline fill — ask the user (or infer from the site and confirm), write
+   it back with `update_site_context`, then continue. Never front-load a full interview.
+3. Before any PAID tool, check the research log: if the same research ran within the last 30
+   days, reuse that result and say so instead of re-buying it.
+4. On finish, write back what is durable — new or corrected key pages, competitors the work
+   revealed, positioning facts the user stated — and append a research-log entry if the
+   session spent paid units (`appendResearchLog`).

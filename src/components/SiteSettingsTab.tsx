@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Settings, Sparkles, Plus, X, Copy, Check, Trash2 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import MetricsImport from "@/components/MetricsImport";
+import SiteContextCard from "@/components/SiteContextCard";
 import { getTaskCreds } from "@/lib/seo/keys";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -722,6 +723,9 @@ export default function SiteSettingsTab({ domain, siteDbId }: { domain: string; 
       </div>
 
       {/* Sections */}
+      {/* Context first: it is what every AI surface reads before touching the site, and the
+          card doubles as the "what does the AI believe about this site" inspector. */}
+      <SiteContextCard siteDbId={siteDbId} />
       <BrandedSection siteDbId={siteDbId} domain={domain} />
       <ClustersSection siteDbId={siteDbId} />
       <GroupsSection siteDbId={siteDbId} />

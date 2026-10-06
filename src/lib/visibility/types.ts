@@ -2,6 +2,9 @@ export interface AiCompetitor {
   name: string;                 // display name
   domain: string;               // host without www; "" when the rival has no site
   terms: string[];              // brand spellings; name is always included implicitly
+  /** free-form operator note ("direct competitor, strong on comparison pages") — carried by
+   *  the site-context surface, ignored by share of voice */
+  notes?: string;
 }
 
 export interface SovEngineRow {

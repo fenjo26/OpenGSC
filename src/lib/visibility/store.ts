@@ -54,7 +54,8 @@ export function sanitizeCompetitors(list: unknown): AiCompetitor[] {
       .map(t => String(t ?? "").trim().slice(0, 80))
       .filter(Boolean)
       .slice(0, 10);
-    out.push({ name, domain, terms });
+    const notes = String((raw as AiCompetitor).notes ?? "").trim().slice(0, 200);
+    out.push(notes ? { name, domain, terms, notes } : { name, domain, terms });
     if (out.length >= MAX_COMPETITORS) break;
   }
   return out;
