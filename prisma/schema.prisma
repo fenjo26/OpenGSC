@@ -504,11 +504,22 @@ model SiteBacklink {
   // source is who created the row; sources is every channel that has since confirmed it, so a
   // link first pasted by hand and later seen by Ahrefs reads "manual,api" instead of losing its
   // provenance to whichever writer touched it last.
-  source    String   @default("api")  // api|csv|manual
+  source    String   @default("api")  // api|csv|manual|purchase
   sources   String   @default("")     // comma-separated: "api,csv"
   favorite  Boolean  @default(false)
   priceNote String   @default("")
   note      String   @default("")
+
+  // --- purchased placement provenance (меджики loop) ---
+  // Set when the donor URL arrived from a paid order's publication list (a FieldLink destination
+  // or a 369Team article) rather than from Ahrefs or the operator. The purchase import is a
+  // fourth writer next to CONTRACT.md §1's three: on create it names identity + source/sources
+  // + these two fields; on an existing row it only claims provenance (purchase* + appends
+  // "purchase" to sources) and never touches check*, api* or tox* — those groups belong to
+  // their own writers, and a bought placement on a donor Ahrefs already knows must not lose
+  // either side's story.
+  purchaseProvider String   @default("")  // "" | fieldlink | magic369
+  purchaseOrderId  String   @default("")  // the provider's order id, deep-links back to the order
 
   // --- toxicity of the donor, for THIS site's niche (N2) ---
   toxLevel      String    @default("unknown") // unknown|clean|suspicious|toxic
@@ -1384,6 +1395,10 @@ model MagicPurchase {
   anchor    String?
   language  String
   quantity  Int
+  // Set once the order's placements have been imported into SiteBacklink — or the order reached
+  // a terminal state with none to import. Null = the tracking pass (/magiclinks detail view or
+  // the verify scheduler) should still poll this order.
+  trackedAt DateTime?
   createdAt DateTime @default(now())
 
   site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)

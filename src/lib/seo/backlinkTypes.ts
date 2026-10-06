@@ -9,7 +9,9 @@
 
 export type PlacementStatus = "unchecked" | "found" | "missing" | "blocked" | "error";
 export type PageStatus = "unknown" | "alive" | "dead" | "blocked";
-export type BacklinkSource = "api" | "csv" | "manual";
+/** "purchase" = the row was created by the меджики import (a paid order's publication URL);
+ *  everything else is the original trio from CONTRACT.md §1. */
+export type BacklinkSource = "api" | "csv" | "manual" | "purchase";
 export type BacklinkEventKind =
   | "appeared" | "lost" | "returned"
   | "rel_downgraded" | "rel_upgraded"

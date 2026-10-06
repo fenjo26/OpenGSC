@@ -68,6 +68,9 @@ type Tpl = {
   dglWhatLost: string;
   dglWhatDowngraded: string;
   dglWhatTargetChanged: string;
+  dglWhatAnchorChanged: string;
+  alertPurchasedTitle: (site: string) => string;
+  alertPurchasedBody: (n: number, lines: string) => string;
   alertBacklinkLossTitle: (site: string) => string;
   alertBacklinkLossBody: (n: number, x: string) => string;
   alertFavoriteLinkTitle: (site: string) => string;
@@ -201,6 +204,9 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     dglWhatLost: "the link is gone",
     dglWhatDowngraded: "downgraded to nofollow / sponsored / ugc",
     dglWhatTargetChanged: "now points somewhere else",
+    dglWhatAnchorChanged: "the anchor was replaced",
+    alertPurchasedTitle: site => `💸 Bought links changed: ${site}`,
+    alertPurchasedBody: (n, lines) => `${n} purchased placement(s) changed:\n${lines}`,
     alertBacklinkLossTitle: site => `🔗 Unusual backlink loss on ${site}`,
     alertBacklinkLossBody: (n, x) => `${n} backlinks lost since the last check — ${x}× the usual rate.`,
     alertFavoriteLinkTitle: site => `⭐ A favourite link changed on ${site}`,
@@ -308,6 +314,9 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     dglWhatLost: "ссылка пропала",
     dglWhatDowngraded: "стала nofollow / sponsored / ugc",
     dglWhatTargetChanged: "теперь ведёт на другую страницу",
+    dglWhatAnchorChanged: "анкор заменили",
+    alertPurchasedTitle: site => `💸 Купленные ссылки: ${site}`,
+    alertPurchasedBody: (n, lines) => `Изменилось купленных размещений: ${n}\n${lines}`,
     alertBacklinkLossTitle: site => `🔗 Необычная потеря ссылок: ${site}`,
     alertBacklinkLossBody: (n, x) => `С прошлой проверки потеряно ссылок: ${n} — это ${x}× от обычного.`,
     alertFavoriteLinkTitle: site => `⭐ Изменилась избранная ссылка: ${site}`,
@@ -415,6 +424,9 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     dglWhatLost: "посилання зникло",
     dglWhatDowngraded: "стало nofollow / sponsored / ugc",
     dglWhatTargetChanged: "тепер веде на іншу сторінку",
+    dglWhatAnchorChanged: "якір замінили",
+    alertPurchasedTitle: site => `💸 Куплені посилання: ${site}`,
+    alertPurchasedBody: (n, lines) => `Змінилося куплених розміщень: ${n}\n${lines}`,
     alertBacklinkLossTitle: site => `🔗 Незвична втрата посилань: ${site}`,
     alertBacklinkLossBody: (n, x) => `З минулої перевірки втрачено посилань: ${n} — це ${x}× від звичайного.`,
     alertFavoriteLinkTitle: site => `⭐ Змінилося обране посилання: ${site}`,
@@ -522,6 +534,9 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     dglWhatLost: "le lien a disparu",
     dglWhatDowngraded: "passé en nofollow / sponsored / ugc",
     dglWhatTargetChanged: "pointe maintenant ailleurs",
+    dglWhatAnchorChanged: "l'ancre a été remplacée",
+    alertPurchasedTitle: site => `💸 Liens achetés modifiés : ${site}`,
+    alertPurchasedBody: (n, lines) => `${n} placement(s) acheté(s) ont changé :\n${lines}`,
     alertBacklinkLossTitle: site => `🔗 Perte de backlinks inhabituelle sur ${site}`,
     alertBacklinkLossBody: (n, x) => `${n} backlinks perdus depuis la dernière vérification — ${x}× le rythme habituel.`,
     alertFavoriteLinkTitle: site => `⭐ Un lien favori a changé sur ${site}`,
@@ -629,6 +644,9 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     dglWhatLost: "el enlace desapareció",
     dglWhatDowngraded: "pasó a nofollow / sponsored / ugc",
     dglWhatTargetChanged: "ahora apunta a otra página",
+    dglWhatAnchorChanged: "el texto ancla fue reemplazado",
+    alertPurchasedTitle: site => `💸 Enlaces comprados modificados: ${site}`,
+    alertPurchasedBody: (n, lines) => `${n} colocación(es) comprada(s) han cambiado:\n${lines}`,
     alertBacklinkLossTitle: site => `🔗 Pérdida inusual de backlinks en ${site}`,
     alertBacklinkLossBody: (n, x) => `${n} backlinks perdidos desde la última revisión — ${x}× el ritmo habitual.`,
     alertFavoriteLinkTitle: site => `⭐ Cambió un enlace favorito en ${site}`,
@@ -736,6 +754,9 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     dglWhatLost: "der Link ist weg",
     dglWhatDowngraded: "auf nofollow / sponsored / ugc herabgestuft",
     dglWhatTargetChanged: "zeigt jetzt woandershin",
+    dglWhatAnchorChanged: "der Ankertext wurde ausgetauscht",
+    alertPurchasedTitle: site => `💸 Gekaufte Links geändert: ${site}`,
+    alertPurchasedBody: (n, lines) => `${n} gekaufte Platzierung(en) haben sich geändert:\n${lines}`,
     alertBacklinkLossTitle: site => `🔗 Ungewöhnlicher Backlink-Verlust bei ${site}`,
     alertBacklinkLossBody: (n, x) => `${n} Backlinks seit der letzten Prüfung verloren — ${x}× so viel wie üblich.`,
     alertFavoriteLinkTitle: site => `⭐ Ein Favoriten-Link hat sich geändert bei ${site}`,
@@ -843,6 +864,9 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     dglWhatLost: "链接已消失",
     dglWhatDowngraded: "降为 nofollow / sponsored / ugc",
     dglWhatTargetChanged: "现在指向其他页面",
+    dglWhatAnchorChanged: "锚文本被更换",
+    alertPurchasedTitle: site => `💸 购买的外链发生变化：${site}`,
+    alertPurchasedBody: (n, lines) => `${n} 条已购链接发生变化：\n${lines}`,
     alertBacklinkLossTitle: site => `🔗 外链异常丢失：${site}`,
     alertBacklinkLossBody: (n, x) => `自上次检查以来丢失 ${n} 条外链 — 是常规速率的 ${x}×。`,
     alertFavoriteLinkTitle: site => `⭐ 重点外链发生变化：${site}`,

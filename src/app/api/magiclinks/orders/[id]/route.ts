@@ -2,9 +2,23 @@ import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { fieldLinkClientFor, magic369ClientFor } from "@/lib/magiclinks/providers";
 import { isMagicProviderId, PROVIDER_FIELDLINK } from "@/lib/magiclinks/purchases";
+import {
+  importPurchasedPlacements,
+  isFieldLinkTerminal,
+  isMagic369Terminal,
+  markOrderTracked,
+  orderOwner,
+  placementsFromFieldLink,
+  placementsFromMagic369,
+} from "@/lib/magiclinks/tracking";
 
 // GET /api/magiclinks/orders/[id]?provider=fieldlink|magic369 — one order in full: per-row
 // progress, publication URLs and (FieldLink) indexing state.
+//
+// Opening a detail view is also the fast path of the tracking loop: the placements this order
+// has already published land in SiteBacklink right here (fire-and-forget — the response does
+// not wait for the import), so bought links start being verified without waiting for the hourly
+// pass. The scheduler does the same for orders nobody opens.
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +35,15 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
       const client = await fieldLinkClientFor(userId);
       if (!client) return NextResponse.json({ error: "not_configured" }, { status: 400 });
       const { order, rows } = await client.order(id);
+      void (async () => {
+        const owner = await orderOwner(id);
+        if (!owner || owner.trackedAt) return;
+        await importPurchasedPlacements({
+          siteId: owner.siteId, provider: PROVIDER_FIELDLINK, orderId: id,
+          placements: placementsFromFieldLink(rows),
+        });
+        if (isFieldLinkTerminal(order.status)) await markOrderTracked(PROVIDER_FIELDLINK, id);
+      })().catch(() => { /* the import is a bonus, not the response's job */ });
       return NextResponse.json({
         provider,
         order,
@@ -46,6 +69,15 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
       client.order(id),
       client.orderArticles(id).catch(() => []),
     ]);
+    void (async () => {
+      const owner = await orderOwner(id);
+      if (!owner || owner.trackedAt) return;
+      await importPurchasedPlacements({
+        siteId: owner.siteId, provider: "magic369", orderId: id,
+        placements: placementsFromMagic369(articles),
+      });
+      if (isMagic369Terminal(order)) await markOrderTracked("magic369", id);
+    })().catch(() => { /* same as above */ });
     return NextResponse.json({
       provider,
       order,

@@ -36,6 +36,18 @@ interface DetailRow {
   error: string | null;
 }
 
+interface PulseProvider {
+  provider: string;
+  name: string;
+  placements: number;
+  found: number;
+  missing: number;
+  blocked: number;
+  error: number;
+  unchecked: number;
+  lastCheckedAt: string | null;
+}
+
 const money = (minor: number | null) => (minor == null ? "—" : `${(minor / 100).toFixed(minor % 100 === 0 ? 0 : 2)}`);
 const unitOf = (p: string) => (p === "fieldlink" ? "cr." : "tok.");
 const pathOf = (url: string) => { try { return new URL(url).pathname || "/"; } catch { return url; } };
@@ -44,6 +56,7 @@ const hostOf = (url: string | null) => { if (!url) return ""; try { return new U
 export default function MagicLinksPage() {
   const { t } = useLanguage();
   const [orders, setOrders] = useState<OrderRow[]>([]);
+  const [pulse, setPulse] = useState<PulseProvider[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
@@ -54,12 +67,14 @@ export default function MagicLinksPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [ordersRes, statusRes] = await Promise.all([
+      const [ordersRes, statusRes, pulseRes] = await Promise.all([
         fetch("/api/magiclinks/orders").then(r => (r.ok ? r.json() : null)).catch(() => null),
         fetch("/api/magiclinks/status").then(r => (r.ok ? r.json() : null)).catch(() => null),
+        fetch("/api/magiclinks/pulse").then(r => (r.ok ? r.json() : null)).catch(() => null),
       ]);
       setOrders(Array.isArray(ordersRes?.orders) ? ordersRes.orders : []);
       setErrors(ordersRes?.errors ?? {});
+      setPulse(Array.isArray(pulseRes?.providers) ? pulseRes.providers : []);
       const providers = Array.isArray(statusRes?.providers) ? statusRes.providers : [];
       setConfigured(providers.some((p: { configured: boolean }) => p.configured));
     } catch { /* the banner below covers a total failure */ }
@@ -113,6 +128,32 @@ export default function MagicLinksPage() {
           {errors.fieldlink ? `FieldLink: ${errors.fieldlink}` : ""}
           {errors.fieldlink && errors.magic369 ? " · " : ""}
           {errors.magic369 ? `369Team: ${errors.magic369}` : ""}
+        </div>
+      )}
+
+      {/* Pulse of bought placements: per provider, how many are standing / gone / unconfirmed.
+          Shown only when there is something imported — the card is a consequence of purchases,
+          not a permanent fixture next to an empty order list. */}
+      {pulse.length > 0 && (
+        <div style={{ border: "1px solid var(--color-border)", borderRadius: "12px", background: "var(--color-card)", padding: "14px 16px", marginBottom: "16px" }}>
+          <div style={{ fontSize: "12px", fontWeight: 700, color: "var(--color-text-primary)", marginBottom: "10px" }}>{t("mlPulseTitle")}</div>
+          {pulse.map(p => (
+            <div key={p.provider} style={{ display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap", padding: "6px 0", fontSize: "12px" }}>
+              <span style={{ fontSize: "10px", fontWeight: 700, padding: "2px 7px", borderRadius: "10px", color: p.provider === "fieldlink" ? "#3B82F6" : "#10B981", background: p.provider === "fieldlink" ? "rgba(59,130,246,0.12)" : "rgba(16,185,129,0.12)" }}>
+                {p.name}
+              </span>
+              <span style={{ color: "var(--color-text-secondary)" }}>
+                <strong style={{ color: "var(--color-text-primary)" }}>{p.placements}</strong> {t("mlPulsePlacements")}
+              </span>
+              <span style={{ color: "#10B981" }}>{t("mlPulseFound")}: <strong>{p.found}</strong></span>
+              {p.missing > 0 && <span style={{ color: "#EF4444" }}>{t("mlPulseMissing")}: <strong>{p.missing}</strong></span>}
+              {p.blocked > 0 && <span style={{ color: "#F59E0B" }}>{t("mlPulseBlocked")}: <strong>{p.blocked}</strong></span>}
+              {p.unchecked > 0 && <span style={{ color: "var(--color-text-tertiary)" }}>{t("mlPulseUnchecked")}: <strong>{p.unchecked}</strong></span>}
+              <span style={{ color: "var(--color-text-tertiary)", fontSize: "11px", marginLeft: "auto" }}>
+                {p.lastCheckedAt ? `${t("mlPulseLastCheck")} ${p.lastCheckedAt.slice(0, 10)}` : t("mlPulseNeverChecked")}
+              </span>
+            </div>
+          ))}
         </div>
       )}
 

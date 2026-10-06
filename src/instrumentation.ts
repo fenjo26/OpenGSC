@@ -52,6 +52,11 @@ export async function register() {
     // Backlink toxicity: hourly recalculation of sites with new donors + toxic_new alerts (N2).
     const { startBacklinkToxScheduler } = await import('@/lib/backlinks/scheduler');
     startBacklinkToxScheduler();
+    // The меджики loop: imports paid orders' publication URLs into SiteBacklink and re-verifies
+    // placements whose last check is older than a week through the same runner the manual
+    // button uses. Both halves are free and degrade silently before `db push`.
+    const { startBacklinkVerifyScheduler } = await import('@/lib/backlinks/verifyScheduler');
+    startBacklinkVerifyScheduler();
     // Local SEO: GBP posts due for publishing, reviews every 6 h, citations weekly (N4).
     const { startLocalScheduler } = await import('@/lib/local/scheduler');
     startLocalScheduler();

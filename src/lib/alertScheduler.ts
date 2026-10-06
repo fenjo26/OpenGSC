@@ -11,6 +11,7 @@
 //   lost_link     — referring domains above a DR threshold disappeared from the stored profile
 //   backlink_loss — link losses ran far above this site's own baseline (no fixed threshold)
 //   favorite_link — a link marked favourite was lost, downgraded to nofollow or re-targeted
+//   purchased_link — a BOUGHT placement (меджики) was lost, re-anchored, downgraded or re-targeted
 
 import { prisma } from "@/lib/prisma";
 import { notifyUser } from "@/lib/notify";
@@ -35,6 +36,11 @@ export interface AlertSettings {
   // или отсутствует по смыслу (favoriteLink — одна испорченная избранная ссылка это уже повод).
   backlinkLoss: { on: boolean };
   favoriteLink: { on: boolean };
+  // Порча купленных ссылок (меджики): lost / anchor_changed / rel_downgraded / target_changed
+  // на строках с purchaseProvider. Включён по умолчанию и молчит сам, пока купленные плейсменты
+  // не импортированы. В отличие от backlinkLoss не требует полной выгрузки Ahrefs: наша
+  // собственная проверка донора — прямое наблюдение, а не вывод из отсутствия в выгрузке.
+  purchasedLink: { on: boolean };
   balanceLow: { on: boolean; percent: number; minUsd: number };
   providerDown: { on: boolean; failures: number };
   // SERP Monitor storm alert (serp_storm). On by default: it fires only for projects whose run
@@ -57,6 +63,7 @@ export const DEFAULT_ALERT_SETTINGS: AlertSettings = {
   // ни одной завершённой полной выгрузки, поэтому пустым шумом это не станет.
   backlinkLoss: { on: true },
   favoriteLink: { on: true },
+  purchasedLink: { on: true },
   // Provider watches. Оба молчат сами, пока для них нет данных: balance_low читает кэш
   // балансов (наполняется refresh'ем и страницей балансов), provider_down — журнал вызовов
   // провайдеров. percent — «осталось меньше N% лимита»; провайдеры без фиксированной квоты
@@ -81,6 +88,7 @@ export async function getAlertSettings(userId: string): Promise<AlertSettings> {
       lostLink: { ...DEFAULT_ALERT_SETTINGS.lostLink, ...(s.lostLink ?? {}) },
       backlinkLoss: { ...DEFAULT_ALERT_SETTINGS.backlinkLoss, ...(s.backlinkLoss ?? {}) },
       favoriteLink: { ...DEFAULT_ALERT_SETTINGS.favoriteLink, ...(s.favoriteLink ?? {}) },
+      purchasedLink: { ...DEFAULT_ALERT_SETTINGS.purchasedLink, ...(s.purchasedLink ?? {}) },
       balanceLow: { ...DEFAULT_ALERT_SETTINGS.balanceLow, ...(s.balanceLow ?? {}) },
       providerDown: { ...DEFAULT_ALERT_SETTINGS.providerDown, ...(s.providerDown ?? {}) },
       serpmonStorm: { ...DEFAULT_ALERT_SETTINGS.serpmonStorm, ...(s.serpmonStorm ?? {}) },
@@ -287,7 +295,7 @@ async function checkUser(userId: string, s: AlertSettings): Promise<Pending[]> {
 
       const [events, syncs, completeSyncs] = await Promise.all([
         prisma.siteBacklinkEvent.findMany({
-          where: { siteId: { in: siteIds }, createdAt: { gte: since }, kind: { in: ["lost", "rel_downgraded", "target_changed"] } },
+          where: { siteId: { in: siteIds }, createdAt: { gte: since }, kind: { in: ["lost", "rel_downgraded", "target_changed", "anchor_changed"] } },
           orderBy: { createdAt: "desc" }, take: 20_000,
         }),
         prisma.siteBacklinkSync.findMany({
@@ -303,7 +311,7 @@ async function checkUser(userId: string, s: AlertSettings): Promise<Pending[]> {
 
       const ids = [...new Set(events.map(e => e.backlinkId))];
       const linkRows = ids.length
-        ? await prisma.siteBacklink.findMany({ where: { id: { in: ids } }, select: { id: true, urlFrom: true, favorite: true } })
+        ? await prisma.siteBacklink.findMany({ where: { id: { in: ids } }, select: { id: true, urlFrom: true, favorite: true, purchaseProvider: true } })
         : [];
       const linkById = new Map(linkRows.map(r => [r.id, r]));
 
@@ -354,6 +362,7 @@ async function checkUser(userId: string, s: AlertSettings): Promise<Pending[]> {
           if (e.kind === "lost" && !countsAsLoss(e)) continue;
           const what = e.kind === "lost" ? L.dglWhatLost
             : e.kind === "rel_downgraded" ? L.dglWhatDowngraded
+            : e.kind === "anchor_changed" ? L.dglWhatAnchorChanged
             : L.dglWhatTargetChanged;
           out.push({
             type: "favorite_link", siteId: e.siteId,
@@ -361,6 +370,39 @@ async function checkUser(userId: string, s: AlertSettings): Promise<Pending[]> {
             message: L.alertFavoriteLinkBody(row.urlFrom, what),
             // Дедуп по id события, как audit_score по id аудита: один факт — одно письмо.
             dedupeKey: `favorite_link:${e.id}`,
+          });
+        }
+      }
+
+      // 3. Порча купленной ссылки (меджики). Без порога и без гейта полноты выгрузки: строка
+      // существует, потому что за неё заплатили, а lost здесь — прямое наблюдение нашей
+      // проверки («страница открылась, ссылки нет»), а не вывод из отсутствия в выгрузке.
+      if (s.purchasedLink.on) {
+        const WHAT: Record<string, string> = {
+          lost: L.dglWhatLost,
+          anchor_changed: L.dglWhatAnchorChanged,
+          rel_downgraded: L.dglWhatDowngraded,
+          target_changed: L.dglWhatTargetChanged,
+        };
+        const bySite = new Map<string, Array<{ urlFrom: string; kind: string }>>();
+        for (const e of events) {
+          if (!(e.kind in WHAT)) continue;
+          const row = linkById.get(e.backlinkId);
+          if (!row?.purchaseProvider) continue;
+          const list = bySite.get(e.siteId) ?? [];
+          list.push({ urlFrom: row.urlFrom, kind: e.kind });
+          bySite.set(e.siteId, list);
+        }
+        for (const [siteId, list] of bySite) {
+          const hostOf = (u: string) => { try { return new URL(/^https?:\/\//i.test(u) ? u : `https://${u}`).hostname; } catch { return u; } };
+          const lines = list.slice(0, 8).map(x => `• ${hostOf(x.urlFrom)} — ${WHAT[x.kind]}`).join("\n");
+          out.push({
+            type: "purchased_link", siteId,
+            title: L.alertPurchasedTitle(String(siteName.get(siteId))),
+            message: L.alertPurchasedBody(list.length, lines),
+            // Как у backlink_loss: день, а не событие — десять снятых за один проход ссылок
+            // это одна новость, а не десять писем.
+            dedupeKey: `purchased_link:${siteId}:${isoDay()}`,
           });
         }
       }
