@@ -87,8 +87,20 @@ npx prisma db push --skip-generate || npx prisma db push || { echo "[update] pri
 source scripts/ensure-build-swap.sh
 ensure_build_swap
 
+# The build erases .next before writing the new one, so an app left running crash-loops
+# through the entire build window — nginx answers 502 and pm2 burns restarts on a server
+# that cannot start. Stopped first, started after: the window is exactly as long, but it
+# is quiet instead of on fire. (Same fallback chain as the restart below.)
+echo "[update] stopping the app for the build window..."
+pm2 stop opengsc >/dev/null 2>&1 || pm2 stop all >/dev/null 2>&1 || echo "[update] pm2 stop failed — continuing"
+
 echo "[update] npm run build..."
-npm run build || { echo "[update] build FAILED"; echo "___OPENGSC_UPDATE_FAIL___"; exit 1; }
+npm run build || {
+  echo "[update] build FAILED"
+  echo "[update] the app stays STOPPED (a failed build leaves no .next to serve) — fix the build, then: pm2 restart opengsc"
+  echo "___OPENGSC_UPDATE_FAIL___"
+  exit 1
+}
 
 # Mark success BEFORE the restart — pm2 restart kills this process's parent shell context,
 # so the UI must be able to see the done marker in the log even if the restart truncates output.
