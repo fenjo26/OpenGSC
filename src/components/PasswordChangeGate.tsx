@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { signOut } from "next-auth/react";
 import { Check, Copy, KeyRound, Loader2, X } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 
@@ -65,7 +66,9 @@ export default function PasswordChangeGate() {
       const body = await res.json();
       if (!res.ok) throw new Error(body?.error || "password_change_failed");
       try { window.localStorage.removeItem(DISMISS_KEY); } catch { /* private mode */ }
-      setState("none");
+      // The session that submitted this form was issued before the new password. It is now
+      // rejected, so leave it instead of rendering a shell whose next request is a 401.
+      await signOut({ callbackUrl: "/login" });
     } catch (reason) { setError(reason instanceof Error ? reason.message : "password_change_failed"); }
     finally { setBusy(false); }
   }

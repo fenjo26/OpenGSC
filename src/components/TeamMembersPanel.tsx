@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { signOut } from "next-auth/react";
 import {
   AlertTriangle, Check, Copy, Crown, KeyRound, Loader2, Plus, RefreshCw, Shield, Trash2, UserX,
 } from "lucide-react";
@@ -139,7 +140,7 @@ export default function TeamMembersPanel() {
       </button>
     </div>}
 
-    <MyPassword me={data.me} t={t as (k: string) => string} onSaved={() => void load()} />
+    <MyPassword me={data.me} t={t as (k: string) => string} />
 
     <div style={{ ...card, padding: 0 }}>
       <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--color-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -196,13 +197,12 @@ export default function TeamMembersPanel() {
  * goes back to being a data connection. The prompt says that plainly rather than hiding a security
  * change behind a settings row.
  */
-function MyPassword({ me, t, onSaved }: { me: Me; t: (k: string) => string; onSaved: () => void }) {
+function MyPassword({ me, t }: { me: Me; t: (k: string) => string }) {
   const hasPassword = me.hasPassword !== false;
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ currentPassword: "", newPassword: "", confirm: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [done, setDone] = useState(false);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -215,7 +215,7 @@ function MyPassword({ me, t, onSaved }: { me: Me; t: (k: string) => string; onSa
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body?.error || "password_change_failed");
-      setDone(true); setOpen(false); setForm({ currentPassword: "", newPassword: "", confirm: "" }); onSaved();
+      await signOut({ callbackUrl: "/login" });
     } catch (reason) { setError(reason instanceof Error ? reason.message : "password_change_failed"); }
     finally { setBusy(false); }
   }
@@ -223,7 +223,6 @@ function MyPassword({ me, t, onSaved }: { me: Me; t: (k: string) => string; onSa
   return <div style={{ ...card, ...(hasPassword ? {} : { borderColor: "rgba(255,159,10,.4)" }) }}>
     <h2 style={h2}>{hasPassword ? t("myPasswordTitle") : t("myPasswordSetTitle")}</h2>
     <p style={hint}>{hasPassword ? t("myPasswordHint") : t("myPasswordSetHint")}</p>
-    {done && <p style={{ ...hint, color: "var(--color-accent-green)", marginTop: 6 }}>{t("myPasswordSaved")}</p>}
     {!open
       ? <button style={{ ...ghost, marginTop: 10 }} onClick={() => setOpen(true)}><KeyRound size={13} /> {hasPassword ? t("myPasswordChange") : t("myPasswordSet")}</button>
       : <form onSubmit={submit} style={{ display: "grid", gap: 8, maxWidth: 360, marginTop: 12 }}>

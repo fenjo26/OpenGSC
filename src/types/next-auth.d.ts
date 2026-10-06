@@ -22,5 +22,10 @@ declare module "next-auth" {
 declare module "next-auth/jwt" {
   interface JWT {
     sub: string;
+    /**
+     * `User.passwordUpdatedAt` in milliseconds at the moment this token was signed.
+     * `0` means the column was null. Absent on tokens issued before the claim existed.
+     */
+    pwdAt?: number;
   }
 }

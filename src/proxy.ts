@@ -9,6 +9,7 @@
 
 import { withAuth } from "next-auth/middleware";
 import { NextResponse } from "next/server";
+import { passwordSessionRevoked } from "./lib/auth/sessionRevocation";
 
 /**
  * The header the matched path travels on.
@@ -56,7 +57,7 @@ export default withAuth(
       //     JSON-RPC — the route's own Bearer check never gets to run. The check is
       //     not skipped, only moved: /api/mcp validates User.mcpToken itself and
       //     answers a JSON-RPC 401 when it is missing or wrong.
-      authorized: ({ token, req }) => {
+      authorized: async ({ token, req }) => {
         const { pathname, searchParams } = req.nextUrl;
         if (pathname === "/api/indexer/webhook") return true;
         if (pathname === "/api/mcp" || pathname.startsWith("/api/mcp/")) return true;
@@ -93,7 +94,13 @@ export default withAuth(
         // N10: PWA assets must load before any session exists — the service worker fetches
         // them itself; no data inside.
         if (pathname === "/manifest.webmanifest" || pathname === "/sw.js" || pathname.startsWith("/icons/")) return true;
-        return !!token;
+        // A JWT with no subject is the empty token `jwt` writes after a password change.
+        if (!token?.sub) return false;
+        // Membership is still checked per request. This only drops sessions whose password
+        // changed after the token was stamped — the proxy never runs the JWT callback, so
+        // without this a page load would still be served to a revoked cookie.
+        if (await passwordSessionRevoked(token)) return false;
+        return true;
       },
     },
   }

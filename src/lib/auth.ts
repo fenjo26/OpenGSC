@@ -8,6 +8,8 @@ import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import { prisma } from "./prisma";
 import { ownerAuthState } from "./team/owner";
 import { decideGoogleSignIn, envFlag, parseEmailList } from "./googleSignIn";
+import { clientIpFromHeaders, loginAttempts } from "./auth/loginRateLimit";
+import { defaultPasswordLookup, enforcePasswordRevision } from "./auth/sessionRevocation";
 
 const useSecureCookies = process.env.NEXTAUTH_URL?.startsWith("https://") ?? false;
 
@@ -66,10 +68,19 @@ export const authOptions: NextAuthOptions = {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, req) {
         const email = String(credentials?.email ?? "").trim().toLowerCase();
         const password = String(credentials?.password ?? "");
         if (!email || !password) return null;
+
+        // Reserve the attempt before bcrypt. A locked source returns the same null as a wrong
+        // password, so the login form does not grow a separate "this account exists" signal.
+        const ip = clientIpFromHeaders(req?.headers);
+        const attempt = loginAttempts.begin(ip, email);
+        if (!attempt.allowed) {
+          console.warn(`[auth] credentials sign-in rate-limited (${attempt.scope})`);
+          return null;
+        }
 
         const user = await prisma.user.findUnique({
           where: { email },
@@ -93,6 +104,7 @@ export const authOptions: NextAuthOptions = {
           if (!membership) return null;
         }
 
+        if (attempt.stamp !== null) loginAttempts.succeed(ip, email, attempt.stamp);
         return { id: user.id, email: user.email, name: user.name, image: user.image };
       },
     }),
@@ -206,7 +218,11 @@ export const authOptions: NextAuthOptions = {
     },
 
     async session({ session, token }) {
-      if (session?.user && token?.sub) {
+      // An empty token is what `jwt` returns after a password change. The object NextAuth built
+      // before this callback still carries the old name and email, so it has to be replaced,
+      // not amended — otherwise getServerSession would keep handing out a user id.
+      if (!token?.sub) return { expires: new Date(0).toISOString() } as typeof session;
+      if (session?.user) {
         // @ts-ignore
         session.user.id = token.sub;
       }
@@ -214,7 +230,15 @@ export const authOptions: NextAuthOptions = {
     },
 
     async jwt({ token, user }) {
-      if (user) token.sub = user.id;
+      if (user?.id) token.sub = user.id;
+      const verdict = await enforcePasswordRevision(token, {
+        signingIn: !!user,
+        lookup: defaultPasswordLookup,
+      });
+      // Drop the claims instead of throwing. The session route re-encodes whatever this returns
+      // and sets it as the cookie; an empty token replaces a stolen one. Throwing is logged as
+      // JWT_SESSION_ERROR on every poll until the browser gives up.
+      if (verdict === "revoked") return {} as typeof token;
       return token;
     },
   },

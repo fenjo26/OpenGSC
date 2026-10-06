@@ -191,7 +191,10 @@ export async function removeMember(ws: WorkspaceContext, membershipId: string) {
   if (row.userId) {
     await prisma.user.update({
       where: { id: row.userId },
-      data: { passwordHash: null, mustChangePassword: false },
+      // Moving passwordUpdatedAt is what invalidates JWTs stamped with the previous value.
+      // Nulling the hash alone would leave pwdAt equal to the column, and the proxy would
+      // still serve pages to that cookie. The membership check already blocks the data.
+      data: { passwordHash: null, mustChangePassword: false, passwordUpdatedAt: new Date() },
     }).catch(() => {});
   }
   return { removed: true };

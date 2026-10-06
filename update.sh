@@ -79,7 +79,10 @@ if [ "$backed_up_before_reset" != "1" ]; then
 fi
 
 echo "[update] prisma db push..."
-npx prisma db push --skip-generate || npx prisma db push || { echo "[update] prisma db push FAILED"; echo "___OPENGSC_UPDATE_FAIL___"; exit 1; }
+# Prisma 7 removed --skip-generate from db push (generate is a separate step and already ran
+# in npm's postinstall), so a plain push is the whole call. The old ||-fallback kept the run
+# alive but printed a usage error on every update.
+npx prisma db push || { echo "[update] prisma db push FAILED"; echo "___OPENGSC_UPDATE_FAIL___"; exit 1; }
 
 # The Turbopack build peaks around 2.4 GB of memory (issue #21) — updates hit the same
 # OOM wall as installs on small boxes, so swap is ensured here too. The reset above has
