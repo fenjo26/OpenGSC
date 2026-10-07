@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import PasswordChangeGate from "@/components/PasswordChangeGate";
 import { useSession, signOut } from "next-auth/react";
 import { useState, useEffect, useRef, Suspense } from "react";
-import { Settings, LogOut, Sparkles, Globe, Newspaper, LayoutDashboard, TrendingUp, Anchor, BarChart2, Users, Compass, Radar, Server, ClipboardCheck, Menu, Boxes, Waves, FileText, Inbox, ChevronDown, Link2 } from "lucide-react";
+import { Settings, LogOut, Sparkles, Globe, Newspaper, LayoutDashboard, TrendingUp, Anchor, BarChart2, Users, Compass, Radar, Server, ClipboardCheck, Menu, Boxes, Waves, FileText, Inbox, ChevronDown, Link2, Send } from "lucide-react";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { useTheme } from "@/lib/ThemeContext";
 import { useLayout } from "@/lib/LayoutContext";
@@ -651,6 +651,11 @@ function useNavItems(): NavItem[] {
     // striking table's buy buttons lead here for the history. Always visible, like /serp-monitor:
     // the page explains what is missing instead of the feature looking absent.
     { href: "/magiclinks", label: t("mlNavTitle"), key: "magiclinks", icon: <Link2 size={14} />, group: "recon" as const },
+    // The other side of the same coin as /magiclinks: there you pay somebody else to place
+    // posts, here you publish your own (WordPress now, satellite platforms later) and the
+    // loop files the result as a donor link the same way. Always visible: the page explains
+    // what is missing (a connection) instead of the feature looking absent.
+    { href: "/publishing", label: t("publishTitle"), key: "publishing", icon: <Send size={14} />, group: "recon" as const },
     // Visible always, unlike /aparser: the page itself explains what is missing (A-Parser
     // credentials) instead of the entry hiding and the feature looking absent.
     { href: "/serp-monitor", label: t("serpmonNavTitle"), key: "serpmon", icon: <Waves size={14} />, group: "monitoring" as const },

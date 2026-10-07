@@ -99,6 +99,7 @@ test("sequential points persist progressively; done status; points JSON shape", 
   assert.deepEqual(seenPointsCounts, [0, 1, 2, 3, 4, 5, 6, 7, 8]);
 
   const row = await prisma.gridScan.findUnique({ where: { id: "g1" } });
+  assert.ok(row, "scan row missing");
   assert.equal(row.status, "done");
   assert.equal(row.error, "");
   const points = readPoints(row.points);
@@ -132,6 +133,7 @@ test("a failing point is isolated: its error is stored, the scan still finishes 
 
   assert.equal(calls.length, 9); // one bad point cost exactly one cell
   const row = await prisma.gridScan.findUnique({ where: { id: "g1" } });
+  assert.ok(row, "scan row missing");
   assert.equal(row.status, "done");
   const points = readPoints(row.points);
   const bad = points.find(p => p.row === 1 && p.col === 1)!;
@@ -151,6 +153,7 @@ test("a throwing scanPoint (not a soft error) is caught per point too", async ()
   };
   await runGridScan("g1", { scanPoint, sleep: noSleep });
   const row = await prisma.gridScan.findUnique({ where: { id: "g1" } });
+  assert.ok(row, "scan row missing");
   assert.equal(row.status, "done");
   const points = readPoints(row.points);
   assert.equal(points.find(p => p.row === 0 && p.col === 0)!.error, "boom");
@@ -163,6 +166,7 @@ test("no creds → whole-run error BEFORE any point exists", async () => {
   await prisma.gridScan.update({ where: { id: "g1" }, data: { status: "queued", points: "[]" } });
   await runGridScan("g1", { sleep: noSleep });
   const row = await prisma.gridScan.findUnique({ where: { id: "g1" } });
+  assert.ok(row, "scan row missing");
   assert.equal(row.status, "error");
   assert.match(row.error, /no_serp_key/);
   assert.equal(readPoints(row.points).length, 0);

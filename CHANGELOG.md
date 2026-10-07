@@ -3,7 +3,30 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
-## [Unreleased]
+## [1.9.0] — 2026-10-07
+
+### Added — Publishing: generated posts go out on their own (`/publishing`)
+
+- **WordPress first, satellites later.** A generated article (text/landing in SEO Tools history) publishes straight to the site's WordPress over the REST API with an application password — no OAuth app to register. The adapter registry (`src/lib/publish/`) is built for the satellite platforms to come (Dev.to, Hashnode, Blogger) — one `BlogAdapter` interface (`verify` + `publish`), per-platform credentials documented in one place. Markdown → HTML is a server-safe serializer with the money-site links deliberately left dofollow (the whole point is the donor link).
+- **Respin — the publishing AI task.** Its own slot in the task registry (tier *cheap*, visible in Settings → SEO Tools with zero extra wiring — the registry renders both surfaces), resolved server-side the same way `dropsHistory` is, so keys never travel to the browser. One structured call per platform: tone and length adapt, facts, structure and links are pinned in the prompt contract; the token budget follows the writer's own words×8 rule with a cheap-slot cap. A failed respin is an honest failure — no post row pretending it was published.
+- **The loop closes the other way around.** Every successful publish files a `SiteBacklink` row with `source: "self"` (a fifth writer under the Backlinks v2 contract: identity + source/sources only, never `check*`/`api*`/`tox*`), so our own satellite post rides the same placement checker, event history and toxicity pass as a bought one. Target resolution is honest: explicit `targetUrl` → first money-site link inside the post → site root, commented as the fallback it is. Retry re-sends the stored markdown — a finished respin is never re-billed.
+- **Connections page.** Always-visible manual forms (the only path in v1 — house rule), Verify against `/wp/v2/users/me`, masked credential previews, per-connection status chips with verbatim errors; one connection failing never aborts its siblings in the same batch. Publish action lives on the history rows and detail pages; the nav entry sits next to Magic links — there you pay somebody else to place posts, here you place your own.
+- MCP: `publish_list_connections`, `publish_post` (confirm-gated when respin is on; description states the per-platform cheap call), `publish_list_posts` — the same shared flow the routes run, never a parallel implementation.
+- Deploy: `npx prisma db push` (new tables `BlogConnection` / `PublishedPost`) + `npx prisma generate`.
+
+### Added — Geo-grid local rank scans (Local tab)
+
+- Local-Falcon-style visibility: one keyword checked at N×N coordinate points (3×3 / 5×5 / 7×7, radius in km) around the business. Each point reuses the existing rank-check path with `location: "lat,lng"` — the infrastructure already extracted local packs; the grid is an orchestrated batch over it, not a new engine. The pack at each point is matched against the profile's business name and host.
+- **Honest cost before the button.** The estimate says `queryCount = gridSize²` on the configured SERP provider — free on a personal A-Parser instance, metered elsewhere; no caps, the operator decides. ScrapingRobot is refused up front (no geo parameter) rather than failing mid-scan; a profile without coordinates and none passed is an explicit ask, never a guessed city. `gl` comes from the profile's country, geography from the explicit centre.
+- Points persist progressively (a running scan shows partial results when polled), a failing point is isolated into its cell, and the heatmap prints each cell's number so colour is never the sole carrier — theme tokens, tooltips carry the matched business name. Summary: average position and in-pack share.
+- MCP: `local_grid_scans` (free), `local_grid_scan_run` (paid, cost note in the description).
+- Deploy: same `db push` (new table `GridScan`).
+
+### Added — AEO citation classification: who crowds you out, by name
+
+- Every domain an engine cites instead of you is now classified — deterministically, free, no new APIs: **12 domain categories** (forum, social, video, developer, e-commerce, reviews, reference, institutional, editorial…; brand and competitor win over platform rules, matched against the site's host and the `aeoCompetitors` list) and **11 page types** (listicle, how-to, comparison, review, product, docs, forum thread…), plus a dedicated **Reddit & communities** cut with subreddit extraction.
+- Classified at write time in the tracker **and re-derived on read** — the classifier's verdicts are a function of the current competitor list, so editing it re-tags the whole stored history for free, the same recompute contract share of voice already promises. Zero schema change: classification lives inside the existing `citations` JSON.
+- UI: category badges next to cited domains (both in the live tracker and in share of voice), a "Citation categories" chart, and the Reddit block where forum citations exist. MCP: `categoryCounts` + `reddit` in the visibility and share-of-voice results, described as the heuristic it is.
 
 ### Added — Site context (Project Memory): one shared AI memory per site
 
@@ -29,6 +52,16 @@ All notable changes to OpenGSC. Dates are release dates; the version shown in
 - **`purchased_link` alert.** Lost, re-anchored, rel-downgraded or re-targeted bought placements fire one message per site per day through the existing alert engine (default on, silent until placements are imported). No full-export gate, unlike `backlink_loss`: our own donor check is a direct observation, not an inference from absence in a crawl. `anchor_changed` also joins the favourite-link vocabulary. Alert text in all 7 notification languages.
 - **Pulse on `/magiclinks`.** Per provider: how many bought placements stand, are gone, are unconfirmed (`blocked` — a WAF refusal is not a death) and not yet checked, plus the last check date. Unconfirmed is never folded into gone.
 - Deploy: `npx prisma db push` (new columns `SiteBacklink.purchaseProvider` / `purchaseOrderId`, `MagicPurchase.trackedAt`) + `npx prisma generate`.
+
+### Security
+
+- Next.js patched to **16.3.8**; login lockout (5 attempts → 15 min lock, escalating), password-change session revocation (`pwdAt` — every session dies when the password does), hardened response headers. Cherry-picked from the vincent-lxc fork's security work.
+- `create-owner.mjs` fixed on Prisma 7 — it silently broke when the client construction changed; it now builds the client through the better-sqlite3 adapter (the owner-password reset path works again). The login form grew a show/hide eye and says how a forgotten password is reset.
+
+### Changed
+
+- **Agent working plans left the repository.** Wave plans and task splits (`docs/*-PLAN.md`, `docs/tasks/T*.md` and friends) are working documents, not product docs — they now live outside the repo. The two `CONTRACT.md` files stay: schema comments cite them as the source of truth for the SiteBacklink writers contract.
+- **Install/update hardening.** A swap guard runs before `next build` (the Rust toolchain peaks ~2.4 GB and `NODE_OPTIONS` doesn't help), and the updater stops PM2 around the build so a cold Turbopack compile can't crash-loop into a 502 window; both READMEs state the real memory requirements.
 
 ### Fixed
 
