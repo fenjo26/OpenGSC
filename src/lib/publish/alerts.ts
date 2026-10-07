@@ -29,12 +29,15 @@ export async function notifyDeferredPostBlocked(
   site: { id: string; label: string },
   post: { title: string },
   reason: string,
+  // Blocked posts of the same site beyond the named one, from the same scheduler tick —
+  // the daily dedupe would swallow their alerts, so the first alert carries the count.
+  alsoBlocked = 0,
 ): Promise<void> {
   try {
     const settings = await getAlertSettings(userId);
     if (!settings.publishBlocked.on) return;
     const L = NOTIFY_L[normalizeLang(settings.lang)];
-    const text = `${L.publishBlockedTitle(site.label)}\n\n${L.publishBlockedMsg(post.title, reason)}`;
+    const text = `${L.publishBlockedTitle(site.label)}\n\n${L.publishBlockedMsg(post.title, reason, alsoBlocked)}`;
     // Split back into title/message for the AlertEvent row — get_alerts (MCP) and the alerts
     // panel read them as separate fields; delivery joins them back into exactly `text`.
     const nl = text.indexOf("\n");

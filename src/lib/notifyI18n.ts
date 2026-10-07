@@ -91,7 +91,7 @@ type Tpl = {
   // R+ publishing: a deferred (scheduled) post hit the uniqueness gate or a respin failure
   // at send time — planning was hours/days ago, so the outcome must be pushed, not just stored.
   publishBlockedTitle: (site: string) => string;
-  publishBlockedMsg: (post: string, reason: string) => string;
+  publishBlockedMsg: (post: string, reason: string, also?: number) => string;
   // wave-oct (CONTRACT.md §8): uptime monitor, index losses, brand mentions, channel tests.
   // `dur` arguments are pre-formatted by formatDuration below ("12 min", "2 ч 5 мин").
   uptimeDownTitle: (site: string) => string;
@@ -227,7 +227,7 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     serpmonStormHosts: list => `Most entries and exits: ${list}`,
     serpmonTestPrefix: "\u{1F9EA} TEST \u2014 fabricated data, not a real storm:",
     publishBlockedTitle: site => `\u{1F6AB} Scheduled post blocked: ${site}`,
-    publishBlockedMsg: (post, reason) => `*${post}* hit the publish gate at send time:\n${reason}\nRewrite the text and publish it as a new post \u2014 there is no override.`,
+    publishBlockedMsg: (post, reason, also) => `*${post}* hit the publish gate at send time:\n${reason}\nRewrite the text and publish it as a new post \u2014 there is no override.${also ? `\n\u2026and ${also} more post(s) of this site blocked in the same run \u2014 see /publishing.` : ""}`,
     uptimeDownTitle: site => `\u{1F534} ${site} is down`,
     uptimeDownMsg: (site, url, cause, since) => `*${site}* is not responding.\nURL: ${url}\nReason: ${cause}\nSince: ${since}`,
     uptimeStillDownMsg: (site, dur) => `*${site}* is still down (${dur}).`,
@@ -339,7 +339,7 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     serpmonStormHosts: list => `Больше всего входов и выходов: ${list}`,
     serpmonTestPrefix: "\u{1F9EA} ТЕСТ \u2014 выдуманные данные, не настоящий шторм:",
     publishBlockedTitle: site => `\u{1F6AB} Отложенный пост заблокирован: ${site}`,
-    publishBlockedMsg: (post, reason) => `*${post}* упёрся в гейт уникальности в момент отправки:\n${reason}\nПерепишите текст и опубликуйте новым постом \u2014 обхода нет.`,
+    publishBlockedMsg: (post, reason, also) => `*${post}* упёрся в гейт уникальности в момент отправки:\n${reason}\nПерепишите текст и опубликуйте новым постом \u2014 обхода нет.${also ? `\n\u2026и ещё ${also} пост(ов) этого сайта заблокировано в этом же прогоне \u2014 см. /publishing.` : ""}`,
     uptimeDownTitle: site => `\u{1F534} ${site} недоступен`,
     uptimeDownMsg: (site, url, cause, since) => `*${site}* не отвечает.\nURL: ${url}\nПричина: ${cause}\nС: ${since}`,
     uptimeStillDownMsg: (site, dur) => `*${site}* всё ещё недоступен (${dur}).`,
@@ -451,7 +451,7 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     serpmonStormHosts: list => `Найбільше входів і виходів: ${list}`,
     serpmonTestPrefix: "\u{1F9EA} ТЕСТ \u2014 вигадані дані, не справжній шторм:",
     publishBlockedTitle: site => `\u{1F6AB} Відкладений пост заблоковано: ${site}`,
-    publishBlockedMsg: (post, reason) => `*${post}* уперся в гейт унікальності в момент відправлення:\n${reason}\nПерепишіть текст і опублікуйте новим постом \u2014 обхіду немає.`,
+    publishBlockedMsg: (post, reason, also) => `*${post}* уперся в гейт унікальності в момент відправлення:\n${reason}\nПерепишіть текст і опублікуйте новим постом \u2014 обхіду немає.${also ? `\n\u2026і ще ${also} пост(ів) цього сайту заблоковано в цьому ж прогоні \u2014 див. /publishing.` : ""}`,
     uptimeDownTitle: site => `\u{1F534} ${site} недоступний`,
     uptimeDownMsg: (site, url, cause, since) => `*${site}* не відповідає.\nURL: ${url}\nПричина: ${cause}\nЗ: ${since}`,
     uptimeStillDownMsg: (site, dur) => `*${site}* досі недоступний (${dur}).`,
@@ -563,7 +563,7 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     serpmonStormHosts: list => `Plus d'entrées et de sorties : ${list}`,
     serpmonTestPrefix: "\u{1F9EA} TEST \u2014 données fictives, pas une vraie tempête :",
     publishBlockedTitle: site => `\u{1F6AB} Post programmé bloqué : ${site}`,
-    publishBlockedMsg: (post, reason) => `*${post}* a été arrêté par le contrôle d'unicité au moment de l'envoi :\n${reason}\nRéécrivez le texte et publiez-le comme un nouveau post \u2014 aucun contournement.`,
+    publishBlockedMsg: (post, reason, also) => `*${post}* a été arrêté par le contrôle d'unicité au moment de l'envoi :\n${reason}\nRéécrivez le texte et publiez-le comme un nouveau post \u2014 aucun contournement.${also ? `\n\u2026et ${also} autre(s) post(s) de ce site bloqué(s) dans la même exécution \u2014 voir /publishing.` : ""}`,
     uptimeDownTitle: site => `\u{1F534} ${site} est inaccessible`,
     uptimeDownMsg: (site, url, cause, since) => `*${site}* ne répond pas.\nURL : ${url}\nCause : ${cause}\nDepuis : ${since}`,
     uptimeStillDownMsg: (site, dur) => `*${site}* est toujours inaccessible (${dur}).`,
@@ -675,7 +675,7 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     serpmonStormHosts: list => `Más entradas y salidas: ${list}`,
     serpmonTestPrefix: "\u{1F9EA} PRUEBA \u2014 datos inventados, no es una tormenta real:",
     publishBlockedTitle: site => `\u{1F6AB} Post programado bloqueado: ${site}`,
-    publishBlockedMsg: (post, reason) => `*${post}* fue detenido por el control de unicidad al enviarse:\n${reason}\nReescribe el texto y publícalo como un post nuevo \u2014 no hay forma de saltárselo.`,
+    publishBlockedMsg: (post, reason, also) => `*${post}* fue detenido por el control de unicidad al enviarse:\n${reason}\nReescribe el texto y publícalo como un post nuevo \u2014 no hay forma de saltárselo.${also ? `\n\u2026y ${also} post(s) más de este sitio bloqueados en la misma ejecución \u2014 ver /publishing.` : ""}`,
     uptimeDownTitle: site => `\u{1F534} ${site} está caído`,
     uptimeDownMsg: (site, url, cause, since) => `*${site}* no responde.\nURL: ${url}\nMotivo: ${cause}\nDesde: ${since}`,
     uptimeStillDownMsg: (site, dur) => `*${site}* sigue caído (${dur}).`,
@@ -787,7 +787,7 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     serpmonStormHosts: list => `Meiste Ein- und Austritte: ${list}`,
     serpmonTestPrefix: "\u{1F9EA} TEST \u2014 erfundene Daten, kein echter Sturm:",
     publishBlockedTitle: site => `\u{1F6AB} Geplanter Post blockiert: ${site}`,
-    publishBlockedMsg: (post, reason) => `*${post}* wurde beim Senden vom Einzigartigkeits-Gate gestoppt:\n${reason}\nSchreibe den Text um und veröffentliche ihn als neuen Post \u2014 ein Override gibt es nicht.`,
+    publishBlockedMsg: (post, reason, also) => `*${post}* wurde beim Senden vom Einzigartigkeits-Gate gestoppt:\n${reason}\nSchreibe den Text um und veröffentliche ihn als neuen Post \u2014 ein Override gibt es nicht.${also ? `\n\u2026und ${also} weitere Post(s) dieser Site im selben Lauf blockiert \u2014 siehe /publishing.` : ""}`,
     uptimeDownTitle: site => `\u{1F534} ${site} ist nicht erreichbar`,
     uptimeDownMsg: (site, url, cause, since) => `*${site}* antwortet nicht.\nURL: ${url}\nGrund: ${cause}\nSeit: ${since}`,
     uptimeStillDownMsg: (site, dur) => `*${site}* ist immer noch nicht erreichbar (${dur}).`,
@@ -899,7 +899,7 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     serpmonStormHosts: list => `进入和退出最多：${list}`,
     serpmonTestPrefix: "\u{1F9EA} 测试 \u2014 模拟数据，并非真实风暴：",
     publishBlockedTitle: site => `\u{1F6AB} 计划发布被拦截：${site}`,
-    publishBlockedMsg: (post, reason) => `*${post}* 在实际发送时被唯一性门禁拦截：\n${reason}\n请改写文本并作为新帖子重新发布——没有绕过方式。`,
+    publishBlockedMsg: (post, reason, also) => `*${post}* 在实际发送时被唯一性门禁拦截：\n${reason}\n请改写文本并作为新帖子重新发布——没有绕过方式。${also ? `\n…同一次运行中该站点还有 ${also} 篇帖子被拦截——见 /publishing。` : ""}`,
     uptimeDownTitle: site => `\u{1F534} ${site} 已宕机`,
     uptimeDownMsg: (site, url, cause, since) => `*${site}* 无响应。\nURL：${url}\n原因：${cause}\n开始于：${since}`,
     uptimeStillDownMsg: (site, dur) => `*${site}* 仍然宕机（${dur}）。`,

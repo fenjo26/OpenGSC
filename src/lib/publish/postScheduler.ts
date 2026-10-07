@@ -42,6 +42,16 @@ export async function runPublishTick(): Promise<{ sent: number; alerted: number 
   });
   let sent = 0;
   let alerted = 0;
+  // Blocked/failed rows of one site within THIS tick, fired as one alert per site after the
+  // loop — the daily dedupe would eat the second and later alerts, so the first one carries
+  // the named post plus the "and N more" count instead of the site alerting N times.
+  const blockedBySite = new Map<string, { userId: string; label: string; entries: { title: string; reason: string }[] }>();
+  const collectBlocked = (post: { site: { userId: string; id: string; url: string; siteId: string }; title: string }, reason: string) => {
+    const key = post.site.id;
+    const bucket = blockedBySite.get(key) ?? { userId: post.site.userId, label: siteLabelOf(post.site.url || post.site.siteId), entries: [] };
+    bucket.entries.push({ title: post.title, reason });
+    blockedBySite.set(key, bucket);
+  };
   for (const post of due) {
     try {
       // The row as it stands right now (title/markdown may be refreshed by the respin below).
@@ -58,23 +68,13 @@ export async function runPublishTick(): Promise<{ sent: number; alerted: number 
         if (!creds.aiApiKey) {
           const error = "no_ai_creds: configure an AI provider for the respin task (Settings → SEO Tools)";
           await prisma.publishedPost.update({ where: { id: post.id }, data: { status: "failed", error, respinUsed: false } });
-          await notifyDeferredPostBlocked(
-            post.site.userId,
-            { id: post.site.id, label: siteLabelOf(post.site.url || post.site.siteId) },
-            { title: post.title },
-            error,
-          );
+          collectBlocked(post, error);
           alerted++;
           continue;
         }
         const r = await respinAtSend(post, post.connection, post.site, creds);
         if (!r.ok) {
-          await notifyDeferredPostBlocked(
-            post.site.userId,
-            { id: post.site.id, label: siteLabelOf(post.site.url || post.site.siteId) },
-            { title: post.title },
-            r.error,
-          );
+          collectBlocked(post, r.error);
           alerted++;
           continue;
         }
@@ -84,12 +84,7 @@ export async function runPublishTick(): Promise<{ sent: number; alerted: number 
       // Gate + send — the same sendPostRow Retry and the immediate publish loop run.
       const updated = await sendPostRow(fresh, post.connection, post.site);
       if (updated.status === "blocked") {
-        await notifyDeferredPostBlocked(
-          post.site.userId,
-          { id: post.site.id, label: siteLabelOf(post.site.url || post.site.siteId) },
-          { title: updated.title },
-          updated.error,
-        );
+        collectBlocked({ ...post, title: updated.title }, updated.error);
         alerted++;
       }
       sent++;
@@ -103,6 +98,10 @@ export async function runPublishTick(): Promise<{ sent: number; alerted: number 
         .update({ where: { id: post.id }, data: { status: "failed", error } })
         .catch(() => undefined);
     }
+  }
+  for (const [siteId, bucket] of blockedBySite) {
+    const [first, ...rest] = bucket.entries;
+    await notifyDeferredPostBlocked(bucket.userId, { id: siteId, label: bucket.label }, { title: first.title }, first.reason, rest.length);
   }
   return { sent, alerted };
 }
