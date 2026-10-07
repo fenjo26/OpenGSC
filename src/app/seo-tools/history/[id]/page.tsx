@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft, Code2, Copy, Download, ChevronDown, Pencil, Wand2, Check, X,
-  FileText, ListTree, Target, Hash, HelpCircle, ArrowUp, Loader2,
+  FileText, ListTree, Target, Hash, HelpCircle, ArrowUp, Loader2, Send,
 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { readUrlParam, writeUrlParam } from "@/lib/urlParam";
@@ -13,6 +13,7 @@ import SeoContentAnalysis from "@/components/SeoContentAnalysis";
 import SeoTextDetail from "@/components/SeoTextDetail";
 import SeoLandingDetail from "@/components/SeoLandingDetail";
 import SeoClusterDetail from "@/components/SeoClusterDetail";
+import PublishDialog from "@/components/publishing/PublishDialog";
 import { getHistoryItem, resolveHistoryItem, updateHistory, addHistory, HistoryItem } from "@/lib/seo/history";
 import { outlineToMarkdown, outlineToHtml, htmlDocument, outlineHeadings, outlineSummary } from "@/lib/seo/outlineFormat";
 import { getSeoGenCreds, getSerpCreds, getFirecrawlKey, getFactSourceCount, getHardRedact, loadPolicies, getActivePolicyName } from "@/lib/seo/keys";
@@ -40,6 +41,7 @@ export default function TaskDetailPage() {
   const [editText, setEditText] = useState("");
   const [copied, setCopied] = useState("");
   const [genOpen, setGenOpen] = useState(false);
+  const [publishOpen, setPublishOpen] = useState(false);
   const topRef = useRef<HTMLDivElement>(null);
 
   // Cache-first: the local copy paints instantly; a record evicted from the cache (older than
@@ -118,8 +120,35 @@ export default function TaskDetailPage() {
   );
 
   if (item.type === "googlebot") return <div style={{ padding: "40px", textAlign: "center", color: "var(--color-text-secondary)" }}><Loader2 size={20} className="spin" /></div>;
-  if (item.type === "text") return <SeoTextDetail item={item} />;
-  if (item.type === "landing") return <SeoLandingDetail item={item} />;
+  // Text and landing are the two record types that carry a publishable body, so they get the
+  // Publish action bar over the detail view. The dialog is given the local body as a fallback
+  // for the (rare) case where the server copy has not synced yet.
+  if (item.type === "text" || item.type === "landing") {
+    const fb = item.type === "text" && typeof item.data === "string"
+      ? item.data
+      : item.type === "landing" && item.data && typeof item.data === "object"
+        ? (typeof (item.data as { text?: unknown }).text === "string" && (item.data as { text?: unknown }).text
+          ? (item.data as { text: string }).text
+          : (item.data as { outline?: unknown }).outline ? outlineToMarkdown((item.data as { outline: unknown }).outline) : "")
+        : "";
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+        <div className="panel" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+          <span style={{ fontSize: "13px", color: "var(--color-text-secondary)" }}>{t("publishDesc")}</span>
+          <button onClick={() => setPublishOpen(true)} style={btnGhost}><Send size={15} /> {t("publishHistoryAction")}</button>
+        </div>
+        {item.type === "text" ? <SeoTextDetail item={item} /> : <SeoLandingDetail item={item} />}
+        {publishOpen && (
+          <PublishDialog
+            historyId={item.id}
+            fallbackTitle={item.keyword}
+            fallbackMarkdown={fb || undefined}
+            onClose={() => setPublishOpen(false)}
+          />
+        )}
+      </div>
+    );
+  }
   if (item.type === "cluster") return <SeoClusterDetail item={item} />;
 
   return (

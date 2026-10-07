@@ -2,12 +2,31 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Eye, Trash2, FileText, ScrollText, BarChart3, LayoutTemplate, Loader2, AlertTriangle, X, Boxes, Bot, Fingerprint, Wand2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Eye, Trash2, FileText, ScrollText, BarChart3, LayoutTemplate, Loader2, AlertTriangle, X, Boxes, Bot, Fingerprint, Wand2, ChevronLeft, ChevronRight, Send } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { loadHistory, removeHistory, clearHistory, HistoryItem } from "@/lib/seo/history";
 import { listJobs, importJob, deleteJob, clearFailedJobs, SeoJobRec } from "@/lib/seo/jobs";
 import { scoreText } from "@/lib/seo/aidetect";
 import { getActiveModel, type StoredModel } from "@/lib/seo/aidetectStore";
+import { outlineToMarkdown } from "@/lib/seo/outlineFormat";
+import PublishDialog from "@/components/publishing/PublishDialog";
+
+// What the Publish dialog gets as a fallback body when the record is still local-only (the
+// server copy lands on a ~2.5s debounce). Text records carry the article string directly;
+// landings carry {text, outline} and are serialized the same way the detail page does.
+function publishFallback(item: HistoryItem): { title: string; markdown?: string } {
+  if (item.type === "text" && typeof item.data === "string" && item.data.trim()) {
+    return { title: item.keyword, markdown: item.data };
+  }
+  if (item.type === "landing" && item.data && typeof item.data === "object") {
+    const d = item.data as { text?: unknown; outline?: unknown };
+    const md = typeof d.text === "string" && d.text.trim()
+      ? d.text
+      : d.outline ? outlineToMarkdown(d.outline) : "";
+    return { title: item.keyword, markdown: md || undefined };
+  }
+  return { title: item.keyword };
+}
 
 // Job rows come from the server, and the server accepts types this local table doesn't know
 // (outline_auto over the jobs API, rewrite inserted directly by MCP) — plus whatever a future
@@ -63,6 +82,9 @@ export default function HistoryPage() {
   const [fp, setFp] = useState<StoredModel | null>(null);
   const [scores, setScores] = useState<Record<string, number>>({});
   const scoreAskedRef = useRef<Set<string>>(new Set());
+  // The record the Publish dialog is open for (text/landing rows only — those are the types
+  // that carry a publishable body).
+  const [publishFor, setPublishFor] = useState<HistoryItem | null>(null);
   useEffect(() => { setFp(getActiveModel()); }, []);
 
   // Merge records into the display list. Later sources win per id (the cache is fresher than
@@ -284,6 +306,9 @@ export default function HistoryPage() {
                   </span>
                 )}
                 <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)", flexShrink: 0, whiteSpace: "nowrap" }}>{fmtDateTime(item.createdAt)}</span>
+                {(item.type === "text" || item.type === "landing") && (
+                  <button onClick={() => setPublishFor(item)} title={t("publishHistoryAction")} style={iconBtn}><Send size={15} /></button>
+                )}
                 <button onClick={() => view(item)} title={t("seoEdit")} style={iconBtn}><Eye size={15} /></button>
                 <button onClick={() => remove(item.id)} title={t("seoDelete")} style={{ ...iconBtn, color: "var(--color-accent-red)" }}><Trash2 size={14} /></button>
               </div>
@@ -313,6 +338,18 @@ export default function HistoryPage() {
           </div>
         )}
       </div>
+
+      {publishFor && (() => {
+        const fb = publishFallback(publishFor);
+        return (
+          <PublishDialog
+            historyId={publishFor.id}
+            fallbackTitle={fb.title}
+            fallbackMarkdown={fb.markdown}
+            onClose={() => setPublishFor(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
