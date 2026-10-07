@@ -19,6 +19,11 @@ export default function UpdateBanner() {
   const [open, setOpen] = useState(false);
   const [phase, setPhase] = useState<"idle" | "running" | "done" | "failed">("idle");
   const [log, setLog] = useState("");
+  // When the poll last got an answer. update.sh stops the app for the build window, so polls fail
+  // for minutes BY DESIGN; the modal says so instead of spinning silently, and only after a long
+  // silence tells the owner to look at the server.
+  const [lastSeen, setLastSeen] = useState(0);
+  const [now, setNow] = useState(0);
   const pollRef = useRef<any>(null);
   const logBoxRef = useRef<HTMLPreElement>(null);
 
@@ -51,7 +56,7 @@ export default function UpdateBanner() {
   }, [info?.remote]);
 
   const startUpdate = async () => {
-    setPhase("running"); setLog("");
+    setPhase("running"); setLog(""); setLastSeen(Date.now()); setNow(Date.now());
     try {
       const res = await fetch("/api/system/update", { method: "POST" });
       const d = await res.json();
@@ -59,8 +64,12 @@ export default function UpdateBanner() {
     } catch (e: any) { setPhase("failed"); setLog(String(e?.message ?? e)); return; }
     // Poll the log. pm2 restart mid-way makes the API blink — tolerate fetch errors.
     pollRef.current = setInterval(async () => {
+      setNow(Date.now());
       try {
-        const d = await fetch("/api/system/update").then(r => r.json());
+        const r = await fetch("/api/system/update", { cache: "no-store" });
+        if (!r.ok) throw new Error(String(r.status)); // nginx 502 while the app is stopped
+        const d = await r.json();
+        setLastSeen(Date.now());
         setLog(d.log || "");
         if (logBoxRef.current) logBoxRef.current.scrollTop = logBoxRef.current.scrollHeight;
         if (d.done) { clearInterval(pollRef.current); setPhase("done"); }
@@ -137,6 +146,11 @@ export default function UpdateBanner() {
                   {phase === "done" && <><CheckCircle size={16} style={{ color: "#34c759" }} /> <span style={{ color: "#34c759" }}>{t("updateDone")}</span></>}
                   {phase === "failed" && <><AlertTriangle size={16} style={{ color: "#ff375f" }} /> <span style={{ color: "#ff375f" }}>{t("updateFailed")}</span></>}
                 </div>
+                {phase === "running" && now - lastSeen > 6000 && (
+                  <div style={{ margin: "0 0 12px", fontSize: "13px", lineHeight: 1.5, color: now - lastSeen > 20 * 60 * 1000 ? "#ff375f" : "var(--color-text-secondary)" }}>
+                    {now - lastSeen > 20 * 60 * 1000 ? t("updateUnreachable") : t("updateRebuilding")}
+                  </div>
+                )}
                 <pre ref={logBoxRef} style={{ background: "#0b0b0f", color: "#c9d1d9", borderRadius: "10px", padding: "12px 14px", fontSize: "11px", lineHeight: 1.5, maxHeight: "300px", overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0 }}>
                   {log || t("updateWaiting")}
                 </pre>

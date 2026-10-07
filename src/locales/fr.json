@@ -2523,6 +2523,8 @@
   "updateRunning": "Mise à jour… cela peut prendre quelques minutes",
   "updateDone": "Mise à jour réussie !",
   "updateFailed": "Échec de la mise à jour",
+  "updateRebuilding": "L'application est arrêtée pendant la compilation de la nouvelle version — la progression réapparaîtra dès son retour. Gardez cette page ouverte.",
+  "updateUnreachable": "Aucune réponse du serveur depuis plus de 20 minutes. Vérifiez via SSH : tail /tmp/opengsc-update.log",
   "updateFailedHint": "Vérifiez le log ci-dessus. Vous pouvez aussi mettre à jour manuellement sur le serveur : placez-vous dans le projet et exécutez : bash update.sh",
   "updateReload": "Recharger la page",
   "updateWaiting": "Démarrage…",

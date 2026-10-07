@@ -2523,6 +2523,8 @@
   "updateRunning": "更新中…这可能需要几分钟",
   "updateDone": "更新成功！",
   "updateFailed": "更新失败",
+  "updateRebuilding": "新版本构建期间应用已停止——恢复后将继续显示进度。请保持此页面打开。",
+  "updateUnreachable": "服务器超过 20 分钟无响应。请通过 SSH 检查：tail /tmp/opengsc-update.log",
   "updateFailedHint": "请检查上方日志。你也可以在服务器上手动更新：cd 到项目目录并运行：bash update.sh",
   "updateReload": "重新加载页面",
   "updateWaiting": "启动中…",

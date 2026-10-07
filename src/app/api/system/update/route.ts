@@ -3,7 +3,7 @@ import { authOptions } from "@/lib/auth";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { spawn } from "child_process";
-import { existsSync, readFileSync, statSync } from "fs";
+import { existsSync, readFileSync, statSync, writeFileSync } from "fs";
 import path from "path";
 import os from "os";
 
@@ -75,12 +75,30 @@ export async function POST() {
     return NextResponse.json({ ok: true, alreadyRunning: true });
   }
 
-  // Fresh log, then spawn detached so pm2 restart at the end doesn't kill the updater
-  // along with this Node process. `bash -c '... > log 2>&1'` keeps it fully independent.
+  // The updater must OUTLIVE this Node process, and `detached: true` alone does not achieve that.
+  // update.sh runs `pm2 stop opengsc` before the build, and pm2 stops an app by tree-kill: it walks
+  // the process tree by PARENT PID, so any descendant of this server dies with it — a new process
+  // group (what `detached` gives) does not take it out of that tree. The UI-started update then
+  // died silently at "stopping the app for the build window...", leaving the app stopped and the
+  // modal spinning on a log nothing writes to anymore.
+  //
+  // So: double fork. The outer bash backgrounds the real run and exits at once; the run is
+  // reparented to init and is no longer anyone's descendant here. `setsid` (when present — it is
+  // on every Linux, not on macOS) additionally drops the controlling terminal and session.
+  // Paths travel as $0/$1, never interpolated into the command string.
   try {
+    // Truncate synchronously before the spawn: the run opens the log a moment later, and a poll
+    // landing in that gap would otherwise read the PREVIOUS run's DONE/FAIL marker and end the UI
+    // progress before this run has written a line.
+    writeFileSync(LOG_PATH, "");
     const child = spawn(
       "bash",
-      ["-c", `bash "${scriptPath}" > "${LOG_PATH}" 2>&1`],
+      [
+        "-c",
+        'if command -v setsid >/dev/null 2>&1; then setsid nohup bash "$0" > "$1" 2>&1 < /dev/null & else nohup bash "$0" > "$1" 2>&1 < /dev/null & fi',
+        scriptPath,
+        LOG_PATH,
+      ],
       { detached: true, stdio: "ignore", cwd: process.cwd() },
     );
     child.unref();
