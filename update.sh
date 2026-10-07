@@ -97,6 +97,12 @@ ensure_build_swap
 echo "[update] stopping the app for the build window..."
 pm2 stop opengsc >/dev/null 2>&1 || pm2 stop all >/dev/null 2>&1 || echo "[update] pm2 stop failed — continuing"
 
+# A build that dies mid-write (panic, OOM, kill) can leave a partial .next behind, and the
+# next Turbopack run has been observed to panic on top of that state ("generate_source_map
+# was canceled") even though the same code builds cleanly from scratch. The build erases
+# .next itself on a normal path; this rm only guarantees the START is clean when it isn't.
+rm -rf .next
+
 echo "[update] npm run build..."
 npm run build || {
   echo "[update] build FAILED"
