@@ -3430,6 +3430,7 @@
   "loginMemberSubmit": "登录",
   "loginMemberFailed": "邮箱或密码错误，或账号已停用。",
   "loginMemberHint": "成员由工作区所有者或管理员添加。Google 登录仅限所有者。",
+  "loginMemberForgot": "忘记密码？在服务器控制台重置：node scripts/create-owner.mjs --email owner@example.com --force（所有者）；成员的新密码由所有者提供。",
   "joinNoToken": "该链接缺少邀请令牌。",
   "joinPassword": "设置密码",
   "joinConfirm": "再次输入密码",

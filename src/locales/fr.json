@@ -3430,6 +3430,7 @@
   "loginMemberSubmit": "Se connecter",
   "loginMemberFailed": "E-mail ou mot de passe incorrect, ou compte suspendu.",
   "loginMemberHint": "Les membres sont ajoutés par le propriétaire ou un admin. La connexion Google est réservée au propriétaire.",
+  "loginMemberForgot": "Mot de passe oublié ? Il se réinitialise depuis la console du serveur : node scripts/create-owner.mjs --email owner@example.com --force (pour le propriétaire) ; un membre reçoit le sien du propriétaire.",
   "joinNoToken": "Ce lien ne contient pas de jeton d'invitation.",
   "joinPassword": "Choisissez un mot de passe",
   "joinConfirm": "Répétez le mot de passe",

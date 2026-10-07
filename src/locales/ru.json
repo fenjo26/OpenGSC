@@ -3430,6 +3430,7 @@
   "loginMemberSubmit": "Войти",
   "loginMemberFailed": "Неверный email или пароль, либо аккаунт заблокирован.",
   "loginMemberHint": "Участников добавляет владелец пространства или админ. Вход через Google — только для владельца.",
+  "loginMemberForgot": "Забыли пароль? Он сбрасывается с консоли сервера: node scripts/create-owner.mjs --email owner@example.com --force (для владельца); участнику новый пароль выдаёт владелец.",
   "joinNoToken": "В ссылке нет токена приглашения.",
   "joinPassword": "Придумайте пароль",
   "joinConfirm": "Повторите пароль",

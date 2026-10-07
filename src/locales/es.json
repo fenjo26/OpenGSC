@@ -3430,6 +3430,7 @@
   "loginMemberSubmit": "Entrar",
   "loginMemberFailed": "Correo o contraseña incorrectos, o la cuenta está suspendida.",
   "loginMemberHint": "A los miembros los añade el propietario o un admin. El acceso con Google es solo para el propietario.",
+  "loginMemberForgot": "¿Olvidaste la contraseña? Se restablece desde la consola del servidor: node scripts/create-owner.mjs --email owner@example.com --force (para el propietario); un miembro recibe la suya del propietario.",
   "joinNoToken": "A este enlace le falta el token de invitación.",
   "joinPassword": "Elige una contraseña",
   "joinConfirm": "Repite la contraseña",

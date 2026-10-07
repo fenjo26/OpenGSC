@@ -3430,6 +3430,7 @@
   "loginMemberSubmit": "Anmelden",
   "loginMemberFailed": "E-Mail oder Passwort falsch, oder das Konto ist gesperrt.",
   "loginMemberHint": "Mitglieder werden vom Eigentümer oder einem Admin angelegt. Die Google-Anmeldung ist dem Eigentümer vorbehalten.",
+  "loginMemberForgot": "Passwort vergessen? Es wird über die Serverkonsole zurückgesetzt: node scripts/create-owner.mjs --email owner@example.com --force (für den Owner); Mitglieder erhalten ein neues vom Owner.",
   "joinNoToken": "In diesem Link fehlt das Einladungs-Token.",
   "joinPassword": "Passwort wählen",
   "joinConfirm": "Passwort wiederholen",

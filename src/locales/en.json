@@ -3430,6 +3430,7 @@
   "loginMemberSubmit": "Sign in",
   "loginMemberFailed": "Wrong email or password, or the account is suspended.",
   "loginMemberHint": "Members are added by the workspace owner or an admin. Google sign-in is for the owner only.",
+  "loginMemberForgot": "Forgot the password? It is reset from the server console: node scripts/create-owner.mjs --email owner@example.com --force (the owner); team members get a new password from the owner.",
   "joinNoToken": "This link is missing its invitation token.",
   "joinPassword": "Choose a password",
   "joinConfirm": "Repeat the password",

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { signIn } from "next-auth/react";
 import Link from "next/link";
-import { TrendingUp, Globe, Shield, Moon, Sun } from "lucide-react";
+import { TrendingUp, Globe, Shield, Moon, Sun, Eye, EyeOff } from "lucide-react";
 import { useTheme } from "@/lib/ThemeContext";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 
@@ -403,6 +403,9 @@ function MemberSignIn({ t, passwordOnly }: { t: (key: string) => string; passwor
   const [form, setForm] = useState({ email: "", password: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // Show/hide for the password field: a typo you cannot see is undiagnosable, and the fix
+  // (reset on the server) costs minutes — the eye costs one click.
+  const [reveal, setReveal] = useState(false);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -432,14 +435,25 @@ function MemberSignIn({ t, passwordOnly }: { t: (key: string) => string; passwor
       className="tool-input" type="email" required autoComplete="username" placeholder={t("teamEmail")}
       value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
     />
-    <input
-      className="tool-input" type="password" required autoComplete="current-password" placeholder={t("teamPassword")}
-      value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-    />
+    <div style={{ position: "relative" }}>
+      <input
+        className="tool-input" type={reveal ? "text" : "password"} required autoComplete="current-password" placeholder={t("teamPassword")}
+        value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+        style={{ paddingRight: 38 }}
+      />
+      <button type="button" onClick={() => setReveal(v => !v)} aria-label={reveal ? "hide password" : "show password"}
+        title={reveal ? "hide password" : "show password"}
+        style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", border: 0, color: "var(--color-text-secondary)", cursor: "pointer", padding: 0 }}>
+        {reveal ? <EyeOff size={15} /> : <Eye size={15} />}
+      </button>
+    </div>
     {error && <span style={{ fontSize: 12, color: "var(--color-accent-red)" }}>{t("loginMemberFailed")}</span>}
     <button type="submit" disabled={busy} style={{ padding: "10px 14px", borderRadius: 9, border: 0, background: "var(--color-accent-blue)", color: "#fff", fontSize: 14, fontWeight: 650, cursor: "pointer" }}>
       {busy ? "…" : t("loginMemberSubmit")}
     </button>
     {!passwordOnly && <span style={{ fontSize: 11, color: "var(--color-text-secondary)", textAlign: "center" }}>{t("loginMemberHint")}</span>}
+    {/* There is no mailer behind this login: a forgotten password is reset from the server
+        console, and the form must say so instead of leaving the operator to guess. */}
+    <span style={{ fontSize: 11, lineHeight: 1.5, color: "var(--color-text-tertiary)", textAlign: "center" }}>{t("loginMemberForgot")}</span>
   </form>;
 }
