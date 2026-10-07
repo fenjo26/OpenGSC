@@ -40,7 +40,8 @@ export async function GET(req: Request) {
   return NextResponse.json({ connections: await listConnections(userId, siteId) });
 }
 
-// POST /api/publishing/connections — { siteId, platform, label, siteIdentifier, credentials }
+// POST /api/publishing/connections — { siteId, platform, connectionType?, label, siteIdentifier, credentials }
+// connectionType: own_satellite (default, fail-closed) | money_site | external_platform.
 export async function POST(req: Request) {
   const userId = await workspaceUserId("write");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -50,6 +51,7 @@ export async function POST(req: Request) {
     const connection = await createConnection(userId, {
       siteId: String(body?.siteId ?? ""),
       platform: String(body?.platform ?? ""),
+      connectionType: body?.connectionType == null ? undefined : String(body.connectionType),
       label: String(body?.label ?? ""),
       siteIdentifier: String(body?.siteIdentifier ?? ""),
       credentials: (body?.credentials && typeof body.credentials === "object" ? body.credentials : {}) as Record<string, string>,

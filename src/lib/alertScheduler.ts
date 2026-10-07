@@ -48,6 +48,11 @@ export interface AlertSettings {
   // finer-grained off switch. Field name follows the T6 brief (`enabled`), not the `on` of the
   // neighbours above.
   serpmonStorm: { enabled: boolean };
+  // R+ publish gate: a SCHEDULED post blocked by the uniqueness gate (or failing its respin)
+  // at send time. On by default with no settings-page row, same as the newer backlink alerts:
+  // it stays silent until something is actually deferred and blocked, so enabling it cannot
+  // produce noise. Fired from lib/publish/postScheduler, not from this hourly tick.
+  publishBlocked: { on: boolean };
   lang: NotifyLang; // language of delivered alerts (saved from the UI language)
 }
 
@@ -71,6 +76,7 @@ export const DEFAULT_ALERT_SETTINGS: AlertSettings = {
   balanceLow: { on: true, percent: 15, minUsd: 10 },
   providerDown: { on: true, failures: 5 },
   serpmonStorm: { enabled: true },
+  publishBlocked: { on: true },
   lang: "en",
 };
 
@@ -92,6 +98,7 @@ export async function getAlertSettings(userId: string): Promise<AlertSettings> {
       balanceLow: { ...DEFAULT_ALERT_SETTINGS.balanceLow, ...(s.balanceLow ?? {}) },
       providerDown: { ...DEFAULT_ALERT_SETTINGS.providerDown, ...(s.providerDown ?? {}) },
       serpmonStorm: { ...DEFAULT_ALERT_SETTINGS.serpmonStorm, ...(s.serpmonStorm ?? {}) },
+      publishBlocked: { ...DEFAULT_ALERT_SETTINGS.publishBlocked, ...(s.publishBlocked ?? {}) },
       lang: normalizeLang(s.lang),
     };
   } catch {
