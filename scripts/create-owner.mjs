@@ -20,6 +20,10 @@ import { randomBytes } from "node:crypto";
 const require = createRequire(import.meta.url);
 const bcrypt = require("bcryptjs");
 const { PrismaClient } = require("../src/generated/prisma/index.js");
+// Prisma 7 refuses a bare constructor: the client needs a driver adapter, exactly as
+// src/lib/prisma.ts builds it for the app. This script is the recovery path for a locked-out
+// operator, so it must work with nothing but `node` and the repo's own dependencies.
+const { PrismaBetterSqlite3 } = require("@prisma/adapter-better-sqlite3");
 
 function arg(name) {
   const hit = process.argv.find(value => value === `--${name}` || value.startsWith(`--${name}=`));
@@ -35,7 +39,9 @@ function generatePassword() {
   return `${body.slice(0, 6)}-${body.slice(6, 12)}-${body.slice(12, 18)}`;
 }
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+  adapter: new PrismaBetterSqlite3({ url: process.env.DATABASE_URL ?? "file:./dev.db" }),
+});
 
 try {
   const email = String(arg("email") ?? "").trim().toLowerCase();
