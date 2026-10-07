@@ -20,7 +20,7 @@ import { getSerpCreds } from "@/lib/seo/keys";
 import { LANGUAGES, defaultLanguageFor } from "@/lib/seo/regions";
 import type { LocalProfileData } from "@/lib/local/types";
 import { estimateQueryCount, generateGridPoints } from "@/lib/localGrid/math";
-import { pointRank, summarizePoints, type GridScanData, type GridScanPoint } from "@/lib/localGrid/run";
+import { pointRank, summarizePoints, type GridScanData, type GridScanPoint } from "@/lib/localGrid/summary";
 import type { GridPresetData } from "@/lib/localGrid/preset";
 import { btnDisabled, btnPrimary, fieldLabel, inputStyle, sendJson, statusPill } from "./shared";
 
