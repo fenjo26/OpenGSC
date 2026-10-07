@@ -11,6 +11,7 @@ import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import AiModelBadge from "@/components/AiModelBadge";
 import PublishingConnections from "@/components/publishing/PublishingConnections";
 import PublishingPosts from "@/components/publishing/PublishingPosts";
+import AnchorPanel from "@/components/publishing/AnchorPanel";
 import { PUBLISHING_SITE_KEY } from "@/components/publishing/PublishDialog";
 
 export default function PublishingPage() {
@@ -73,6 +74,9 @@ export default function PublishingPage() {
         <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
           <PublishingConnections siteId={siteId} onChanged={() => setPostsKey(k => k + 1)} />
           <PublishingPosts key={postsKey} siteId={siteId} />
+          {/* Anchor distribution across this site's published network posts — the same
+              aggregation the publish review runs pre-send, here as the accumulated view. */}
+          <AnchorPanel key={`anchors-${postsKey}`} siteId={siteId} />
         </div>
       )}
     </div>

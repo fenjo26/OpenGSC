@@ -12,7 +12,7 @@ import { PLATFORMS, platformDefById } from "@/lib/publish/platforms";
 import { StatusChip } from "./PublishDialog";
 
 interface ConnectionRow {
-  id: string; platform: string; label: string; siteIdentifier: string; status: string;
+  id: string; platform: string; connectionType: string; label: string; siteIdentifier: string; status: string;
   lastError: string; lastVerifiedAt: string | null; credentialPreview: Record<string, string>;
 }
 
@@ -23,13 +23,18 @@ export default function PublishingConnections({ siteId, onChanged }: { siteId: s
   const [error, setError] = useState("");
 
   // Add form — plain text inputs for every declared credential field; the route keeps only
-  // the fields the platform actually declares.
+  // the fields the platform actually declares. connectionType defaults to own_satellite
+  // (fail-closed: respin stays off until the operator explicitly marks a platform external).
   const [platform, setPlatform] = useState(PLATFORMS[0]?.id ?? "wordpress");
+  const [connectionType, setConnectionType] = useState("own_satellite");
   const [label, setLabel] = useState("");
   const [siteIdentifier, setSiteIdentifier] = useState("");
   const [creds, setCreds] = useState<Record<string, string>>({});
   const [adding, setAdding] = useState(false);
   const fields = platformDefById(platform)?.fields ?? [];
+
+  const typeLabel = (v: string) =>
+    v === "money_site" ? t("pubTypeMoneySite") : v === "external_platform" ? t("pubTypeExternal") : t("pubTypeOwnSatellite");
 
   const load = useCallback(async () => {
     try {
@@ -50,7 +55,7 @@ export default function PublishingConnections({ siteId, onChanged }: { siteId: s
     try {
       const res = await fetch("/api/publishing/connections", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ siteId, platform, label, siteIdentifier, credentials: creds }),
+        body: JSON.stringify({ siteId, platform, connectionType, label, siteIdentifier, credentials: creds }),
       });
       const d = await res.json();
       if (!res.ok) { setError(String(d?.error ?? "failed")); setAdding(false); return; }
@@ -60,7 +65,7 @@ export default function PublishingConnections({ siteId, onChanged }: { siteId: s
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: d?.connection?.id }),
       });
-      setLabel(""); setSiteIdentifier(""); setCreds({});
+      setLabel(""); setSiteIdentifier(""); setCreds({}); setConnectionType("own_satellite");
       await load();
       onChanged?.();
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
@@ -111,6 +116,11 @@ export default function PublishingConnections({ siteId, onChanged }: { siteId: s
               <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
                 <span style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)" }}>{c.label}</span>
                 <span style={{ fontSize: "11px", fontWeight: 700, padding: "2px 8px", borderRadius: "6px", background: "var(--color-bg)", color: "var(--color-text-secondary)" }}>{def?.name ?? c.platform}</span>
+                {/* The type badge is the respin permission made visible: external_platform
+                    (blue) may adapt, everything else publishes its own text as-is. */}
+                <span title={t("pubTypeHint")} style={{ fontSize: "11px", fontWeight: 700, padding: "2px 8px", borderRadius: "6px", background: c.connectionType === "external_platform" ? "rgba(41,151,255,0.12)" : "var(--color-bg)", color: c.connectionType === "external_platform" ? "var(--color-accent-blue)" : "var(--color-text-secondary)" }}>
+                  {typeLabel(c.connectionType)}
+                </span>
                 <StatusChip status={c.status} />
               </div>
               <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginTop: "4px", wordBreak: "break-all" }}>
@@ -145,6 +155,15 @@ export default function PublishingConnections({ siteId, onChanged }: { siteId: s
           <div>
             <div style={miniLabel}>{t("publishLabel")}</div>
             <input className="tool-input" value={label} onChange={e => setLabel(e.target.value)} />
+          </div>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <div style={miniLabel}>{t("pubConnectionType")}</div>
+            <select className="tool-input" value={connectionType} onChange={e => setConnectionType(e.target.value)}>
+              <option value="own_satellite">{t("pubTypeOwnSatellite")}</option>
+              <option value="money_site">{t("pubTypeMoneySite")}</option>
+              <option value="external_platform">{t("pubTypeExternal")}</option>
+            </select>
+            <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "4px" }}>{t("pubTypeHint")}</div>
           </div>
           <div style={{ gridColumn: "1 / -1" }}>
             <div style={miniLabel}>{t(platformDefById(platform)?.siteIdentifierLabelKey ?? "publishSiteIdentifier")}</div>
