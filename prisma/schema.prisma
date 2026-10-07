@@ -280,6 +280,7 @@ model Site {
   trendItems      TrendItem[]
   clientReports   ClientReport[]
   gridScans        GridScan[]
+  gridPresets      GridPreset[]
   blogConnections  BlogConnection[]
   publishedPosts   PublishedPost[]
 
@@ -2557,11 +2558,46 @@ model GridScan {
   status    String   @default("queued") // queued | running | done | error
   error     String   @default("")
   points    String   // JSON: [{ row, col, lat, lng, position, localPack, businessName }]
+  // R+: which preset fired this scan (null = one-off manual run) and which answer
+  // language the SERP actually ran with. hl is stored per scan because it changes the
+  // SERP as much as geography does — tourists search "thessaloniki airport transfer"
+  // in EN/RU/DE while the profile country stays GR.
+  presetId  String?
+  hl        String   @default("") // "" = defaultLanguageFor(profile country) at run time
   createdAt DateTime @default(now())
 
-  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  site   Site       @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  preset GridPreset? @relation(fields: [presetId], references: [id], onDelete: SetNull)
 
   @@index([siteId, createdAt])
+  @@index([presetId, createdAt])
+}
+
+// R+: a saved "point + radius + grid" with an optional cron schedule, so a scan is a
+// repeatable measurement (dynamics across scans chained by presetId), not a one-off.
+// Schedule is a plain 5-field cron string — the in-house matcher (src/lib/cron.ts)
+// reads it; the UI compiles human choices ("weekly at 09:00") into it and never
+// offers free-text cron. lastFireAt is the scheduler's high-water mark: a missed tick
+// is skipped, never back-filled (a grid run costs gridSize² queries).
+model GridPreset {
+  id         String    @id @default(cuid())
+  siteId     String
+  name       String
+  keyword    String
+  centerLat  Float
+  centerLng  Float
+  gridSize   Int       // 3 | 5 | 7
+  radiusKm   Float
+  hl         String    @default("") // "" = language of the profile country; EN/RU/DE for tourist queries
+  schedule   String    @default("") // 5-field cron; "" = manual only (Run now)
+  lastFireAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  site  Site       @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  scans GridScan[]
+
+  @@index([siteId])
 }
 
 // ─── Multi-platform publishing (wave P) ───────────────────────────────────────
@@ -2572,6 +2608,11 @@ model BlogConnection {
   id             String    @id @default(cuid())
   siteId         String
   platform       String    // "wordpress" (later: devto, hashnode, blogger…)
+  // R+: what this destination IS in the network. The respin gate reads exactly this:
+  // adaptation is allowed ONLY for external_platform — respinning one canonical post
+  // onto own satellites hands Google a ready-made footprint (one facture, one link
+  // target, one publication moment), which is the thing the type system exists to prevent.
+  connectionType String    @default("own_satellite") // own_satellite | money_site | external_platform
   label          String    // human-readable, e.g. "Money site SKG"
   siteIdentifier String    // platform's notion of the target: site URL, blog id…
   credentials    String    // JSON: { appPassword } | { apiKey } — per platform
@@ -2600,8 +2641,15 @@ model PublishedPost {
   respinUsed   Boolean   @default(false)
   remoteId     String    @default("")
   remoteUrl    String    @default("")
-  status       String    @default("draft") // draft | publishing | published | failed
+  status       String    @default("draft") // draft | scheduled | publishing | published | failed | blocked
   error        String    @default("")
+  // R+: publish later, inside a random jitter window — satellites must not go out as
+  // one detectable batch. The offset is fixed at planning time (visible, editable);
+  // a scheduler pass sends due posts through the same per-post path as retry.
+  scheduledAt  DateTime?
+  // R+: 1 − max textSimilarity against every published post in the instance at send
+  // time (see the publish gate). Null = not yet measured.
+  uniquenessScore Float?
   publishedAt  DateTime?
   createdAt    DateTime  @default(now())
 
