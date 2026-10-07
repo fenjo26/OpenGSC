@@ -279,6 +279,9 @@ model Site {
   trendSeeds      TrendSeed[]
   trendItems      TrendItem[]
   clientReports   ClientReport[]
+  gridScans        GridScan[]
+  blogConnections  BlogConnection[]
+  publishedPosts   PublishedPost[]
 
   @@unique([userId, siteId])
   @@index([userId, archivedAt])
@@ -507,7 +510,7 @@ model SiteBacklink {
   // source is who created the row; sources is every channel that has since confirmed it, so a
   // link first pasted by hand and later seen by Ahrefs reads "manual,api" instead of losing its
   // provenance to whichever writer touched it last.
-  source    String   @default("api")  // api|csv|manual|purchase
+  source    String   @default("api")  // api|csv|manual|purchase|self
   sources   String   @default("")     // comma-separated: "api,csv"
   favorite  Boolean  @default(false)
   priceNote String   @default("")
@@ -2534,4 +2537,76 @@ model InstanceSetting {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+// ─── Geo-grid local rank scans (wave G) ───────────────────────────────────────
+// One keyword checked at N×N lat/lng points around the business (Local Falcon style).
+// Points live as a JSON array inside the row — a scan's points are always read together,
+// same pattern as AeoCheck.citations. The rank-check runner already accepts location as
+// "lat,lng" and extracts the local pack, so a scan is an orchestrated batch of those.
+model GridScan {
+  id        String   @id @default(cuid())
+  siteId    String
+  keyword   String
+  centerLat Float
+  centerLng Float
+  gridSize  Int      // 3 | 5 | 7 (odd, so there is a true centre point)
+  radiusKm  Float    // centre → outer edge
+  provider  String   // from RANK_PROVIDERS (src/lib/rank.ts)
+  depth     Int
+  status    String   @default("queued") // queued | running | done | error
+  error     String   @default("")
+  points    String   // JSON: [{ row, col, lat, lng, position, localPack, businessName }]
+  createdAt DateTime @default(now())
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([siteId, createdAt])
+}
+
+// ─── Multi-platform publishing (wave P) ───────────────────────────────────────
+// A connection is one publishable destination: the site's own WordPress (money site)
+// or a satellite blog platform. Credentials follow the same at-rest convention as the
+// seoSettings keys — behind auth, encryption is a separate future workstream.
+model BlogConnection {
+  id             String    @id @default(cuid())
+  siteId         String
+  platform       String    // "wordpress" (later: devto, hashnode, blogger…)
+  label          String    // human-readable, e.g. "Money site SKG"
+  siteIdentifier String    // platform's notion of the target: site URL, blog id…
+  credentials    String    // JSON: { appPassword } | { apiKey } — per platform
+  status         String    @default("unverified") // unverified | ok | error
+  lastError      String    @default("")
+  lastVerifiedAt DateTime?
+  createdAt      DateTime  @default(now())
+
+  site  Site            @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  posts PublishedPost[]
+
+  @@index([siteId, createdAt])
+}
+
+// The published sibling of SeoHistory: what actually went out (the respin, when one ran),
+// where it lives, and whether it succeeded. A successful publish feeds the loop — a
+// SiteBacklink row with source "self" so the existing link checker and donor indexer
+// treat our own satellite post like any other donor page.
+model PublishedPost {
+  id           String    @id @default(cuid())
+  siteId       String
+  connectionId String
+  historyId    String?   // SeoHistory.id the post was generated from; null = pasted manually
+  title        String
+  markdown     String    // what was actually sent (respin output when respin was used)
+  respinUsed   Boolean   @default(false)
+  remoteId     String    @default("")
+  remoteUrl    String    @default("")
+  status       String    @default("draft") // draft | publishing | published | failed
+  error        String    @default("")
+  publishedAt  DateTime?
+  createdAt    DateTime  @default(now())
+
+  site       Site           @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  connection BlogConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@index([siteId, createdAt])
 }
