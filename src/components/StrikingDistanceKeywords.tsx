@@ -395,11 +395,12 @@ function KeywordsTable({ data, loading, siteDbId, weights, country }: {
                     {item.query}
                   </span>
                   {/* Already-bought mark: this exact query+URL pair has paid links behind it —
-                      the badge says how many, so buying round two is a decision, not an accident. */}
+                      the badge says how many and when the last batch landed, so buying round
+                      two is a decision, not an accident (date = last purchase, dd.MM). */}
                   {purchase && (
                     <span title={t("mlBoughtN").replace("{n}", String(purchase.quantity)) + ` · ${purchase.lastAt.slice(0, 10)}`}
                       style={{ flexShrink: 0, fontSize: "10px", fontWeight: 700, color: "#7C3AED", background: "rgba(124,58,237,0.12)", padding: "2px 6px", borderRadius: "10px", marginLeft: "4px", whiteSpace: "nowrap" }}>
-                      ✦ {purchase.quantity}
+                      ✦ {purchase.quantity} · {purchase.lastAt.slice(5, 10).split("-").reverse().join(".")}
                     </span>
                   )}
                   {item.siteName && (

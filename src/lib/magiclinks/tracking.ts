@@ -81,6 +81,8 @@ export interface PulseRow {
   purchaseProvider: string;
   checkStatus: string;
   checkedAt: Date | null;
+  /** donor's Google-index verdict from the XML River pass; "" = never checked */
+  xrStatus?: string;
 }
 
 export interface ProviderPulse {
@@ -92,6 +94,13 @@ export interface ProviderPulse {
   blocked: number;
   error: number;
   unchecked: number;
+  /** donors the xr pass confirmed in Google's index */
+  indexed: number;
+  /** donors the xr pass found OUT of the index — the links there are dead weight even when
+   *  they physically stand; prime candidates for the indexer queue */
+  notIndexed: number;
+  /** donors whose index status nobody has checked yet */
+  xrUnchecked: number;
   lastCheckedAt: string | null;
 }
 
@@ -107,7 +116,8 @@ export function foldPulse(rows: PulseRow[]): ProviderPulse[] {
     if (!acc) {
       acc = {
         provider, name: providerName(provider),
-        placements: 0, found: 0, missing: 0, blocked: 0, error: 0, unchecked: 0, lastCheckedAt: null,
+        placements: 0, found: 0, missing: 0, blocked: 0, error: 0, unchecked: 0,
+        indexed: 0, notIndexed: 0, xrUnchecked: 0, lastCheckedAt: null,
       };
       byProvider.set(provider, acc);
     }
@@ -118,6 +128,10 @@ export function foldPulse(rows: PulseRow[]): ProviderPulse[] {
     else if (status === "blocked") acc.blocked++;
     else if (status === "error") acc.error++;
     else acc.unchecked++;
+    const xr = String(r.xrStatus ?? "");
+    if (xr === "indexed") acc.indexed++;
+    else if (xr === "not_indexed") acc.notIndexed++;
+    else acc.xrUnchecked++;
     const iso = r.checkedAt ? r.checkedAt.toISOString() : null;
     if (iso && (!acc.lastCheckedAt || iso > acc.lastCheckedAt)) acc.lastCheckedAt = iso;
   }
@@ -128,7 +142,7 @@ export async function purchasedPulse(userId: string): Promise<ProviderPulse[]> {
   try {
     const rows = await prisma.siteBacklink.findMany({
       where: { purchaseProvider: { not: "" }, site: { userId } },
-      select: { purchaseProvider: true, checkStatus: true, checkedAt: true },
+      select: { purchaseProvider: true, checkStatus: true, checkedAt: true, xrStatus: true },
     });
     return foldPulse(rows);
   } catch {

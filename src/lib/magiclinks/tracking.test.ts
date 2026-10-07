@@ -96,11 +96,11 @@ test("pure: placements from provider payloads", async () => {
 test("pure: foldPulse keeps unconfirmed apart from gone", async () => {
   const { foldPulse } = await import("./tracking");
   const pulse = foldPulse([
-    { purchaseProvider: "fieldlink", checkStatus: "found", checkedAt: new Date("2026-10-01T10:00:00Z") },
-    { purchaseProvider: "fieldlink", checkStatus: "found", checkedAt: new Date("2026-10-02T10:00:00Z") },
-    { purchaseProvider: "fieldlink", checkStatus: "missing", checkedAt: new Date("2026-10-03T10:00:00Z") },
+    { purchaseProvider: "fieldlink", checkStatus: "found", checkedAt: new Date("2026-10-01T10:00:00Z"), xrStatus: "indexed" },
+    { purchaseProvider: "fieldlink", checkStatus: "found", checkedAt: new Date("2026-10-02T10:00:00Z"), xrStatus: "not_indexed" },
+    { purchaseProvider: "fieldlink", checkStatus: "missing", checkedAt: new Date("2026-10-03T10:00:00Z"), xrStatus: "indexed" },
     { purchaseProvider: "fieldlink", checkStatus: "blocked", checkedAt: null },
-    { purchaseProvider: "fieldlink", checkStatus: "unchecked", checkedAt: null },
+    { purchaseProvider: "fieldlink", checkStatus: "unchecked", checkedAt: null, xrStatus: "" },
     { purchaseProvider: "", checkStatus: "found", checkedAt: new Date() }, // not purchased — ignored
     { purchaseProvider: "magic369", checkStatus: "found", checkedAt: new Date("2026-09-01T10:00:00Z") },
   ]);
@@ -113,8 +113,13 @@ test("pure: foldPulse keeps unconfirmed apart from gone", async () => {
   assert.equal(fl.missing, 1);
   assert.equal(fl.blocked, 1);
   assert.equal(fl.unchecked, 1);
+  // Donor index verdicts: three checked (two in, one out), two never xr-checked.
+  assert.equal(fl.indexed, 2);
+  assert.equal(fl.notIndexed, 1);
+  assert.equal(fl.xrUnchecked, 2);
   assert.equal(fl.lastCheckedAt, "2026-10-03T10:00:00.000Z");
   assert.equal(pulse[1].provider, "magic369");
+  assert.equal(pulse[1].xrUnchecked, 1); // no xrStatus at all counts as unchecked
 });
 
 test("db: import creates, claims and dedupes placements", async () => {

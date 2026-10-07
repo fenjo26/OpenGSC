@@ -45,6 +45,9 @@ interface PulseProvider {
   blocked: number;
   error: number;
   unchecked: number;
+  indexed: number;
+  notIndexed: number;
+  xrUnchecked: number;
   lastCheckedAt: string | null;
 }
 
@@ -82,6 +85,34 @@ export default function MagicLinksPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Both donor-index actions are portfolio-wide (the pulse itself is) and paid in different
+  // currencies: the xr check spends the XML River balance per URL, the indexer queue is free.
+  const xrTotals = pulse.reduce((a, p) => ({ xrUnchecked: a.xrUnchecked + p.xrUnchecked, notIndexed: a.notIndexed + p.notIndexed }), { xrUnchecked: 0, notIndexed: 0 });
+  const [xrChecking, setXrChecking] = useState(false);
+  const [queueing, setQueueing] = useState(false);
+  const [xrNote, setXrNote] = useState<string | null>(null);
+  const runXrCheck = async () => {
+    setXrChecking(true); setXrNote(null);
+    try {
+      const r = await fetch("/api/backlinks/xr-donors", { method: "POST" });
+      const d = await r.json();
+      if (!r.ok) setXrNote(d?.error === "not_migrated" ? t("mlPulseNotMigrated") : String(d?.error ?? d?.message ?? "failed"));
+      else setXrNote(t("mlPulseXrDone").replace("{n}", String(d.checked ?? 0)).replace("{i}", String(d.indexed ?? 0)));
+      await load();
+    } catch { setXrNote("failed"); }
+    setXrChecking(false);
+  };
+  const queueToIndexer = async () => {
+    setQueueing(true); setXrNote(null);
+    try {
+      const r = await fetch("/api/magiclinks/donors-indexer", { method: "POST" });
+      const d = await r.json();
+      if (!r.ok) setXrNote(d?.error === "no_indexer_domains" ? t("mlPulseNoIndexer") : String(d?.error ?? "failed"));
+      else setXrNote(t("mlPulseQueued").replace("{n}", String(d.queued ?? 0)).replace("{d}", String(d.domains ?? 0)));
+    } catch { setXrNote("failed"); }
+    setQueueing(false);
+  };
 
   const openDetail = async (o: OrderRow) => {
     if (openId === o.orderId) { setOpenId(null); return; }
@@ -136,7 +167,27 @@ export default function MagicLinksPage() {
           not a permanent fixture next to an empty order list. */}
       {pulse.length > 0 && (
         <div style={{ border: "1px solid var(--color-border)", borderRadius: "12px", background: "var(--color-card)", padding: "14px 16px", marginBottom: "16px" }}>
-          <div style={{ fontSize: "12px", fontWeight: 700, color: "var(--color-text-primary)", marginBottom: "10px" }}>{t("mlPulseTitle")}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
+            <div style={{ fontSize: "12px", fontWeight: 700, color: "var(--color-text-primary)" }}>{t("mlPulseTitle")}</div>
+            <div style={{ flex: 1 }} />
+            {xrTotals.xrUnchecked > 0 && (
+              <button onClick={runXrCheck} disabled={xrChecking || queueing}
+                title={t("mlPulseXrHint")}
+                style={{ display: "flex", alignItems: "center", gap: "6px", padding: "5px 12px", borderRadius: "7px", border: "1px solid var(--color-border)", background: "var(--color-bg)", color: "var(--color-text-secondary)", fontSize: "11.5px", fontWeight: 600, cursor: "pointer" }}>
+                {xrChecking ? "…" : t("mlPulseXrCheck").replace("{n}", String(xrTotals.xrUnchecked))}
+              </button>
+            )}
+            {xrTotals.notIndexed > 0 && (
+              <button onClick={queueToIndexer} disabled={xrChecking || queueing}
+                title={t("mlPulseQueueHint")}
+                style={{ display: "flex", alignItems: "center", gap: "6px", padding: "5px 12px", borderRadius: "7px", border: "1px solid rgba(124,58,237,0.35)", background: "rgba(124,58,237,0.08)", color: "#7C3AED", fontSize: "11.5px", fontWeight: 600, cursor: "pointer" }}>
+                {queueing ? "…" : t("mlPulseToIndexer").replace("{n}", String(xrTotals.notIndexed))}
+              </button>
+            )}
+          </div>
+          {xrNote && (
+            <div style={{ fontSize: "11.5px", color: "var(--color-text-secondary)", marginBottom: "8px" }}>{xrNote}</div>
+          )}
           {pulse.map(p => (
             <div key={p.provider} style={{ display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap", padding: "6px 0", fontSize: "12px" }}>
               <span style={{ fontSize: "10px", fontWeight: 700, padding: "2px 7px", borderRadius: "10px", color: p.provider === "fieldlink" ? "#3B82F6" : "#10B981", background: p.provider === "fieldlink" ? "rgba(59,130,246,0.12)" : "rgba(16,185,129,0.12)" }}>
@@ -149,6 +200,12 @@ export default function MagicLinksPage() {
               {p.missing > 0 && <span style={{ color: "#EF4444" }}>{t("mlPulseMissing")}: <strong>{p.missing}</strong></span>}
               {p.blocked > 0 && <span style={{ color: "#F59E0B" }}>{t("mlPulseBlocked")}: <strong>{p.blocked}</strong></span>}
               {p.unchecked > 0 && <span style={{ color: "var(--color-text-tertiary)" }}>{t("mlPulseUnchecked")}: <strong>{p.unchecked}</strong></span>}
+              {(p.indexed > 0 || p.notIndexed > 0) && (
+                <span style={{ color: "var(--color-text-secondary)" }}>
+                  · {t("mlPulseIndexed")}: <strong style={{ color: "#10B981" }}>{p.indexed}</strong>
+                  {p.notIndexed > 0 && <>{t("mlPulseNotIndexed")}: <strong style={{ color: "#EF4444" }}>{p.notIndexed}</strong></>}
+                </span>
+              )}
               <span style={{ color: "var(--color-text-tertiary)", fontSize: "11px", marginLeft: "auto" }}>
                 {p.lastCheckedAt ? `${t("mlPulseLastCheck")} ${p.lastCheckedAt.slice(0, 10)}` : t("mlPulseNeverChecked")}
               </span>
