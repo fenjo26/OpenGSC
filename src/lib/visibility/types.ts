@@ -1,3 +1,5 @@
+import type { CitationCategory } from "@/lib/seo/aeoCitationClassify";
+
 export interface AiCompetitor {
   name: string;                 // display name
   domain: string;               // host without www; "" when the rival has no site
@@ -34,6 +36,9 @@ export interface CitedDomainRow {
   exampleUrl: string;
   isUs: boolean;
   competitor: string | null;    // competitor name if the domain belongs to one
+  /** Wave A heuristic domain category (forum/social/video/…), stamped by the store so the
+   *  cited-domains table can badge rows without re-classifying client-side. */
+  category?: CitationCategory;
 }
 
 export interface SuggestedQuestion {

@@ -142,22 +142,18 @@ test("isRedditDomain / extractSubreddit", () => {
 
 // ── classifyCitations + aggregates ────────────────────────────────────────────
 
-test("classifyCitations fills category/pageType and keeps already-classified entries (idempotent)", () => {
-  const out = classifyCitations(
-    [
-      { url: "https://www.reddit.com/r/Cars/comments/a/b/", domain: "www.reddit.com", title: "B" },
-      { url: "https://oursite.gr/", domain: "oursite.gr", title: "" },
-      // Pre-classified by the write path: the read path must not clobber it.
-      { url: "https://sketchy.example/x", domain: "sketchy.example", title: "", category: "reviews", pageType: "article" },
-    ],
-    BRAND,
-    RIVALS,
-  );
+test("classifyCitations fills category/pageType and recomputes against the CURRENT brand/rival lists", () => {
+  const raw = [
+    { url: "https://www.reddit.com/r/Cars/comments/a/b/", domain: "www.reddit.com", title: "B" },
+    { url: "https://oursite.gr/", domain: "oursite.gr", title: "" },
+  ];
+  const out = classifyCitations(raw, BRAND, RIVALS);
   assert.deepEqual(out[0], { url: "https://www.reddit.com/r/Cars/comments/a/b/", domain: "www.reddit.com", title: "B", category: "forum", pageType: "forum-thread" });
   assert.equal(out[1].category, "brand");
   assert.equal(out[1].pageType, "homepage");
-  assert.equal(out[2].category, "reviews");
-  assert.equal(out[2].pageType, "article");
+  // A newly added rival re-tags the stored history — the same free-recompute promise share of
+  // voice makes. Classification is never trusted from stale stored fields.
+  assert.equal(classifyCitations(raw, BRAND, ["reddit.com"])[0].category, "competitor");
 });
 
 test("categoryCounts: shares over the total, sorted by count with a stable tiebreak", () => {

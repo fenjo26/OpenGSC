@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
+import { hostOf } from "@/lib/seo/aeo";
+import { classifyCitations, type ClassifiedCitation } from "@/lib/seo/aeoCitationClassify";
+import { brandNamesFromHost } from "@/lib/seo/localPack";
 
 // GET /api/aeo/history?questionId=…&days=90
 // Full per-engine check history for one tracked question — used by the expandable row.
@@ -14,9 +17,22 @@ export async function GET(req: Request) {
 
   const q = await prisma.trackedQuestion.findUnique({
     where: { id: questionId },
-    include: { site: { select: { userId: true } } },
+    include: { site: { select: { userId: true, url: true, aeoCompetitors: true } } },
   });
   if (!q || q.site.userId !== userId) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // Wave A: classify citations for display with the site's own brand/competitor context. Done
+  // here, on the read, so checks stored before the wave badge correctly with zero migration —
+  // and recomputed fresh so an edited competitor list re-tags old answers too.
+  const host = hostOf(q.site.url);
+  let competitorDomains: string[] = [];
+  try {
+    const parsed = q.site.aeoCompetitors ? JSON.parse(q.site.aeoCompetitors) : [];
+    if (Array.isArray(parsed)) {
+      competitorDomains = parsed.map((c: { domain?: unknown }) => hostOf(String(c?.domain ?? ""))).filter(Boolean);
+    }
+  } catch { competitorDomains = []; }
+  const brandDomains = [host, ...brandNamesFromHost(host)].filter(Boolean);
 
   const since = new Date(Date.now() - days * 86400000);
   let checks;
@@ -52,10 +68,10 @@ export async function GET(req: Request) {
       })
     : [];
 
-  const latest: Record<string, { answerText: string | null; citations: unknown[]; sentiment: string | null; sentimentScore: number | null; sentimentNote: string | null }> = {};
+  const latest: Record<string, { answerText: string | null; citations: ClassifiedCitation[]; sentiment: string | null; sentimentScore: number | null; sentimentNote: string | null }> = {};
   for (const d of detail) {
-    let citations: unknown[] = [];
-    try { citations = d.citations ? JSON.parse(d.citations) : []; } catch { citations = []; }
+    let citations: ClassifiedCitation[] = [];
+    try { citations = d.citations ? classifyCitations(JSON.parse(d.citations), brandDomains, competitorDomains) : []; } catch { citations = []; }
     latest[d.engine] = { answerText: d.answerText, citations, sentiment: d.sentiment, sentimentScore: d.sentimentScore, sentimentNote: d.sentimentNote };
   }
 

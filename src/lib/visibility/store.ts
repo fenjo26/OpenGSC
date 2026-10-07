@@ -6,6 +6,11 @@
 
 import { prisma } from "@/lib/prisma";
 import { hostOf, brandTermsFor } from "@/lib/seo/aeo";
+import {
+  classifyCitations, categorizeDomain, categoryCounts, redditCut,
+  type CategoryCount, type ClassifiedCitation, type RedditCut,
+} from "@/lib/seo/aeoCitationClassify";
+import { brandNamesFromHost } from "@/lib/seo/localPack";
 import { parseBrandTerms } from "@/lib/aeoTracker";
 import { buildSovReport, buildCitedDomains, latestPerQuestionEngine, questionLike, sentimentDistribution, type SovAnswer, type SentimentSlice } from "./sov";
 import type { AiCompetitor, CitedDomainRow, SovReport, SuggestedQuestion } from "./types";
@@ -16,14 +21,22 @@ const SUGGEST_HARD_CAP = 50;
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
-function parseCitations(raw: string | null): SovAnswer["citations"] {
+// Citations parsed off the stored JSON, classified on the fly: rows written before Wave A carry
+// no category/pageType, and rather than a migration the read path recomputes them — pure string
+// rules, and recomputing (instead of trusting stored tags) keeps the "add a competitor, the
+// whole history re-tags for free" promise share of voice already makes. Nothing is persisted;
+// old rows stay as they are on disk.
+function parseCitations(raw: string | null, brandDomains: string[] = [], competitorDomains: string[] = []): ClassifiedCitation[] {
   if (!raw) return [];
   try {
     const arr = JSON.parse(raw);
     if (!Array.isArray(arr)) return [];
-    return arr
-      .filter(c => c && typeof c === "object")
-      .map(c => ({ url: String(c.url ?? ""), domain: String(c.domain ?? ""), title: String(c.title ?? "") }));
+    return classifyCitations(
+      arr.filter(c => c && typeof c === "object")
+        .map(c => ({ url: String(c.url ?? ""), domain: String(c.domain ?? ""), title: String(c.title ?? "") })),
+      brandDomains,
+      competitorDomains,
+    );
   } catch {
     return [];
   }
@@ -65,7 +78,16 @@ export function sanitizeCompetitors(list: unknown): AiCompetitor[] {
 
 export async function sovForSite(
   userId: string, siteDbId: string, days: number,
-): Promise<{ report: SovReport; cited: CitedDomainRow[]; sentiment: { us: SentimentSlice | null } } | null> {
+): Promise<{
+  report: SovReport;
+  cited: CitedDomainRow[];
+  sentiment: { us: SentimentSlice | null };
+  /** Wave A: heuristic classification of the same windowed citations — per-category citation
+   *  slots plus the Reddit/communities cut. Free by construction, same as the rest of the
+   *  report: plain counting over stored rows. */
+  categoryCounts: CategoryCount[];
+  reddit: RedditCut;
+} | null> {
   const site = await prisma.site.findFirst({
     where: { id: siteDbId, userId }, select: { url: true, brandedKeywords: true },
   });
@@ -94,13 +116,21 @@ export async function sovForSite(
     },
   });
 
-  const answers: SovAnswer[] = checks.map(c => ({
+  const host = hostOf(site.url);
+  const terms = brandTermsFor(host, parseBrandTerms(site.brandedKeywords));
+  const rivals = await getCompetitors(userId, siteDbId);
+  // Citation classification context, resolved once: our host (+ brand spellings from it) and
+  // the same rival domains the citation share above is computed against.
+  const brandDomains = [host, ...brandNamesFromHost(host)].filter(Boolean);
+  const rivalDomains = rivals.map(r => r.domain).filter(Boolean);
+
+  const answers = checks.map(c => ({
     questionId: c.questionId,
     question: c.question.question,
     engine: c.engine,
     checkedAt: c.checkedAt,
     answerText: c.answerText && c.answerText.trim() ? c.answerText : null,
-    citations: parseCitations(c.citations),
+    citations: parseCitations(c.citations, brandDomains, rivalDomains),
     rank: c.rank,
     status: c.status,
     sentiment: c.sentiment,
@@ -112,19 +142,21 @@ export async function sovForSite(
     ? checks[checks.length - 1].checkedAt
     : from;
 
-  const host = hostOf(site.url);
-  const terms = brandTermsFor(host, parseBrandTerms(site.brandedKeywords));
-  const rivals = await getCompetitors(userId, siteDbId);
-
   const report = buildSovReport(answers, { host, terms }, rivals, actualFrom, to);
   // buildSovReport applies latest-per-pair itself; the cited rating takes the same filtered list.
   const latest = latestPerQuestionEngine(answers, actualFrom, to);
-  const cited = buildCitedDomains(latest, { host }, rivals, 50);
+  const cited = buildCitedDomains(latest, { host }, rivals, 50).map(row => ({
+    ...row,
+    category: categorizeDomain(row.domain, brandDomains, rivalDomains),
+  }));
   // Sentiment of OUR brand across the same windowed answers — free by construction: it reads
   // the columns the sentiment pass already wrote. Competitor sentiment has no column and is
   // therefore NOT here; it exists only in a paid run's response (see sentimentStore).
   const sentiment = { us: sentimentDistribution(latest, terms) };
-  return { report, cited, sentiment };
+  // Wave A cuts over the SAME windowed citations the cited rating counted — one number per
+  // category, and which subreddits the Reddit mass concentrates in.
+  const windowedCitations = latest.flatMap(a => a.citations);
+  return { report, cited, sentiment, categoryCounts: categoryCounts(windowedCitations), reddit: redditCut(windowedCitations) };
 }
 
 // ─── competitors ──────────────────────────────────────────────────────────────

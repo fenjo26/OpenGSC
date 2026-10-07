@@ -7,8 +7,9 @@
 // history with zero new AI calls. The store (store.ts) feeds rows in; nothing here knows Prisma.
 
 import type { AiCompetitor, CitedDomainRow, SovEngineRow, SovReport } from "./types";
+import type { CitationCategory, CitationPageType } from "@/lib/seo/aeoCitationClassify";
 
-export interface SovAnswer { questionId: string; question: string; engine: string; checkedAt: Date; answerText: string | null; citations: { url: string; domain: string; title: string }[]; rank: number | null; status: string | null; sentiment?: string | null }
+export interface SovAnswer { questionId: string; question: string; engine: string; checkedAt: Date; answerText: string | null; citations: { url: string; domain: string; title: string; category?: CitationCategory; pageType?: CitationPageType }[]; rank: number | null; status: string | null; sentiment?: string | null }
 
 // ─── folding: case- and diacritics-insensitive comparison ─────────────────────
 

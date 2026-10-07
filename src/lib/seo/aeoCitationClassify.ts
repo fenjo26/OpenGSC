@@ -217,16 +217,13 @@ function isCategory(v: unknown): v is CitationCategory {
   return typeof v === "string" && (CITATION_CATEGORIES as string[]).includes(v);
 }
 
-const PAGE_TYPES = ["homepage", "article", "listicle", "howto", "comparison", "review", "product", "doc", "forum-thread", "video", "other"] as const;
-function isPageType(v: unknown): v is CitationPageType {
-  return typeof v === "string" && (PAGE_TYPES as readonly string[]).includes(v);
-}
-
-/** Classify a raw citation list (the AeoCheck.citations JSON, parsed). Entries that already
- *  carry a valid category/pageType keep it — write-time enrichment survives the read path; only
- *  the gaps (rows written before this wave) are filled, so re-reading is idempotent. */
+/** Classify a raw citation list (the AeoCheck.citations JSON, parsed) into enriched entries.
+ *  Classification is recomputed on every call rather than trusted from stored fields: the
+ *  rules are pure and cheap, and brand/competitor verdicts depend on lists the operator edits —
+ *  a freshly added competitor must re-tag the whole stored history, exactly like share of voice
+ *  recomputes it for free. */
 export function classifyCitations(
-  raw: { url: string; domain: string; title: string; category?: unknown; pageType?: unknown }[],
+  raw: { url: string; domain: string; title: string }[],
   brandDomains: string[] = [],
   competitorDomains: string[] = [],
 ): ClassifiedCitation[] {
@@ -238,10 +235,8 @@ export function classifyCitations(
       url,
       domain,
       title,
-      category: isCategory(c?.category)
-        ? c.category
-        : categorizeDomain(domain || url, brandDomains, competitorDomains),
-      pageType: isPageType(c?.pageType) ? c.pageType : classifyPageType(url, title),
+      category: categorizeDomain(domain || url, brandDomains, competitorDomains),
+      pageType: classifyPageType(url, title),
     };
   });
 }
@@ -256,8 +251,9 @@ export interface CategoryCount {
 }
 
 /** Citation slots per category, sorted by count then by the fixed category order (a stable,
- *  deterministic tiebreak). Empty input → empty list, which callers render as "no data". */
-export function categoryCounts(citations: { category: CitationCategory }[]): CategoryCount[] {
+ *  deterministic tiebreak). Entries without a resolvable category are skipped, not guessed into
+ *  "other". Empty input → empty list, which callers render as "no data". */
+export function categoryCounts(citations: { category?: CitationCategory | null }[]): CategoryCount[] {
   const counts = new Map<CitationCategory, number>();
   for (const c of citations) {
     if (!c || !isCategory(c.category)) continue;

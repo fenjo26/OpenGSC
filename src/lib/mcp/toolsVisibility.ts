@@ -9,7 +9,7 @@ export const VISIBILITY_TOOLS: McpTool[] = [
     cost: "local",
     readOnly: true,
     description:
-      "AI share of voice vs the site's named competitors (brand mentions and citation share, per engine, weekly trend) plus the domains AI engines cite for its tracked questions. Aggregated from stored AEO answers — LOCAL/READ-ONLY: no AI call runs, adding a competitor never costs anything.",
+      "AI share of voice vs the site's named competitors (brand mentions and citation share, per engine, weekly trend) plus the domains AI engines cite for its tracked questions. The cited domains carry a heuristic DETERMINISTIC category (brand/competitor/forum/social/video/developer/ecommerce/reviews/reference/institutional/editorial — host rules, no AI), and `categoryCounts` + `reddit` aggregate those categories over the window (the Reddit cut lists the subreddits). Aggregated from stored AEO answers — LOCAL/READ-ONLY: no AI call runs, adding a competitor never costs anything.",
     inputSchema: {
       type: "object",
       properties: {
@@ -23,7 +23,7 @@ export const VISIBILITY_TOOLS: McpTool[] = [
       const days = [7, 30, 90].includes(Number(args.days)) ? Number(args.days) : 30;
       const r = await sovForSite(userId, site.id, days);
       if (!r) throw new Error("Site not found");
-      return { report: r.report, cited: r.cited };
+      return { report: r.report, cited: r.cited, categoryCounts: r.categoryCounts, reddit: r.reddit };
     },
   },
 ];
