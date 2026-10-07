@@ -7,6 +7,8 @@ import {
   runAeoCheck, AEO_ENGINES, AEO_DEFAULT_MODEL, hostOf,
   type AeoEngine, type AeoCheckResult, type AeoRunOptions, type AeoStatus, type AioContext,
 } from "@/lib/seo/aeo";
+import { classifyCitations, categoryCounts, redditCut, type ClassifiedCitation } from "@/lib/seo/aeoCitationClassify";
+import { brandNamesFromHost } from "@/lib/seo/localPack";
 import { getAparserServerCreds } from "@/lib/seo/aparserServerCreds";
 import { rawQuery } from "@/lib/db/raw";
 
@@ -135,6 +137,11 @@ type LastResult = {
   cited: boolean; status: AeoStatus; url: string | null; rank: number | null;
   citedDomains: string[]; searched: boolean; model: string | null;
   checkedAt: string; error?: string | null;
+  /** Wave A citation classification of this check's citations: non-zero category counts and,
+   *  when Reddit shows up, the subreddit cut. Absent on rows written before the wave and on
+   *  checks with no citations — undefined drops out of the JSON, keeping old payloads intact. */
+  categoryCounts?: Record<string, number>;
+  reddit?: { count: number; subreddits: { name: string; count: number }[] };
 };
 type LastResults = Partial<Record<AeoEngine, LastResult>>;
 
@@ -143,7 +150,23 @@ type LastResults = Partial<Record<AeoEngine, LastResult>>;
 // without a second query per row.
 const TOP_DOMAINS_KEPT = 8;
 
-function summarize(r: AeoCheckResult, host: string, prev: LastResult | undefined, now: Date): LastResult {
+/** Brand/competitor domains the citation classifier needs. Brand = the site host plus the brand
+ *  spellings guessed from it (brandNamesFromHost); competitor = the same aeoCompetitors list
+ *  share of voice reads. */
+export interface CitationClassifyContext {
+  brandDomains: string[];
+  competitorDomains: string[];
+}
+
+export function defaultCitationContext(siteUrl: string): CitationClassifyContext {
+  const host = hostOf(siteUrl);
+  return { brandDomains: [host, ...brandNamesFromHost(host)].filter(Boolean), competitorDomains: [] };
+}
+
+function summarize(
+  r: AeoCheckResult, host: string, prev: LastResult | undefined, now: Date,
+  classified: ClassifiedCitation[] = [],
+): LastResult {
   const domains: string[] = [];
   for (const c of r.citations) if (c.domain && !domains.includes(c.domain)) domains.push(c.domain);
 
@@ -160,8 +183,12 @@ function summarize(r: AeoCheckResult, host: string, prev: LastResult | undefined
       model: r.model ?? prev?.model ?? null,
       checkedAt: now.toISOString(),
       error: r.error,
+      categoryCounts: prev?.categoryCounts,
+      reddit: prev?.reddit,
     };
   }
+  const counts = categoryCounts(classified);
+  const reddit = redditCut(classified);
   return {
     cited: r.cited,
     status: r.status,
@@ -172,18 +199,26 @@ function summarize(r: AeoCheckResult, host: string, prev: LastResult | undefined
     model: r.model,
     checkedAt: now.toISOString(),
     error: null,
+    ...(counts.length ? { categoryCounts: Object.fromEntries(counts.map(c => [c.category, c.count])) } : {}),
+    ...(reddit.count ? { reddit } : {}),
   };
 }
 
 // Check one tracked question across every engine the user has a key for; persist an
-// AeoCheck row per engine plus the denormalized lastResults JSON.
+// AeoCheck row per engine plus the denormalized lastResults JSON. Citations are classified
+// (Wave A) before they are stored — category/pageType ride inside the citations JSON, so the
+// schema stays as it is.
 export async function checkTrackedQuestion(
   q: { id: string; question: string; lastResults: string | null },
   cfg: AeoSiteConfig, creds: AeoCreds,
+  classifyCtx?: CitationClassifyContext,
 ): Promise<Partial<Record<AeoEngine, AeoCheckResult>>> {
   const results: Partial<Record<AeoEngine, AeoCheckResult>> = {};
   const now = new Date();
   const host = hostOf(cfg.url);
+  // Brand context always resolves (the host itself is a brand domain); the competitor half is
+  // what checkSiteQuestions adds from Site.aeoCompetitors.
+  const classify = classifyCtx ?? defaultCitationContext(cfg.url);
   let lastResults: LastResults = {};
   try { lastResults = q.lastResults ? JSON.parse(q.lastResults) : {}; } catch { lastResults = {}; }
 
@@ -217,6 +252,8 @@ export async function checkTrackedQuestion(
     const r = await runAeoCheck(engine, key, q.question, cfg.url, cfg.brandTerms, engineOpts);
     results[engine] = r;
 
+    const classified = classifyCitations(r.citations.slice(0, 40), classify.brandDomains, classify.competitorDomains);
+
     await prisma.aeoCheck.create({
       data: {
         questionId: q.id, engine, checkedAt: now,
@@ -230,12 +267,12 @@ export async function checkTrackedQuestion(
         // Trimmed: a tracked question checked daily across four engines would otherwise grow
         // an unbounded text column forever. Enough to see what the engine actually said.
         answerText: r.answerText ? r.answerText.slice(0, 12000) : null,
-        citations: r.citations.length ? JSON.stringify(r.citations.slice(0, 40)) : null,
+        citations: classified.length ? JSON.stringify(classified) : null,
         error: r.error ?? null,
       },
     });
 
-    lastResults[engine] = summarize(r, host, lastResults[engine], now);
+    lastResults[engine] = summarize(r, host, lastResults[engine], now, classified);
 
     // Small delay between engine calls — kind to rate limits, and these are billed API calls.
     await new Promise(res => setTimeout(res, 500));
@@ -262,8 +299,22 @@ export async function checkSiteQuestions(
 
   const all = await prisma.trackedQuestion.findMany({ where, orderBy: [{ lastCheckedAt: "asc" }] });
   const batch = all.slice(0, limit);
+
+  // Competitor domains for citation classification, read here rather than trusted from the
+  // callers: the scheduler's site select does not carry aeoCompetitors, and one tiny query per
+  // batch beats every caller having to remember it.
+  let competitorDomains: string[] = [];
+  try {
+    const site = await prisma.site.findUnique({ where: { id: siteId }, select: { aeoCompetitors: true } });
+    const parsed = site?.aeoCompetitors ? JSON.parse(site.aeoCompetitors) : [];
+    if (Array.isArray(parsed)) {
+      competitorDomains = parsed.map((c: { domain?: unknown }) => hostOf(String(c?.domain ?? ""))).filter(Boolean);
+    }
+  } catch { competitorDomains = []; } // missing column / corrupt blob → classify without rivals
+  const classifyCtx = { ...defaultCitationContext(cfg.url), competitorDomains };
+
   for (const q of batch) {
-    await checkTrackedQuestion({ id: q.id, question: q.question, lastResults: q.lastResults }, cfg, creds);
+    await checkTrackedQuestion({ id: q.id, question: q.question, lastResults: q.lastResults }, cfg, creds, classifyCtx);
   }
   return { checked: batch.length, remaining: Math.max(0, all.length - batch.length) };
 }

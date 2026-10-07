@@ -41,7 +41,14 @@ export type AeoEngine = "chatgpt" | "perplexity" | "claude" | "grok" | "gemini" 
 // anyone, so it is a separate state and is kept out of every share-of-voice denominator.
 export type AeoStatus = "cited" | "mentioned" | "absent" | "no_overview";
 
-export interface AeoCitation { url: string; domain: string; title: string }
+// Wave A: `category`/`pageType` are stamped onto citations at write time (and backfilled at
+// read time for rows stored before the wave) by aeoCitationClassify — optional because the
+// engines' own payloads never carry them and the check pipeline works without them.
+export interface AeoCitation {
+  url: string; domain: string; title: string;
+  category?: string;
+  pageType?: string;
+}
 
 export interface AeoCheckResult {
   cited: boolean;
