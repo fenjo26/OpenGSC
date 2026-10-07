@@ -28,6 +28,7 @@ import { getOpenAiKey, getOpenAiBaseUrl } from "@/lib/seo/geoClient";
 import { rankModels, OPENAI_FALLBACK_MODELS, type ModelOpt } from "@/lib/seo/models";
 import type { CitationCategory, CitationPageType } from "@/lib/seo/aeoCitationClassify";
 import { CategoryBadge } from "@/components/visibility/citationCategoryUi";
+import DomainListsEditor from "@/components/visibility/DomainListsEditor";
 
 const ENGINES = ["chatgpt", "perplexity", "claude", "grok", "gemini", "ai_overview"] as const;
 type Engine = typeof ENGINES[number];
@@ -283,6 +284,10 @@ function SettingsPanel({ siteDbId, settings, onChange }: {
           <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--color-text-primary)" }}>{t("aiSentAuto")}</div>
         </label>
       </div>
+
+      {/* R+ — per-category market domain lists for citation classification. Instance-wide, so it
+          saves to its own endpoint rather than riding the per-site PUT above. */}
+      <DomainListsEditor />
 
       <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.55, marginTop: "10px" }}>
         {t("aeoSettingsGeoHint")}

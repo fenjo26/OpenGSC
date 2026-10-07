@@ -9,7 +9,7 @@
 // question the raw table cannot — WHO crowds us out: Reddit, review sites, or competitors.
 
 import { useEffect, useState } from "react";
-import { ExternalLink, Handshake, MessageCircleQuestion } from "lucide-react";
+import { AlertTriangle, ExternalLink, Handshake, MessageCircleQuestion } from "lucide-react";
 import { BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { usePrivacy } from "@/lib/PrivacyContext";
@@ -19,6 +19,13 @@ import { CategoryBadge, CATEGORY_LABEL_KEY, CATEGORY_COLOR } from "./citationCat
 
 const VIOLET = "#8B5CF6";
 const GREEN = "#10B981";
+const AMBER = "#F59E0B";
+
+// The "extend the domain lists" signal (plan §7.4): when more than this share of citations
+// falls into "other", the classifier does not know the market. Deliberately a constant, not a
+// setting — one more knob to not set — and deliberately printed next to the number when it
+// fires, so the threshold is read, not guessed from the colour.
+const OTHER_SHARE_WARN = 0.3;
 
 const tooltipStyle: React.CSSProperties = { background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: "8px", fontSize: "12px", color: "var(--color-text-primary)" };
 
@@ -38,6 +45,33 @@ async function fetchCited(siteDbId: string): Promise<{
     categoryCounts: Array.isArray(d?.categoryCounts) ? (d.categoryCounts as CategoryCount[]) : [],
     reddit: d?.reddit ?? { count: 0, subreddits: [] },
   };
+}
+
+// The "other: NN%" chip for the categories header. Computed from the same counts the chart
+// below draws, so the two can never disagree. Absent when nothing fell through — a chip that
+// says "other: 0%" next to a chart with no "other" bar would claim a measurement twice.
+function OtherShareChip({ counts }: { counts: CategoryCount[] }) {
+  const { t } = useLanguage();
+  const entry = counts.find(c => c.category === "other");
+  if (!entry) return null;
+  const pct = Math.round(entry.share * 1000) / 10;
+  const warn = entry.share > OTHER_SHARE_WARN;
+  const thresholdPct = Math.round(OTHER_SHARE_WARN * 100);
+  // t() has no interpolation — the warn sentence and the threshold are joined by hand.
+  const title = warn ? `${t("aeoOtherShareWarn")} (> ${thresholdPct}%)` : undefined;
+  return (
+    <span title={title} style={{
+      display: "inline-flex", alignItems: "center", gap: "4px",
+      fontSize: "10px", fontWeight: 700, letterSpacing: "0.03em", textTransform: "uppercase",
+      padding: "2px 8px", borderRadius: "999px", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums",
+      ...(warn
+        ? { color: AMBER, border: `1px solid ${AMBER}55`, background: `${AMBER}14` }
+        : { color: "var(--color-text-secondary)", border: "1px solid var(--color-border)", background: "transparent" }),
+    }}>
+      {warn && <AlertTriangle size={10} />}
+      {t("aeoOtherShare")}: {pct}%{warn ? ` > ${thresholdPct}%` : ""}
+    </span>
+  );
 }
 
 // Horizontal share of the citation categories (recharts, vertical layout). The bar's LENGTH is
@@ -217,7 +251,10 @@ export default function CitedDomains({ siteDbId, domain, readOnly = false }: { s
           {(counts.length > 0 || reddit.count > 0) && (
             <div style={{ borderTop: "1px solid var(--color-border)", marginTop: "14px", paddingTop: "14px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: "18px" }}>
               <div>
-                <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--color-text-primary)", marginBottom: "2px" }}>{t("aeoCitationsCategories")}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "2px", flexWrap: "wrap" }}>
+                  <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--color-text-primary)" }}>{t("aeoCitationsCategories")}</div>
+                  <OtherShareChip counts={counts} />
+                </div>
                 <div style={{ fontSize: "11.5px", color: "var(--color-text-secondary)", marginBottom: "10px", lineHeight: 1.5 }}>{t("aeoCitationsCategoriesDesc")}</div>
                 <CategoryChart counts={counts} />
               </div>
