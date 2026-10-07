@@ -14,6 +14,7 @@ import NapCard from "@/components/local/NapCard";
 import CitationsCard from "@/components/local/CitationsCard";
 import SchemaCard from "@/components/local/SchemaCard";
 import GbpCard from "@/components/local/GbpCard";
+import GridCard from "@/components/local/GridCard";
 import { fieldLabel, inputStyle } from "@/components/local/shared";
 
 type Tab = "profile" | "nap" | "citations" | "schema" | "gbp";
@@ -150,8 +151,12 @@ export default function LocalPage() {
             ))}
           </div>
 
-          <div style={{ marginTop: 14 }}>
+          <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 14 }}>
             {tab === "profile" && <ProfileCard siteId={siteId} profile={profile} onChanged={() => void loadProfile(siteId)} />}
+            {/* Geo-grid (wave G) lives in the profile tab: its default scan centre IS the business
+                profile's coordinates (the one input no other tab owns), and no grid tab key was
+                pre-added to the locales — a pill showing its raw key would read as a bug. */}
+            {tab === "profile" && <GridCard siteId={siteId} profile={profile} />}
             {tab === "nap" && <NapCard siteId={siteId} hasProfile={hasProfile} />}
             {tab === "citations" && <CitationsCard siteId={siteId} hasProfile={hasProfile} />}
             {tab === "schema" && <SchemaCard siteId={siteId} hasProfile={hasProfile} />}
