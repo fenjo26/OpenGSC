@@ -54,12 +54,67 @@ function hostMatches(domain: string, host: string): boolean {
   return d === h || d.endsWith("." + h);
 }
 
+// ─── operator overlay lists (R+, Wave A) ─────────────────────────────────────
+
+/** The categories an operator can extend with their own domains. brand/competitor/other are
+ *  excluded on purpose: brand and competitor are identity (they come from the site's own
+ *  context, not a static list), and "other" is the honest fallthrough — listing a domain as
+ *  "other" would be a no-op with a confusing knob. */
+export type OverlayListCategory =
+  | "forum" | "reviews" | "editorial" | "reference" | "ecommerce"
+  | "developer" | "social" | "video" | "institutional";
+
+/** Fixed iteration order so a domain listed under two overlay categories resolves the same way
+ *  on every call — deterministic output is this module's contract. */
+export const OVERLAY_CATEGORIES: OverlayListCategory[] = [
+  "forum", "reviews", "editorial", "reference", "ecommerce",
+  "developer", "social", "video", "institutional",
+];
+
+/** Extra per-category domain lists, the shape the InstanceSetting `aeo_domain_lists` JSON
+ *  stores (see lib/visibility/domainListStore). Added ON TOP of the built-in defaults — an
+ *  overlay, never a replacement: reddit/wikipedia are correct regardless of market. */
+export type ExtraDomainLists = Partial<Record<OverlayListCategory, string[]>>;
+
+// Host syntax for a saved overlay entry: dot-separated ASCII labels, at least two of them (a
+// registrable-ish host — "localhost" is not something an answer engine cites). The classifier
+// matches subdomains by host boundary already, so wildcards like "*.gr" are rejected on
+// purpose: they would swallow unrelated sites and defeat the per-domain curation point.
+// Unicode hosts are not accepted either — citations arrive as URLs, and URLs arrive punycoded.
+const HOST_RE = /^(?=.{1,253}$)[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
+
+/** Normalize one operator-listed host the same way the classifier normalizes cited domains:
+ *  lowercase, scheme/www/path/port stripped. Returns "" for anything that is not a bare host —
+ *  the save path drops those, the editor refuses them inline. Kept here (not in the store) so
+ *  the client editor and the server store cannot drift apart. */
+export function normalizeOverlayHost(raw: unknown): string {
+  let d = String(raw ?? "").trim().toLowerCase();
+  d = d.replace(/^https?:\/\//, "").split("/")[0].split("?")[0].split("#")[0];
+  d = d.split(":")[0]; // port
+  d = d.replace(/^www\./, "");
+  return HOST_RE.test(d) ? d : "";
+}
+
 // ─── domain categories ────────────────────────────────────────────────────────
 
 // Domain-level rules are deliberately CONSERVATIVE: a label literally named "forum"/"forums"
 // is a strong signal, but "community.example.com" is not (it may be a marketing page), so it
 // stays "other". Page-type heuristics (classifyPageType) carry the URL-shape half.
-const FORUM_HOSTS = ["reddit.com", "quora.com", "stackexchange.com", "discourse.org", "discourse.group"];
+const FORUM_HOSTS = [
+  "reddit.com", "quora.com", "stackexchange.com", "discourse.org", "discourse.group",
+  "insomnia.gr", "adslgr.com", // GR starter
+];
+
+// Starter set for the GR market (the operator's main market), verified 2026-10-07, marked
+// "GR starter" on each line below:
+//   forum      insomnia.gr (largest Greek tech community), adslgr.com (telecom/broadband community)
+//   ecommerce  skroutz.gr, bestprice.gr (the two dominant price-comparison/marketplace platforms)
+//   reference  sansimera.gr ("on this day" / namedays / history portal)
+//   editorial  kathimerini.gr, tovima.gr, protothema.gr, naftemporiki.gr, in.gr, newsit.gr,
+//              tanea.gr, ethnos.gr, skai.gr, efsyn.gr — the major national news outlets.
+// This is a FLOOR, not a ceiling: the intended curation path is the editable overlay
+// (InstanceSetting `aeo_domain_lists`, UI card on the AEO settings panel) — these built-ins
+// only exist so a fresh instance does not file half the Greek market under "other" on day one.
 
 const SOCIAL_HOSTS = [
   "facebook.com", "instagram.com", "tiktok.com", "x.com", "twitter.com",
@@ -73,11 +128,17 @@ const DEVELOPER_HOSTS = ["github.com", "stackoverflow.com", "gitlab.com", "devel
 // Marketplace families where the first label is the brand (amazon.de, ebay.co.uk, …) — matched
 // by label rather than by enumerating every regional domain.
 const ECOMMERCE_FIRST_LABELS = new Set(["amazon", "ebay"]);
-const ECOMMERCE_HOSTS = ["etsy.com", "aliexpress.com", "walmart.com", "alibaba.com"];
+const ECOMMERCE_HOSTS = [
+  "etsy.com", "aliexpress.com", "walmart.com", "alibaba.com",
+  "skroutz.gr", "bestprice.gr", // GR starter
+];
 
 const REVIEWS_HOSTS = ["trustpilot.com", "sitejabber.com", "g2.com", "capterra.com", "reviews.io", "yelp.com"];
 
-const REFERENCE_HOSTS = ["wikipedia.org", "wikimedia.org", "britannica.com", "dictionary.com"];
+const REFERENCE_HOSTS = [
+  "wikipedia.org", "wikimedia.org", "britannica.com", "dictionary.com",
+  "sansimera.gr", // GR starter
+];
 
 // Mainstream news domains we are confident about. Deliberately SHORT and extensible: an unknown
 // news-looking domain must not be guessed into "editorial" — it goes to "other" until added
@@ -86,6 +147,9 @@ const EDITORIAL_HOSTS = [
   "nytimes.com", "washingtonpost.com", "wsj.com", "ft.com", "theguardian.com",
   "bbc.com", "bbc.co.uk", "cnn.com", "reuters.com", "bloomberg.com", "forbes.com",
   "spiegel.de", "lemonde.fr",
+  // GR starter:
+  "kathimerini.gr", "tovima.gr", "protothema.gr", "naftemporiki.gr", "in.gr",
+  "newsit.gr", "tanea.gr", "ethnos.gr", "skai.gr", "efsyn.gr",
 ];
 
 function matchesAnyHost(domain: string, hosts: string[]): boolean {
@@ -103,14 +167,28 @@ export function categorizeDomain(
   domain: string,
   brandDomains: string[] = [],
   competitorDomains: string[] = [],
+  extraLists?: ExtraDomainLists,
 ): CitationCategory {
   const host = normalizeHost(domain);
   if (!host) return "other";
 
-  // Brand and competitor win over every platform rule — a competitor on a reddit.com subdomain
-  // (a hosted community) is still "who crowds us out", and that is the question being answered.
+  // Brand and competitor win over every platform rule AND over the operator overlay — they are
+  // identity, not taxonomy: a rival filed under "editorial" by mistake is still "who crowds us
+  // out", and re-tagging the stored history is free (classification is recomputed on read).
   if (brandDomains.some(b => hostMatches(host, b))) return "brand";
   if (competitorDomains.some(c => hostMatches(host, c))) return "competitor";
+
+  // Operator overlay next — intent beats the built-in defaults. If the operator lists
+  // youtube.com under "editorial" (say it hosts their market's news), that verdict wins over
+  // the built-in "video"; the operator looked at the domain, the default did not. Consulted
+  // category-by-category in OVERLAY_CATEGORIES order, so a domain listed twice resolves the
+  // same way every time.
+  if (extraLists) {
+    for (const category of OVERLAY_CATEGORIES) {
+      const list = extraLists[category];
+      if (list?.some(d => hostMatches(host, d))) return category;
+    }
+  }
 
   const labels = hostLabels(host);
   // forums.example.com / example.forum.io — a host label that is literally "forum(s)".
@@ -226,6 +304,7 @@ export function classifyCitations(
   raw: { url: string; domain: string; title: string }[],
   brandDomains: string[] = [],
   competitorDomains: string[] = [],
+  extraLists?: ExtraDomainLists,
 ): ClassifiedCitation[] {
   return (Array.isArray(raw) ? raw : []).map(c => {
     const url = String(c?.url ?? "");
@@ -235,7 +314,7 @@ export function classifyCitations(
       url,
       domain,
       title,
-      category: categorizeDomain(domain || url, brandDomains, competitorDomains),
+      category: categorizeDomain(domain || url, brandDomains, competitorDomains, extraLists),
       pageType: classifyPageType(url, title),
     };
   });
@@ -271,6 +350,14 @@ export interface RedditCut {
   count: number;
   /** r/<name> ranked by citation slots, lowercase-grouped, top 10. */
   subreddits: { name: string; count: number }[];
+}
+
+/** Share of citations the classifier could not name — the "other" slice of categoryCounts,
+ *  0..1, 0 when nothing fell through. This is the "extend the domain lists" signal: a market
+ *  the built-ins and the overlay do not cover accumulates here. The warning threshold lives
+ *  in the UI (visible next to the number, not a hidden magic) — this stays a pure fraction. */
+export function otherShare(counts: { category: CitationCategory; share: number }[]): number {
+  return counts.find(c => c.category === "other")?.share ?? 0;
 }
 
 /** The Reddit/communities cut: how much of the citation mass is Reddit, and which subreddits

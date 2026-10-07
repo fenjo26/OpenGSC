@@ -3,12 +3,17 @@
 // competitor filed under "forum", or Reddit filed under "other", changes the answer to "who
 // crowds us out of AI answers" without any error anywhere. Precedence (brand/competitor beat
 // every platform rule) and the conservative fallthrough to "other" carry most of the value.
+//
+// R+ adds the operator overlay (extra per-category lists) and the GR starter built-ins — the
+// precedence question gets sharper there: identity (brand/competitor) vs operator intent
+// (overlay) vs defaults (built-ins), in that order.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
   categorizeDomain, classifyPageType, classifyCitations, categoryCounts, redditCut,
-  isRedditDomain, extractSubreddit,
+  isRedditDomain, extractSubreddit, otherShare, normalizeOverlayHost,
+  type ExtraDomainLists,
 } from "./aeoCitationClassify";
 
 const BRAND = ["oursite.gr"];
@@ -82,6 +87,104 @@ test("unknown domains fall through to other; inputs are normalized (scheme, www,
   assert.equal(categorizeDomain("some-random-shop.example"), "other");
   assert.equal(categorizeDomain("https://WWW.Reddit.Com/r/foo"), "forum");
   assert.equal(categorizeDomain(""), "other");
+});
+
+// ── R+: GR starter built-ins ──────────────────────────────────────────────────
+
+test("GR starter set: Greek forums, aggregators, reference and news are named, not 'other'", () => {
+  for (const d of ["insomnia.gr", "www.insomnia.gr", "adslgr.com"]) {
+    assert.equal(categorizeDomain(d), "forum", d);
+  }
+  for (const d of ["skroutz.gr", "bestprice.gr"]) {
+    assert.equal(categorizeDomain(d), "ecommerce", d);
+  }
+  assert.equal(categorizeDomain("sansimera.gr"), "reference");
+  for (const d of [
+    "kathimerini.gr", "tovima.gr", "protothema.gr", "naftemporiki.gr", "in.gr",
+    "newsit.gr", "tanea.gr", "ethnos.gr", "skai.gr", "efsyn.gr",
+  ]) {
+    assert.equal(categorizeDomain(d), "editorial", d);
+  }
+  // Host boundary still applies to the starter set: a lookalike is not the outlet.
+  assert.equal(categorizeDomain("notskroutz.gr"), "other");
+  assert.equal(categorizeDomain("skroutz.gr.evil.io"), "other");
+});
+
+// ── R+: the operator overlay ──────────────────────────────────────────────────
+
+test("overlay adds a category to an otherwise unknown domain, subdomains included", () => {
+  const lists: ExtraDomainLists = { editorial: ["localnews.example"] };
+  assert.equal(categorizeDomain("localnews.example", [], [], lists), "editorial");
+  assert.equal(categorizeDomain("www.localnews.example", [], [], lists), "editorial");
+  assert.equal(categorizeDomain("localnews.example", [], [], undefined), "other"); // no overlay → unchanged
+  // A sibling on a DIFFERENT subdomain depth still needs the host boundary, not substring.
+  assert.equal(categorizeDomain("notlocalnews.example", [], [], lists), "other");
+});
+
+test("operator intent beats a built-in match in a different category", () => {
+  // youtube.com is built-in video; the operator who lists it as editorial has looked at it.
+  const lists: ExtraDomainLists = { editorial: ["youtube.com"] };
+  assert.equal(categorizeDomain("youtube.com", [], [], lists), "editorial");
+  assert.equal(categorizeDomain("m.youtube.com", [], [], lists), "editorial");
+  // Without the overlay the built-in verdict stands.
+  assert.equal(categorizeDomain("youtube.com"), "video");
+});
+
+test("brand and competitor still win over the overlay (identity beats taxonomy)", () => {
+  const lists: ExtraDomainLists = { forum: ["oursite.gr", "bigcompetitor.com", "reddit.com"] };
+  assert.equal(categorizeDomain("oursite.gr", BRAND, RIVALS, lists), "brand");
+  assert.equal(categorizeDomain("bigcompetitor.com", BRAND, RIVALS, lists), "competitor");
+  // The same reddit.com entry DOES take effect for a domain that is neither — the overlay is
+  // consulted after identity, not ignored.
+  assert.equal(categorizeDomain("reddit.com", BRAND, RIVALS, lists), "forum"); // built-in agrees
+});
+
+test("a domain listed under two overlay categories resolves by the fixed category order", () => {
+  // "forum" precedes "editorial" in OVERLAY_CATEGORIES — deterministic regardless of the
+  // object's key order at the call site.
+  const lists: ExtraDomainLists = { editorial: ["multi.example"], forum: ["multi.example"] };
+  assert.equal(categorizeDomain("multi.example", [], [], lists), "forum");
+  const reversed: ExtraDomainLists = { forum: ["multi.example"], editorial: ["multi.example"] };
+  assert.equal(categorizeDomain("multi.example", [], [], reversed), "forum");
+});
+
+test("classifyCitations threads the overlay through", () => {
+  const raw = [{ url: "https://localnews.example/story", domain: "localnews.example", title: "S" }];
+  assert.equal(classifyCitations(raw)[0].category, "other");
+  assert.equal(classifyCitations(raw, [], [], { editorial: ["localnews.example"] })[0].category, "editorial");
+});
+
+// ── R+: normalizeOverlayHost (the rule the editor and the save path share) ─────
+
+test("normalizeOverlayHost: scheme/www/path/port stripped, case folded", () => {
+  assert.equal(normalizeOverlayHost("https://Example.gr/Path?x=1"), "example.gr");
+  assert.equal(normalizeOverlayHost("http://www.example.gr:8080/a"), "example.gr");
+  assert.equal(normalizeOverlayHost("  Example.GR  "), "example.gr");
+  assert.equal(normalizeOverlayHost("forums.example.gr"), "forums.example.gr"); // subdomain kept, host-boundary matched later
+});
+
+test("normalizeOverlayHost rejects what is not a registrable-ish ASCII host", () => {
+  assert.equal(normalizeOverlayHost("*.gr"), "");       // wildcard breadth — by design
+  assert.equal(normalizeOverlayHost("gr"), "");         // single label
+  assert.equal(normalizeOverlayHost(""), "");
+  assert.equal(normalizeOverlayHost(null), "");
+  assert.equal(normalizeOverlayHost(42), "");
+  assert.equal(normalizeOverlayHost("δοκιμή.gr"), "");   // unicode/IDN — citations arrive punycoded
+  assert.equal(normalizeOverlayHost("-bad.example"), "");
+  assert.equal(normalizeOverlayHost("example..gr"), "");
+});
+
+// ── R+: otherShare ────────────────────────────────────────────────────────────
+
+test("otherShare: the 'other' slice of categoryCounts, 0 when nothing fell through", () => {
+  const counts = categoryCounts([
+    { category: "forum" as const }, { category: "forum" as const },
+    { category: "other" as const }, { category: "editorial" as const },
+  ]);
+  assert.equal(otherShare(counts), 0.25);
+  assert.equal(otherShare(categoryCounts([{ category: "brand" as const }, { category: "forum" as const }])), 0);
+  assert.equal(otherShare(categoryCounts([{ category: "other" as const }])), 1);
+  assert.equal(otherShare(categoryCounts([])), 0);
 });
 
 // ── classifyPageType ──────────────────────────────────────────────────────────
