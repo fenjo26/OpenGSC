@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { hostOf } from "@/lib/seo/aeo";
 import { classifyCitations, type ClassifiedCitation } from "@/lib/seo/aeoCitationClassify";
 import { brandNamesFromHost } from "@/lib/seo/localPack";
+import { getAeoDomainLists } from "@/lib/visibility/domainListStore";
 
 // GET /api/aeo/history?questionId=…&days=90
 // Full per-engine check history for one tracked question — used by the expandable row.
@@ -23,7 +24,9 @@ export async function GET(req: Request) {
 
   // Wave A: classify citations for display with the site's own brand/competitor context. Done
   // here, on the read, so checks stored before the wave badge correctly with zero migration —
-  // and recomputed fresh so an edited competitor list re-tags old answers too.
+  // and recomputed fresh so an edited competitor list re-tags old answers too. The operator's
+  // domain-list overlay (R+) rides along for the same reason: a list edited after a check must
+  // re-badge that check, and the read path is where that happens for free.
   const host = hostOf(q.site.url);
   let competitorDomains: string[] = [];
   try {
@@ -33,6 +36,7 @@ export async function GET(req: Request) {
     }
   } catch { competitorDomains = []; }
   const brandDomains = [host, ...brandNamesFromHost(host)].filter(Boolean);
+  const extraLists = await getAeoDomainLists();
 
   const since = new Date(Date.now() - days * 86400000);
   let checks;
@@ -71,7 +75,7 @@ export async function GET(req: Request) {
   const latest: Record<string, { answerText: string | null; citations: ClassifiedCitation[]; sentiment: string | null; sentimentScore: number | null; sentimentNote: string | null }> = {};
   for (const d of detail) {
     let citations: ClassifiedCitation[] = [];
-    try { citations = d.citations ? classifyCitations(JSON.parse(d.citations), brandDomains, competitorDomains) : []; } catch { citations = []; }
+    try { citations = d.citations ? classifyCitations(JSON.parse(d.citations), brandDomains, competitorDomains, extraLists) : []; } catch { citations = []; }
     latest[d.engine] = { answerText: d.answerText, citations, sentiment: d.sentiment, sentimentScore: d.sentimentScore, sentimentNote: d.sentimentNote };
   }
 

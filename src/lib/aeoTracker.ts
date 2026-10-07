@@ -7,9 +7,10 @@ import {
   runAeoCheck, AEO_ENGINES, AEO_DEFAULT_MODEL, hostOf,
   type AeoEngine, type AeoCheckResult, type AeoRunOptions, type AeoStatus, type AioContext,
 } from "@/lib/seo/aeo";
-import { classifyCitations, categoryCounts, redditCut, type ClassifiedCitation } from "@/lib/seo/aeoCitationClassify";
+import { classifyCitations, categoryCounts, redditCut, type ClassifiedCitation, type ExtraDomainLists } from "@/lib/seo/aeoCitationClassify";
 import { brandNamesFromHost } from "@/lib/seo/localPack";
 import { getAparserServerCreds } from "@/lib/seo/aparserServerCreds";
+import { getAeoDomainLists } from "@/lib/visibility/domainListStore";
 import { rawQuery } from "@/lib/db/raw";
 
 export const AEO_STALE_MS = 24 * 60 * 60 * 1000; // daily — AEO checks cost real money per engine
@@ -152,10 +153,12 @@ const TOP_DOMAINS_KEPT = 8;
 
 /** Brand/competitor domains the citation classifier needs. Brand = the site host plus the brand
  *  spellings guessed from it (brandNamesFromHost); competitor = the same aeoCompetitors list
- *  share of voice reads. */
+ *  share of voice reads. `extraLists` (R+) is the operator's per-category domain-list overlay —
+ *  optional so the callers that have no market-specific lists yet keep today's behaviour. */
 export interface CitationClassifyContext {
   brandDomains: string[];
   competitorDomains: string[];
+  extraLists?: ExtraDomainLists;
 }
 
 export function defaultCitationContext(siteUrl: string): CitationClassifyContext {
@@ -252,7 +255,9 @@ export async function checkTrackedQuestion(
     const r = await runAeoCheck(engine, key, q.question, cfg.url, cfg.brandTerms, engineOpts);
     results[engine] = r;
 
-    const classified = classifyCitations(r.citations.slice(0, 40), classify.brandDomains, classify.competitorDomains);
+    const classified = classifyCitations(
+      r.citations.slice(0, 40), classify.brandDomains, classify.competitorDomains, classify.extraLists,
+    );
 
     await prisma.aeoCheck.create({
       data: {
@@ -311,7 +316,10 @@ export async function checkSiteQuestions(
       competitorDomains = parsed.map((c: { domain?: unknown }) => hostOf(String(c?.domain ?? ""))).filter(Boolean);
     }
   } catch { competitorDomains = []; } // missing column / corrupt blob → classify without rivals
-  const classifyCtx = { ...defaultCitationContext(cfg.url), competitorDomains };
+  // The operator's domain-list overlay, same one-read-per-batch rule: it rides into
+  // checkTrackedQuestion's context so every check of the batch classifies against it.
+  const extraLists = await getAeoDomainLists();
+  const classifyCtx = { ...defaultCitationContext(cfg.url), competitorDomains, extraLists };
 
   for (const q of batch) {
     await checkTrackedQuestion({ id: q.id, question: q.question, lastResults: q.lastResults }, cfg, creds, classifyCtx);

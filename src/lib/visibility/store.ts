@@ -7,11 +7,12 @@
 import { prisma } from "@/lib/prisma";
 import { hostOf, brandTermsFor } from "@/lib/seo/aeo";
 import {
-  classifyCitations, categorizeDomain, categoryCounts, redditCut,
-  type CategoryCount, type ClassifiedCitation, type RedditCut,
+  classifyCitations, categorizeDomain, categoryCounts, otherShare, redditCut,
+  type CategoryCount, type ClassifiedCitation, type ExtraDomainLists, type RedditCut,
 } from "@/lib/seo/aeoCitationClassify";
 import { brandNamesFromHost } from "@/lib/seo/localPack";
 import { parseBrandTerms } from "@/lib/aeoTracker";
+import { getAeoDomainLists } from "./domainListStore";
 import { buildSovReport, buildCitedDomains, latestPerQuestionEngine, questionLike, sentimentDistribution, type SovAnswer, type SentimentSlice } from "./sov";
 import type { AiCompetitor, CitedDomainRow, SovReport, SuggestedQuestion } from "./types";
 
@@ -26,7 +27,10 @@ const SUGGEST_HARD_CAP = 50;
 // rules, and recomputing (instead of trusting stored tags) keeps the "add a competitor, the
 // whole history re-tags for free" promise share of voice already makes. Nothing is persisted;
 // old rows stay as they are on disk.
-function parseCitations(raw: string | null, brandDomains: string[] = [], competitorDomains: string[] = []): ClassifiedCitation[] {
+function parseCitations(
+  raw: string | null, brandDomains: string[] = [], competitorDomains: string[] = [],
+  extraLists?: ExtraDomainLists,
+): ClassifiedCitation[] {
   if (!raw) return [];
   try {
     const arr = JSON.parse(raw);
@@ -36,6 +40,7 @@ function parseCitations(raw: string | null, brandDomains: string[] = [], competi
         .map(c => ({ url: String(c.url ?? ""), domain: String(c.domain ?? ""), title: String(c.title ?? "") })),
       brandDomains,
       competitorDomains,
+      extraLists,
     );
   } catch {
     return [];
@@ -86,6 +91,9 @@ export async function sovForSite(
    *  slots plus the Reddit/communities cut. Free by construction, same as the rest of the
    *  report: plain counting over stored rows. */
   categoryCounts: CategoryCount[];
+  /** Share (0..1) of citations that fell into "other" — the "extend the domain lists" signal
+   *  (R+): a market the built-ins and the overlay miss accumulates here. */
+  otherShare: number;
   reddit: RedditCut;
 } | null> {
   const site = await prisma.site.findFirst({
@@ -119,10 +127,13 @@ export async function sovForSite(
   const host = hostOf(site.url);
   const terms = brandTermsFor(host, parseBrandTerms(site.brandedKeywords));
   const rivals = await getCompetitors(userId, siteDbId);
-  // Citation classification context, resolved once: our host (+ brand spellings from it) and
-  // the same rival domains the citation share above is computed against.
+  // Citation classification context, resolved once: our host (+ brand spellings from it), the
+  // same rival domains the citation share above is computed against, and the operator's
+  // per-category domain-list overlay (R+) — one read, then threaded through every
+  // classification below rather than re-fetched per domain.
   const brandDomains = [host, ...brandNamesFromHost(host)].filter(Boolean);
   const rivalDomains = rivals.map(r => r.domain).filter(Boolean);
+  const extraLists = await getAeoDomainLists();
 
   const answers = checks.map(c => ({
     questionId: c.questionId,
@@ -130,7 +141,7 @@ export async function sovForSite(
     engine: c.engine,
     checkedAt: c.checkedAt,
     answerText: c.answerText && c.answerText.trim() ? c.answerText : null,
-    citations: parseCitations(c.citations, brandDomains, rivalDomains),
+    citations: parseCitations(c.citations, brandDomains, rivalDomains, extraLists),
     rank: c.rank,
     status: c.status,
     sentiment: c.sentiment,
@@ -147,7 +158,7 @@ export async function sovForSite(
   const latest = latestPerQuestionEngine(answers, actualFrom, to);
   const cited = buildCitedDomains(latest, { host }, rivals, 50).map(row => ({
     ...row,
-    category: categorizeDomain(row.domain, brandDomains, rivalDomains),
+    category: categorizeDomain(row.domain, brandDomains, rivalDomains, extraLists),
   }));
   // Sentiment of OUR brand across the same windowed answers — free by construction: it reads
   // the columns the sentiment pass already wrote. Competitor sentiment has no column and is
@@ -156,7 +167,13 @@ export async function sovForSite(
   // Wave A cuts over the SAME windowed citations the cited rating counted — one number per
   // category, and which subreddits the Reddit mass concentrates in.
   const windowedCitations = latest.flatMap(a => a.citations);
-  return { report, cited, sentiment, categoryCounts: categoryCounts(windowedCitations), reddit: redditCut(windowedCitations) };
+  const counts = categoryCounts(windowedCitations);
+  return {
+    report, cited, sentiment,
+    categoryCounts: counts,
+    otherShare: otherShare(counts),
+    reddit: redditCut(windowedCitations),
+  };
 }
 
 // ─── competitors ──────────────────────────────────────────────────────────────
