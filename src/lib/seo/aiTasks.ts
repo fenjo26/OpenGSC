@@ -46,6 +46,10 @@ export const AI_TASKS: AiTaskDef[] = [
   // fine here — while the main SEO provider may be an expensive writer the user does not want
   // burning credits on catalogue passes.
   { id: "dropsHistory", labelKey: "seoTaskDropsHistory", descKey: "seoTaskDropsHistoryDesc", tier: "cheap" },
+  // The publishing respin: adapts a finished post for one platform before it ships. Same
+  // reasoning as dropsHistory — a mechanical pass whose output is parsed, not read, so it runs
+  // fine on a cheap model even when the article itself was written by an expensive one.
+  { id: "respin", labelKey: "seoTaskRespin", descKey: "seoTaskRespinDesc", tier: "cheap" },
 ];
 
 export const AI_TASK_BY_ID: Record<string, AiTaskDef> =
@@ -71,6 +75,9 @@ export const PATH_TASKS: Record<string, SeoTask[]> = {
   // The drops catalogue is not an /seo-tools page, but its AI history pass is a real spend —
   // listing it keeps the "used by" column honest about where this slot fires.
   "/drops":              ["dropsHistory"],
+  // Publishing spends AI only when "adapt for the platform" is on — one respin call per
+  // platform. Listed so the header badge names the model about to spend, like every tool.
+  "/publishing":         ["respin"],
 };
 
 export function tasksForPath(pathname: string): AiTaskDef[] {
