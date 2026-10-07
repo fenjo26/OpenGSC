@@ -15,13 +15,18 @@ import { prisma } from "@/lib/prisma";
 import { normalizeBacklinkUrl, donorHostOf } from "@/lib/seo/backlinkImport";
 import { backlinksNotMigrated } from "@/lib/backlinks/store";
 import { mergeSources } from "@/lib/magiclinks/tracking";
-import { outlineToMarkdown } from "@/lib/seo/outlineFormat";
 import { fetchLLM } from "@/lib/llm";
 import { adapterFor } from "./registry";
 import { markdownToHtmlBody } from "./markdown";
 import { respinPost, type RespinCreds } from "./respin";
 import { platformDefById } from "./platforms";
+import { extractPostFromHistory, firstHeading } from "./historySource";
 import type { BlogCreds } from "./types";
+
+// The pure history extraction lives in historySource.ts (so read-only tools can share it
+// without importing prisma); re-exported here because every existing importer buys it from
+// the store.
+export { extractPostFromHistory, firstHeading };
 
 // ─── connections ───────────────────────────────────────────────────────────────
 
@@ -143,31 +148,6 @@ export async function verifyConnection(userId: string, id: string): Promise<Conn
 }
 
 // ─── article source ────────────────────────────────────────────────────────────
-
-function firstHeading(markdown: string): string {
-  return /^#{1,6}\s+(.+)$/m.exec(markdown || "")?.[1]?.trim() || "";
-}
-
-/**
- * SeoHistory.data is JSON.stringify(item.data): for `text` the article string itself, for
- * `landing` an object whose body is `text` (when the landing step wrote one) or an outline to
- * serialize. Returns null when the record carries no publishable body — the caller reports
- * that instead of publishing an empty post.
- */
-export function extractPostFromHistory(row: { type: string; keyword: string; data: string }): { title: string; markdown: string } | null {
-  let data: unknown;
-  try { data = JSON.parse(row.data); } catch { return null; }
-  if (row.type === "text" && typeof data === "string" && data.trim()) {
-    return { title: firstHeading(data) || row.keyword, markdown: data };
-  }
-  if (row.type === "landing" && data && typeof data === "object") {
-    const obj = data as { text?: unknown; outline?: unknown };
-    let markdown = typeof obj.text === "string" && obj.text.trim() ? obj.text : "";
-    if (!markdown && obj.outline) markdown = outlineToMarkdown(obj.outline);
-    if (markdown.trim()) return { title: firstHeading(markdown) || row.keyword, markdown };
-  }
-  return null;
-}
 
 /** The money-site host out of a Site row (url or sc-domain: property), lowercase. */
 export function siteHostOf(siteUrl: string, siteIdProp: string): string {
