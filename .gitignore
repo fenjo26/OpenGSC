@@ -77,3 +77,6 @@ backups/
 
 # Scratch: device_bash cannot unlink, so stale .git/*.lock files get moved here.
 _to_delete/
+
+# Local SQLite database (was tracked until v1.9.1 — real site data must not ride commits).
+dev.db
