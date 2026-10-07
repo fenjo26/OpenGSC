@@ -24,7 +24,7 @@ before(async () => {
   await prisma.$executeRawUnsafe(`CREATE TABLE Site (id TEXT PRIMARY KEY, userId TEXT, url TEXT)`);
   await prisma.$executeRawUnsafe(`CREATE TABLE User (id TEXT PRIMARY KEY, seoSettings TEXT)`);
   await prisma.$executeRawUnsafe(`CREATE TABLE LocalProfile (
-    siteId TEXT PRIMARY KEY, name TEXT NOT NULL, country TEXT NOT NULL DEFAULT '',
+    id TEXT PRIMARY KEY, siteId TEXT NOT NULL UNIQUE, name TEXT NOT NULL, country TEXT NOT NULL DEFAULT '',
     lat REAL, lng REAL
   )`);
   await prisma.$executeRawUnsafe(`CREATE TABLE GridScan (
@@ -32,7 +32,8 @@ before(async () => {
     centerLat REAL NOT NULL, centerLng REAL NOT NULL, gridSize INTEGER NOT NULL,
     radiusKm REAL NOT NULL, provider TEXT NOT NULL, depth INTEGER NOT NULL,
     status TEXT NOT NULL DEFAULT 'queued', error TEXT NOT NULL DEFAULT '',
-    points TEXT NOT NULL, createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    points TEXT NOT NULL, presetId TEXT, hl TEXT NOT NULL DEFAULT '',
+    createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`);
 });
 

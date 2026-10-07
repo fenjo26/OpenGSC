@@ -66,10 +66,14 @@ export interface GridScanData {
   status: "queued" | "running" | "done" | "error";
   error: string;
   points: GridScanPoint[];
+  /** The answer language the SERP actually ran with (resolved at creation; "" only on pre-R+ rows). */
+  hl: string;
+  /** Which preset fired this scan; null = a manual one-off run. */
+  presetId: string | null;
   createdAt: string;
 }
 
-type GridScanRow = { id: string; siteId: string; keyword: string; centerLat: number; centerLng: number; gridSize: number; radiusKm: number; provider: string; depth: number; status: string; error: string; points: string; createdAt: Date };
+type GridScanRow = { id: string; siteId: string; keyword: string; centerLat: number; centerLng: number; gridSize: number; radiusKm: number; provider: string; depth: number; status: string; error: string; points: string; hl: string; presetId: string | null; createdAt: Date };
 
 function toData(row: GridScanRow): GridScanData {
   let points: GridScanPoint[] = [];
@@ -82,7 +86,7 @@ function toData(row: GridScanRow): GridScanData {
     centerLat: row.centerLat, centerLng: row.centerLng, gridSize: row.gridSize, radiusKm: row.radiusKm,
     provider: row.provider, depth: row.depth,
     status: (["queued", "running", "done", "error"] as const).includes(row.status as never) ? row.status as GridScanData["status"] : "error",
-    error: row.error, points, createdAt: row.createdAt.toISOString(),
+    error: row.error, points, hl: row.hl, presetId: row.presetId, createdAt: row.createdAt.toISOString(),
   };
 }
 
@@ -243,11 +247,14 @@ export async function runGridScan(
     // The market the SERP is answered for: the business's own country when the profile states
     // one, "us" otherwise — gl only nudges the SERP, the geography itself is the explicit
     // scan centre, so this default never guesses WHERE the grid is.
-    const gl = /^[a-z]{2}$/i.test(profile?.country ?? "") ? (profile!.country as string).toLowerCase() : "us";
+    const gl = glForProfile(profile?.country);
+    // The row records the language its SERP ran with (resolved at creation since R+); rows from
+    // before the column exist carry "" and resolve exactly as they always did.
+    const hl = scan.hl || defaultLanguageFor(gl);
     const scanPoint = opts.scanPoint ?? buildScanPoint(creds!, {
       keyword: scan.keyword,
       gl,
-      hl: defaultLanguageFor(gl),
+      hl,
       depth: scan.depth,
       siteHost,
       names: localMatchNames(siteHost, profile?.name ? [profile.name] : []),
@@ -291,6 +298,10 @@ export interface GridScanInput {
   /** Overrides the profile centre; both must be present — a half-overridden centre is a typo. */
   centerLat?: number;
   centerLng?: number;
+  /** Answer language override; "" or omitted = language of the profile country (see resolveHl). */
+  hl?: string;
+  /** Chains the scan to a preset (dynamics); omit for manual one-off runs. */
+  presetId?: string;
 }
 
 export type CreateGridScanProblem =
@@ -299,12 +310,34 @@ export type CreateGridScanProblem =
   | "grid_size_invalid"
   | "radius_invalid"
   | "center_invalid"
+  | "hl_invalid"
   | "profile_no_coords"
   | "no_serp_key"
   | "location_unsupported";
 
 export const RADIUS_MIN_KM = 0.1;
 export const RADIUS_MAX_KM = 100;
+
+/** The market a scan answers for: the profile's country when it states a valid one, "us" else. */
+export function glForProfile(country: string | null | undefined): string {
+  return /^[a-z]{2}$/i.test(country ?? "") ? (country as string).toLowerCase() : "us";
+}
+
+/** hl is "" (profile-country default) or a 2-letter language code — anything else is a typo. */
+export function isValidHl(hl: string): boolean {
+  return hl === "" || /^[a-z]{2}$/i.test(hl);
+}
+
+/**
+ * The full hl chain in one place (R+ §7.6-5): an explicit language wins — tourists search
+ * "thessaloniki airport transfer" in EN/RU/DE while the profile country stays GR — and ""
+ * falls back to today's behaviour, the language of the profile country ("us" → en).
+ */
+export function resolveHl(explicitHl: string | undefined, profileCountry: string | null | undefined): string {
+  const hl = (explicitHl ?? "").trim().toLowerCase();
+  if (hl) return hl;
+  return defaultLanguageFor(glForProfile(profileCountry));
+}
 
 export type CreateGridScanResult =
   | { ok: true; scan: GridScanData; queryCount: number }
@@ -317,7 +350,12 @@ export type CreateGridScanResult =
  * The centre is NEVER guessed: explicit coordinates win, otherwise the LocalProfile's lat/lng,
  * otherwise an honest `profile_no_coords` asking the operator for one of the two.
  */
-export async function createAndRunGridScan(userId: string, siteDbId: string, input: GridScanInput): Promise<CreateGridScanResult> {
+export async function createAndRunGridScan(
+  userId: string,
+  siteDbId: string,
+  input: GridScanInput,
+  opts: { kick?: boolean } = {},
+): Promise<CreateGridScanResult> {
   const site = await prisma.site.findFirst({ where: { id: siteDbId, userId }, select: { id: true } });
   if (!site) return { ok: false, error: "site_not_found" };
 
@@ -331,6 +369,18 @@ export async function createAndRunGridScan(userId: string, siteDbId: string, inp
   if (!Number.isFinite(radiusKm) || radiusKm < RADIUS_MIN_KM || radiusKm > RADIUS_MAX_KM) {
     return { ok: false, error: "radius_invalid", hint: `Radius must be between ${RADIUS_MIN_KM} and ${RADIUS_MAX_KM} km.` };
   }
+  const hl = String(input.hl ?? "").trim().toLowerCase();
+  if (!isValidHl(hl)) {
+    return { ok: false, error: "hl_invalid", hint: 'hl must be "" (profile-country default) or a 2-letter language code, e.g. "en", "ru", "de".' };
+  }
+
+  // The profile is read once for everything location/language-related: centre fallback AND the
+  // country the hl default derives from (R+ §7.6-5 — the hl chain must see the profile even
+  // when the centre is explicit, or an SKG-airport preset would answer in the wrong language).
+  const profile = await prisma.localProfile.findUnique({
+    where: { siteId: site.id },
+    select: { lat: true, lng: true, country: true },
+  });
 
   const hasExplicit = input.centerLat != null && input.centerLng != null;
   if ((input.centerLat != null) !== (input.centerLng != null)) {
@@ -345,7 +395,6 @@ export async function createAndRunGridScan(userId: string, siteDbId: string, inp
       return { ok: false, error: "center_invalid", hint: "centerLat must be in [-90, 90], centerLng in [-180, 180]." };
     }
   } else {
-    const profile = await prisma.localProfile.findUnique({ where: { siteId: site.id }, select: { lat: true, lng: true } });
     if (profile?.lat == null || profile?.lng == null) {
       return {
         ok: false,
@@ -375,19 +424,25 @@ export async function createAndRunGridScan(userId: string, siteDbId: string, inp
     data: {
       siteId: site.id, keyword, centerLat, centerLng, gridSize, radiusKm,
       provider: creds.provider, depth: GRID_SCAN_DEPTH, status: "queued", error: "", points: "[]",
+      presetId: input.presetId ?? null,
+      // Stored resolved, never as "": the row records the language its SERP actually ran with —
+      // hl changes the result as much as geography does, and dynamics compare like with like.
+      hl: resolveHl(hl, profile?.country),
     },
   });
-  // Fire-and-forget, the /api/seo/jobs shape: runGridScan never rejects and writes its own
-  // terminal status, so there is nothing left for a .catch to add beyond noise.
-  void runGridScan(row.id);
+  // Fire-and-forget by default (the /api/seo/jobs shape): runGridScan never rejects and writes
+  // its own terminal status, so there is nothing left for a .catch to add beyond noise.
+  // The scheduler passes kick: false and awaits the runner itself — its presets fire one at a
+  // time (same gentleness as the scan runner's sequential points).
+  if (opts.kick !== false) void runGridScan(row.id);
   return { ok: true, scan: toData(row), queryCount: gridSize * gridSize };
 }
 
 /** Newest scans of a site the caller owns, points parsed. Free read (local SQLite only). */
-export async function listGridScans(userId: string, siteDbId: string, limit = 20): Promise<GridScanData[]> {
+export async function listGridScans(userId: string, siteDbId: string, limit = 20, presetId?: string): Promise<GridScanData[]> {
   const capped = Math.min(50, Math.max(1, limit));
   const rows = await prisma.gridScan.findMany({
-    where: { siteId: siteDbId, site: { userId } },
+    where: { siteId: siteDbId, site: { userId }, ...(presetId != null ? { presetId } : {}) },
     orderBy: { createdAt: "desc" },
     take: capped,
   });
