@@ -7,6 +7,12 @@
 set -o pipefail
 cd "$(dirname "$0")" || exit 1
 
+# The pm2 process name this install runs under. Default "opengsc"; set PM2_PROC_NAME in .env
+# when the box hosts several pm2 apps — without it, a non-default name falls through to
+# "pm2 stop all", which takes unrelated neighbours down for the whole build window.
+PM2_NAME="$(grep -E '^PM2_PROC_NAME=' .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\"' | tr -d "'")"
+PM2_NAME="${PM2_NAME:-opengsc}"
+
 # ─── survive being started from the UI ─────────────────────────────────────────────────────
 # Two traps, both fatal to an update started from the Settings button, both handled here so they
 # hold even when the server that launched this run is an OLDER build with an older route:
@@ -102,7 +108,7 @@ DEPS_TOUCHED=0
 APP_STOPPED=0
 
 restart_app() {
-  pm2 restart opengsc || pm2 restart all || echo "[update] pm2 restart failed — restart manually"
+  pm2 restart "$PM2_NAME" || pm2 restart all || echo "[update] pm2 restart failed — restart manually"
 }
 
 fail_and_rollback() {
@@ -179,7 +185,7 @@ ensure_build_swap
 # that cannot start. Stopped first, started after: the window is exactly as long, but it
 # is quiet instead of on fire. (Same fallback chain as the restart below.)
 echo "[update] stopping the app for the build window..."
-pm2 stop opengsc >/dev/null 2>&1 || pm2 stop all >/dev/null 2>&1 || echo "[update] pm2 stop failed — continuing"
+pm2 stop "$PM2_NAME" >/dev/null 2>&1 || pm2 stop all >/dev/null 2>&1 || echo "[update] pm2 stop failed — continuing"
 APP_STOPPED=1
 
 # A build that dies mid-write (panic, OOM, kill) can leave a partial .next behind, and the
