@@ -36,6 +36,7 @@ const STATUS_FOR_PROBLEM: Record<CreateGridScanProblem, number> = {
   grid_size_invalid: 400,
   radius_invalid: 400,
   center_invalid: 400,
+  hl_invalid: 400,
   profile_no_coords: 400,
   no_serp_key: 400,
   location_unsupported: 400,
@@ -58,6 +59,9 @@ export async function POST(req: Request) {
       radiusKm: Number(body?.radiusKm),
       centerLat: numOrNull(body?.centerLat),
       centerLng: numOrNull(body?.centerLng),
+      // Manual scans gained the same language override presets carry (R+ §7.6-5): "" keeps
+      // the profile-country default, "en"/"ru"/"de" answers for the tourist market.
+      hl: typeof body?.hl === "string" ? body.hl : "",
     });
     if (!result.ok) {
       // The query count rides along even on failure: the operator sees what the rejected scan

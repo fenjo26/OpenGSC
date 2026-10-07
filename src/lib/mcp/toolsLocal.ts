@@ -10,6 +10,7 @@ import { getProfile, localSchemaMissing } from "@/lib/local/store";
 import { runNapCheck } from "@/lib/local/runner";
 import { buildLocalBusinessSchema, validateLocalBusinessSchema } from "@/lib/local/schema";
 import { createAndRunGridScan, listGridScans, summarizePoints } from "@/lib/localGrid/run";
+import { createGridPreset, deleteGridPreset, listGridPresets, runGridPreset } from "@/lib/localGrid/preset";
 
 export const LOCAL_TOOLS: McpTool[] = [
   {
@@ -117,6 +118,7 @@ export const LOCAL_TOOLS: McpTool[] = [
         radiusKm: { type: "number", description: "Centre → outer edge in km, 0.1–100 (default 2)" },
         centerLat: { type: "number", description: "Scan centre override; pass with centerLng to skip the business profile location" },
         centerLng: { type: "number", description: "Scan centre override; pass with centerLat" },
+        hl: { type: "string", description: 'Answer language override: "" (default — language of the profile country) or a 2-letter code like "en", "ru", "de" for tourist markets' },
       },
       required: ["site", "keyword"],
     },
@@ -130,6 +132,7 @@ export const LOCAL_TOOLS: McpTool[] = [
           radiusKm: typeof args.radiusKm === "number" ? args.radiusKm : 2,
           centerLat: num(args.centerLat),
           centerLng: num(args.centerLng),
+          hl: typeof args.hl === "string" ? args.hl : "",
         });
         if (!result.ok) {
           return { error: result.error, ...(result.hint ? { hint: result.hint } : {}) };
@@ -139,6 +142,150 @@ export const LOCAL_TOOLS: McpTool[] = [
           scan: result.scan,
           queryCount: result.queryCount,
           note: "Running in the background — poll local_grid_scans for points as they are answered.",
+        };
+      } catch (e) {
+        if (localSchemaMissing(e)) return { notMigrated: true };
+        throw e;
+      }
+    },
+  },
+  {
+    name: "local_grid_presets",
+    cost: "local",
+    readOnly: true,
+    description:
+      "Saved geo-grid presets of one site — the REPEATABLE scans (R+ wave G): each preset is a named point + radius + grid + answer language + optional cron schedule, e.g. \"SKG airport\" or \"Thessaloniki centre\". Returns every preset with its schedule (5-field cron, \"\" = manual only), lastFireAt (the scheduler's high-water mark), and its scan history summarized — per scan: date, hl, avg rank, in-map-pack share — which IS the dynamics series across that preset's scans. Free read of this instance's database.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        site: { type: "string", description: "Site row id, GSC property, or bare domain" },
+      },
+      required: ["site"],
+    },
+    handler: async (userId, args) => {
+      try {
+        const site = await resolveSite(userId, args.site);
+        const presets = await listGridPresets(userId, site.id);
+        return {
+          presets: presets.map(p => ({
+            id: p.id,
+            name: p.name,
+            keyword: p.keyword,
+            center: { lat: p.centerLat, lng: p.centerLng },
+            gridSize: p.gridSize,
+            radiusKm: p.radiusKm,
+            hl: p.hl, // "" = language of the profile country at fire time
+            queryCostPerFire: p.gridSize * p.gridSize,
+            schedule: p.schedule || "manual",
+            lastFireAt: p.lastFireAt,
+            scans: p.scans.map(s => ({
+              id: s.id, createdAt: s.createdAt, status: s.status, hl: s.hl, summary: s.summary,
+            })),
+          })),
+        };
+      } catch (e) {
+        if (localSchemaMissing(e)) return { notMigrated: true };
+        throw e;
+      }
+    },
+  },
+  {
+    name: "local_grid_preset_create",
+    cost: "local",
+    description:
+      "Save a geo-grid preset (a repeatable scan): name, keyword, centre (an ARBITRARY point — SKG airport, a Halkidiki resort zone — not just the business profile), gridSize 3|5|7, radiusKm 0.1–100, hl (\"\" = language of the profile country; \"en\"/\"ru\"/\"de\" for tourist markets — the SERP language changes the result as much as geography does), and schedule. schedule is \"\" (manual — fire with local_grid_preset_run) or a 5-field cron expression (minute hour day-of-month month day-of-week, UTC) evaluated by the in-house matcher; the scheduler fires it with a 15-minute tick, never back-fills missed windows, and its first sighting of a preset only records the marker without firing. COST PER FIRE: gridSize² SERP queries (9/25/49) on the workspace's Rank Tracker provider — free on a personal A-Parser, metered elsewhere; the preset keeps no caps, the operator owns the schedule.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        site: { type: "string", description: "Site row id, GSC property, or bare domain" },
+        name: { type: "string", description: "Preset label, e.g. \"SKG airport\"" },
+        keyword: { type: "string", description: "The keyword the preset checks at every grid point" },
+        centerLat: { type: "number", description: "Grid centre latitude (-90…90)" },
+        centerLng: { type: "number", description: "Grid centre longitude (-180…180)" },
+        gridSize: { type: "number", description: "Grid edge: 3, 5 or 7 (default 5). Each fire costs gridSize² queries." },
+        radiusKm: { type: "number", description: "Centre → outer edge in km, 0.1–100 (default 2)" },
+        hl: { type: "string", description: 'Answer language: "" (default — language of the profile country) or a 2-letter code ("en", "ru", "de"…)' },
+        schedule: { type: "string", description: '5-field cron (UTC), e.g. "0 6 * * 1" = Mondays 06:00 UTC; "" = manual only. The UI compiles "weekly at HH:MM" into this — free-text cron never reaches users, but the field is the contract.' },
+      },
+      required: ["site", "name", "keyword", "centerLat", "centerLng"],
+    },
+    handler: async (userId, args) => {
+      try {
+        const site = await resolveSite(userId, args.site);
+        const num = (v: unknown, d: number): number => (typeof v === "number" && Number.isFinite(v) ? v : d);
+        const result = await createGridPreset(userId, site.id, {
+          name: String(args.name ?? ""),
+          keyword: String(args.keyword ?? ""),
+          centerLat: num(args.centerLat, NaN),
+          centerLng: num(args.centerLng, NaN),
+          gridSize: num(args.gridSize, 5),
+          radiusKm: num(args.radiusKm, 2),
+          hl: typeof args.hl === "string" ? args.hl : "",
+          schedule: typeof args.schedule === "string" ? args.schedule : "",
+        });
+        if (!result.ok) return { error: result.error, ...(result.hint ? { hint: result.hint } : {}) };
+        return {
+          preset: result.preset,
+          note: result.preset.schedule
+            ? `Scheduled (${result.preset.schedule}, UTC). The scheduler's first sighting only records the marker — the first automatic fire comes at the NEXT matching window, never retroactively.`
+            : "Manual preset — fire it with local_grid_preset_run.",
+        };
+      } catch (e) {
+        if (localSchemaMissing(e)) return { notMigrated: true };
+        throw e;
+      }
+    },
+  },
+  {
+    name: "local_grid_preset_delete",
+    cost: "local",
+    description:
+      "Delete a saved geo-grid preset by id (see local_grid_presets for ids). The preset's past scans SURVIVE (they stay in local_grid_scans, unchained) — history is a fact, not part of the configuration. Free.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        site: { type: "string", description: "Site row id, GSC property, or bare domain" },
+        id: { type: "string", description: "Preset id from local_grid_presets" },
+      },
+      required: ["site", "id"],
+    },
+    handler: async (userId, args) => {
+      try {
+        const site = await resolveSite(userId, args.site);
+        // resolveSite pins the workspace; deleteGridPreset re-scopes by site ownership, so a
+        // preset id from another site of the same workspace is still refused, not borrowed.
+        const deleted = await deleteGridPreset(userId, String(args.id ?? ""));
+        if (!deleted) return { error: "preset_not_found" };
+        return { ok: true };
+      } catch (e) {
+        if (localSchemaMissing(e)) return { notMigrated: true };
+        throw e;
+      }
+    },
+  },
+  {
+    name: "local_grid_preset_run",
+    cost: "paid",
+    description:
+      "Fire a saved geo-grid preset NOW (run-now button's path): creates one GridScan chained to the preset — the preset's own point, radius, grid and hl — and runs it in the background; the scan joins the preset's dynamics series. COST: gridSize² SERP queries (9 for 3×3, 25 for 5×5, 49 for 7×7) on the workspace's configured Rank Tracker provider — free on a personal A-Parser instance, metered on Serper/DataForSEO. Poll local_grid_scans (or local_grid_presets for the series) for points as they are answered. This is a manual fire: scheduled fires happen on their own and need no agent.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        site: { type: "string", description: "Site row id, GSC property, or bare domain" },
+        id: { type: "string", description: "Preset id from local_grid_presets" },
+      },
+      required: ["site", "id"],
+    },
+    handler: async (userId, args) => {
+      try {
+        const site = await resolveSite(userId, args.site);
+        const fired = await runGridPreset(userId, String(args.id ?? ""));
+        if (!fired.ok) return { error: fired.error };
+        if (!fired.result.ok) return { error: fired.result.error, ...(fired.result.hint ? { hint: fired.result.hint } : {}) };
+        return {
+          scan: fired.result.scan,
+          queryCount: fired.result.queryCount,
+          note: "Running in the background — poll local_grid_scans for points, local_grid_presets for the dynamics series.",
         };
       } catch (e) {
         if (localSchemaMissing(e)) return { notMigrated: true };
