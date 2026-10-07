@@ -3,6 +3,38 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
+## [1.9.1] — 2026-10-07
+
+The R+ wave: the v1.9.0 features grow the anti-footprint and repeatability layers the operator asked for after reviewing them.
+
+### Added — Geo-grid presets: scans become a measurement, not a snapshot
+
+- A preset saves point + radius + grid + **answer language** + an optional cron schedule. The language defaults to the profile country's but is overridable per preset (and per one-off scan): tourists search "thessaloniki airport transfer" in EN/RU/DE while the profile country stays GR — the wrong `hl` shows the wrong SERP. The `hl` actually used is stored on every `GridScan`.
+- The scheduler (15-min tick, `lastFireAt` high-water) follows the audit-family semantics: a first sighting only adopts the marker without firing, and a missed tick is **skipped, never back-filled** — a run costs `gridSize²` queries, which the preset card says out loud. A zombie "running" row older than 2 h counts as abandoned so it can't silence a preset.
+- Per-preset dynamics: avg position and in-pack share across the preset's scans (chart + list in the Local tab). MCP: `local_grid_presets`, `local_grid_preset_create`, `local_grid_preset_delete`, `local_grid_preset_run` (registry now 94 tools).
+
+### Added — Publishing gates: connection types, uniqueness, jitter, anchors
+
+- **Connection types** (`own_satellite` / `money_site` / `external_platform`, default `own_satellite` — fail-closed: existing connections lose respin until retyped, visibly). **Respin is only allowed for external platforms**, enforced server-side in the shared flow (routes and MCP both pass through it). Own satellites each get their own post — per-connection source selection in the publish dialog (`items[]` API form).
+- **Uniqueness gate at send time**: the post is compared against every published post **in the whole instance** (latest 300) with the same trigram engine as `analyze_text`; `uniquenessScore = 1 − maxSimilarity` is stored. Block at ≥ 0.3, warn at ≥ 0.15 — **provisional thresholds**: the calibration run found the local dev db empty (0 articles, 0 posts), so the numbers are the operator's documented prior; re-run `npx tsx src/lib/publish/calibrate.ts` after ~20 publications and re-derive (the distribution table lives in `src/lib/publish/gate.ts`). The UI states the gate's honest limit: it catches textual near-duplicates, not paraphrases. No bypass parameter exists anywhere.
+- **Jitter scheduling**: publications spread over a configurable window (hours/days); posts are created as `scheduled` with the offset fixed at planning time (visible, editable), and a scheduler pass sends due posts through the same per-post path — respin and the uniqueness gate run at send time. A deferred post that gets blocked **fires a `publish_blocked` alert** (existing alert engine, deduped per site per day, 7 languages) instead of dying as a status change.
+- **Anchor & footprint review**: pre-publish summary of anchor → target across the network (flagging identical exact anchors on several satellites), warnings on shared title skeletons among the planned batch and on scheduledAt hour-clustering — from signals that actually exist; the panel never promises theme/credential fingerprinting the app can't see. MCP `publish_post` gains `items[]`, spread windows and gate results with scores.
+
+### Added — AEO domain lists: the classifier learns your market
+
+- Editable per-category domain lists (InstanceSetting `aeo_domain_lists`, editor co-located with the sentiment toggle) merged **over** the built-ins: brand/competitor still win (identity beats taxonomy), the operator's overlay beats defaults. Wired into both the write path and the read-time reclassification, so editing the lists re-tags the stored history.
+- **Greek starter set built in** (Kathimerini, To Vima, Proto Thema, Naftemporiki, in.gr, Newsit, Ta Nea, Ethnos, Skai, Efsyn; forums Insomnia/adslgr; aggregators Skroutz/BestPrice; sansimera as reference) — every host verified live; two candidates were dropped as unverifiable.
+- **"other: NN%" chip** on the categories block, warning above 30% (threshold printed next to the number) — the signal to extend the lists. MCP share-of-voice gains `otherShare`.
+
+### Changed
+
+- **`dev.db` is no longer tracked.** The repo is public and the db carries real site data and tokens; it is gitignored now and stays on disk untouched. ⚠️ **Deploy note (VPS):** the production dev.db is locally modified, so the next pull will refuse to fast-forward past the untrack commit until you do: `cp dev.db ~/dev.db.prod.bak && git checkout -- dev.db && git pull --ff-only && cp ~/dev.db.prod.bak dev.db`. Old copies remain in git history — scrubbing history is a separate, explicit decision.
+- `Claude outputs/` (the operator's wave-plan archive) is excluded via `.git/info/exclude` on this machine.
+
+### Deploy
+
+`npx prisma db push` (new table `GridPreset`; new columns `GridScan.presetId/hl`, `BlogConnection.connectionType`, `PublishedPost.scheduledAt/uniquenessScore`) + `npx prisma generate` + build + `pm2 restart` — plus the dev.db pull recipe above, once.
+
 ## [1.9.0] — 2026-10-07
 
 ### Added — Publishing: generated posts go out on their own (`/publishing`)
