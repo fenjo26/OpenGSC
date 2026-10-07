@@ -57,6 +57,16 @@ export async function register() {
     // button uses. Both halves are free and degrade silently before `db push`.
     const { startBacklinkVerifyScheduler } = await import('@/lib/backlinks/verifyScheduler');
     startBacklinkVerifyScheduler();
+    // ─── R+ wave schedulers (pre-wired stubs; owning agents fill the tick bodies) ────
+    // Geo-grid presets: fires scheduled scans (cron matcher, high-water lastFireAt) and
+    // never back-fills missed ticks — a grid run costs gridSize² queries.
+    const { startGridPresetScheduler } = await import('@/lib/localGrid/presetScheduler');
+    startGridPresetScheduler();
+    // Publish queue: sends scheduled posts (jitter) through the per-post path, running the
+    // respin gate and the uniqueness gate at send time; a blocked deferred post fires an
+    // alert through the existing alert engine, not just a status change.
+    const { startPublishScheduler } = await import('@/lib/publish/postScheduler');
+    startPublishScheduler();
     // Local SEO: GBP posts due for publishing, reviews every 6 h, citations weekly (N4).
     const { startLocalScheduler } = await import('@/lib/local/scheduler');
     startLocalScheduler();
