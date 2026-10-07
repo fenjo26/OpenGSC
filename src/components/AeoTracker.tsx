@@ -26,6 +26,8 @@ import { usePrivacy } from "@/lib/PrivacyContext";
 import { COUNTRIES, LANGUAGES } from "@/lib/seo/regions";
 import { getOpenAiKey, getOpenAiBaseUrl } from "@/lib/seo/geoClient";
 import { rankModels, OPENAI_FALLBACK_MODELS, type ModelOpt } from "@/lib/seo/models";
+import type { CitationCategory, CitationPageType } from "@/lib/seo/aeoCitationClassify";
+import { CategoryBadge } from "@/components/visibility/citationCategoryUi";
 
 const ENGINES = ["chatgpt", "perplexity", "claude", "grok", "gemini", "ai_overview"] as const;
 type Engine = typeof ENGINES[number];
@@ -63,7 +65,9 @@ type Settings = {
   city: string | null; language: string | null; auto: boolean; sentimentAuto: boolean;
 };
 
-type Citation = { url: string; domain: string; title: string };
+// Wave A: the history route classifies citations on the fly, so entries carry the heuristic
+// category/pageType alongside the engine's own fields (absent only if classification failed).
+type Citation = { url: string; domain: string; title: string; category?: CitationCategory | null; pageType?: CitationPageType | null };
 type Check = {
   id: string; engine: Engine; checkedAt: string; cited: boolean; status: Status | null;
   url: string | null; snippet: string | null; rank: number | null; model: string | null;
@@ -375,6 +379,7 @@ function CitationList({ citations, host, blurStyle }: { citations: Citation[]; h
             }}>
             <span style={{ width: "18px", flexShrink: 0, color: "var(--color-text-tertiary)", fontVariantNumeric: "tabular-nums" }}>{n}</span>
             <span style={{ fontWeight: ours ? 700 : 600, color: ours ? GREEN : "var(--color-text-primary)", ...blurStyle }}>{c.domain}</span>
+            {c.category && <CategoryBadge category={c.category} pageType={c.pageType} t={t} />}
             {ours && <span style={{ fontSize: "10px", fontWeight: 700, color: GREEN, textTransform: "uppercase" }}>{t("aeoYourSite")}</span>}
             <span style={{ color: "var(--color-text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{c.title}</span>
             <ExternalLink size={11} color="var(--color-text-tertiary)" style={{ flexShrink: 0 }} />
