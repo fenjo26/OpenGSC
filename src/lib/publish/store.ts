@@ -201,9 +201,9 @@ export function firstMoneySiteLink(markdown: string, host: string): string {
 /**
  * Write the published post into SiteBacklink as a donor with source "self". Mirrors
  * importPurchasedPlacements in lib/magiclinks/tracking.ts: identity is (site, urlFromNorm,
- * urlTo); an existing row only gains "self" in sources — it never touches check*/api*/tox*,
- * which belong to their own writers. Degrades to a no-op before `prisma db push` (the loop
- * simply has nothing to feed yet), same convention as the ledger.
+ * urlTo); an existing row only gains "self" in sources — it never touches the check-,
+ * api- or tox- field groups, which belong to their own writers. Degrades to a no-op before
+ * `prisma db push` (the loop simply has nothing to feed yet), same convention as the ledger.
  */
 export async function recordSelfBacklink(siteId: string, remoteUrl: string, targetUrl: string): Promise<void> {
   const urlFromNorm = normalizeBacklinkUrl(remoteUrl);
