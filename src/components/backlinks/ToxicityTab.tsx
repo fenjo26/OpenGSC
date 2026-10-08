@@ -9,11 +9,94 @@
 // pages (free network, no provider). Marking for disavow is the operator's decision — the
 // checkbox only writes the flag; the file itself is the Disavow tab.
 
-import { useCallback, useEffect, useState } from "react";
-import { Loader2, RefreshCw, ShieldAlert, Wand2 } from "lucide-react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { Download, Loader2, RefreshCw, ShieldAlert, Wand2 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { MARKER_GROUPS, type ToxLevel } from "@/lib/backlinks/toxicity";
 import { shareTokenFromPath } from "@/lib/shareParam";
+import { getMetricsCreds, hasMetricsKey, formatUsd } from "@/lib/seo/metricsClient";
+
+// Keys.so key present in this browser? false on the server pass, real once hydrated.
+const noopSubscribe = () => () => {};
+const useKeyssoKey = () => useSyncExternalStore(noopSubscribe, () => hasMetricsKey("keysso"), () => false);
+
+type KsEstimate = { rows: number; units: number; usd: number };
+
+/**
+ * «Ссылки из Keys.so»: fills the site's backlink rows (anchors included) from Keys.so's Runet
+ * index, so this tab has anchors to judge for sites Ahrefs barely sees. Two clicks by design —
+ * the first only prices the run (1 credit), the second spends; then the tab re-scores itself.
+ * Rendered only for users with a Keys.so key.
+ */
+function KeyssoLinksLoader({ siteDbId, onDone }: { siteDbId: string; onDone: () => Promise<void> }) {
+  const { t } = useLanguage();
+  const [est, setEst] = useState<KsEstimate | null>(null);
+  const [phase, setPhase] = useState<"idle" | "pricing" | "quote" | "running">("idle");
+  const [msg, setMsg] = useState("");
+
+  const post = async (confirm: boolean) => {
+    const c = getMetricsCreds("keysso");
+    const res = await fetch("/api/backlinks/sync", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ siteId: siteDbId, provider: "keysso", confirm, apiKey: c.apiKey, baseUrl: c.baseUrl, cap: c.cap }),
+    });
+    return { ok: res.ok, d: await res.json().catch(() => ({})) };
+  };
+  const errText = (e: string) => e === "cap_exceeded" ? t("kwCapExceeded")
+    : e === "already_running" ? t("blKsRunning")
+    : /^keysso 402/.test(e) ? t("blsrcKsOutOfCredits")
+    : /^keysso 401/.test(e) ? t("metricsKeyssoBadKey")
+    : e;
+
+  const quote = async () => {
+    setPhase("pricing"); setMsg("");
+    const { ok, d } = await post(false);
+    if (ok && d.estimate) { setEst(d.estimate); setPhase("quote"); }
+    else { setMsg(errText(String(d.error ?? "error"))); setPhase("idle"); }
+  };
+
+  const start = async () => {
+    setPhase("running"); setMsg("");
+    const { ok, d } = await post(true);
+    if (!ok || !d.id) { setMsg(errText(String(d.error ?? "error"))); setPhase("idle"); return; }
+    // Poll the run until it settles, then re-score: the point of loading is the toxicity verdict.
+    // Bounded: a run whose process died stays "running" until the next sync request cleans it
+    // up, and this loop must not outlive the page's patience (30 minutes).
+    for (let i = 0; i < 450; i++) {
+      await new Promise(r => setTimeout(r, 4000));
+      const runs = await fetch(`/api/backlinks/sync?siteId=${encodeURIComponent(siteDbId)}`, { cache: "no-store" })
+        .then(r => r.json()).then(x => (Array.isArray(x.runs) ? x.runs : [])).catch(() => []);
+      const run = runs.find((r: { id: string }) => r.id === d.id);
+      if (!run || run.status === "running") continue;
+      setMsg(run.status === "completed"
+        ? String(t("blKsLoaded")).replace("{n}", Number(run.rowsSeen ?? 0).toLocaleString())
+        : errText(String(run.error ?? "error")));
+      break;
+    }
+    setPhase("idle"); setEst(null);
+    await onDone();
+  };
+
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+      {phase === "quote" && est ? (
+        <>
+          <span className="metric-cost" title={t("blpKsMarketHint")}>
+            Keys.so · ≈ {est.rows.toLocaleString()} {t("blKsLinks")} · {est.units.toLocaleString()} {t("blsrcKsCredits")} · ≈ {formatUsd(est.usd)}
+          </span>
+          <button className="metric-action" onClick={() => { void start(); }}>{t("blKsConfirm")}</button>
+          <button className="pill" style={{ cursor: "pointer" }} onClick={() => { setPhase("idle"); setEst(null); }}>{t("cancel")}</button>
+        </>
+      ) : (
+        <button className="metric-action" onClick={() => { void quote(); }} disabled={phase !== "idle"} title={t("blKsHint")}>
+          {phase === "idle" ? <Download size={13} /> : <Loader2 size={13} className="spin" />}
+          {phase === "running" ? t("blKsRunning") : t("blKsLoad")}
+        </button>
+      )}
+      {msg && <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>{msg}</span>}
+    </span>
+  );
+}
 
 export interface DonorRow {
   domainFrom: string;
@@ -55,6 +138,7 @@ export function signalLabel(t: (k: never) => string, code: string): string {
 
 export default function ToxicityTab({ siteDbId, guest }: { siteDbId: string; guest: boolean }) {
   const { t } = useLanguage();
+  const keysso = useKeyssoKey();
   const [data, setData] = useState<ToxicityOverviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -227,6 +311,7 @@ export default function ToxicityTab({ siteDbId, guest }: { siteDbId: string; gue
         </div>
         {!guest && (
           <span style={{ marginLeft: "auto", display: "inline-flex", gap: "8px", flexWrap: "wrap" }}>
+            {keysso && <KeyssoLinksLoader siteDbId={siteDbId} onDone={() => run(0)} />}
             <button className="metric-action" onClick={() => { void run(0); }} disabled={busy || loading}
               title={data?.lastRun ? new Date(data.lastRun).toLocaleString() : String(t("blToxNotRun" as never))}>
               {busy ? <Loader2 size={13} className="spin" /> : <RefreshCw size={13} />} {t("blToxRun")}

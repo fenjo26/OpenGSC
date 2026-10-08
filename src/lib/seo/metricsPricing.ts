@@ -378,6 +378,17 @@ export const KEYSSO_DOMAIN_UNITS = 3;
  */
 export const KEYSSO_REFDOMAIN_PAGE_SIZE = 100;
 
+/**
+ * The Yandex market as a gap "country". Competitor and keyword pulls with this market go to
+ * Keys.so (Moscow base) and are stored apart from every Google market, so the two never mix.
+ */
+export const YANDEX_MARKET = "yandex";
+
+/** Credits for a Keys.so list read of `rows` rows at 100 a page — one credit per page. */
+export function keyssoListUnits(rows: number): number {
+  return Math.max(1, Math.ceil(Math.max(1, rows) / 100));
+}
+
 /** Reserve for a Keys.so refdomain pull: the stats pair plus one credit per page. */
 export function estimateKeyssoProfileUnits(domains: number): number {
   return KEYSSO_STATS_UNITS + Math.ceil(Math.max(1, domains) / KEYSSO_REFDOMAIN_PAGE_SIZE);

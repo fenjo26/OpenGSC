@@ -13,12 +13,18 @@
 // Ahrefs knows the first half of every row. Search Console knows the second. Neither knows both,
 // which is the entire reason this screen exists.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Compass, Loader2, Download, ExternalLink, Search } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { readUrlParam, writeUrlParam } from "@/lib/urlParam";
 import { COUNTRIES, LANGUAGES, defaultLanguageFor } from "@/lib/seo/regions";
-import { formatUsd } from "@/lib/seo/metricsClient";
+import { formatUsd, getMetricsCreds, hasMetricsKey } from "@/lib/seo/metricsClient";
+import { YANDEX_MARKET } from "@/lib/seo/metricsPricing";
+
+// Keys.so key present? false on the server pass, real once hydrated. The Yandex market exists in
+// the market list only for users who connected Keys.so.
+const noopSubscribe = () => () => {};
+const useKeyssoKey = () => useSyncExternalStore(noopSubscribe, () => hasMetricsKey("keysso"), () => false);
 import { getDataForSeoKey } from "@/lib/seo/keys";
 import DemandDomain from "@/components/DemandDomain";
 import TrendRadar from "@/components/TrendRadar";
@@ -159,10 +165,18 @@ export default function DemandPage() {
   // surfaces rising markets that volume-sort would bury (a +300% niche below a stagnant high-volume one).
   const [sortBy, setSortBy] = useState<"volume" | "growth">("volume");
   const [risingOnly, setRisingOnly] = useState(false);
+  const keysso = useKeyssoKey();
+  const yandex = country === YANDEX_MARKET;
+  const [ownStale, setOwnStale] = useState(false);
+  // The run button's key: DataForSEO for Google markets, Keys.so for the Yandex one.
+  const canRun = yandex ? keysso : hasKey;
 
   useEffect(() => {
     setHasKey(getDataForSeoKey().length > 4);
-    setCountry(localStorage.getItem("seoMetricsCountry") || "us");
+    // Remembered apart from `seoMetricsCountry`, which other screens read as a Google country.
+    setCountry(localStorage.getItem("seoDemandYandex") === "1" && hasMetricsKey("keysso")
+      ? YANDEX_MARKET
+      : localStorage.getItem("seoMetricsCountry") || "us");
     setLanguage(localStorage.getItem("seoDemandLang") || "en");
     fetch("/api/gsc/sites")
       .then((r) => (r.ok ? r.json() : null))
@@ -179,7 +193,10 @@ export default function DemandPage() {
     const body: Record<string, unknown> = {
       seed, siteId, country, language, mode, limit, clickstream, fetch: wantFetch,
     };
-    if (wantFetch) {
+    if (wantFetch && country === YANDEX_MARKET) {
+      const c = getMetricsCreds("keysso");
+      Object.assign(body, { apiKey: c.apiKey, baseUrl: c.baseUrl, cap: c.cap });
+    } else if (wantFetch) {
       body.apiKey = getDataForSeoKey();
       body.cap = Number(localStorage.getItem("seoDemandCap") || 0) || 0;
     }
@@ -193,6 +210,7 @@ export default function DemandPage() {
     setSource(d.source ?? null);
     setCachedAt(d.cachedAt ?? null);
     setSpentUsd(typeof d.spentUsd === "number" ? d.spentUsd : 0);
+    setOwnStale(!!d.ownYandexStale);
 
     if (!res.ok || d.error) {
       setNotice(
@@ -214,7 +232,7 @@ export default function DemandPage() {
   }, [seed, siteId, country, language, mode, limit, clickstream, call]);
 
   async function run() {
-    if (busy || !hasKey) return;
+    if (busy || !canRun) return;
     setBusy(true);
     await call(true).catch(() => {});
     setBusy(false);
@@ -318,27 +336,47 @@ export default function DemandPage() {
         <div>
           <span className="tool-field-label">{t("importCountry")}</span>
           <select className="tool-input inline" value={country}
-            onChange={(e) => { const gl = e.target.value; setCountry(gl); localStorage.setItem("seoMetricsCountry", gl); if (!langTouched) setLanguage(defaultLanguageFor(gl)); }}>
+            onChange={(e) => {
+              const gl = e.target.value; setCountry(gl);
+              if (gl === YANDEX_MARKET) { localStorage.setItem("seoDemandYandex", "1"); return; }
+              localStorage.removeItem("seoDemandYandex");
+              localStorage.setItem("seoMetricsCountry", gl);
+              if (!langTouched) setLanguage(defaultLanguageFor(gl));
+            }}>
+            {keysso && <option value={YANDEX_MARKET}>{t("gapMarketYandex")}</option>}
             {COUNTRIES.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
           </select>
         </div>
-        <div>
+        {!yandex && <div>
           <span className="tool-field-label">{t("dmLanguage")}</span>
           <select className="tool-input inline" value={language}
             onChange={(e) => { setLangTouched(true); setLanguage(e.target.value); localStorage.setItem("seoDemandLang", e.target.value); }}>
             {LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
           </select>
-        </div>
-        <button className="metric-action" onClick={run} disabled={busy || !hasKey || !seed.trim()}
-          title={!hasKey ? t("dmNoKey") : undefined}>
+        </div>}
+        <button className="metric-action" onClick={run} disabled={busy || !canRun || !seed.trim()}
+          title={!canRun ? t("dmNoKey") : undefined}>
           {busy ? <Loader2 size={13} className="spin" /> : <Search size={13} />}
           {t("dmRun")}
         </button>
-        {hasKey && <span className="metric-cost">≈ {formatUsd(priceUsd)}</span>}
+        {canRun && <span className="metric-cost">≈ {formatUsd(priceUsd)}</span>}
         {notice && <span style={{ fontSize: "12px", color: "var(--color-danger)" }}>{notice}</span>}
       </div>
 
-      <div className="panel" style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+      {/* Yandex market: one source (Keys.so similar phrases), so the mode row gives way to the
+          two facts that change how to read the table. */}
+      {yandex && (
+        <div className="panel" style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap", fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.55 }}>
+          <span className="metric-chip" style={{ fontWeight: 500 }} title={t("blpKsMarketHint")}>Keys.so · {t("ykaiMarket")}</span>
+          <span style={{ flex: "1 1 420px" }}>{t("dmYandexNote")}</span>
+          <select className="tool-input inline" value={limit} onChange={(e) => setLimit(Number(e.target.value))}>
+            {[50, 150, 300, 500].map((n) => <option key={n} value={n}>{n} {t("gapKeywords")}</option>)}
+          </select>
+          {ownStale && <span style={{ flexBasis: "100%", color: "var(--color-text-tertiary)" }}>{t("dmYandexOwnStale")}</span>}
+        </div>
+      )}
+
+      {!yandex && <div className="panel" style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
         <span className="tool-section-label" style={{ marginBottom: 0 }}>{t("dmMode")}</span>
         {MODES.map(({ id, label, hint }) => (
           <button key={id} className={mode === id ? "pill active" : "pill"} onClick={() => setMode(id)}
@@ -362,7 +400,7 @@ export default function DemandPage() {
             {spentUsd > 0 && ` · ${formatUsd(spentUsd)}`}
           </span>
         )}
-      </div>
+      </div>}
 
       {rows.length > 0 && (
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>

@@ -6,11 +6,12 @@ import {
   fetchOrganicCompetitors, fetchOrganicKeywords,
   estimateCompetitorUnits, estimateOrganicKeywordUnits,
   SEMRUSH_COMPETITOR_UNITS_PER_ROW, SEMRUSH_ORGANIC_KEYWORD_UNITS_PER_ROW,
-  DEFAULT_BASE_URL, parseMetricsProvider,
+  DEFAULT_BASE_URL, parseMetricsProvider, YANDEX_MARKET, keyssoListUnits,
 } from "@/lib/seo/metrics";
 import { readUsage, recordUsage, releaseUnusedUnits, withinCap, learnFieldSupport, unsupportedFields } from "@/lib/seo/metricsStore";
 import { runUpsert } from "@/lib/db/upsert";
 import { rawQuery, rawExec } from "@/lib/db/raw";
+import { OWN_YANDEX_ROWS, ownYandexStale, refreshOwnYandex } from "@/lib/seo/yandexOwn";
 
 // POST /api/metrics/gap { siteId, action, ... }
 //
@@ -49,7 +50,11 @@ export async function POST(req: Request) {
 
   const action = String(b.action ?? "read");
   const country = String(b.country ?? "us").toLowerCase();
-  const provider = parseMetricsProvider(b.provider);
+  // The Yandex market is Keys.so's alone, whatever the body says — and Keys.so serves no other
+  // market here, so a Google country can never be filled with Yandex positions.
+  const yandex = country === YANDEX_MARKET;
+  const requested = parseMetricsProvider(b.provider);
+  const provider = yandex ? "keysso" : requested === "keysso" ? "ahrefs" : requested;
   const apiKey = String(b.apiKey ?? "").trim();
   const baseUrl = String(b.baseUrl ?? "").trim() || undefined;
   const cap = Number(b.cap ?? 0);
@@ -70,6 +75,34 @@ export async function POST(req: Request) {
       );
     } catch { return { rows: [], competitors: [] }; }
     if (!stored.length) return { rows: [], competitors: [] };
+
+    // Yandex market: our own side is our own Yandex positions (stored under the site's domain by
+    // the keywords pull below), not GSC — comparing Yandex positions with Google ones would make
+    // "close" mean nothing. Any position in the top 100 counts as being shown.
+    if (yandex) {
+      const own = norm(site.url);
+      const mine = new Map<string, { position: number; url: string }>();
+      for (const r of stored) {
+        if (String(r.competitor) !== own || r.position == null) continue;
+        const k = String(r.keyword);
+        const prev = mine.get(k);
+        if (!prev || Number(r.position) < prev.position) mine.set(k, { position: Number(r.position), url: String(r.url ?? "") });
+      }
+      const theirs = stored.filter(r => String(r.competitor) !== own);
+      return {
+        rows: theirs.map(r => {
+          const m = mine.get(String(r.keyword));
+          return {
+            keyword: r.keyword, competitor: r.competitor,
+            competitorPosition: r.position == null ? null : Number(r.position),
+            volume: r.volume == null ? null : Number(r.volume),
+            difficulty: null, competitorUrl: r.url ?? "",
+            ourPosition: m ? m.position : null, ourUrl: m?.url ?? null, ourImpressions: m ? 1 : 0,
+          };
+        }),
+        competitors: [...new Set(theirs.map(r => String(r.competitor)))],
+      };
+    }
 
     // Our own side comes from GSC, which knows about queries we have ever been shown for —
     // including ones we rank 40th on. That is the whole point: "they rank, we have a page but
@@ -136,9 +169,10 @@ export async function POST(req: Request) {
     // Semrush prices `domain_organic_organic` at a flat 40 units/line regardless of columns —
     // the Ahrefs per-field formula would under-quote it, and a cap that lets the cheaper price
     // through is the one failure mode here (the call lands and the real bill breaches the cap).
-    const units = provider === "semrush"
-      ? SEMRUSH_COMPETITOR_UNITS_PER_ROW * limit
-      : estimateCompetitorUnits(limit);
+    const units = provider === "keysso" ? 1
+      : provider === "semrush"
+        ? SEMRUSH_COMPETITOR_UNITS_PER_ROW * limit
+        : estimateCompetitorUnits(limit);
     if (!(await withinCap(userId, provider, units, cap))) {
       return respond({ error: "cap_exceeded", wouldSpend: units }, 429);
     }
@@ -152,9 +186,10 @@ export async function POST(req: Request) {
       // Priced with the same formula the reservation used, or the refund would be computed at
       // Ahrefs rates against a Semrush charge and hand back the wrong amount.
       const got = Math.max(1, res.items.length);
-      await releaseUnusedUnits(userId, provider, units, provider === "semrush"
-        ? SEMRUSH_COMPETITOR_UNITS_PER_ROW * got
-        : estimateCompetitorUnits(got));
+      await releaseUnusedUnits(userId, provider, units, provider === "keysso" ? res.units
+        : provider === "semrush"
+          ? SEMRUSH_COMPETITOR_UNITS_PER_ROW * got
+          : estimateCompetitorUnits(got));
       // Returned, not stored: this list is a menu the user picks from, and the expensive step is
       // the next one. Persisting it would suggest work has been done that has not.
       return respond({ units, found: res.items });
@@ -178,9 +213,14 @@ export async function POST(req: Request) {
     // Semrush `domain_organic` is 10 units/line flat; Ahrefs' per-field formula matches that when
     // KD is off and exceeds it when KD is on (10 extra). Using the provider's own rate keeps the
     // cap check honest either way.
-    const units = provider === "semrush"
-      ? SEMRUSH_ORGANIC_KEYWORD_UNITS_PER_ROW * limit
-      : estimateOrganicKeywordUnits(limit, withDifficulty);
+    // Keys.so: a credit per 100-row page, plus — on the Yandex market — up to ten pages of the
+    // site's own Yandex positions when they are missing or older than a week (the gap's "our" side).
+    const ownStale = yandex ? await ownYandexStale(site.id, norm(site.url)) : false;
+    const units = provider === "keysso"
+      ? keyssoListUnits(limit) + (ownStale ? keyssoListUnits(OWN_YANDEX_ROWS) : 0)
+      : provider === "semrush"
+        ? SEMRUSH_ORGANIC_KEYWORD_UNITS_PER_ROW * limit
+        : estimateOrganicKeywordUnits(limit, withDifficulty);
     if (!(await withinCap(userId, provider, units, cap))) {
       return respond({ error: "cap_exceeded", wouldSpend: units }, 429);
     }
@@ -214,10 +254,15 @@ export async function POST(req: Request) {
         { witnessField: "volume", minRows: 20 });
     }
 
+    let ownUnits = 0;
+    if (yandex && ownStale && res.items.length) {
+      ownUnits = await refreshOwnYandex({ provider, apiKey, baseUrl }, site.id, norm(site.url));
+    }
     const gotKw = Math.max(1, res.items.length);
-    await releaseUnusedUnits(userId, provider, units, provider === "semrush"
-      ? SEMRUSH_ORGANIC_KEYWORD_UNITS_PER_ROW * gotKw
-      : estimateOrganicKeywordUnits(gotKw, withDifficulty));
+    await releaseUnusedUnits(userId, provider, units, provider === "keysso" ? res.units + ownUnits
+      : provider === "semrush"
+        ? SEMRUSH_ORGANIC_KEYWORD_UNITS_PER_ROW * gotKw
+        : estimateOrganicKeywordUnits(gotKw, withDifficulty));
 
     if (!res.items.length) {
       return respond({ error: "no_competitor_keywords", competitor, maxPosition: 20 }, 200);
@@ -269,3 +314,4 @@ export async function POST(req: Request) {
 
   return NextResponse.json({ error: "bad_action" }, { status: 400 });
 }
+

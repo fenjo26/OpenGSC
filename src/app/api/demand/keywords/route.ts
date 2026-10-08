@@ -10,6 +10,9 @@ import { defaultLanguageFor } from "@/lib/seo/regions";
 import { writeKeywordCache, readUsage, recordUsage, withinCap, normalizeKeyword } from "@/lib/seo/metricsStore";
 import { runUpsert } from "@/lib/db/upsert";
 import { rawQuery } from "@/lib/db/raw";
+import { estimateCostUsd, fetchYandexKeywords, keyssoListUnits, YANDEX_MARKET } from "@/lib/seo/metrics";
+import { releaseUnusedUnits } from "@/lib/seo/metricsStore";
+import { OWN_YANDEX_UNITS, ownYandexStale, readOwnYandex, refreshOwnYandex } from "@/lib/seo/yandexOwn";
 
 // POST /api/demand/keywords { seed, siteId?, country?, language?, mode?, limit?, clickstream?, apiKey?, cap?, fetch? }
 //
@@ -80,6 +83,12 @@ export async function POST(req: Request) {
   const siteId = String(b.siteId ?? "");
 
   if (!seed) return NextResponse.json({ error: "no_seed" }, { status: 400 });
+
+  // The Yandex market is a separate path end to end: Keys.so instead of DataForSEO, Wordstat
+  // instead of Google volumes, and our own Yandex positions instead of GSC on the "ours" side.
+  if (country === YANDEX_MARKET) {
+    return yandexDemand(userId, { seed, siteId, limit, apiKey, baseUrl: String(b.baseUrl ?? "").trim() || undefined, cap, wantFetch });
+  }
 
   // The site is optional: researching a market you do not yet have a site for is a legitimate
   // use, and the join simply degrades to "we rank for nothing", which is the truth.
@@ -250,5 +259,99 @@ export async function POST(req: Request) {
     priceUsd,
     usage: await usage(),
     ...(res.error ? { warning: res.error } : {}),
+  });
+}
+
+// ─── Yandex market ──────────────────────────────────────────────────────────────
+
+/**
+ * Keyword demand on the Yandex market, from Keys.so: the seed and its similar phrases with
+ * Wordstat frequencies (volume = exact-phrase `wsk`, the figure Yandex SEO plans by), each
+ * verdicted against the site's OWN Yandex positions — refreshed here when missing or stale, at
+ * most ten credits, quoted up front. Cached in DemandSearch under the `yandex` market like any
+ * other search; metered on `keysso`.
+ */
+async function yandexDemand(
+  userId: string,
+  o: { seed: string; siteId: string; limit: number; apiKey: string; baseUrl?: string; cap: number; wantFetch: boolean },
+) {
+  const limit = Math.max(50, Math.min(500, o.limit));
+  const site = o.siteId
+    ? await prisma.site.findFirst({ where: { id: o.siteId, userId }, select: { id: true, url: true } })
+    : null;
+  const own = site ? site.url.replace(/^sc-domain:/, "").replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0].toLowerCase() : "";
+  const ownStale = site ? await ownYandexStale(site.id, own) : false;
+  const units = 1 + keyssoListUnits(limit) + (ownStale ? OWN_YANDEX_UNITS : 0);
+  const priceUsd = estimateCostUsd(units, "keysso");
+  const cacheKey = `${normalizeKeyword(o.seed)}|${YANDEX_MARKET}|ru|similar|${limit}|0`;
+
+  const decorate = async (rows: DemandRow[]): Promise<DemandApiRow[]> => {
+    const ours = site ? await readOwnYandex(site.id, own) : new Map<string, { position: number; url: string }>();
+    return rows.map(r => {
+      const mine = ours.get(normalizeKeyword(r.keyword));
+      const ourPosition = mine ? mine.position : null;
+      return {
+        ...r, ourPosition, ourUrl: mine?.url ?? null, ourImpressions: mine ? 1 : 0,
+        verdict: ourPosition == null ? "none" : ourPosition <= REACH_POSITION ? "reach" : "wrong_page",
+      };
+    });
+  };
+  const readCache = async (): Promise<{ rows: DemandRow[]; at: string } | null> => {
+    try {
+      const rows: { rows: string; createdAt: string }[] = await rawQuery(
+        `SELECT rows, createdAt FROM "DemandSearch" WHERE userId = ? AND cacheKey = ?`, userId, cacheKey);
+      const hit = rows?.[0];
+      if (!hit || Date.now() - new Date(hit.createdAt).getTime() > SEARCH_TTL_DAYS * 24 * 3600 * 1000) return null;
+      return { rows: JSON.parse(hit.rows) as DemandRow[], at: new Date(hit.createdAt).toISOString() };
+    } catch { return null; }
+  };
+  const base = { seed: o.seed, country: YANDEX_MARKET, language: "ru", mode: "auto", provider: "keysso", priceUsd, units };
+  const usage = async () => {
+    const u = await readUsage(userId, "keysso");
+    return { ...u, spentUsd: estimateCostUsd(u.units, "keysso") };
+  };
+
+  if (!o.wantFetch || !o.apiKey) {
+    const cached = await readCache();
+    return NextResponse.json({
+      ...base, rows: cached ? await decorate(cached.rows) : [],
+      source: cached ? "keysso" : null, cachedAt: cached?.at ?? null, usage: await usage(),
+      ...(site && !ownStale ? {} : site ? { ownYandexStale: true } : {}),
+      ...(o.wantFetch && !o.apiKey ? { error: "no_key" } : {}),
+    });
+  }
+
+  if (!(await withinCap(userId, "keysso", units, o.cap))) {
+    return NextResponse.json({ ...base, rows: [], error: "cap_exceeded", wouldSpendUsd: priceUsd, usage: await usage() }, { status: 429 });
+  }
+  await recordUsage(userId, "keysso", units);
+  const creds = { provider: "keysso" as const, apiKey: o.apiKey, baseUrl: o.baseUrl };
+  const res = await fetchYandexKeywords(creds, o.seed, limit);
+  let spent = res.units;
+  if (site && ownStale && res.rows.length) spent += await refreshOwnYandex(creds, site.id, own);
+  await releaseUnusedUnits(userId, "keysso", units, spent);
+  if (!res.rows.length) {
+    return NextResponse.json({ ...base, rows: [], error: res.error ?? "empty", usage: await usage() }, { status: 502 });
+  }
+
+  const rows: DemandRow[] = res.rows.map(k => ({
+    keyword: k.keyword, volume: k.wsk, globalVolume: null, difficulty: null, cpc: null,
+    competition: null, competitionLevel: null, intent: "unknown", trend: [],
+  }));
+  try {
+    await runUpsert({
+      table: "DemandSearch",
+      conflict: ["userId", "cacheKey"],
+      values: {
+        userId, cacheKey, seed: normalizeKeyword(o.seed), country: YANDEX_MARKET, language: "ru", mode: "auto",
+        source: "keysso", rows: JSON.stringify(rows), createdAt: new Date().toISOString(),
+      },
+      update: { source: "set", rows: "set", createdAt: "set" },
+    });
+  } catch { /* best effort */ }
+
+  return NextResponse.json({
+    ...base, rows: await decorate(rows), source: "keysso",
+    spentUsd: estimateCostUsd(spent, "keysso"), usage: await usage(),
   });
 }

@@ -19,10 +19,17 @@
 // hostId), 5 per detail section, 5 per title's country split, 4 per keyword lookup. Sections
 // cache independently for 7 days, so detailing the tab never re-buys the overview.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { Loader2, RefreshCw, Search } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { getGoAnyKey } from "@/lib/seo/keys";
+import { hasMetricsKey } from "@/lib/seo/metricsClient";
+import YandexDirectBlock from "@/components/YandexDirectBlock";
+
+// Keys.so key present? false on the server pass, real once hydrated — the Yandex Direct block
+// exists only for users who connected Keys.so.
+const noopSubscribe = () => () => {};
+const useKeyssoKey = () => useSyncExternalStore(noopSubscribe, () => hasMetricsKey("keysso"), () => false);
 
 interface Advertiser { advertiser: string; country: string; adsCount: number | null; creativeIds: string[] }
 interface AdTitle { title: string; startDay: string; endDay: string }
@@ -49,6 +56,7 @@ const normDomain = (d: string) =>
 
 export default function AdsIntelTab({ domain }: { domain: string }) {
   const { t } = useLanguage();
+  const keysso = useKeyssoKey();
   const siteDomain = normDomain(domain);
 
   // The research target: prefilled with the site, editable to any competitor.
@@ -441,6 +449,7 @@ export default function AdsIntelTab({ domain }: { domain: string }) {
           ))}
         </div>
       )}
+      {keysso && <YandexDirectBlock domain={target} />}
     </div>
   );
 }

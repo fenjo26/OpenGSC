@@ -5185,5 +5185,22 @@
   "ykaiShared": "Gemeinsame Anfragen",
   "ykaiSharedHint": "Anfragen, deren KI-Antwort diese Domain und deine Website zitiert",
   "ykaiTheirAi": "Ihre KI-Anfragen",
-  "ykaiFailed": "Keys.so hat nicht geantwortet — später erneut versuchen."
+  "ykaiFailed": "Keys.so hat nicht geantwortet — später erneut versuchen.",
+  "blKsLoad": "Links aus Keys.so",
+  "blKsHint": "Backlinks der Website samt Ankertexten aus dem Runet-Index von Keys.so laden und die Toxizität neu bewerten. Der erste Klick ermittelt nur den Preis (1 Credit).",
+  "blKsLinks": "Links",
+  "blKsConfirm": "Laden",
+  "blKsRunning": "Links werden geladen…",
+  "blKsLoaded": "{n} Links geladen — Toxizität neu bewertet.",
+  "ydTitle": "Yandex Direct",
+  "ydLoad": "Laden",
+  "ydEmpty": "Für diese Domain noch nicht geladen: ihre Direct-Anzeigen und die Suchanfragen, bei denen sie erscheinen.",
+  "ydNone": "Keys.so kennt keine Yandex-Direct-Anzeigen für diese Domain.",
+  "ydAds": "Anzeigen",
+  "ydKeywords": "Anfragen mit Anzeigen",
+  "ydAdKeys": "Anfragen",
+  "gapMarketYandex": "Yandex (Keys.so)",
+  "gapYandexNote": "Yandex-Markt, Moskau: Positionen der Wettbewerber und deine eigenen kommen beide aus Keys.so (deine Top-1000-Yandex-Keywords werden wöchentlich aktualisiert, bis zu 10 Credits zusätzlich), daher vergleicht „nah / schwach / fehlt“ Yandex mit Yandex. Das Volumen ist die exakte Wordstat-Frequenz; Keys.so hat keinen KD.",
+  "dmYandexNote": "Ähnliche Phrasen aus Keys.so mit exakter Wordstat-Frequenz, jeweils mit deinen eigenen Yandex-Positionen abgeglichen (nicht mit der Search Console). Ein Credit pro 100 Phrasen plus einer für den Suchbegriff.",
+  "dmYandexOwnStale": "Deine Yandex-Positionen fehlen oder sind älter als eine Woche — der nächste Lauf aktualisiert sie (bis zu 10 Credits, im Preis enthalten)."
 }

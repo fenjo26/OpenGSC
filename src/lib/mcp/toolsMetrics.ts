@@ -12,7 +12,8 @@
 import { prisma } from "@/lib/prisma";
 import { McpTool, lim, resolveSite, siteArg, normDomain } from "./shared";
 import { readKeywordCache, readDomainCache } from "@/lib/seo/metricsStore";
-import { parseMetricsProvider } from "@/lib/seo/metricsPricing";
+import { parseMetricsProvider, YANDEX_MARKET } from "@/lib/seo/metricsPricing";
+import { readOwnYandex } from "@/lib/seo/yandexOwn";
 import { readRefDomains, readSnapshots } from "@/lib/seo/backlinkStore";
 import { rawQuery } from "@/lib/db/raw";
 
@@ -200,7 +201,7 @@ export const METRICS_TOOLS: McpTool[] = [
       type: "object",
       properties: {
         site: siteArg,
-        country: { type: "string", description: "Market, 2-letter code. Default us" },
+        country: { type: "string", description: "Market, 2-letter code. Default us. \"yandex\" = the Yandex market from Keys.so — both sides are Yandex positions (ours from the site's own stored Yandex keywords), volume is Wordstat exact frequency, no KD" },
         bucket: { type: "string", description: "Filter: close (we rank in top 30) | weak (impressions only) | missing (absent)" },
         limit: { type: "number", description: "Max rows (default 100, max 500)" },
       },
@@ -227,7 +228,13 @@ export const METRICS_TOOLS: McpTool[] = [
       // Same join as the web view, and deliberately recomputed rather than cached: GSC moves
       // daily while the competitor list does not.
       const ours = new Map<string, { position: number; url: string; impressions: number }>();
-      try {
+      const own = normDomain(site.url);
+      if (country === YANDEX_MARKET) {
+        // Yandex vs Yandex: our side is the site's own stored Yandex positions, and those rows
+        // are not a competitor.
+        for (const [k, v] of await readOwnYandex(site.id, own)) ours.set(k, { ...v, impressions: 1 });
+        stored = stored.filter(r => String(r.competitor) !== own);
+      } else try {
         const since = new Date();
         since.setDate(since.getDate() - 90);
         const rows = await prisma.dailyMetric.groupBy({
@@ -336,11 +343,13 @@ export const METRICS_TOOLS: McpTool[] = [
   {
     name: "get_ads_intel",
     description:
-      "Google Ads Transparency intelligence for a domain, from the local cache: which advertisers run " +
+      "Ad intelligence for a domain, from the local cache. Google Ads Transparency: which advertisers run " +
       "ads for it (with creative ID counts), the ad titles with their run windows, weekly ad-count " +
       "activity per advertiser and country, and image creatives. Read-only and free — the cache is " +
       "filled when a human presses Load on the site's Ads tab. Sections not loaded yet come back in " +
-      "notLoaded; an empty section means the provider answered and found nothing, not that nobody looked.",
+      "notLoaded; an empty section means the provider answered and found nothing, not that nobody looked. " +
+      "Section `yandex_direct` (when loaded via Keys.so on the same tab) holds Yandex Direct: top ads with " +
+      "landing URL and query reach, and the queries the domain's ads show on with Wordstat exact frequency.",
     cost: "local",
     inputSchema: {
       type: "object",

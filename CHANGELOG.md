@@ -20,6 +20,16 @@ All notable changes to OpenGSC. Dates are release dates; the version shown in
 - MCP: `get_yandex_ai_answers` (local) returns the stored report — queries, cited URL and rank among sources, competitors (registry now 95 tools).
 - The answer HTML is never rendered — only its source links are read. Storage reuses `DomainMetricCache` under the pseudo-provider `keysso_ai` (no schema change); usage is metered on `keysso`.
 
+### Added — Keys.so across the Yandex market (phase 2)
+
+Every surface below appears only for users with a Keys.so key; nothing changes for anyone else.
+
+- **Backlink toxicity gets Runet anchors.** «Links from Keys.so» on the Toxicity tab loads the site's live backlinks with anchors from Keys.so's index (priced first: 1 credit, then 1 credit per 100 links, confirmed by the user), then re-scores toxicity. Rows are restated in the Ahrefs all-backlinks shape, so the existing writer, toxicity, disavow and recovery work unchanged. `POST /api/backlinks/sync` takes `provider: "keysso"`. Follow semantics: no `rel` → dofollow; any `rel` code → not passing weight (Keys.so does not document the codes).
+- **Competitor gap: a «Yandex (Keys.so)» market.** Competitors (`organic/concurents`, 1 credit) and their keywords (`organic/keywords`, 1 credit per 100, best positions first) — and "ours" comes from the site's OWN Yandex positions (top 1 000, refreshed weekly for up to 10 credits), never GSC, so close/weak/missing compares Yandex with Yandex. Stored under the `yandex` market, apart from every Google country. Volume = Wordstat exact; no KD.
+- **Keyword demand: the same market.** Seed + similar phrases (`keyword_dashboard` + `similarkeys`), verdicted against the own Yandex positions, cached like any search. Remembered apart from `seoMetricsCountry`, which other screens read as a Google country.
+- **Ads tab: Yandex Direct.** Below the Google Ads Transparency sections, for the same researched domain: top ads (landing URL without per-click query noise, query reach) and the queries its ads show on. 2 credits, cached 7 days in `AdIntelCache` (`yandex_direct`).
+- MCP: `get_competitor_gap` and `get_keyword_demand` accept `country: "yandex"` with the same Yandex-vs-Yandex join; `get_ads_intel` documents the `yandex_direct` section; `get_backlink_toxicity` sees Keys.so anchors once loaded.
+
 ### Fixed
 
 - Backlink profile, Semrush tab: the RD/backlinks chips and the change figure read Ahrefs' snapshot history instead of Semrush's own.

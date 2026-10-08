@@ -5185,5 +5185,22 @@
   "ykaiShared": "Shared queries",
   "ykaiSharedHint": "Queries whose AI answer cites both this domain and your site",
   "ykaiTheirAi": "Their AI queries",
-  "ykaiFailed": "Keys.so did not answer — try again later."
+  "ykaiFailed": "Keys.so did not answer — try again later.",
+  "blKsLoad": "Links from Keys.so",
+  "blKsHint": "Load this site's backlinks with anchors from Keys.so's Runet index, then re-score toxicity. The first click only prices the run (1 credit).",
+  "blKsLinks": "links",
+  "blKsConfirm": "Load",
+  "blKsRunning": "Loading links…",
+  "blKsLoaded": "Loaded {n} links — toxicity re-scored.",
+  "ydTitle": "Yandex Direct",
+  "ydLoad": "Load",
+  "ydEmpty": "Not loaded for this domain yet: its Direct ads and the queries they show on.",
+  "ydNone": "Keys.so has no Yandex Direct ads for this domain.",
+  "ydAds": "Ads",
+  "ydKeywords": "Queries with ads",
+  "ydAdKeys": "queries",
+  "gapMarketYandex": "Yandex (Keys.so)",
+  "gapYandexNote": "Yandex market, Moscow: competitor positions and your own both come from Keys.so (your top 1 000 Yandex keywords are refreshed weekly, up to 10 extra credits), so «close / weak / missing» compares Yandex with Yandex. Volume is exact Wordstat frequency; Keys.so has no KD.",
+  "dmYandexNote": "Similar phrases from Keys.so with exact Wordstat frequency, each checked against your own Yandex positions (not Search Console). A credit per 100 phrases, plus one for the seed.",
+  "dmYandexOwnStale": "Your Yandex positions are missing or older than a week — the next run refreshes them (up to 10 credits, included in the price)."
 }

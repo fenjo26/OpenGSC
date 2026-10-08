@@ -15,7 +15,7 @@
 // build break; the cast makes the module compile before and after the client catches up.
 
 import { prisma } from "@/lib/prisma";
-import { MetricsCreds } from "@/lib/seo/metrics";
+import { MetricsCreds, fetchKeyssoBacklinksPage } from "@/lib/seo/metrics";
 import { releaseUnusedUnits } from "@/lib/seo/metricsStore";
 import {
   EXPORT_PAGE_SIZE, MappedBacklinkRow, PaginationMode, ExistingApiState,
@@ -382,4 +382,62 @@ async function pageBySlices(
   }
   state.notes.push("slice fallback used: losses cannot be concluded from this run");
   return false;
+}
+
+// ─── Keys.so export ──────────────────────────────────────────────────────────
+
+/** Hard stop for one Keys.so run: 20 000 pages × 100 links. Far past a normal profile, short of a loop. */
+const KEYSSO_MAX_EXPORT_PAGES = 20000;
+
+/**
+ * The same export, sourced from Keys.so's Runet link index — what gives the toxicity, disavow
+ * and recovery tabs real anchors for a site Ahrefs barely sees. Rows arrive already restated in
+ * the all-backlinks shape (`keyssoBacklinkToExportRow`), so `upsertFromApi` is shared unchanged.
+ *
+ * Paging is plain `page`/`per_page`, ended by the envelope's `last_page` — no dialect probe.
+ * One credit per page, metered on `keysso`. The gateway serves live links only (status=1), so
+ * a complete run still never infers a loss from absence: `upsertFromApi` never does.
+ */
+export async function runKeyssoBacklinkExport(opts: ExportRunOpts): Promise<void> {
+  const { syncId, siteId, userId, target, creds } = opts;
+  const state: ExportSummary = {
+    rowsSeen: 0, pagesPulled: 0, unitsSpent: 0, complete: false,
+    paginationMode: "keysso_page", slicesUsed: false, slicesTruncated: false, notes: [],
+  };
+  try {
+    for (let page = 1; page <= KEYSSO_MAX_EXPORT_PAGES; page++) {
+      await heartbeatApiSync(syncId, { stage: "pull", unitsSpent: state.unitsSpent });
+      const res = await fetchKeyssoBacklinksPage(creds, target, page);
+      if (res.error) throw new Error(res.error);
+      state.unitsSpent += res.units;
+      if (!res.rows.length) { state.complete = true; break; }
+      await upsertFromApi(siteId, res.rows, { fetchedAt: new Date() });
+      state.rowsSeen += res.rows.length;
+      state.pagesPulled++;
+      const progress = opts.live && opts.live > 0
+        ? Math.min(99, Math.floor((state.rowsSeen / opts.live) * 100))
+        : 0;
+      await heartbeatApiSync(syncId, {
+        stage: "persist", progress, rowsSeen: state.rowsSeen,
+        pagesPulled: state.pagesPulled, unitsSpent: state.unitsSpent,
+      });
+      if (res.lastPage != null && page >= res.lastPage) { state.complete = true; break; }
+    }
+    await finishApiSync(syncId, {
+      status: "completed", stage: "completed", progress: 100, complete: state.complete,
+      rowsSeen: state.rowsSeen, pagesPulled: state.pagesPulled, unitsSpent: state.unitsSpent,
+      summary: JSON.stringify(state), error: null,
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    state.notes.push(message);
+    await finishApiSync(syncId, {
+      status: "error", stage: "error", complete: false,
+      rowsSeen: state.rowsSeen, pagesPulled: state.pagesPulled, unitsSpent: state.unitsSpent,
+      summary: JSON.stringify(state),
+      error: message.slice(0, 500),
+    });
+  } finally {
+    await releaseUnusedUnits(userId, "keysso", opts.reservedUnits, state.unitsSpent);
+  }
 }

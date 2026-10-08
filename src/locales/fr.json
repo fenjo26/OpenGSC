@@ -5185,5 +5185,22 @@
   "ykaiShared": "Requêtes communes",
   "ykaiSharedHint": "Requêtes dont la réponse IA cite ce domaine et votre site",
   "ykaiTheirAi": "Leurs requêtes IA",
-  "ykaiFailed": "Keys.so n'a pas répondu — réessayez plus tard."
+  "ykaiFailed": "Keys.so n'a pas répondu — réessayez plus tard.",
+  "blKsLoad": "Liens depuis Keys.so",
+  "blKsHint": "Charger les backlinks du site avec leurs ancres depuis l'index Runet de Keys.so, puis recalculer la toxicité. Le premier clic ne fait qu'estimer le prix (1 crédit).",
+  "blKsLinks": "liens",
+  "blKsConfirm": "Charger",
+  "blKsRunning": "Chargement des liens…",
+  "blKsLoaded": "{n} liens chargés — toxicité recalculée.",
+  "ydTitle": "Yandex Direct",
+  "ydLoad": "Charger",
+  "ydEmpty": "Pas encore chargé pour ce domaine : ses annonces Direct et les requêtes sur lesquelles elles s'affichent.",
+  "ydNone": "Keys.so n'a aucune annonce Yandex Direct pour ce domaine.",
+  "ydAds": "Annonces",
+  "ydKeywords": "Requêtes avec annonces",
+  "ydAdKeys": "requêtes",
+  "gapMarketYandex": "Yandex (Keys.so)",
+  "gapYandexNote": "Marché Yandex, Moscou : les positions des concurrents comme les vôtres viennent de Keys.so (vos 1 000 premiers mots-clés Yandex sont actualisés chaque semaine, jusqu'à 10 crédits en plus) ; « proche / faible / absent » compare donc Yandex à Yandex. Le volume est la fréquence Wordstat exacte ; Keys.so n'a pas de KD.",
+  "dmYandexNote": "Expressions similaires de Keys.so avec la fréquence Wordstat exacte, chacune comparée à vos propres positions Yandex (pas à Search Console). Un crédit par 100 expressions, plus un pour la requête de départ.",
+  "dmYandexOwnStale": "Vos positions Yandex manquent ou datent de plus d'une semaine — la prochaine exécution les actualise (jusqu'à 10 crédits, inclus dans le prix)."
 }

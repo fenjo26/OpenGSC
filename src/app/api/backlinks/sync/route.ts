@@ -2,19 +2,21 @@ import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { rawQuery } from "@/lib/db/raw";
-import { estimateCostUsd, MetricsCreds } from "@/lib/seo/metrics";
-import { recordUsage, withinCap } from "@/lib/seo/metricsStore";
+import { estimateCostUsd, MetricsCreds, fetchKeyssoBacklinksPage, KEYSSO_BACKLINK_PAGE_SIZE } from "@/lib/seo/metrics";
+import { recordUsage, releaseUnusedUnits, withinCap } from "@/lib/seo/metricsStore";
 import { normDomain } from "@/lib/seo/backlinkStore";
 import {
   EXPORT_PAGE_SIZE, PROBE_UNITS, STATS_UNITS,
   cachedPaginationMode, estimateExportUnits, fetchBacklinksStats,
 } from "@/lib/seo/backlinksApi";
 import {
-  createApiSync, listApiSyncs, runBacklinkExport, runningApiSync,
+  createApiSync, listApiSyncs, runBacklinkExport, runKeyssoBacklinkExport, runningApiSync,
 } from "@/lib/seo/siteBacklinkStore";
 
 // Full backlink export from Ahrefs — the api writer of the backlinks v2 wave.
-// POST /api/backlinks/sync { siteId, confirm?, apiKey?, baseUrl?, cap? }
+// POST /api/backlinks/sync { siteId, provider?, confirm?, apiKey?, baseUrl?, cap? }
+//   provider "keysso" → the same export from Keys.so's Runet index (1 credit per 100 links);
+//   anything else → Ahrefs, as before.
 //   without confirm → { confirmRequired: true, estimate } — the price, nothing spent beyond the
 //                     one stats call that priced it
 //   with confirm    → creates a SiteBacklinkSync row, runs the export fire-and-forget
@@ -42,6 +44,8 @@ export async function POST(req: Request) {
   // arbitrary domains just because someone asked it to.
   const target = normDomain(String(site.url ?? "").replace(/^sc-domain:/, ""));
   if (!target) return NextResponse.json({ error: "bad_site_url" }, { status: 400 });
+
+  if (b.provider === "keysso") return keyssoSync(userId, siteId, target, b, confirm, cap);
 
   const resolved = await resolveAhrefsCreds(userId, b);
   if (resolved === "semrush") return NextResponse.json({ error: "provider_unsupported" }, { status: 400 });
@@ -144,5 +148,58 @@ async function resolveAhrefsCreds(
       return { provider: "ahrefs", apiKey: key, baseUrl: String(s.seoMetricsBaseUrl_ahrefs ?? "").trim() || undefined };
     }
     return s.seoMetricsProvider === "semrush" ? "semrush" : null;
+  } catch { return null; }
+}
+
+/**
+ * The Keys.so export: priced from a one-credit `per_page=1` read whose envelope `total` is the
+ * live backlink count, then the same confirm gate, the same one-run-per-site rule, and the same
+ * detached runner pattern as the Ahrefs path — only the wallet (`keysso`) and the pager differ.
+ */
+async function keyssoSync(
+  userId: string, siteId: string, target: string,
+  b: { apiKey?: unknown; baseUrl?: unknown }, confirm: boolean, cap: number,
+) {
+  const creds = await resolveKeyssoCreds(userId, b);
+  if (!creds) return NextResponse.json({ error: "no_key" }, { status: 400 });
+
+  if (!(await withinCap(userId, "keysso", 1, cap))) {
+    return NextResponse.json({ error: "cap_exceeded", wouldSpend: 1 }, { status: 429 });
+  }
+  await recordUsage(userId, "keysso", 1);
+  const stats = await fetchKeyssoBacklinksPage(creds, target, 1, 1);
+  if (stats.error || stats.total == null) {
+    // A refused read is not billed by the gateway — it comes back off the month.
+    await releaseUnusedUnits(userId, "keysso", 1, stats.units);
+    return NextResponse.json({ error: stats.error ?? "stats_failed" }, { status: 502 });
+  }
+  const live = stats.total;
+  const pages = Math.max(1, Math.ceil(live / KEYSSO_BACKLINK_PAGE_SIZE));
+  const estimate = { rows: live, pages, units: pages, usd: estimateCostUsd(pages, "keysso"), provider: "keysso" };
+  if (!confirm) return NextResponse.json({ confirmRequired: true, estimate });
+
+  const running = await runningApiSync(siteId);
+  if (running) return NextResponse.json({ error: "already_running", id: running.id }, { status: 409 });
+  if (!(await withinCap(userId, "keysso", pages, cap))) {
+    return NextResponse.json({ error: "cap_exceeded", wouldSpend: pages }, { status: 429 });
+  }
+  await recordUsage(userId, "keysso", pages);
+  const sync = await createApiSync(siteId, "keysso_page");
+  runKeyssoBacklinkExport({ syncId: sync.id, siteId, userId, target, creds, live, reservedUnits: pages })
+    .catch(err => console.error(`[backlinks-sync:keysso] ${sync.id} failed:`, err));
+  return NextResponse.json({ id: sync.id, estimate });
+}
+
+/** Keys.so key from the body, else the seoSettings mirror — same slot/mode chain as Ahrefs above. */
+async function resolveKeyssoCreds(userId: string, body: { apiKey?: unknown; baseUrl?: unknown }): Promise<MetricsCreds | null> {
+  const apiKey = String(body.apiKey ?? "").trim();
+  if (apiKey) return { provider: "keysso", apiKey, baseUrl: String(body.baseUrl ?? "").trim() || undefined };
+  try {
+    const rows: { seoSettings: string | null }[] = await rawQuery(`SELECT seoSettings FROM "User" WHERE id = ?`, userId);
+    const s = JSON.parse(rows?.[0]?.seoSettings ?? "{}") as Record<string, unknown>;
+    const mode = String(s.seoMetricsMode_keysso ?? "");
+    const slot = mode === "reseller" || mode === "custom" ? "seoKey_keysso__" + mode : "seoKey_keysso";
+    const key = String(s[slot] ?? s.seoKey_keysso ?? "").trim();
+    return key ? { provider: "keysso", apiKey: key, baseUrl: String(s.seoMetricsBaseUrl_keysso ?? "").trim() || undefined } : null;
   } catch { return null; }
 }

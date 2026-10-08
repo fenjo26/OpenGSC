@@ -12,16 +12,21 @@
 //
 // Sorted by the first group, because that is the work with the shortest path to traffic.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { Users, Loader2, Download, ExternalLink, Search, PenLine, FileDown } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { COUNTRIES } from "@/lib/seo/regions";
 import {
-  getMetricsCreds, getKeywordCapableCreds, estimateCostUsd, formatUsd,
+  getMetricsCreds, getKeywordCapableCreds, estimateCostUsd, formatUsd, hasMetricsKey,
 } from "@/lib/seo/metricsClient";
 // Prices only, from the module that has no network half — see `metricsPricing.ts`.
-import { estimateCompetitorUnits, estimateOrganicKeywordUnits } from "@/lib/seo/metricsPricing";
+import { estimateCompetitorUnits, estimateOrganicKeywordUnits, keyssoListUnits, YANDEX_MARKET } from "@/lib/seo/metricsPricing";
+
+// Keys.so key present? false on the server pass, real once hydrated. The Yandex market only
+// appears in the market list for users who connected Keys.so.
+const noopSubscribe = () => () => {};
+const useKeyssoKey = () => useSyncExternalStore(noopSubscribe, () => hasMetricsKey("keysso"), () => false);
 
 interface GapRow {
   keyword: string; competitor: string;
@@ -74,11 +79,20 @@ export default function CompetitorsPage() {
    * out of the quote — the tool stops selling a column it cannot deliver.
    */
   const [unsupported, setUnsupported] = useState<string[]>([]);
-  const kdBlocked = unsupported.includes("difficulty");
+  const keysso = useKeyssoKey();
+  const yandex = country === YANDEX_MARKET;
+  // Keys.so has no KD column at all — the checkbox would sell nothing on the Yandex market.
+  const kdBlocked = yandex || unsupported.includes("difficulty");
+  // The Yandex market talks to Keys.so only; every Google market keeps the keyword-capable key.
+  const credsFor = useCallback(() => (country === YANDEX_MARKET ? getMetricsCreds("keysso") : getKeywordCapableCreds()), [country]);
 
   useEffect(() => {
     setHasKey(getKeywordCapableCreds().apiKey.length > 4);
-    setCountry(localStorage.getItem("seoMetricsCountry") || "us");
+    // The Yandex choice is remembered apart from `seoMetricsCountry`: other screens read that key
+    // as a Google country, and "yandex" there would be a market nothing else understands.
+    setCountry(localStorage.getItem("seoGapYandex") === "1" && hasMetricsKey("keysso")
+      ? YANDEX_MARKET
+      : localStorage.getItem("seoMetricsCountry") || "us");
     fetch("/api/gsc/sites")
       .then(r => (r.ok ? r.json() : null))
       .then(d => {
@@ -91,8 +105,9 @@ export default function CompetitorsPage() {
 
   const call = useCallback(async (action: string, extra: Record<string, unknown> = {}) => {
     if (!siteId) return null;
-    // Keyword-side route: resolves off Majestic onto a keyword-capable key.
-    const creds = getKeywordCapableCreds();
+    // Keyword-side route: resolves off Majestic onto a keyword-capable key — or Keys.so on the
+    // Yandex market.
+    const creds = credsFor();
     const body: Record<string, unknown> = { siteId, country, action, provider: creds.provider, ...extra };
     if (action !== "read") {
       Object.assign(body, { apiKey: creds.apiKey, baseUrl: creds.baseUrl, cap: creds.cap });
@@ -121,7 +136,7 @@ export default function CompetitorsPage() {
     }
     setNotice("");
     return d;
-  }, [siteId, country, t]);
+  }, [siteId, country, t, credsFor]);
 
   // Free read of what is stored, on every site/market change.
   useEffect(() => { if (siteId) call("read").catch(() => {}); }, [siteId, country, call]);
@@ -157,7 +172,7 @@ export default function CompetitorsPage() {
     sessionStorage.setItem("seoClusterSeed", JSON.stringify({
       keyword: seed,
       additional: extra.filter(k => k !== seed).join("\n"),
-      gl: country,
+      gl: country === YANDEX_MARKET ? "ru" : country,
     }));
     router.push("/seo-tools/outline");
   }
@@ -193,9 +208,10 @@ export default function CompetitorsPage() {
     URL.revokeObjectURL(a.href);
   }
 
-  const creds = getKeywordCapableCreds();
-  const discoverCost = estimateCostUsd(estimateCompetitorUnits(20), creds.provider);
-  const pullUnits = estimateOrganicKeywordUnits(limit, withKd && !kdBlocked);
+  const creds = credsFor();
+  const canPull = yandex ? keysso : hasKey;
+  const discoverCost = estimateCostUsd(yandex ? 1 : estimateCompetitorUnits(20), creds.provider);
+  const pullUnits = yandex ? keyssoListUnits(limit) : estimateOrganicKeywordUnits(limit, withKd && !kdBlocked);
   const pullCost = estimateCostUsd(pullUnits, creds.provider);
 
   const counts = useMemo(() => {
@@ -239,16 +255,22 @@ export default function CompetitorsPage() {
         </div>
         <div>
           <span className="tool-field-label">{t("importCountry")}</span>
-          <select className="tool-input inline" value={country} onChange={e => { setCountry(e.target.value); localStorage.setItem("seoMetricsCountry", e.target.value); }}>
+          <select className="tool-input inline" value={country} onChange={e => {
+            const v = e.target.value;
+            setCountry(v);
+            if (v === YANDEX_MARKET) localStorage.setItem("seoGapYandex", "1");
+            else { localStorage.removeItem("seoGapYandex"); localStorage.setItem("seoMetricsCountry", v); }
+          }}>
+            {keysso && <option value={YANDEX_MARKET}>{t("gapMarketYandex")}</option>}
             {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
           </select>
         </div>
-        <button className="metric-action" onClick={discover} disabled={!!busy || !hasKey || !siteId}
-          title={!hasKey ? t("gapNoKey") : undefined}>
+        <button className="metric-action" onClick={discover} disabled={!!busy || !canPull || !siteId}
+          title={!canPull ? t("gapNoKey") : undefined}>
           {busy === "competitors" ? <Loader2 size={13} className="spin" /> : <Search size={13} />}
           {t("gapDiscover")}
         </button>
-        {hasKey && <span className="metric-cost">≈ {formatUsd(discoverCost)}</span>}
+        {canPull && <span className="metric-cost">{yandex ? `1 ${t("blsrcKsCredits")} · ` : ""}≈ {formatUsd(discoverCost)}</span>}
         {notice && <span style={{ fontSize: "12px", color: "var(--color-danger)" }}>{notice}</span>}
       </div>
 
@@ -260,16 +282,22 @@ export default function CompetitorsPage() {
         <div className="panel">
           <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", marginBottom: "10px" }}>
             <span className="tool-section-label" style={{ marginBottom: 0 }}>{t("gapCompetitors")}</span>
-            <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--color-text-secondary)", cursor: "pointer" }} title={t("kwWithKdHint")}>
+            {!yandex && <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--color-text-secondary)", cursor: "pointer" }} title={t("kwWithKdHint")}>
               <input type="checkbox" checked={withKd && !kdBlocked} disabled={kdBlocked}
                 onChange={e => setWithKd(e.target.checked)} /> {t("kwWithKd")}
               {kdBlocked && <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>({t("gapKdUnsupported")})</span>}
-            </label>
+            </label>}
             <select className="tool-input inline" value={limit} onChange={e => setLimit(Number(e.target.value))}>
               {[100, 200, 500, 1000].map(n => <option key={n} value={n}>{n} {t("gapKeywords")}</option>)}
             </select>
-            <span className="metric-cost">{pullUnits.toLocaleString()} {t("metricsUnits")} · ≈ {formatUsd(pullCost)}</span>
+            <span className="metric-cost">{pullUnits.toLocaleString()} {yandex ? t("blsrcKsCredits") : t("metricsUnits")} · ≈ {formatUsd(pullCost)}</span>
           </div>
+          {/* Said once, where the market is chosen: on Yandex both sides of the gap are Yandex. */}
+          {yandex && (
+            <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.55, margin: "-4px 0 10px", maxWidth: "720px" }}>
+              {t("gapYandexNote")}
+            </div>
+          )}
 
           {found.length > 0 && (
             <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "10px" }}>
@@ -299,8 +327,8 @@ export default function CompetitorsPage() {
             <input className="tool-input inline" value={manual} onChange={e => setManual(e.target.value)}
               placeholder={t("gapManualPh")} onKeyDown={e => { if (e.key === "Enter") pull(manual); }}
               style={{ minWidth: "220px", fontFamily: "monospace" }} />
-            <button className="metric-action" onClick={() => pull(manual)} disabled={!!busy || !manual.trim() || !hasKey}
-              title={!hasKey ? t("gapNoKey") : undefined}>
+            <button className="metric-action" onClick={() => pull(manual)} disabled={!!busy || !manual.trim() || !canPull}
+              title={!canPull ? t("gapNoKey") : undefined}>
               {busy === "keywords" && manual.trim() ? <Loader2 size={11} className="spin" /> : <Download size={11} />}
               {t("gapPull")}
             </button>

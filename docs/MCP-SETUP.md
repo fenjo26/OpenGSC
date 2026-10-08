@@ -169,7 +169,7 @@ create new data, and it is the one that costs money.
 |---|---|---|
 | `get_keyword_demand` | local | **Start here.** Keyword research already stored, joined against the site's own GSC positions — each row verdicted as reach / wrong_page / none. With no seed, lists what has been researched |
 | `get_keyword_metrics` | local | Volume, difficulty and CPC for specific keywords from the metric cache. Missing ≠ zero volume |
-| `get_competitor_gap` | local | Competitors' keywords joined against your GSC data, bucketed close / weak / missing |
+| `get_competitor_gap` | local | Competitors' keywords joined against your GSC data, bucketed close / weak / missing. `country: "yandex"` = the Keys.so Yandex market, judged against your own Yandex positions |
 | `get_domain_metrics` | local | Referring domains, backlinks, estimated traffic for any domain in the cache |
 | `get_backlink_profile` | local | A site's referring domains, live and lost, with stored history (`provider`: ahrefs / semrush / majestic / keysso / all) |
 | `get_yandex_ai_answers` | local | Keys.so: queries whose Yandex AI answer cites the site, its place among the sources, and who is cited beside it — the stored report from Visibility → Yandex AI |

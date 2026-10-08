@@ -34,7 +34,9 @@ import {
 } from "./metricsPricing";
 import {
   keyssoErrorText, keyssoNextStep, keyssoRemainingCredits, mapKeyssoAiAnswer, mapKeyssoAiCompetitor,
-  mapKeyssoDashboard, mapKeyssoRefDomain, parseKeyssoEnvelope,
+  mapKeyssoDashboard, mapKeyssoRefDomain, parseKeyssoEnvelope, keyssoBacklinkToExportRow,
+  mapKeyssoDirectAd, mapKeyssoDirectKeyword, type KeyssoDirectAd, type KeyssoDirectKeyword,
+  mapKeyssoKeyword, type KeyssoKeyword,
   type KeyssoAiAnswer, type KeyssoAiCompetitor,
 } from "./keyssoParse";
 
@@ -1275,6 +1277,170 @@ async function keyssoProfile(
   return result;
 }
 
+/** Per-link backlink page size for the full export; one credit per page whatever its size. */
+export const KEYSSO_BACKLINK_PAGE_SIZE = 100;
+
+/**
+ * One page of a domain's live backlinks from Keys.so, already restated in the all-backlinks row
+ * shape the SiteBacklink writer expects (see `keyssoBacklinkToExportRow`). `total` is the live
+ * backlink count — page 1 with `perPage = 1` is the one-credit stats call that prices an export.
+ */
+export async function fetchKeyssoBacklinksPage(
+  creds: MetricsCreds, domain: string, page: number, perPage = KEYSSO_BACKLINK_PAGE_SIZE,
+): Promise<{ rows: Record<string, unknown>[]; total: number | null; lastPage: number | null; units: number; error?: string }> {
+  const r = await keyssoGet(creds, "/report/simple/links/backlinks", {
+    domain, page: String(page), per_page: String(perPage),
+  });
+  if (!r.ok) return { rows: [], total: null, lastPage: null, units: 0, error: r.error };
+  const env = parseKeyssoEnvelope(r.data);
+  return {
+    rows: env.rows.map(keyssoBacklinkToExportRow).filter((x): x is Record<string, unknown> => !!x),
+    total: env.total, lastPage: env.lastPage, units: 1,
+  };
+}
+
+/** Yandex Direct snapshot: one page of ads and one page of the queries they show on. */
+export const KEYSSO_DIRECT_UNITS = 2;
+
+export interface YandexDirectReport {
+  adsTotal: number | null;
+  ads: KeyssoDirectAd[];
+  keywordsTotal: number | null;
+  keywords: KeyssoDirectKeyword[];
+  fetchedAt: string;
+}
+
+/** A sorted read that falls back to unsorted when the gateway rejects the sort field. */
+async function keyssoGetSorted(creds: MetricsCreds, path: string, params: Record<string, string>, sort: string) {
+  const r = await keyssoGet(creds, path, { ...params, sort });
+  if (!r.ok && r.status >= 400 && r.status < 500 && ![401, 402, 403, 429].includes(r.status)) {
+    return keyssoGet(creds, path, params);
+  }
+  return r;
+}
+
+/**
+ * How a domain advertises in Yandex Direct (search, Moscow base): its top ads by reach and the
+ * queries its ads show on, by exact Wordstat frequency. Two credits. Any domain — like the
+ * Google half of the Ads tab, the interesting lookups are competitors.
+ */
+export async function fetchYandexDirectReport(
+  creds: MetricsCreds, domain: string,
+): Promise<{ ok: true; report: YandexDirectReport; units: number } | { ok: false; error: string; units: number }> {
+  if (creds.provider !== "keysso" || !creds.apiKey) return { ok: false, error: "no_key", units: 0 };
+  const base = { domain, base: "msk", page: "1", per_page: "20" };
+  const [ads, kws] = await Promise.all([
+    keyssoGetSorted(creds, "/report/simple/context/ads", base, "keyscnt|desc"),
+    keyssoGetSorted(creds, "/report/simple/context/keywords", base, "wsk|desc"),
+  ]);
+  const units = (ads.ok ? 1 : 0) + (kws.ok ? 1 : 0);
+  if (!ads.ok && !kws.ok) return { ok: false, error: ads.error, units };
+  const aenv = ads.ok ? parseKeyssoEnvelope(ads.data) : null;
+  const kenv = kws.ok ? parseKeyssoEnvelope(kws.data) : null;
+  return {
+    ok: true,
+    units,
+    report: {
+      adsTotal: aenv?.total ?? null,
+      ads: (aenv?.rows ?? []).map(mapKeyssoDirectAd).filter((r): r is KeyssoDirectAd => !!r),
+      keywordsTotal: kenv?.total ?? null,
+      keywords: (kenv?.rows ?? []).map(mapKeyssoDirectKeyword).filter((r): r is KeyssoDirectKeyword => !!r),
+      fetchedAt: new Date().toISOString(),
+    },
+  };
+}
+
+// ─── Keys.so organic (the Yandex market of the competitor gap) ─────────────────
+//
+// Only reachable with the gap's `yandex` market (the route forces provider keysso there), so
+// Yandex positions are stored under their own market key and never join a Google one. Volume
+// is Wordstat's exact-phrase `wsk`; Keys.so has no KD, so difficulty stays null rather than
+// borrowing its `kei` (a different index).
+
+async function keyssoCompetitors(
+  creds: MetricsCreds, domain: string, opts: { limit?: number },
+): Promise<MetricsResult<CompetitorItem>> {
+  const limit = Math.max(5, Math.min(100, opts.limit ?? 20));
+  const r = await keyssoGetSorted(creds, "/report/simple/organic/concurents",
+    { domain, base: "msk", page: "1", per_page: String(limit) }, "cnt|desc");
+  if (!r.ok) return { items: [], units: 0, error: r.error };
+  const items = parseKeyssoEnvelope(r.data).rows
+    .map(x => ({ domain: String(x.name ?? "").toLowerCase().replace(/^www\./, ""), sharedKeywords: num(x.cnt), traffic: null }))
+    .filter(x => x.domain.includes(".") && x.domain !== domain);
+  return { items, units: 1 };
+}
+
+async function keyssoOrganicKeywords(
+  creds: MetricsCreds, domain: string, opts: { limit?: number; maxPosition?: number },
+): Promise<MetricsResult<OrganicKeywordItem>> {
+  const limit = Math.max(10, Math.min(1000, opts.limit ?? 200));
+  const maxPos = Math.max(1, Math.min(100, opts.maxPosition ?? 100));
+  const items: OrganicKeywordItem[] = [];
+  let units = 0;
+  // Best positions first, so `limit` keeps the rows that matter and the position cut can stop early.
+  for (let page = 1; items.length < limit && page <= Math.ceil(limit / 100); page++) {
+    const r = await keyssoGetSorted(creds, "/report/simple/organic/keywords",
+      { domain, base: "msk", page: String(page), per_page: "100" }, "pos|asc");
+    if (!r.ok) {
+      if (!items.length) return { items: [], units, error: r.error };
+      break;
+    }
+    units++;
+    const env = parseKeyssoEnvelope(r.data);
+    let pastCut = false;
+    for (const x of env.rows) {
+      const position = num(x.pos);
+      if (position != null && position > maxPos) { pastCut = true; continue; }
+      const keyword = String(x.word ?? "").trim().toLowerCase();
+      if (!keyword) continue;
+      const path = String(x.url ?? "");
+      items.push({
+        keyword, position, volume: num(x.wsk), difficulty: null,
+        url: /^https?:\/\//.test(path) ? path : `https://${domain}${path.startsWith("/") ? path : `/${path}`}`,
+      });
+      if (items.length >= limit) break;
+    }
+    if (pastCut || !env.rows.length || (env.lastPage != null && page >= env.lastPage)) break;
+  }
+  return { items, units };
+}
+
+/**
+ * Yandex keyword research from one seed: the seed's own Wordstat figures (`keyword_dashboard`,
+ * 1 credit) and up to `limit` similar phrases by exact frequency (`similarkeys`, a credit per
+ * 100). The seed leads the list. Moscow base, the only one this screen asks for.
+ */
+export async function fetchYandexKeywords(
+  creds: MetricsCreds, seed: string, limit: number,
+): Promise<{ rows: KeyssoKeyword[]; units: number; error?: string }> {
+  if (creds.provider !== "keysso" || !creds.apiKey) return { rows: [], units: 0, error: "no_key" };
+  const rows: KeyssoKeyword[] = [];
+  const seen = new Set<string>();
+  let units = 0;
+  const dash = await keyssoGet(creds, "/report/simple/keyword_dashboard", { keyword: seed, base: "msk" });
+  if (dash.ok) {
+    units++;
+    const k = mapKeyssoKeyword(dash.data ?? {});
+    if (k) { rows.push(k); seen.add(k.keyword); }
+  }
+  let lastError = dash.ok ? "" : dash.error;
+  for (let page = 1; page <= Math.ceil(limit / 100) && rows.length < limit + 1; page++) {
+    const r = await keyssoGetSorted(creds, "/report/simple/similarkeys",
+      { keyword: seed, base: "msk", page: String(page), per_page: "100" }, "wsk|desc");
+    if (!r.ok) { lastError = r.error; break; }
+    units++;
+    const env = parseKeyssoEnvelope(r.data);
+    for (const x of env.rows) {
+      const k = mapKeyssoKeyword(x);
+      if (!k || seen.has(k.keyword)) continue;
+      seen.add(k.keyword);
+      rows.push(k);
+    }
+    if (!env.rows.length || (env.lastPage != null && page >= env.lastPage)) break;
+  }
+  return { rows: rows.slice(0, limit + 1), units, ...(rows.length ? {} : { error: lastError || "empty" }) };
+}
+
 /** What one Yandex AI-answers refresh costs: the answers page and the competitors page. */
 export const KEYSSO_AI_UNITS = 2;
 
@@ -1346,6 +1512,7 @@ export async function fetchOrganicCompetitors(
   if (!normCountry(opts.country)) return { items: [], units: 0, error: "no_country" };
   // Majestic has no organic-search data at all — the honest answer is the same one Semrush-only
   // users got before their path existed, not a request its key cannot answer.
+  if (creds.provider === "keysso") return keyssoCompetitors(creds, domain, opts);
   if (!isKeywordCapable(creds.provider)) return { items: [], units: 0, error: "provider_unsupported" };
   if (creds.provider === "semrush") return semrushCompetitors(creds, domain, opts);
   return ahrefsCompetitors(creds, domain, opts);
@@ -1438,6 +1605,7 @@ export async function fetchOrganicKeywords(
 ): Promise<MetricsResult<OrganicKeywordItem>> {
   if (!creds.apiKey) return { items: [], units: 0, error: "no_key" };
   if (!normCountry(opts.country)) return { items: [], units: 0, error: "no_country" };
+  if (creds.provider === "keysso") return keyssoOrganicKeywords(creds, domain, opts);
   if (!isKeywordCapable(creds.provider)) return { items: [], units: 0, error: "provider_unsupported" };
   if (creds.provider === "semrush") return semrushOrganicKeywords(creds, domain, opts);
   return ahrefsOrganicKeywords(creds, domain, opts);

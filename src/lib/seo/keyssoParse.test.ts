@@ -3,11 +3,12 @@ import test from "node:test";
 import {
   parseKeyssoEnvelope, mapKeyssoDashboard, mapKeyssoRefDomain, keyssoRemainingCredits,
   keyssoErrorText, keyssoNextStep, KEYSSO_202_DELAYS_MS, KEYSSO_ERROR_RETRIES,
-  keyssoAnswerSources, mapKeyssoAiAnswer, mapKeyssoAiCompetitor,
+  keyssoAnswerSources, mapKeyssoAiAnswer, mapKeyssoAiCompetitor, keyssoDate, keyssoBacklinkToExportRow,
+  mapKeyssoDirectAd, mapKeyssoDirectKeyword, mapKeyssoKeyword,
 } from "./keyssoParse";
 import {
   parseMetricsProvider, isKeywordCapable, domainUnits, estimateKeyssoProfileUnits,
-  gatewayStatusFromError, UNIT_PRICE_USD, KEYSSO_REFDOMAIN_PAGE_SIZE,
+  gatewayStatusFromError, UNIT_PRICE_USD, KEYSSO_REFDOMAIN_PAGE_SIZE, keyssoListUnits, YANDEX_MARKET,
 } from "./metricsPricing";
 
 // Fixtures are trimmed copies of live GroupBuySEO gateway answers captured 2026-10-08
@@ -143,4 +144,68 @@ test("AI answer: a subdomain counts as the site; an absent site leaves rank and 
 test("AI competitors: name, shared count and their own AI-answer reach", () => {
   const c = mapKeyssoAiCompetitor({ id: 30079137, name: "sweetmarin.ru", cnt: 57, vis: 11165, queries_in_ai_answers: 560 })!;
   assert.deepEqual(c, { domain: "sweetmarin.ru", shared: 57, aiQueries: 560 });
+});
+
+// Live `links/backlinks` row (probe 1, 2026-10-08).
+const LIVE_BACKLINK = {
+  id: 241384346, source_did: 241384346, source_name: "list-vk.com", domain_exist: true,
+  source_url: "https://list-vk.com/274450183", source_title: "Чикокер …", source_ip: "195.161.68.20",
+  source_dr: 30, url: "https://wildberries.ru/catalog/7256043/detail.aspx", anchor: "Подробнее...",
+  link_type: 1, rel_type: [], created_at: "05.08.2023", updated_at: "05.08.2023", status: 1,
+};
+
+test("Keys.so dates: dd.mm.yyyy and dd.mm.yy hh:mm both become ISO days", () => {
+  assert.equal(keyssoDate("05.08.2023"), "2023-08-05");
+  assert.equal(keyssoDate("10.07.23 17:46"), "2023-07-10");
+  assert.equal(keyssoDate(""), "");
+  assert.equal(keyssoDate("2023-08-05"), "");
+});
+
+test("backlink row → all-backlinks shape the SiteBacklink writer already understands", () => {
+  const r = keyssoBacklinkToExportRow(LIVE_BACKLINK)!;
+  assert.equal(r.url_from, "https://list-vk.com/274450183");
+  assert.equal(r.url_to, "https://wildberries.ru/catalog/7256043/detail.aspx");
+  assert.equal(r.anchor, "Подробнее...");
+  assert.equal(r.domain_rating_source, 30);
+  assert.equal(r.first_seen_link, "2023-08-05");
+  assert.equal(r.is_lost, false);
+  // No rel attribute → follow.
+  assert.equal(r.is_dofollow, true);
+  assert.equal(r.is_nofollow, false);
+});
+
+test("any rel code reads as not passing weight; rows without a source URL are dropped", () => {
+  const r = keyssoBacklinkToExportRow({ ...LIVE_BACKLINK, rel_type: [1] })!;
+  assert.equal(r.is_dofollow, false);
+  assert.equal(r.is_nofollow, true);
+  assert.equal(keyssoBacklinkToExportRow({ ...LIVE_BACKLINK, source_url: "" }), null);
+  assert.equal(keyssoBacklinkToExportRow({ ...LIVE_BACKLINK, status: 0 })!.is_lost, true);
+});
+
+// Live `context/ads` / `context/keywords` / `similarkeys` rows (probe 4, 2026-10-08), trimmed.
+test("Direct ad: header/txt/keyscnt, landing URL stripped of per-click query noise", () => {
+  const a = mapKeyssoDirectAd({
+    id: 2555396596, header: "Перфоратор профессиональный. Акции каждый день.",
+    txt: "Перфоратор способен обрабатывать различные материалы…", keyscnt: 5,
+    url: "https://www.wildberries.ru/catalog/227424775/detail.aspx?utm_source=ya_direct&yclid=1468", serp: "22.08.2026",
+  })!;
+  assert.equal(a.url, "https://www.wildberries.ru/catalog/227424775/detail.aspx");
+  assert.equal(a.keys, 5);
+  assert.equal(a.seen, "2026-08-22");
+  assert.equal(mapKeyssoDirectAd({ txt: "no header" }), null);
+});
+
+test("Direct keyword and similar-phrase rows keep Wordstat exact frequency apart from broad", () => {
+  const k = mapKeyssoDirectKeyword({ word: "роял канин для щенков", pos: 62, ws: 4, wsk: 2, header: "Original Choice" })!;
+  assert.deepEqual(k, { keyword: "роял канин для щенков", position: 62, wsk: 2, title: "Original Choice" });
+  const s2 = mapKeyssoKeyword({ word: "Fox Cake", ws: 61, wsk: 1, kei: 1 })!;
+  assert.deepEqual(s2, { keyword: "fox cake", ws: 61, wsk: 1, kei: 1 });
+});
+
+test("list pricing: a credit per started 100 rows; the Yandex market has its own key", () => {
+  assert.equal(keyssoListUnits(1), 1);
+  assert.equal(keyssoListUnits(100), 1);
+  assert.equal(keyssoListUnits(150), 2);
+  assert.equal(keyssoListUnits(1000), 10);
+  assert.equal(YANDEX_MARKET, "yandex");
 });

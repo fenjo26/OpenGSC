@@ -229,3 +229,105 @@ export function mapKeyssoAiCompetitor(r: Record<string, any>): KeyssoAiCompetito
     aiQueries: ksNum(ksPick(r, "queries_in_ai_answers", "ai_queries")),
   };
 }
+
+// ─── Per-link backlinks (`links/backlinks`) → the SiteBacklink export shape ────
+//
+// The full backlink export (siteBacklinkStore.upsertFromApi) speaks Ahrefs' all-backlinks row
+// shape. Rather than teach the store a second dialect, Keys.so rows are restated in that shape
+// here — one pure adapter, and toxicity / disavow / recovery read Keys.so anchors unchanged.
+
+/** "05.08.2023" or "10.07.23 17:46" → "2023-08-05" / "2023-07-10"; anything else → "". */
+export function keyssoDate(v: unknown): string {
+  const m = /^(\d{1,2})\.(\d{1,2})\.(\d{2,4})/.exec(String(v ?? "").trim());
+  if (!m) return "";
+  const yyyy = m[3].length === 2 ? `20${m[3]}` : m[3];
+  return `${yyyy}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+}
+
+/**
+ * One `links/backlinks` row as an all-backlinks row, or null when it carries no source URL.
+ *
+ * Follow semantics: Keys.so reports `rel_type` as an array of undocumented codes. An empty
+ * array — no rel attribute — is the one unambiguous case and maps to dofollow; any rel value at
+ * all is treated as NOT passing weight (nofollow), the conservative reading. The gateway's
+ * default `filter=status=1` returns live links only, so `is_lost` follows `status`.
+ */
+export function keyssoBacklinkToExportRow(r: Record<string, any>): Record<string, unknown> | null {
+  const urlFrom = String(ksPick(r, "source_url") ?? "").trim();
+  if (!/^https?:\/\//i.test(urlFrom)) return null;
+  const rel = Array.isArray(r?.rel_type) ? r.rel_type : [];
+  const status = ksNum(ksPick(r, "status"));
+  return {
+    url_from: urlFrom,
+    url_to: String(ksPick(r, "url") ?? ""),
+    anchor: String(ksPick(r, "anchor") ?? ""),
+    is_dofollow: rel.length === 0,
+    is_nofollow: rel.length > 0,
+    domain_rating_source: ksNum(ksPick(r, "source_dr")),
+    first_seen_link: keyssoDate(ksPick(r, "created_at")),
+    last_seen: keyssoDate(ksPick(r, "updated_at")),
+    is_lost: status != null && status !== 1,
+    link_type: String(ksPick(r, "link_type") ?? ""),
+  };
+}
+
+// ─── Yandex Direct (`context/ads`, `context/keywords`) ─────────────────────────
+
+export interface KeyssoDirectAd {
+  title: string;
+  text: string;
+  /** Landing URL with the query string dropped — Direct links carry yclid/utm noise per click. */
+  url: string;
+  /** How many queries this ad was seen on (`keyscnt`). */
+  keys: number | null;
+  seen: string;
+}
+
+export interface KeyssoDirectKeyword {
+  keyword: string;
+  position: number | null;
+  wsk: number | null;
+  title: string;
+}
+
+const stripQuery = (u: string) => u.split(/[?#]/)[0];
+
+export function mapKeyssoDirectAd(r: Record<string, any>): KeyssoDirectAd | null {
+  const title = String(ksPick(r, "header", "title") ?? "").trim();
+  if (!title) return null;
+  return {
+    title,
+    text: String(ksPick(r, "txt", "text", "description") ?? "").trim(),
+    url: stripQuery(String(ksPick(r, "url", "link") ?? "")),
+    keys: ksNum(ksPick(r, "keyscnt", "keys_count")),
+    seen: keyssoDate(ksPick(r, "serp", "serpf", "updated_at")),
+  };
+}
+
+export function mapKeyssoDirectKeyword(r: Record<string, any>): KeyssoDirectKeyword | null {
+  const keyword = String(ksPick(r, "word", "keyword") ?? "").trim();
+  if (!keyword) return null;
+  return {
+    keyword,
+    position: ksNum(ksPick(r, "pos")),
+    wsk: ksNum(ksPick(r, "wsk")),
+    title: String(ksPick(r, "header") ?? "").trim(),
+  };
+}
+
+// ─── Yandex keyword research (`similarkeys`, `keyword_dashboard`) ──────────────
+
+export interface KeyssoKeyword {
+  keyword: string;
+  /** Wordstat broad (`ws`) and exact-phrase (`wsk`) monthly frequency, Moscow base. */
+  ws: number | null;
+  wsk: number | null;
+  /** Keys.so's own competition index `kei` (0–100) — not a KD, and never shown as one. */
+  kei: number | null;
+}
+
+export function mapKeyssoKeyword(r: Record<string, any>): KeyssoKeyword | null {
+  const keyword = String(ksPick(r, "word", "keyword") ?? "").trim().toLowerCase();
+  if (!keyword) return null;
+  return { keyword, ws: ksNum(ksPick(r, "ws")), wsk: ksNum(ksPick(r, "wsk")), kei: ksNum(ksPick(r, "kei")) };
+}

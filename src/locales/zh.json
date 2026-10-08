@@ -5185,5 +5185,22 @@
   "ykaiShared": "共同查询",
   "ykaiSharedHint": "AI 回答同时引用该域名和你网站的查询",
   "ykaiTheirAi": "其 AI 查询数",
-  "ykaiFailed": "Keys.so 未响应——请稍后再试。"
+  "ykaiFailed": "Keys.so 未响应——请稍后再试。",
+  "blKsLoad": "从 Keys.so 加载链接",
+  "blKsHint": "从 Keys.so 的俄语网络索引加载本网站带锚文本的反向链接，然后重新评估毒性。第一次点击只估算价格（1 个积分）。",
+  "blKsLinks": "条链接",
+  "blKsConfirm": "加载",
+  "blKsRunning": "正在加载链接…",
+  "blKsLoaded": "已加载 {n} 条链接——毒性已重新评估。",
+  "ydTitle": "Yandex Direct",
+  "ydLoad": "加载",
+  "ydEmpty": "尚未为该域名加载：其 Direct 广告以及展示这些广告的查询。",
+  "ydNone": "Keys.so 没有该域名的 Yandex Direct 广告。",
+  "ydAds": "广告",
+  "ydKeywords": "投放广告的查询",
+  "ydAdKeys": "查询",
+  "gapMarketYandex": "Yandex（Keys.so）",
+  "gapYandexNote": "Yandex 市场，莫斯科：竞争对手和你自己的排名都来自 Keys.so（你在 Yandex 的前 1000 个关键词每周更新一次，最多额外 10 个积分），因此“接近 / 较弱 / 缺失”是在 Yandex 与 Yandex 之间比较。搜索量为 Wordstat 精确词频；Keys.so 没有 KD。",
+  "dmYandexNote": "来自 Keys.so 的相似短语及 Wordstat 精确词频，每条都与你在 Yandex 的排名比对（而非 Search Console）。每 100 条短语 1 个积分，种子词另计 1 个。",
+  "dmYandexOwnStale": "你在 Yandex 的排名缺失或已超过一周——下次运行会更新（最多 10 个积分，已含在价格中）。"
 }
