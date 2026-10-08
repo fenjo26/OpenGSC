@@ -200,7 +200,7 @@ export async function POST(req: Request) {
   // provider prices in its own currency: Ahrefs' two floored calls plus per-row refdomains,
   // Majestic's per-page analysis figure plus a retrieval unit a row.
   const errors: Record<string, string> = {};
-  const perProvider: Record<string, { units: number; complete?: boolean; sync?: unknown; summary?: unknown }> = {};
+  const perProvider: Record<string, { units: number; complete?: boolean; sync?: unknown; summary?: unknown; shortfall?: { pulled: number; total: number } }> = {};
   let pulledAny = false;
 
   for (const p of pulls) {
@@ -248,6 +248,9 @@ export async function POST(req: Request) {
 
     perProvider[p] = {
       units: spent, complete, sync,
+      // Set when the pull reached an end but came up far short of the provider's own count — the
+      // gateway returned a sample. The rows are kept; `complete` is false, so nothing is marked lost.
+      shortfall: res.shortfall,
       summary: {
         refDomainsTotal: profile.refDomainsTotal,
         backlinksTotal: profile.backlinksTotal,

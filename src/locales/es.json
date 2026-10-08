@@ -5204,5 +5204,12 @@
   "dmYandexNote": "Frases similares de Keys.so con la frecuencia exacta de Wordstat, cada una contrastada con tus propias posiciones en Yandex (no con Search Console). Un crédito por cada 100 frases y uno por la semilla.",
   "dmYandexOwnStale": "Tus posiciones en Yandex faltan o tienen más de una semana: la próxima ejecución las actualiza (hasta 10 créditos, incluidos en el precio).",
   "metricsKeyssoRegion": "Región de Yandex",
-  "metricsKeyssoRegionHint": "La usan el mercado Yandex en Competidores y Demanda, y Yandex Direct en la pestaña de anuncios. Las respuestas IA de Yandex solo existen para Moscú; el DR y los enlaces no dependen de la región."
+  "metricsKeyssoRegionHint": "La usan el mercado Yandex en Competidores y Demanda, y Yandex Direct en la pestaña de anuncios. Las respuestas IA de Yandex solo existen para Moscú; el DR y los enlaces no dependen de la región.",
+  "blsyncHint": "Descarga de Ahrefs la lista completa de enlaces (anclas, DR del donante, fragmentos). Es el inventario que clasifica el módulo de toxicidad. Consume unidades: primero ves el precio y confirmas.",
+  "blsyncQuoteNote": "Comprobar el tamaño del perfil ya costó 50 unidades. No se gasta nada más hasta que confirmes. El total puede ser menor si el proveedor devuelve menos enlaces.",
+  "blsyncChecking": "Comprobando el tamaño del perfil…",
+  "blsyncErrNoKey": "No hay clave de Ahrefs. Añade una en Ajustes → Métricas.",
+  "blsyncErrCap": "Se superaría el límite mensual de unidades.",
+  "blsyncErrSemrush": "La sincronización solo funciona con Ahrefs: añade una clave de Ahrefs.",
+  "blpShortfall": "El proveedor devolvió solo {pulled} de {total} dominios de referencia, así que es una muestra, no el perfil completo. No se marcó nada como perdido."
 }

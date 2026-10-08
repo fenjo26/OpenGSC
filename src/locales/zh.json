@@ -5204,5 +5204,12 @@
   "dmYandexNote": "来自 Keys.so 的相似短语及 Wordstat 精确词频，每条都与你在 Yandex 的排名比对（而非 Search Console）。每 100 条短语 1 个积分，种子词另计 1 个。",
   "dmYandexOwnStale": "你在 Yandex 的排名缺失或已超过一周——下次运行会更新（最多 10 个积分，已含在价格中）。",
   "metricsKeyssoRegion": "Yandex 地区",
-  "metricsKeyssoRegionHint": "用于“竞争对手”和“需求”中的 Yandex 市场，以及广告标签中的 Yandex Direct。Yandex AI 回答仅限莫斯科；DR 和链接与地区无关。"
+  "metricsKeyssoRegionHint": "用于“竞争对手”和“需求”中的 Yandex 市场，以及广告标签中的 Yandex Direct。Yandex AI 回答仅限莫斯科；DR 和链接与地区无关。",
+  "blsyncHint": "从 Ahrefs 拉取完整的外链清单（锚文本、来源 DR、片段），毒性模块正是对它进行分类。会消耗点数——先显示价格并等待你确认。",
+  "blsyncQuoteNote": "检查档案规模已消耗 50 点数。在你确认之前不会再扣费。如果服务商返回的外链更少，最终费用可能更低。",
+  "blsyncChecking": "正在检查档案规模…",
+  "blsyncErrNoKey": "没有 Ahrefs 密钥。请在 设置 → 指标 中添加。",
+  "blsyncErrCap": "将超出每月点数上限。",
+  "blsyncErrSemrush": "同步仅支持 Ahrefs——请添加 Ahrefs 密钥。",
+  "blpShortfall": "服务商只返回了 {total} 个引用域名中的 {pulled} 个，这只是样本而非完整档案。未将任何域名标记为已丢失。"
 }

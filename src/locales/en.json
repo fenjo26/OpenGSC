@@ -5204,5 +5204,12 @@
   "dmYandexNote": "Similar phrases from Keys.so with exact Wordstat frequency, each checked against your own Yandex positions (not Search Console). A credit per 100 phrases, plus one for the seed.",
   "dmYandexOwnStale": "Your Yandex positions are missing or older than a week — the next run refreshes them (up to 10 credits, included in the price).",
   "metricsKeyssoRegion": "Yandex region",
-  "metricsKeyssoRegionHint": "Used by the Yandex market in Competitors and Demand and by Yandex Direct on the Ads tab. Yandex AI answers exist for Moscow only; DR and links do not depend on the region."
+  "metricsKeyssoRegionHint": "Used by the Yandex market in Competitors and Demand and by Yandex Direct on the Ads tab. Yandex AI answers exist for Moscow only; DR and links do not depend on the region.",
+  "blsyncHint": "Pulls the full list of individual links (anchors, donor DR, snippets) from Ahrefs. This is the inventory the Toxicity module classifies. It costs units — you see the price and confirm first.",
+  "blsyncQuoteNote": "Checking the profile size already used 50 units. Nothing more is spent until you confirm. The final bill can be lower if the provider returns fewer links.",
+  "blsyncChecking": "Checking profile size…",
+  "blsyncErrNoKey": "No Ahrefs key. Add one in Settings → Metrics.",
+  "blsyncErrCap": "The monthly unit cap would be exceeded.",
+  "blsyncErrSemrush": "Sync works with Ahrefs only — add an Ahrefs key.",
+  "blpShortfall": "The provider returned only {pulled} of {total} referring domains, so this is a sample, not the full profile. Nothing was marked as lost."
 }

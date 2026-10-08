@@ -33,6 +33,7 @@ import TrafficChip from "@/components/TrafficChip";
 import { drSeriesText, type DrPoint } from "@/components/DrSparkline";
 import BacklinkProfile from "@/components/BacklinkProfile";
 import BacklinkImportDialog from "@/components/BacklinkImportDialog";
+import BacklinkSyncButton from "@/components/backlinks/BacklinkSyncButton";
 import type { BacklinkRow, BacklinkListStats } from "@/lib/seo/backlinkTypes";
 import {
   ArrowLeft, Sparkles, Eye, Percent, MoveUp,
@@ -2580,6 +2581,7 @@ function BacklinksTab({ siteDbId }: { siteDbId: string }) {
             style={{ padding: "7px 13px", borderRadius: "8px", border: "none", background: "#3B82F6", color: "#fff", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>
             {t("bluiImport")}
           </button>
+          <BacklinkSyncButton siteDbId={siteDbId} onFinished={() => { void load(); }} />
           <button onClick={handleCheck404} disabled={checking404}
             style={{ padding: "7px 13px", borderRadius: "8px", border: "none", background: "#64748B", color: "#fff", fontSize: "12px", fontWeight: 600, cursor: checking404 ? "not-allowed" : "pointer", opacity: checking404 ? 0.6 : 1 }}>
             {checking404 ? t("backlinksChecking") : t("backlinksCheck404")}
@@ -2709,6 +2711,7 @@ function BacklinksTab({ siteDbId }: { siteDbId: string }) {
             style={{ padding: "8px 18px", borderRadius: "8px", border: "none", background: "#3B82F6", color: "#fff", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}>
             {t("bluiImport")}
           </button>
+          <BacklinkSyncButton siteDbId={siteDbId} onFinished={() => { void load(); }} />
         </div>
       )}
 

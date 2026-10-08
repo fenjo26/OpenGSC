@@ -5204,5 +5204,12 @@
   "dmYandexNote": "Expressions similaires de Keys.so avec la fréquence Wordstat exacte, chacune comparée à vos propres positions Yandex (pas à Search Console). Un crédit par 100 expressions, plus un pour la requête de départ.",
   "dmYandexOwnStale": "Vos positions Yandex manquent ou datent de plus d'une semaine — la prochaine exécution les actualise (jusqu'à 10 crédits, inclus dans le prix).",
   "metricsKeyssoRegion": "Région Yandex",
-  "metricsKeyssoRegionHint": "Utilisée par le marché Yandex dans Concurrents et Demande, et par Yandex Direct dans l'onglet Publicité. Les réponses IA de Yandex n'existent que pour Moscou ; le DR et les liens ne dépendent pas de la région."
+  "metricsKeyssoRegionHint": "Utilisée par le marché Yandex dans Concurrents et Demande, et par Yandex Direct dans l'onglet Publicité. Les réponses IA de Yandex n'existent que pour Moscou ; le DR et les liens ne dépendent pas de la région.",
+  "blsyncHint": "Récupère depuis Ahrefs la liste complète des liens (ancres, DR du donneur, extraits). C'est l'inventaire que classe le module Toxicité. Cela consomme des unités : le prix s'affiche et vous confirmez d'abord.",
+  "blsyncQuoteNote": "La vérification de la taille du profil a déjà coûté 50 unités. Rien d'autre n'est dépensé avant votre confirmation. La facture finale peut être plus basse si le fournisseur renvoie moins de liens.",
+  "blsyncChecking": "Vérification de la taille du profil…",
+  "blsyncErrNoKey": "Aucune clé Ahrefs. Ajoutez-en une dans Paramètres → Métriques.",
+  "blsyncErrCap": "Le plafond mensuel d'unités serait dépassé.",
+  "blsyncErrSemrush": "La synchronisation ne fonctionne qu'avec Ahrefs — ajoutez une clé Ahrefs.",
+  "blpShortfall": "Le fournisseur n'a renvoyé que {pulled} domaines référents sur {total} : c'est un échantillon, pas le profil complet. Rien n'a été marqué comme perdu."
 }

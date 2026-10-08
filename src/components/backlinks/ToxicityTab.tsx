@@ -14,6 +14,7 @@ import { Download, Loader2, RefreshCw, ShieldAlert, Wand2 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { MARKER_GROUPS, type ToxLevel } from "@/lib/backlinks/toxicity";
 import { shareTokenFromPath } from "@/lib/shareParam";
+import BacklinkSyncButton from "@/components/backlinks/BacklinkSyncButton";
 import { getMetricsCreds, hasMetricsKey, formatUsd } from "@/lib/seo/metricsClient";
 
 // Keys.so key present in this browser? false on the server pass, real once hydrated.
@@ -310,8 +311,11 @@ export default function ToxicityTab({ siteDbId, guest }: { siteDbId: string; gue
           <div style={{ fontSize: "17px", fontWeight: 700, color: "var(--color-text-primary)" }}>{data?.donors ?? "—"}</div>
         </div>
         {!guest && (
-          <span style={{ marginLeft: "auto", display: "inline-flex", gap: "8px", flexWrap: "wrap" }}>
+          <span style={{ marginLeft: "auto", display: "inline-flex", gap: "8px", flexWrap: "wrap", alignItems: "flex-start" }}>
             {keysso && <KeyssoLinksLoader siteDbId={siteDbId} onDone={() => run(0)} />}
+            {/* The donors this tab classifies come from the per-link inventory, not from the
+                referring-domains profile above — this fills it from Ahrefs. */}
+            <BacklinkSyncButton compact siteDbId={siteDbId} onFinished={() => { void load(); }} />
             <button className="metric-action" onClick={() => { void run(0); }} disabled={busy || loading}
               title={data?.lastRun ? new Date(data.lastRun).toLocaleString() : String(t("blToxNotRun" as never))}>
               {busy ? <Loader2 size={13} className="spin" /> : <RefreshCw size={13} />} {t("blToxRun")}

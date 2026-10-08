@@ -36,9 +36,15 @@ Every surface below appears only for users with a Keys.so key; nothing changes f
 - Results are stored per region (`yandex` for Moscow, as before; `yandex_spb` …), including the site's own Yandex positions, so regions never overwrite or mix. Yandex AI answers stay Moscow-only (the only base Keys.so serves them for); DR and links are region-independent.
 - MCP: `get_competitor_gap` / `get_keyword_demand` accept `yandex_<code>` for other regions.
 
+### Added — «Export all backlinks» button (the missing UI for `POST /api/backlinks/sync`)
+
+- Backlinks tab header and the Toxicity tab: the full per-link inventory (anchors, donor DR, snippets) is what Toxicity classifies, and the server-side Ahrefs export for it existed with no button — a site with an Ahrefs key and no CSV had an empty toxicity report and no way to fill it. The button asks for the price first (`≈ N links · ≈ M units · ≈ $X`, the route's own estimate), starts the run only after confirmation, shows progress, picks up a run already in flight after a reload, and recalculates toxicity (local, free) when the run ends.
+
 ### Fixed
 
 - Backlink profile, Semrush tab: the RD/backlinks chips and the change figure read Ahrefs' snapshot history instead of Semrush's own.
+- Referring-domains pull (Ahrefs): a response with fewer rows than the `limit` asked for (reported on a reseller gateway: 12 rows on a 648-domain profile; the cause on the gateway side is not established — a probe against a healthy profile returned full pages and honoured `offset` and the cursor) was read as "end of profile", so the refresh reported `complete: true` on a stub and marked every unseen domain as lost. A short page no longer ends the pull — the end is an empty page, or a short page that reaches the provider's own `live_refdomains`. Offset now steps by the rows actually received; a gateway that ignores `offset` on a profile that fits one page is detected and the pull switches to the cursor (and remembers it). A pull that ends far short of the provider's count (more than max(5, 10 %) missing) keeps its rows but is never complete, and the UI says "N of M" instead of the generic filtered-pull notice.
+- Full backlink export: same short-page-is-the-end assumption in both offset and keyset paging; same fix, plus a guard against an ignored offset (the same edge rows twice) and a sample being reported as a complete export. The loops moved to `lib/seo/exportPaging.ts` so they are tested against fake gateways without a database.
 
 ## [1.9.1] — 2026-10-07
 

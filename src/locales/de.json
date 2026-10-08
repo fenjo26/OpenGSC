@@ -5204,5 +5204,12 @@
   "dmYandexNote": "Ähnliche Phrasen aus Keys.so mit exakter Wordstat-Frequenz, jeweils mit deinen eigenen Yandex-Positionen abgeglichen (nicht mit der Search Console). Ein Credit pro 100 Phrasen plus einer für den Suchbegriff.",
   "dmYandexOwnStale": "Deine Yandex-Positionen fehlen oder sind älter als eine Woche — der nächste Lauf aktualisiert sie (bis zu 10 Credits, im Preis enthalten).",
   "metricsKeyssoRegion": "Yandex-Region",
-  "metricsKeyssoRegionHint": "Wird vom Yandex-Markt in Wettbewerber und Nachfrage sowie von Yandex Direct im Anzeigen-Tab genutzt. Yandex-KI-Antworten gibt es nur für Moskau; DR und Links hängen nicht von der Region ab."
+  "metricsKeyssoRegionHint": "Wird vom Yandex-Markt in Wettbewerber und Nachfrage sowie von Yandex Direct im Anzeigen-Tab genutzt. Yandex-KI-Antworten gibt es nur für Moskau; DR und Links hängen nicht von der Region ab.",
+  "blsyncHint": "Lädt die vollständige Liste einzelner Links (Anker, Spender-DR, Snippets) von Ahrefs. Genau diese klassifiziert das Toxizitätsmodul. Kostet Einheiten — der Preis wird vorab angezeigt und muss bestätigt werden.",
+  "blsyncQuoteNote": "Die Prüfung der Profilgröße hat bereits 50 Einheiten gekostet. Bis zu Ihrer Bestätigung wird nichts weiter ausgegeben. Der Endbetrag kann niedriger ausfallen, wenn der Anbieter weniger Links liefert.",
+  "blsyncChecking": "Profilgröße wird geprüft…",
+  "blsyncErrNoKey": "Kein Ahrefs-Schlüssel. Fügen Sie einen unter Einstellungen → Metriken hinzu.",
+  "blsyncErrCap": "Das monatliche Einheitenlimit würde überschritten.",
+  "blsyncErrSemrush": "Die Synchronisierung funktioniert nur mit Ahrefs — fügen Sie einen Ahrefs-Schlüssel hinzu.",
+  "blpShortfall": "Der Anbieter lieferte nur {pulled} von {total} verweisenden Domains — das ist eine Stichprobe, nicht das vollständige Profil. Nichts wurde als verloren markiert."
 }

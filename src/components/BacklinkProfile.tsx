@@ -289,9 +289,17 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
             `${PROVIDER_NAME[p as MetricsProvider] ?? p}: ${
               gatewayNotice(e, (getMetricsCreds(p as MetricsProvider).baseUrl || DEFAULT_BASE_URL[p as MetricsProvider])) ?? e}`)
         : null;
-      setNotice(d.complete === false
-        ? <>{t("blpPartial")}{reason ? <> · {reason}</> : null}</>
-        : "");
+      // A pull that ended far short of the provider's own count is a sample, and "filtered
+      // result" (the generic partial text) would be the wrong explanation for it.
+      const sampled = d.perProvider && typeof d.perProvider === "object"
+        ? (Object.values(d.perProvider as Record<string, { shortfall?: { pulled: number; total: number } }>)
+            .find(v => v?.shortfall)?.shortfall ?? null)
+        : null;
+      setNotice(sampled
+        ? <>{fill(t("blpShortfall"), { pulled: String(sampled.pulled), total: String(sampled.total) })}{reason ? <> · {reason}</> : null}</>
+        : d.complete === false
+          ? <>{t("blpPartial")}{reason ? <> · {reason}</> : null}</>
+          : "");
       loadBalance().catch(() => {});
     }
   }, [dropDomain, siteDbId, view, t, loadBalance, gatewayNotice]);

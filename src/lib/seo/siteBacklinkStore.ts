@@ -18,9 +18,10 @@ import { prisma } from "@/lib/prisma";
 import { MetricsCreds, fetchKeyssoBacklinksPage } from "@/lib/seo/metrics";
 import { releaseUnusedUnits } from "@/lib/seo/metricsStore";
 import {
-  EXPORT_PAGE_SIZE, MappedBacklinkRow, PaginationMode, ExistingApiState,
-  monthSlices, mapApiRow, planEvents, probePagination, fetchBacklinksPage,
+  MappedBacklinkRow, PaginationMode, ExistingApiState,
+  mapApiRow, planEvents, probePagination, fetchBacklinksPage,
 } from "@/lib/seo/backlinksApi";
+import { pageByKeyset, pageByOffset, settleCompleteness, type PagingDeps } from "@/lib/seo/exportPaging";
 
 const db = prisma as any;
 
@@ -291,18 +292,15 @@ export async function runBacklinkExport(opts: ExportRunOpts): Promise<void> {
       });
     };
 
-    if (mode === "offset") {
-      for (let offset = 0; ; offset += EXPORT_PAGE_SIZE) {
-        const page = await fetchBacklinksPage(creds, { target, limit: EXPORT_PAGE_SIZE, offset });
-        if (page.error) throw new Error(page.error);
-        state.unitsSpent += page.units;
-        if (!page.rows.length) { state.complete = true; break; }
-        await persistPage(page.rows);
-        if (page.rows.length < EXPORT_PAGE_SIZE) { state.complete = true; break; }
-      }
-    } else {
-      state.complete = await pageByKeyset(opts, state, persistPage);
-    }
+    // The loops themselves live in exportPaging.ts (no database, so a fake gateway can drive
+    // them in a test). The end of a listing is an empty page, never a short one.
+    const deps: PagingDeps = {
+      target, live: opts.live, state,
+      fetchPage: q => fetchBacklinksPage(creds, q),
+      persistPage,
+    };
+    state.complete = mode === "offset" ? await pageByOffset(deps) : await pageByKeyset(deps);
+    settleCompleteness(state, opts.live);
 
     await finishApiSync(syncId, {
       status: "completed", stage: "completed", progress: 100, complete: state.complete,
@@ -324,66 +322,6 @@ export async function runBacklinkExport(opts: ExportRunOpts): Promise<void> {
     await releaseUnusedUnits(userId, "ahrefs", opts.reservedUnits, state.unitsSpent);
   }
 }
-
-/** keyset paging on url_from; falls back to monthly first_seen slices when the cursor is rejected. */
-async function pageByKeyset(
-  opts: ExportRunOpts,
-  state: ExportSummary,
-  persistPage: (rows: any[]) => Promise<void>,
-): Promise<boolean> {
-  const { target, creds } = opts;
-  let cursor: string | undefined;
-  for (;;) {
-    const page = await fetchBacklinksPage(creds, { target, limit: EXPORT_PAGE_SIZE, afterUrlFrom: cursor });
-    // A 400 on a cursor page (and only there) means the gateway refuses `where` on url_from —
-    // not a malformed select, which would 400 on the very first page too.
-    if (page.status === 400 && cursor !== undefined) {
-      state.notes.push("url_from cursor rejected by gateway; falling back to monthly first_seen slices");
-      return pageBySlices(opts, state, persistPage);
-    }
-    if (page.error) throw new Error(page.error);
-    state.unitsSpent += page.units;
-    if (!page.rows.length) return true;
-    await persistPage(page.rows);
-    if (page.rows.length < EXPORT_PAGE_SIZE) return true;
-    // Ascending order: the last row of the page carries the largest url_from. A cursor that
-    // does not advance means the gateway ignored the `where` and served the same head again —
-    // without this check the loop would page the first 1000 links forever. Not a row ceiling:
-    // the run ends incomplete, with the reason in `error`.
-    const next = page.rows[page.rows.length - 1]?.url_from;
-    if (!next || String(next) === cursor) {
-      throw new Error(cursor ? "keyset cursor did not advance — gateway ignored the where filter" : "keyset page without url_from — cannot continue");
-    }
-    cursor = String(next);
-  }
-}
-
-/**
- * The lossy fallback: monthly first_seen_link windows. Never complete — links older than the
- * lookback are invisible to it, and a month with more links than one page cannot be paged
- * (that is the very limitation that forced this fallback).
- */
-async function pageBySlices(
-  opts: ExportRunOpts,
-  state: ExportSummary,
-  persistPage: (rows: any[]) => Promise<void>,
-): Promise<boolean> {
-  const { target, creds } = opts;
-  state.slicesUsed = true;
-  for (const s of monthSlices(new Date())) {
-    const page = await fetchBacklinksPage(creds, {
-      target, limit: EXPORT_PAGE_SIZE, seenFrom: s.from, seenTo: s.to,
-    });
-    if (page.error) throw new Error(page.error);
-    state.unitsSpent += page.units;
-    if (!page.rows.length) continue;
-    await persistPage(page.rows);
-    if (page.rows.length >= EXPORT_PAGE_SIZE) state.slicesTruncated = true;
-  }
-  state.notes.push("slice fallback used: losses cannot be concluded from this run");
-  return false;
-}
-
 // ─── Keys.so export ──────────────────────────────────────────────────────────
 
 /** Hard stop for one Keys.so run: 20 000 pages × 100 links. Far past a normal profile, short of a loop. */

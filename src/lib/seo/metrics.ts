@@ -386,6 +386,21 @@ export interface BacklinkProfile {
 /** One refdomains page. A full profile pull is several of these — there is no row ceiling. */
 export const REFDOMAIN_PAGE_SIZE = 1000;
 
+export interface RefdomainShortfall { pulled: number; total: number }
+
+/**
+ * Did a pull that reached its end still come up far short of the provider's own domain count?
+ * Tolerates ordinary drift between the stats figure and the list (a handful of domains, or a
+ * tenth of the profile); beyond that the pull is a sample. A DR-filtered pull is a deliberate
+ * subset, so it is never "short". Pure — unit-tested without a network.
+ */
+export function refdomainShortfall(
+  pulled: number, total: number | null | undefined, minDr?: number,
+): RefdomainShortfall | null {
+  if (minDr || total == null || total <= 0) return null;
+  return total - pulled > Math.max(5, Math.ceil(total * 0.1)) ? { pulled, total } : null;
+}
+
 /**
  * Params for one refdomains page. The first page keeps the DR-descending order the table shows;
  * keyset pages must order by the cursor instead. `domain` is already in the select, so the
@@ -565,6 +580,10 @@ async function ahrefsProfile(
   // domain, and starting from a DR-ordered page would key the cursor off a row that is not the
   // alphabetically last one, silently dropping everything after it.
   let afterDomain: string | undefined = mode === "keyset" ? "" : undefined;
+  // A profile that fits one page is never probed, so its offset mode is an assumption, not a
+  // finding. Remembered so a gateway that turns out to ignore offset can be switched once.
+  const modeWasAssumed = mode === null;
+  let switchedToKeyset = false;
   for (;;) {
     const p = await fetchPage(refdomainsPageParams({
       target: domain, limit: REFDOMAIN_PAGE_SIZE, minDr: opts.minDr, offset: offset || undefined, afterDomain,
@@ -583,16 +602,44 @@ async function ahrefsProfile(
       afterDomain = last;
       if (added === 0 && p.rows.length >= REFDOMAIN_PAGE_SIZE) break; // safety: full page, nothing new
     } else {
-      if (p.rows.length < REFDOMAIN_PAGE_SIZE) { sawEnd = true; break; }
-      if (added === 0) break; // offset drifting in place — same guard as above
-      offset += REFDOMAIN_PAGE_SIZE;
+      // A page shorter than the limit is NOT the end of the profile. A gateway can answer with
+      // fewer rows than asked for — a cap, or partial upstream data (one user's refresh ended
+      // with 12 rows on a 648-domain profile) — and calling that the end produced
+      // `complete: true` on a stub, which then marked every domain it had not seen as lost.
+      // The end is an empty page.
+      if (added === 0) {
+        // The same rows again at a new offset: the gateway ignores `offset`. When that was only
+        // assumed, page by cursor instead (already-seen domains are deduplicated), and remember
+        // it so the next refresh does not pay to find out again.
+        if (modeWasAssumed && !switchedToKeyset) {
+          switchedToKeyset = true;
+          mode = "keyset";
+          afterDomain = "";
+          refdomainsModeCache.set(base, { mode, at: Date.now() });
+          continue;
+        }
+        break; // offset drifting in place — stop rather than re-bill the same page
+      }
+      // The one case where the end is provable without paying for an empty page: a short page
+      // that brings the pull up to the provider's own count. Short of that, ask again.
+      if (p.rows.length < REFDOMAIN_PAGE_SIZE && total != null && refDomains.length >= total) {
+        sawEnd = true;
+        break;
+      }
+      offset += p.rows.length;
     }
   }
+
+  // An end that left far fewer domains than the provider says exist is a sample, not a profile.
+  // It is kept (the rows are real) but never called complete: `complete` licenses marking every
+  // absent domain as lost.
+  const shortfall = sawEnd ? refdomainShortfall(refDomains.length, total, opts.minDr) : null;
+  if (shortfall) sawEnd = false;
 
   const live = num(stats?.live);
   const dofollowCount = refDomains.filter(r => r.dofollow).length;
 
-  const result: MetricsResult<BacklinkProfile> & { sawEnd?: boolean; unitsSpent?: number } = {
+  const result: MetricsResult<BacklinkProfile> & { sawEnd?: boolean; unitsSpent?: number; shortfall?: RefdomainShortfall } = {
     units: unitsSpent,
     unitsSpent,
     sawEnd,
@@ -605,6 +652,7 @@ async function ahrefsProfile(
       refDomains,
     }],
   };
+  if (shortfall) result.shortfall = shortfall;
   if (partialError) result.error = partialError;
   return result;
 }
@@ -613,7 +661,7 @@ export async function fetchBacklinkProfile(
   creds: MetricsCreds,
   domain: string,
   opts: { minDr?: number; stats?: any } = {},
-): Promise<MetricsResult<BacklinkProfile> & { sawEnd?: boolean; unitsSpent?: number }> {
+): Promise<MetricsResult<BacklinkProfile> & { sawEnd?: boolean; unitsSpent?: number; shortfall?: RefdomainShortfall }> {
   if (!creds.apiKey) return { items: [], units: 0, error: "no_key" };
   try {
     return creds.provider === "majestic"
