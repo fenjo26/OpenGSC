@@ -16,7 +16,7 @@ import { watchAcceleration } from "@/lib/drops/watch";
 import { scanDomainName } from "@/lib/drops/toxicity/markers";
 import { usePersistedState } from "@/lib/usePersistedState";
 import { getMetricsCreds } from "@/lib/seo/metricsClient";
-import { DrSparkline, drSeriesText, type DrPoint } from "@/components/DrSparkline";
+import { drSeriesText, type DrPoint } from "@/components/DrSparkline";
 import BacklinkProfile from "@/components/BacklinkProfile";
 import ActivationPanel from "@/components/drops/ActivationPanel";
 import ToxCard from "@/components/drops/ToxCard";
@@ -2158,21 +2158,36 @@ export default function DropsPage() {
                     })()}
                   </td>
                   <td style={tdNum}>
-                    {r.dr ?? "—"}
-                    {/* The stored monthly series, next to the number it qualifies — and the veto
-                        flag when the window shows a ≥5-point fall. Nothing stored, nothing drawn:
-                        the series appears as the panel accumulates it. */}
-                    {(() => {
-                      const hist = drHist[r.domain];
-                      if (!hist || hist.length < 2) return null;
-                      const drop = hist[hist.length - 1].dr - hist[0].dr;
-                      const title = `${tr("drHistHint")}\n\n${drSeriesText(hist)}`
-                        + (drop <= -5 ? `\n\n${tr("drHistFlag").replace("{n}", String(Math.abs(drop)))}` : "");
-                      return <span title={title} style={{ marginLeft: 6, display: "inline-flex", verticalAlign: "-4px", alignItems: "center", gap: 3 }}>
-                        <DrSparkline points={hist} />
-                        {drop <= -5 && <AlertTriangle size={12} color="#ff6b62" style={{ flexShrink: 0 }} />}
-                      </span>;
-                    })()}
+                    {/* Number and delta chip share one centered flex line — the chip centers
+                        against the number exactly the way the dashboard card chips center
+                        against each other, instead of baseline-guessing next to a bare text
+                        node. */}
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      {r.dr ?? "—"}
+                      {/* The stored monthly series compressed to the dashboard-card delta chip:
+                          ↓n red / ↑n green (a polyline this small reads as noise and stretches the
+                          row), the months and the ≥5-point veto flag live in the tooltip. No chip
+                          until the delta rounds to something; nothing stored, nothing shown. */}
+                      {(() => {
+                        const hist = drHist[r.domain];
+                        if (!hist || hist.length < 2) return null;
+                        const drop = hist[hist.length - 1].dr - hist[0].dr;
+                        const shown = Math.round(Math.abs(drop));
+                        if (!shown) return null;
+                        const title = `${tr("drHistHint")}\n\n${drSeriesText(hist)}`
+                          + (drop <= -5 ? `\n\n${tr("drHistFlag").replace("{n}", String(shown))}` : "");
+                        return <span title={title} style={{ display: "inline-flex", alignItems: "center", gap: 4, cursor: "help" }}>
+                          {/* lineHeight kept at the font size so the chip fits inside the DR
+                              number's line box — a taller chip stretches its row. */}
+                          <span style={{ fontSize: 10, fontWeight: 700, lineHeight: "12px", padding: "1px 6px", borderRadius: 6,
+                            background: drop < 0 ? "rgba(239,68,68,0.12)" : "rgba(16,185,129,0.12)",
+                            color: drop < 0 ? "#F87171" : "#34D399" }}>
+                            {drop < 0 ? "↓" : "↑"}{shown}
+                          </span>
+                          {drop <= -5 && <AlertTriangle size={12} color="#ff6b62" style={{ flexShrink: 0 }} />}
+                        </span>;
+                      })()}
+                    </span>
                   </td>
                   <td style={tdNum}>{r.refdomainsDofollow ?? r.refdomains ?? "—"}</td>
                   <td style={tdNum} title={tr("dropsTfHint")}>

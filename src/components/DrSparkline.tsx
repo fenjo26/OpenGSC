@@ -1,8 +1,10 @@
 "use client";
 
-// The DR history sparkline: an inline monthly polyline next to wherever a single DR number is
-// already shown (drops DR cell, site header chip). Hand-rolled SVG like PosSparkline in
-// RankTracker — a recharts ResponsiveContainer at this size costs more than the chart is worth.
+// DR history plumbing: the DrPoint series type and drSeriesText tooltip text feed the DR delta
+// chips (dashboard cards, site header, drops DR cell). The polyline sparkline itself is now a
+// generic tiny trend line (AiShareOfVoice) — the DR chips deliberately don't use it, a polyline
+// that small reads as noise, not a trend. Hand-rolled SVG like PosSparkline in RankTracker — a
+// recharts ResponsiveContainer at this size costs more than the chart is worth.
 
 export interface DrPoint {
   month: string; // YYYY-MM
