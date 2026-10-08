@@ -99,6 +99,50 @@ export const METRICS_TOOLS: McpTool[] = [
   },
 
   {
+    name: "get_yandex_ai_answers",
+    description:
+      "Yandex AI-answer visibility for a site, from Keys.so (Yandex/Runet index, Moscow base): the queries whose Yandex AI answer " +
+      "already cites the site (top 100 by exact Wordstat frequency `wsk`), the site's cited URL and its 1-based `rank` among the " +
+      "answer's source domains, the other `sources`, and the ten domains most often cited beside it (`shared` = queries citing both). " +
+      "`total` is every query Keys.so has with the site in an AI answer. Read-only from the stored report the human refreshed in " +
+      "Visibility → Yandex AI (2 Keys.so credits); null `report` means not loaded yet, not 'never cited'.",
+    cost: "local",
+    inputSchema: {
+      type: "object",
+      properties: {
+        site: siteArg,
+        limit: { type: "number", description: "Max queries to return (default 50, max 100)" },
+      },
+      required: ["site"],
+    },
+    handler: async (userId, args) => {
+      const site = await resolveSite(userId, args.site);
+      const target = normDomain(site.url);
+      const limit = lim(args.limit, 50, 100);
+      const cache = await readDomainCache([target], "keysso_ai");
+      const raw = (cache[target] as unknown as { payload?: unknown } | undefined)?.payload;
+      let report: { total?: unknown; answers?: unknown[]; competitors?: unknown[]; competitorsTotal?: unknown; fetchedAt?: unknown } | null = null;
+      try { report = raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : null; } catch { report = null; }
+      if (!report || !Array.isArray(report.answers)) {
+        return {
+          target, report: null,
+          note: "No Yandex AI report stored for this site — refresh it in Visibility → Yandex AI (needs a Keys.so key; 2 credits).",
+        };
+      }
+      return {
+        target,
+        source: "keysso",
+        market: "yandex/msk",
+        fetchedAt: report.fetchedAt ?? null,
+        total: report.total ?? null,
+        answers: report.answers.slice(0, limit),
+        competitorsTotal: report.competitorsTotal ?? null,
+        competitors: report.competitors ?? [],
+      };
+    },
+  },
+
+  {
     name: "get_backlink_profile",
     description:
       "A site's referring domains — live and lost — plus the stored history of referring-domain and backlink counts. " +

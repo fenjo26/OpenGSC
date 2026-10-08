@@ -721,7 +721,7 @@ const CORE_TOOLS: McpTool[] = [
           "quota = calls a Google API on the owner's OAuth; free but quota-limited. " +
           "net = fetches a third-party page. " +
           "paid = spends the OWNER'S OWN AI credits and refuses to run without confirm: true — ask the user first, and prefer get_optimization_brief, which gives you the same material for free. " +
-          "The Ahrefs/Semrush metric tools (get_keyword_metrics, get_domain_metrics, get_backlink_profile, get_competitor_gap) are local reads of a cache the human fills by hand — they cannot fetch, so an empty result means 'not loaded yet', never 'zero'.",
+          "The Ahrefs/Semrush/Majestic/Keys.so metric tools (get_keyword_metrics, get_domain_metrics, get_backlink_profile, get_competitor_gap, get_yandex_ai_answers) are local reads of a cache the human fills by hand — they cannot fetch, so an empty result means 'not loaded yet', never 'zero'.",
       };
     },
   },

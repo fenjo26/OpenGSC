@@ -17,6 +17,7 @@ All notable changes to OpenGSC. Dates are release dates; the version shown in
 ### Added — Yandex AI answers (Keys.so)
 
 - Visibility hub gets a «Yandex AI» sub-tab, shown only when a Keys.so key is configured — nothing changes for anyone else. It lists the queries whose Yandex AI answer already cites the site (top 100 by exact Wordstat frequency), our cited page and its place among the answer's source domains, and the ten domains cited beside us. Two credits per refresh; the stored report renders free.
+- MCP: `get_yandex_ai_answers` (local) returns the stored report — queries, cited URL and rank among sources, competitors (registry now 95 tools).
 - The answer HTML is never rendered — only its source links are read. Storage reuses `DomainMetricCache` under the pseudo-provider `keysso_ai` (no schema change); usage is metered on `keysso`.
 
 ### Fixed

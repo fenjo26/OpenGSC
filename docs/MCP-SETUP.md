@@ -171,7 +171,8 @@ create new data, and it is the one that costs money.
 | `get_keyword_metrics` | local | Volume, difficulty and CPC for specific keywords from the metric cache. Missing ≠ zero volume |
 | `get_competitor_gap` | local | Competitors' keywords joined against your GSC data, bucketed close / weak / missing |
 | `get_domain_metrics` | local | Referring domains, backlinks, estimated traffic for any domain in the cache |
-| `get_backlink_profile` | local | A site's referring domains, live and lost, with stored history |
+| `get_backlink_profile` | local | A site's referring domains, live and lost, with stored history (`provider`: ahrefs / semrush / majestic / keysso / all) |
+| `get_yandex_ai_answers` | local | Keys.so: queries whose Yandex AI answer cites the site, its place among the sources, and who is cited beside it — the stored report from Visibility → Yandex AI |
 | `research_keywords` | **paid** | Discovers a market from one seed via DataForSEO and verdicts every row against your GSC. ~$0.03 per call at 150 rows. Check `get_keyword_demand` first — a seed researched in the last 14 days is free |
 
 ### Footprints, backlink toxicity, local SEO, trends, reports, leads
