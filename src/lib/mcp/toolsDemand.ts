@@ -29,7 +29,7 @@ import { defaultLanguageFor } from "@/lib/seo/regions";
 import { writeKeywordCache, normalizeKeyword, recordUsage } from "@/lib/seo/metricsStore";
 import { runUpsert } from "@/lib/db/upsert";
 import { rawQuery } from "@/lib/db/raw";
-import { YANDEX_MARKET } from "@/lib/seo/metricsPricing";
+import { isYandexMarketKey } from "@/lib/seo/metricsPricing";
 import { readOwnYandex } from "@/lib/seo/yandexOwn";
 import { applyContextUpdates } from "@/lib/siteContext/store";
 
@@ -122,9 +122,9 @@ function assertResearchConfirmed(args: Json): void {
  * join would mean re-buying the external half whenever your own rank changed.
  */
 /** The stored own Yandex positions in the shape `decorate` expects. */
-async function ownYandexAsQueries(siteId: string, own: string) {
+async function ownYandexAsQueries(siteId: string, own: string, market: string) {
   const out = new Map<string, { position: number; url: string; impressions: number }>();
-  for (const [k, v] of await readOwnYandex(siteId, own)) out.set(k, { ...v, impressions: 1 });
+  for (const [k, v] of await readOwnYandex(siteId, own, market)) out.set(k, { ...v, impressions: 1 });
   return out;
 }
 
@@ -211,7 +211,7 @@ export const DEMAND_TOOLS: McpTool[] = [
       properties: {
         seed: { type: "string", description: "Seed keyword to look up. Omit to list stored searches instead." },
         site: { ...siteArg, description: `${siteArg.description} Optional — without it, rows carry market data but no verdict.` },
-        country: { type: "string", description: "Market, 2-letter code. Default us. \"yandex\" = the Yandex market (Keys.so, Wordstat volumes; verdicts against the site's own Yandex positions)" },
+        country: { type: "string", description: "Market, 2-letter code. Default us. \"yandex\" = the Yandex market, Moscow (Keys.so, Wordstat volumes; verdicts against the site's own Yandex positions); other Yandex regions are \"yandex_<code>\", e.g. yandex_spb" },
         verdict: { type: "string", description: "Filter rows: reach | wrong_page | none" },
         limit: { type: "number", description: "Max rows (default 100, max 500)" },
       },
@@ -264,7 +264,7 @@ export const DEMAND_TOOLS: McpTool[] = [
       const site = args.site ? await resolveSite(userId, args.site) : null;
       // The Yandex market is judged against the site's own Yandex positions, never GSC.
       const ours = !site ? new Map()
-        : country === YANDEX_MARKET ? await ownYandexAsQueries(site.id, normDomain(site.url))
+        : isYandexMarketKey(country) ? await ownYandexAsQueries(site.id, normDomain(site.url), country)
         : await ourQueries(site.id);
       const rows = decorate(stored, ours);
 

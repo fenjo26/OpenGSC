@@ -20,11 +20,12 @@ import MetricsWarmup from "@/components/MetricsWarmup";
 import KeywordSourceSettings from "@/components/KeywordSourceSettings";
 import {
   getMetricsMode, setMetricsMode, metricsKeyStorage, getMetricsApiKey, RESELLER_BASE_URL,
+  getKeyssoBase, setKeyssoBase,
   type MetricsMode,
 } from "@/lib/seo/metricsClient";
 import { getAhrefsDrKey, setAhrefsDrKey } from "@/lib/seo/keys";
 import type { MetricsProvider, SubscriptionInfo } from "@/lib/seo/metricsPricing";
-import { parseMetricsProvider } from "@/lib/seo/metricsPricing";
+import { parseMetricsProvider, KEYSSO_BASES, keyssoBaseLabel } from "@/lib/seo/metricsPricing";
 
 // ─── Ahrefs free Domain Rating key ──────────────────────────────────────────────
 // Unrelated to the paid Site Explorer integration below: this key only unlocks the free
@@ -123,7 +124,8 @@ const PROVIDER_LABEL: Record<MetricsProvider, string> = {
 };
 
 export default function MetricsSettingsSection() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const [ksBase, setKsBase] = useState("msk");
 
   const [provider, setProvider] = useState<MetricsProvider>("ahrefs");
   const [mode, setMode] = useState<MetricsMode>("official");
@@ -138,6 +140,7 @@ export default function MetricsSettingsSection() {
   // disagree with the server-rendered HTML.
   useEffect(() => {
     setProvider(parseMetricsProvider(localStorage.getItem("seoMetricsProvider")));
+    setKsBase(getKeyssoBase());
   }, []);
 
   useEffect(() => {
@@ -273,6 +276,18 @@ export default function MetricsSettingsSection() {
         {provider === "keysso" && (
           <div style={{ margin: "-10px 0 18px", fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.55, maxWidth: "620px" }}>
             {t("metricsKeyssoHint")}
+          </div>
+        )}
+        {/* The one Keys.so-specific setting: which Yandex region the region-scoped reports read.
+            Here, once, rather than a selector on every screen that uses it. */}
+        {provider === "keysso" && (
+          <div style={{ margin: "-8px 0 18px", display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+            <span className="tool-field-label" style={{ margin: 0 }}>{t("metricsKeyssoRegion")}</span>
+            <select className="tool-input inline" value={ksBase}
+              onChange={e => { setKsBase(e.target.value); setKeyssoBase(e.target.value); }}>
+              {KEYSSO_BASES.map(b => <option key={b.code} value={b.code}>{keyssoBaseLabel(b.code, language)}</option>)}
+            </select>
+            <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.5, flex: "1 1 320px" }}>{t("metricsKeyssoRegionHint")}</span>
           </div>
         )}
 

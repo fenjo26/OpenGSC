@@ -28,7 +28,7 @@ import {
   SEMRUSH_COMPETITOR_UNITS_PER_ROW, SEMRUSH_IDEA_UNITS_PER_ROW, SEMRUSH_ORGANIC_KEYWORD_UNITS_PER_ROW,
   COMPETITOR_FIELDS, ORGANIC_KEYWORD_FIELDS, REFDOMAIN_FIELDS,
   estimateCompetitorUnits, estimateIdeaUnits, estimateOrganicKeywordUnits, estimateUnits,
-  gatewayStatusFromError, ideaEndpoint, isKeywordCapable,
+  gatewayStatusFromError, ideaEndpoint, isKeywordCapable, parseKeyssoBase,
   KEYSSO_REFDOMAIN_PAGE_SIZE, KEYSSO_STATS_UNITS,
   type IdeaMode, type MetricsCreds, type MetricsProvider, type SubscriptionInfo,
 } from "./metricsPricing";
@@ -1320,7 +1320,7 @@ async function keyssoGetSorted(creds: MetricsCreds, path: string, params: Record
 }
 
 /**
- * How a domain advertises in Yandex Direct (search, Moscow base): its top ads by reach and the
+ * How a domain advertises in Yandex Direct (search, in the user's Yandex region): its top ads by reach and the
  * queries its ads show on, by exact Wordstat frequency. Two credits. Any domain — like the
  * Google half of the Ads tab, the interesting lookups are competitors.
  */
@@ -1328,7 +1328,7 @@ export async function fetchYandexDirectReport(
   creds: MetricsCreds, domain: string,
 ): Promise<{ ok: true; report: YandexDirectReport; units: number } | { ok: false; error: string; units: number }> {
   if (creds.provider !== "keysso" || !creds.apiKey) return { ok: false, error: "no_key", units: 0 };
-  const base = { domain, base: "msk", page: "1", per_page: "20" };
+  const base = { domain, base: parseKeyssoBase(creds.keyssoBase), page: "1", per_page: "20" };
   const [ads, kws] = await Promise.all([
     keyssoGetSorted(creds, "/report/simple/context/ads", base, "keyscnt|desc"),
     keyssoGetSorted(creds, "/report/simple/context/keywords", base, "wsk|desc"),
@@ -1362,7 +1362,7 @@ async function keyssoCompetitors(
 ): Promise<MetricsResult<CompetitorItem>> {
   const limit = Math.max(5, Math.min(100, opts.limit ?? 20));
   const r = await keyssoGetSorted(creds, "/report/simple/organic/concurents",
-    { domain, base: "msk", page: "1", per_page: String(limit) }, "cnt|desc");
+    { domain, base: parseKeyssoBase(creds.keyssoBase), page: "1", per_page: String(limit) }, "cnt|desc");
   if (!r.ok) return { items: [], units: 0, error: r.error };
   const items = parseKeyssoEnvelope(r.data).rows
     .map(x => ({ domain: String(x.name ?? "").toLowerCase().replace(/^www\./, ""), sharedKeywords: num(x.cnt), traffic: null }))
@@ -1380,7 +1380,7 @@ async function keyssoOrganicKeywords(
   // Best positions first, so `limit` keeps the rows that matter and the position cut can stop early.
   for (let page = 1; items.length < limit && page <= Math.ceil(limit / 100); page++) {
     const r = await keyssoGetSorted(creds, "/report/simple/organic/keywords",
-      { domain, base: "msk", page: String(page), per_page: "100" }, "pos|asc");
+      { domain, base: parseKeyssoBase(creds.keyssoBase), page: String(page), per_page: "100" }, "pos|asc");
     if (!r.ok) {
       if (!items.length) return { items: [], units, error: r.error };
       break;
@@ -1408,7 +1408,7 @@ async function keyssoOrganicKeywords(
 /**
  * Yandex keyword research from one seed: the seed's own Wordstat figures (`keyword_dashboard`,
  * 1 credit) and up to `limit` similar phrases by exact frequency (`similarkeys`, a credit per
- * 100). The seed leads the list. Moscow base, the only one this screen asks for.
+ * 100). The seed leads the list. Region = `creds.keyssoBase` (Moscow by default).
  */
 export async function fetchYandexKeywords(
   creds: MetricsCreds, seed: string, limit: number,
@@ -1417,7 +1417,8 @@ export async function fetchYandexKeywords(
   const rows: KeyssoKeyword[] = [];
   const seen = new Set<string>();
   let units = 0;
-  const dash = await keyssoGet(creds, "/report/simple/keyword_dashboard", { keyword: seed, base: "msk" });
+  const region = parseKeyssoBase(creds.keyssoBase);
+  const dash = await keyssoGet(creds, "/report/simple/keyword_dashboard", { keyword: seed, base: region });
   if (dash.ok) {
     units++;
     const k = mapKeyssoKeyword(dash.data ?? {});
@@ -1426,7 +1427,7 @@ export async function fetchYandexKeywords(
   let lastError = dash.ok ? "" : dash.error;
   for (let page = 1; page <= Math.ceil(limit / 100) && rows.length < limit + 1; page++) {
     const r = await keyssoGetSorted(creds, "/report/simple/similarkeys",
-      { keyword: seed, base: "msk", page: String(page), per_page: "100" }, "wsk|desc");
+      { keyword: seed, base: region, page: String(page), per_page: "100" }, "wsk|desc");
     if (!r.ok) { lastError = r.error; break; }
     units++;
     const env = parseKeyssoEnvelope(r.data);

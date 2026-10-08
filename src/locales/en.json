@@ -5200,7 +5200,9 @@
   "ydKeywords": "Queries with ads",
   "ydAdKeys": "queries",
   "gapMarketYandex": "Yandex (Keys.so)",
-  "gapYandexNote": "Yandex market, Moscow: competitor positions and your own both come from Keys.so (your top 1 000 Yandex keywords are refreshed weekly, up to 10 extra credits), so «close / weak / missing» compares Yandex with Yandex. Volume is exact Wordstat frequency; Keys.so has no KD.",
+  "gapYandexNote": "Yandex market ({region}): competitor positions and your own both come from Keys.so (your top 1 000 Yandex keywords are refreshed weekly, up to 10 extra credits), so «close / weak / missing» compares Yandex with Yandex. Volume is exact Wordstat frequency; Keys.so has no KD.",
   "dmYandexNote": "Similar phrases from Keys.so with exact Wordstat frequency, each checked against your own Yandex positions (not Search Console). A credit per 100 phrases, plus one for the seed.",
-  "dmYandexOwnStale": "Your Yandex positions are missing or older than a week — the next run refreshes them (up to 10 credits, included in the price)."
+  "dmYandexOwnStale": "Your Yandex positions are missing or older than a week — the next run refreshes them (up to 10 credits, included in the price).",
+  "metricsKeyssoRegion": "Yandex region",
+  "metricsKeyssoRegionHint": "Used by the Yandex market in Competitors and Demand and by Yandex Direct on the Ads tab. Yandex AI answers exist for Moscow only; DR and links do not depend on the region."
 }

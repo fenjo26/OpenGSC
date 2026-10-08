@@ -9,6 +9,7 @@ import {
 import {
   parseMetricsProvider, isKeywordCapable, domainUnits, estimateKeyssoProfileUnits,
   gatewayStatusFromError, UNIT_PRICE_USD, KEYSSO_REFDOMAIN_PAGE_SIZE, keyssoListUnits, YANDEX_MARKET,
+  KEYSSO_BASES, parseKeyssoBase, yandexMarketKey, isYandexMarketKey, keyssoBaseLabel,
 } from "./metricsPricing";
 
 // Fixtures are trimmed copies of live GroupBuySEO gateway answers captured 2026-10-08
@@ -208,4 +209,19 @@ test("list pricing: a credit per started 100 rows; the Yandex market has its own
   assert.equal(keyssoListUnits(150), 2);
   assert.equal(keyssoListUnits(1000), 10);
   assert.equal(YANDEX_MARKET, "yandex");
+});
+
+test("Yandex regions: documented codes only, Moscow by default, stored apart per region", () => {
+  assert.equal(KEYSSO_BASES.length, 20);
+  assert.equal(parseKeyssoBase("SPB"), "spb");
+  // Keys.so's Google bases and junk fall back to Moscow — this is the Yandex market.
+  assert.equal(parseKeyssoBase("gru"), "msk");
+  assert.equal(parseKeyssoBase(undefined), "msk");
+  // Moscow keeps the key results were stored under before regions existed.
+  assert.equal(yandexMarketKey("msk"), "yandex");
+  assert.equal(yandexMarketKey("spb"), "yandex_spb");
+  assert.equal(isYandexMarketKey("yandex_spb"), true);
+  assert.equal(isYandexMarketKey("ru"), false);
+  assert.equal(keyssoBaseLabel("spb", "ru"), "Санкт-Петербург");
+  assert.equal(keyssoBaseLabel("spb", "de"), "Saint Petersburg");
 });

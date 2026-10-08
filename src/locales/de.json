@@ -5200,7 +5200,9 @@
   "ydKeywords": "Anfragen mit Anzeigen",
   "ydAdKeys": "Anfragen",
   "gapMarketYandex": "Yandex (Keys.so)",
-  "gapYandexNote": "Yandex-Markt, Moskau: Positionen der Wettbewerber und deine eigenen kommen beide aus Keys.so (deine Top-1000-Yandex-Keywords werden wöchentlich aktualisiert, bis zu 10 Credits zusätzlich), daher vergleicht „nah / schwach / fehlt“ Yandex mit Yandex. Das Volumen ist die exakte Wordstat-Frequenz; Keys.so hat keinen KD.",
+  "gapYandexNote": "Yandex-Markt ({region}): Positionen der Wettbewerber und deine eigenen kommen beide aus Keys.so (deine Top-1000-Yandex-Keywords werden wöchentlich aktualisiert, bis zu 10 Credits zusätzlich), daher vergleicht „nah / schwach / fehlt“ Yandex mit Yandex. Das Volumen ist die exakte Wordstat-Frequenz; Keys.so hat keinen KD.",
   "dmYandexNote": "Ähnliche Phrasen aus Keys.so mit exakter Wordstat-Frequenz, jeweils mit deinen eigenen Yandex-Positionen abgeglichen (nicht mit der Search Console). Ein Credit pro 100 Phrasen plus einer für den Suchbegriff.",
-  "dmYandexOwnStale": "Deine Yandex-Positionen fehlen oder sind älter als eine Woche — der nächste Lauf aktualisiert sie (bis zu 10 Credits, im Preis enthalten)."
+  "dmYandexOwnStale": "Deine Yandex-Positionen fehlen oder sind älter als eine Woche — der nächste Lauf aktualisiert sie (bis zu 10 Credits, im Preis enthalten).",
+  "metricsKeyssoRegion": "Yandex-Region",
+  "metricsKeyssoRegionHint": "Wird vom Yandex-Markt in Wettbewerber und Nachfrage sowie von Yandex Direct im Anzeigen-Tab genutzt. Yandex-KI-Antworten gibt es nur für Moskau; DR und Links hängen nicht von der Region ab."
 }

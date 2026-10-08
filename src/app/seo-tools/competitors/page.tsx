@@ -18,15 +18,17 @@ import { Users, Loader2, Download, ExternalLink, Search, PenLine, FileDown } fro
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { COUNTRIES } from "@/lib/seo/regions";
 import {
-  getMetricsCreds, getKeywordCapableCreds, estimateCostUsd, formatUsd, hasMetricsKey,
+  getMetricsCreds, getKeywordCapableCreds, estimateCostUsd, formatUsd, hasMetricsKey, getKeyssoBase,
 } from "@/lib/seo/metricsClient";
 // Prices only, from the module that has no network half — see `metricsPricing.ts`.
-import { estimateCompetitorUnits, estimateOrganicKeywordUnits, keyssoListUnits, YANDEX_MARKET } from "@/lib/seo/metricsPricing";
+import { estimateCompetitorUnits, estimateOrganicKeywordUnits, keyssoListUnits, keyssoBaseLabel, YANDEX_MARKET } from "@/lib/seo/metricsPricing";
 
 // Keys.so key present? false on the server pass, real once hydrated. The Yandex market only
 // appears in the market list for users who connected Keys.so.
 const noopSubscribe = () => () => {};
 const useKeyssoKey = () => useSyncExternalStore(noopSubscribe, () => hasMetricsKey("keysso"), () => false);
+// The Yandex region chosen in Settings → SEO Metrics → Keys.so.
+const useKeyssoRegion = () => useSyncExternalStore(noopSubscribe, getKeyssoBase, () => "msk");
 
 interface GapRow {
   keyword: string; competitor: string;
@@ -52,8 +54,9 @@ const BUCKET_COLOR: Record<Bucket, string> = {
 const fmt = (n: number | null) => (n == null ? "—" : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 
 export default function CompetitorsPage() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const router = useRouter();
+  const region = useKeyssoRegion();
 
   const [sites, setSites] = useState<SiteOption[]>([]);
   const [siteId, setSiteId] = useState("");
@@ -109,6 +112,7 @@ export default function CompetitorsPage() {
     // Yandex market.
     const creds = credsFor();
     const body: Record<string, unknown> = { siteId, country, action, provider: creds.provider, ...extra };
+    if (country === YANDEX_MARKET) body.keyssoBase = region;
     if (action !== "read") {
       Object.assign(body, { apiKey: creds.apiKey, baseUrl: creds.baseUrl, cap: creds.cap });
     }
@@ -136,7 +140,7 @@ export default function CompetitorsPage() {
     }
     setNotice("");
     return d;
-  }, [siteId, country, t, credsFor]);
+  }, [siteId, country, t, credsFor, region]);
 
   // Free read of what is stored, on every site/market change.
   useEffect(() => { if (siteId) call("read").catch(() => {}); }, [siteId, country, call]);
@@ -261,7 +265,7 @@ export default function CompetitorsPage() {
             if (v === YANDEX_MARKET) localStorage.setItem("seoGapYandex", "1");
             else { localStorage.removeItem("seoGapYandex"); localStorage.setItem("seoMetricsCountry", v); }
           }}>
-            {keysso && <option value={YANDEX_MARKET}>{t("gapMarketYandex")}</option>}
+            {keysso && <option value={YANDEX_MARKET}>{t("gapMarketYandex")} · {keyssoBaseLabel(region, language)}</option>}
             {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
           </select>
         </div>
@@ -295,7 +299,7 @@ export default function CompetitorsPage() {
           {/* Said once, where the market is chosen: on Yandex both sides of the gap are Yandex. */}
           {yandex && (
             <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.55, margin: "-4px 0 10px", maxWidth: "720px" }}>
-              {t("gapYandexNote")}
+              {t("gapYandexNote").replace("{region}", keyssoBaseLabel(region, language))}
             </div>
           )}
 

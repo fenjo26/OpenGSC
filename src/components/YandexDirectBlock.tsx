@@ -6,10 +6,11 @@
 //
 // Same contract as the sections above: the cached snapshot reads free, «Load» spends 2 credits.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { Loader2, RefreshCw, ExternalLink } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
-import { getMetricsCreds, estimateCostUsd, formatUsd } from "@/lib/seo/metricsClient";
+import { getMetricsCreds, estimateCostUsd, formatUsd, getKeyssoBase } from "@/lib/seo/metricsClient";
+import { keyssoBaseLabel } from "@/lib/seo/metricsPricing";
 import type { KeyssoDirectAd, KeyssoDirectKeyword } from "@/lib/seo/keyssoParse";
 
 interface Report { adsTotal: number | null; ads: KeyssoDirectAd[]; keywordsTotal: number | null; keywords: KeyssoDirectKeyword[]; fetchedAt: string }
@@ -17,9 +18,13 @@ interface Report { adsTotal: number | null; ads: KeyssoDirectAd[]; keywordsTotal
 const UNITS = 2;
 const label: React.CSSProperties = { fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "6px" };
 const num = (n: number | null | undefined) => (n == null ? "—" : n.toLocaleString());
+// The Yandex region chosen in Settings → SEO Metrics → Keys.so; the cache is kept per region.
+const noopSubscribe = () => () => {};
+const useKeyssoRegion = () => useSyncExternalStore(noopSubscribe, getKeyssoBase, () => "msk");
 
 export default function YandexDirectBlock({ domain }: { domain: string }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const region = useKeyssoRegion();
   const [report, setReport] = useState<Report | null>(null);
   const [checkedAt, setCheckedAt] = useState("");
   const [busy, setBusy] = useState(false);
@@ -29,13 +34,13 @@ export default function YandexDirectBlock({ domain }: { domain: string }) {
     if (!domain.includes(".")) return;
     let cancelled = false;
     fetch("/api/ads-intel/yandex", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ domain }),
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ domain, keyssoBase: region }),
     })
       .then(r => r.json())
       .then(d => { if (!cancelled) { setReport(d.payload ?? null); setCheckedAt(d.checkedAt ?? ""); setErr(""); } })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [domain]);
+  }, [domain, region]);
 
   const load = useCallback(async () => {
     if (busy) return;
@@ -44,7 +49,7 @@ export default function YandexDirectBlock({ domain }: { domain: string }) {
     try {
       const r = await fetch("/api/ads-intel/yandex", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ domain, fetch: true, apiKey: c.apiKey, baseUrl: c.baseUrl, cap: c.cap }),
+        body: JSON.stringify({ domain, keyssoBase: region, fetch: true, apiKey: c.apiKey, baseUrl: c.baseUrl, cap: c.cap }),
       });
       const d = await r.json().catch(() => ({}));
       if (d.payload) { setReport(d.payload); setCheckedAt(d.checkedAt ?? ""); }
@@ -57,13 +62,13 @@ export default function YandexDirectBlock({ domain }: { domain: string }) {
       }
     } catch { setErr(t("ykaiFailed")); }
     setBusy(false);
-  }, [busy, domain, t]);
+  }, [busy, domain, region, t]);
 
   return (
     <div style={{ marginTop: "24px", paddingTop: "18px", borderTop: "1px solid var(--color-border)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", marginBottom: "10px" }}>
         <span style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)" }}>{t("ydTitle")}</span>
-        <span className="metric-chip" style={{ fontWeight: 500 }} title={t("blpKsMarketHint")}>Keys.so · {t("ykaiMarket")}</span>
+        <span className="metric-chip" style={{ fontWeight: 500 }} title={t("blpKsMarketHint")}>Keys.so · {keyssoBaseLabel(region, language)}</span>
         {checkedAt && <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>{new Date(checkedAt).toLocaleDateString()}</span>}
         <button className="metric-action" style={{ marginLeft: "auto" }} onClick={() => { void load(); }} disabled={busy || !domain.includes(".")}>
           {busy ? <Loader2 size={13} className="spin" /> : <RefreshCw size={13} />}

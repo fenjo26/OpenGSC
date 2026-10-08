@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { runUpsert } from "@/lib/db/upsert";
 import { rawQuery } from "@/lib/db/raw";
-import { fetchYandexDirectReport, KEYSSO_DIRECT_UNITS } from "@/lib/seo/metrics";
+import { fetchYandexDirectReport, KEYSSO_DIRECT_UNITS, parseKeyssoBase } from "@/lib/seo/metrics";
 import { recordUsage, releaseUnusedUnits, withinCap } from "@/lib/seo/metricsStore";
 
-// POST /api/ads-intel/yandex { domain, fetch?, apiKey?, baseUrl?, cap? }
+// POST /api/ads-intel/yandex { domain, keyssoBase?, fetch?, apiKey?, baseUrl?, cap? }
 //
 // The Yandex half of the Ads tab: how a domain advertises in Yandex Direct, from Keys.so. Same
 // contract as the Google half next door — the cached snapshot reads free, a refresh spends
@@ -27,11 +27,14 @@ export async function POST(req: Request) {
 
   const domain = normDomain(String(b.domain ?? ""));
   if (!domain.includes(".")) return NextResponse.json({ error: "bad_domain" }, { status: 400 });
+  // One cache row per region: Moscow keeps the empty key it had before regions existed.
+  const region = parseKeyssoBase(b.keyssoBase);
+  const key = region === "msk" ? "" : region;
 
   let cached: { payload: unknown; checkedAt: string; fresh: boolean } | null = null;
   try {
     const rows: { payload: string; checkedAt: string }[] = await rawQuery(
-      `SELECT payload, checkedAt FROM "AdIntelCache" WHERE domain = ? AND section = ? AND key = ?`, domain, SECTION, "");
+      `SELECT payload, checkedAt FROM "AdIntelCache" WHERE domain = ? AND section = ? AND key = ?`, domain, SECTION, key);
     if (rows?.[0]) {
       cached = {
         payload: JSON.parse(rows[0].payload),
@@ -52,7 +55,7 @@ export async function POST(req: Request) {
   }
   await recordUsage(userId, "keysso", KEYSSO_DIRECT_UNITS);
   const res = await fetchYandexDirectReport(
-    { provider: "keysso", apiKey, baseUrl: String(b.baseUrl ?? "").trim() || undefined }, domain);
+    { provider: "keysso", apiKey, baseUrl: String(b.baseUrl ?? "").trim() || undefined, keyssoBase: region }, domain);
   await releaseUnusedUnits(userId, "keysso", KEYSSO_DIRECT_UNITS, res.units);
   if (!res.ok) return NextResponse.json({ domain, error: res.error, ...(cached ?? {}) }, { status: 502 });
 
@@ -61,7 +64,7 @@ export async function POST(req: Request) {
     await runUpsert({
       table: "AdIntelCache",
       conflict: ["domain", "section", "key"],
-      values: { domain, section: SECTION, key: "", payload: JSON.stringify(res.report), checkedAt },
+      values: { domain, section: SECTION, key, payload: JSON.stringify(res.report), checkedAt },
       update: { payload: "set", checkedAt: "set" },
     });
   } catch { /* best effort — the answer is paid for and returned either way */ }

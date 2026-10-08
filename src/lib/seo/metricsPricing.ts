@@ -39,6 +39,8 @@ export interface MetricsCreds {
   apiKey: string;
   /** Optional host override — an official client pointed at a different gateway. Path is unchanged. */
   baseUrl?: string;
+  /** Keys.so only: the Yandex region (`base`) for region-scoped reports. Default Moscow. */
+  keyssoBase?: string;
 }
 
 export const DEFAULT_BASE_URL: Record<MetricsProvider, string> = {
@@ -383,6 +385,62 @@ export const KEYSSO_REFDOMAIN_PAGE_SIZE = 100;
  * Keys.so (Moscow base) and are stored apart from every Google market, so the two never mix.
  */
 export const YANDEX_MARKET = "yandex";
+
+/**
+ * Keys.so's Yandex regions (`base`), as documented at apidoc.keys.so. Its Google bases (gru,
+ * gkv, gmns, gny) and Dzen are left out on purpose: this integration is the Yandex market, and
+ * Google data already has its own providers. Moscow first — it is the default and the only base
+ * the AI-answer reports serve.
+ */
+export const KEYSSO_BASES: readonly { code: string; ru: string; en: string }[] = [
+  { code: "msk", ru: "Москва", en: "Moscow" },
+  { code: "spb", ru: "Санкт-Петербург", en: "Saint Petersburg" },
+  { code: "ekb", ru: "Екатеринбург", en: "Yekaterinburg" },
+  { code: "nsk", ru: "Новосибирск", en: "Novosibirsk" },
+  { code: "kzn", ru: "Казань", en: "Kazan" },
+  { code: "nnv", ru: "Нижний Новгород", en: "Nizhny Novgorod" },
+  { code: "sam", ru: "Самара", en: "Samara" },
+  { code: "rnd", ru: "Ростов-на-Дону", en: "Rostov-on-Don" },
+  { code: "krr", ru: "Краснодар", en: "Krasnodar" },
+  { code: "ufa", ru: "Уфа", en: "Ufa" },
+  { code: "prm", ru: "Пермь", en: "Perm" },
+  { code: "vrn", ru: "Воронеж", en: "Voronezh" },
+  { code: "vlg", ru: "Волгоград", en: "Volgograd" },
+  { code: "kry", ru: "Красноярск", en: "Krasnoyarsk" },
+  { code: "che", ru: "Челябинск", en: "Chelyabinsk" },
+  { code: "oms", ru: "Омск", en: "Omsk" },
+  { code: "sar", ru: "Саратов", en: "Saratov" },
+  { code: "tmn", ru: "Тюмень", en: "Tyumen" },
+  { code: "tom", ru: "Томск", en: "Tomsk" },
+  { code: "mns", ru: "Минск", en: "Minsk" },
+];
+
+/** A known Yandex region code, or Moscow. Request bodies are untyped JSON — never trusted as-is. */
+export function parseKeyssoBase(v: unknown): string {
+  const c = String(v ?? "").trim().toLowerCase();
+  return KEYSSO_BASES.some(b => b.code === c) ? c : "msk";
+}
+
+/** The region's display name — Russian for ru/uk interfaces, English otherwise. */
+export function keyssoBaseLabel(code: string, language: string): string {
+  const b = KEYSSO_BASES.find(x => x.code === code) ?? KEYSSO_BASES[0];
+  return language === "ru" || language === "uk" ? b.ru : b.en;
+}
+
+/**
+ * Where a Yandex-market result is stored. Moscow keeps the plain `yandex` key (what was stored
+ * before regions existed); every other region gets its own, so Saint Petersburg positions never
+ * overwrite or mix with Moscow ones.
+ */
+export function yandexMarketKey(base: string): string {
+  const b = parseKeyssoBase(base);
+  return b === "msk" ? YANDEX_MARKET : `${YANDEX_MARKET}_${b}`;
+}
+
+/** Is this a stored Yandex-market key (any region)? */
+export function isYandexMarketKey(country: string): boolean {
+  return country === YANDEX_MARKET || country.startsWith(`${YANDEX_MARKET}_`);
+}
 
 /** Credits for a Keys.so list read of `rows` rows at 100 a page — one credit per page. */
 export function keyssoListUnits(rows: number): number {

@@ -6,7 +6,7 @@
 
 // From `metricsPricing`, not `metrics`: this file runs in the browser, and `metrics.ts` reaches
 // the provider log and through it the Prisma client. Prices are shared knowledge; sockets are not.
-import { MetricsProvider, parseMetricsProvider, UNIT_PRICE_USD, estimateCostUsd, estimateKeywordUnits, priceExpand, priceEnrich } from "./metricsPricing";
+import { MetricsProvider, parseMetricsProvider, parseKeyssoBase, UNIT_PRICE_USD, estimateCostUsd, estimateKeywordUnits, priceExpand, priceEnrich } from "./metricsPricing";
 
 export const METRICS_PROVIDERS: MetricsProvider[] = ["ahrefs", "semrush", "majestic", "keysso"];
 
@@ -154,4 +154,17 @@ export function formatUsd(v: number): string {
   if (v <= 0) return "$0";
   if (v < 0.01) return `$${v.toFixed(4)}`;
   return `$${v.toFixed(2)}`;
+}
+
+/**
+ * The user's Yandex region for Keys.so (`base`). Under the `seoMetrics` prefix, so SeoKeysSync
+ * mirrors it to the server with the rest of the metrics settings. Moscow when unset.
+ */
+export function getKeyssoBase(): string {
+  if (typeof window === "undefined") return "msk";
+  return parseKeyssoBase(localStorage.getItem("seoMetricsKeyssoBase"));
+}
+
+export function setKeyssoBase(code: string) {
+  localStorage.setItem("seoMetricsKeyssoBase", parseKeyssoBase(code));
 }

@@ -5200,7 +5200,9 @@
   "ydKeywords": "投放广告的查询",
   "ydAdKeys": "查询",
   "gapMarketYandex": "Yandex（Keys.so）",
-  "gapYandexNote": "Yandex 市场，莫斯科：竞争对手和你自己的排名都来自 Keys.so（你在 Yandex 的前 1000 个关键词每周更新一次，最多额外 10 个积分），因此“接近 / 较弱 / 缺失”是在 Yandex 与 Yandex 之间比较。搜索量为 Wordstat 精确词频；Keys.so 没有 KD。",
+  "gapYandexNote": "Yandex 市场（{region}）：竞争对手和你自己的排名都来自 Keys.so（你在 Yandex 的前 1000 个关键词每周更新一次，最多额外 10 个积分），因此“接近 / 较弱 / 缺失”是在 Yandex 与 Yandex 之间比较。搜索量为 Wordstat 精确词频；Keys.so 没有 KD。",
   "dmYandexNote": "来自 Keys.so 的相似短语及 Wordstat 精确词频，每条都与你在 Yandex 的排名比对（而非 Search Console）。每 100 条短语 1 个积分，种子词另计 1 个。",
-  "dmYandexOwnStale": "你在 Yandex 的排名缺失或已超过一周——下次运行会更新（最多 10 个积分，已含在价格中）。"
+  "dmYandexOwnStale": "你在 Yandex 的排名缺失或已超过一周——下次运行会更新（最多 10 个积分，已含在价格中）。",
+  "metricsKeyssoRegion": "Yandex 地区",
+  "metricsKeyssoRegionHint": "用于“竞争对手”和“需求”中的 Yandex 市场，以及广告标签中的 Yandex Direct。Yandex AI 回答仅限莫斯科；DR 和链接与地区无关。"
 }

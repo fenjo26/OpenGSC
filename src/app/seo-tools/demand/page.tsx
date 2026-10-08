@@ -18,13 +18,15 @@ import { Compass, Loader2, Download, ExternalLink, Search } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { readUrlParam, writeUrlParam } from "@/lib/urlParam";
 import { COUNTRIES, LANGUAGES, defaultLanguageFor } from "@/lib/seo/regions";
-import { formatUsd, getMetricsCreds, hasMetricsKey } from "@/lib/seo/metricsClient";
-import { YANDEX_MARKET } from "@/lib/seo/metricsPricing";
+import { formatUsd, getMetricsCreds, hasMetricsKey, getKeyssoBase } from "@/lib/seo/metricsClient";
+import { YANDEX_MARKET, keyssoBaseLabel } from "@/lib/seo/metricsPricing";
 
 // Keys.so key present? false on the server pass, real once hydrated. The Yandex market exists in
 // the market list only for users who connected Keys.so.
 const noopSubscribe = () => () => {};
 const useKeyssoKey = () => useSyncExternalStore(noopSubscribe, () => hasMetricsKey("keysso"), () => false);
+// The Yandex region chosen in Settings → SEO Metrics → Keys.so.
+const useKeyssoRegion = () => useSyncExternalStore(noopSubscribe, getKeyssoBase, () => "msk");
 import { getDataForSeoKey } from "@/lib/seo/keys";
 import DemandDomain from "@/components/DemandDomain";
 import TrendRadar from "@/components/TrendRadar";
@@ -125,7 +127,8 @@ function growthPct(points: MonthlyPoint[]): number | null {
 }
 
 export default function DemandPage() {
-  const { t } = useLanguage();
+  const { t, language: uiLanguage } = useLanguage();
+  const region = useKeyssoRegion();
 
   // Two ways to ask the same question — from the market inwards, or from a domain outwards.
   // They share the tab because the answer lands in the same place: a keyword you should act on.
@@ -192,6 +195,7 @@ export default function DemandPage() {
     if (!seed.trim()) return;
     const body: Record<string, unknown> = {
       seed, siteId, country, language, mode, limit, clickstream, fetch: wantFetch,
+      ...(country === YANDEX_MARKET ? { keyssoBase: region } : {}),
     };
     if (wantFetch && country === YANDEX_MARKET) {
       const c = getMetricsCreds("keysso");
@@ -221,7 +225,7 @@ export default function DemandPage() {
       return;
     }
     setNotice("");
-  }, [seed, siteId, country, language, mode, limit, clickstream, t]);
+  }, [seed, siteId, country, language, mode, limit, clickstream, t, region]);
 
   // Free cache read whenever the parameters change — a search already paid for should never be
   // bought twice just because the user came back to the tab.
@@ -343,7 +347,7 @@ export default function DemandPage() {
               localStorage.setItem("seoMetricsCountry", gl);
               if (!langTouched) setLanguage(defaultLanguageFor(gl));
             }}>
-            {keysso && <option value={YANDEX_MARKET}>{t("gapMarketYandex")}</option>}
+            {keysso && <option value={YANDEX_MARKET}>{t("gapMarketYandex")} · {keyssoBaseLabel(region, uiLanguage)}</option>}
             {COUNTRIES.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
           </select>
         </div>
@@ -367,7 +371,7 @@ export default function DemandPage() {
           two facts that change how to read the table. */}
       {yandex && (
         <div className="panel" style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap", fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.55 }}>
-          <span className="metric-chip" style={{ fontWeight: 500 }} title={t("blpKsMarketHint")}>Keys.so · {t("ykaiMarket")}</span>
+          <span className="metric-chip" style={{ fontWeight: 500 }} title={t("blpKsMarketHint")}>Keys.so · {keyssoBaseLabel(region, uiLanguage)}</span>
           <span style={{ flex: "1 1 420px" }}>{t("dmYandexNote")}</span>
           <select className="tool-input inline" value={limit} onChange={(e) => setLimit(Number(e.target.value))}>
             {[50, 150, 300, 500].map((n) => <option key={n} value={n}>{n} {t("gapKeywords")}</option>)}

@@ -30,6 +30,12 @@ Every surface below appears only for users with a Keys.so key; nothing changes f
 - **Ads tab: Yandex Direct.** Below the Google Ads Transparency sections, for the same researched domain: top ads (landing URL without per-click query noise, query reach) and the queries its ads show on. 2 credits, cached 7 days in `AdIntelCache` (`yandex_direct`).
 - MCP: `get_competitor_gap` and `get_keyword_demand` accept `country: "yandex"` with the same Yandex-vs-Yandex join; `get_ads_intel` documents the `yandex_direct` section; `get_backlink_toxicity` sees Keys.so anchors once loaded.
 
+### Added — Yandex region for Keys.so
+
+- Settings → SEO Metrics → Keys.so gets one extra control: the Yandex region (the 20 Yandex bases Keys.so documents; Moscow by default; Google bases and Dzen left out). It drives the Yandex market in Competitors and Demand and the Yandex Direct block; the market selectors show the region next to «Yandex (Keys.so)».
+- Results are stored per region (`yandex` for Moscow, as before; `yandex_spb` …), including the site's own Yandex positions, so regions never overwrite or mix. Yandex AI answers stay Moscow-only (the only base Keys.so serves them for); DR and links are region-independent.
+- MCP: `get_competitor_gap` / `get_keyword_demand` accept `yandex_<code>` for other regions.
+
 ### Fixed
 
 - Backlink profile, Semrush tab: the RD/backlinks chips and the change figure read Ahrefs' snapshot history instead of Semrush's own.

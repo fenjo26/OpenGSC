@@ -10,7 +10,7 @@ import { defaultLanguageFor } from "@/lib/seo/regions";
 import { writeKeywordCache, readUsage, recordUsage, withinCap, normalizeKeyword } from "@/lib/seo/metricsStore";
 import { runUpsert } from "@/lib/db/upsert";
 import { rawQuery } from "@/lib/db/raw";
-import { estimateCostUsd, fetchYandexKeywords, keyssoListUnits, YANDEX_MARKET } from "@/lib/seo/metrics";
+import { estimateCostUsd, fetchYandexKeywords, keyssoListUnits, parseKeyssoBase, yandexMarketKey, YANDEX_MARKET } from "@/lib/seo/metrics";
 import { releaseUnusedUnits } from "@/lib/seo/metricsStore";
 import { OWN_YANDEX_UNITS, ownYandexStale, readOwnYandex, refreshOwnYandex } from "@/lib/seo/yandexOwn";
 
@@ -87,7 +87,10 @@ export async function POST(req: Request) {
   // The Yandex market is a separate path end to end: Keys.so instead of DataForSEO, Wordstat
   // instead of Google volumes, and our own Yandex positions instead of GSC on the "ours" side.
   if (country === YANDEX_MARKET) {
-    return yandexDemand(userId, { seed, siteId, limit, apiKey, baseUrl: String(b.baseUrl ?? "").trim() || undefined, cap, wantFetch });
+    return yandexDemand(userId, {
+      seed, siteId, limit, apiKey, baseUrl: String(b.baseUrl ?? "").trim() || undefined, cap, wantFetch,
+      region: parseKeyssoBase(b.keyssoBase),
+    });
   }
 
   // The site is optional: researching a market you do not yet have a site for is a legitimate
@@ -273,20 +276,23 @@ export async function POST(req: Request) {
  */
 async function yandexDemand(
   userId: string,
-  o: { seed: string; siteId: string; limit: number; apiKey: string; baseUrl?: string; cap: number; wantFetch: boolean },
+  o: { seed: string; siteId: string; limit: number; apiKey: string; baseUrl?: string; cap: number; wantFetch: boolean; region: string },
 ) {
+  // Stored and judged per region: the market key doubles as DemandSearch.country and as the key
+  // of the site's own Yandex positions.
+  const market = yandexMarketKey(o.region);
   const limit = Math.max(50, Math.min(500, o.limit));
   const site = o.siteId
     ? await prisma.site.findFirst({ where: { id: o.siteId, userId }, select: { id: true, url: true } })
     : null;
   const own = site ? site.url.replace(/^sc-domain:/, "").replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0].toLowerCase() : "";
-  const ownStale = site ? await ownYandexStale(site.id, own) : false;
+  const ownStale = site ? await ownYandexStale(site.id, own, market) : false;
   const units = 1 + keyssoListUnits(limit) + (ownStale ? OWN_YANDEX_UNITS : 0);
   const priceUsd = estimateCostUsd(units, "keysso");
-  const cacheKey = `${normalizeKeyword(o.seed)}|${YANDEX_MARKET}|ru|similar|${limit}|0`;
+  const cacheKey = `${normalizeKeyword(o.seed)}|${market}|ru|similar|${limit}|0`;
 
   const decorate = async (rows: DemandRow[]): Promise<DemandApiRow[]> => {
-    const ours = site ? await readOwnYandex(site.id, own) : new Map<string, { position: number; url: string }>();
+    const ours = site ? await readOwnYandex(site.id, own, market) : new Map<string, { position: number; url: string }>();
     return rows.map(r => {
       const mine = ours.get(normalizeKeyword(r.keyword));
       const ourPosition = mine ? mine.position : null;
@@ -305,7 +311,7 @@ async function yandexDemand(
       return { rows: JSON.parse(hit.rows) as DemandRow[], at: new Date(hit.createdAt).toISOString() };
     } catch { return null; }
   };
-  const base = { seed: o.seed, country: YANDEX_MARKET, language: "ru", mode: "auto", provider: "keysso", priceUsd, units };
+  const base = { seed: o.seed, country: YANDEX_MARKET, region: o.region, language: "ru", mode: "auto", provider: "keysso", priceUsd, units };
   const usage = async () => {
     const u = await readUsage(userId, "keysso");
     return { ...u, spentUsd: estimateCostUsd(u.units, "keysso") };
@@ -325,10 +331,10 @@ async function yandexDemand(
     return NextResponse.json({ ...base, rows: [], error: "cap_exceeded", wouldSpendUsd: priceUsd, usage: await usage() }, { status: 429 });
   }
   await recordUsage(userId, "keysso", units);
-  const creds = { provider: "keysso" as const, apiKey: o.apiKey, baseUrl: o.baseUrl };
+  const creds = { provider: "keysso" as const, apiKey: o.apiKey, baseUrl: o.baseUrl, keyssoBase: o.region };
   const res = await fetchYandexKeywords(creds, o.seed, limit);
   let spent = res.units;
-  if (site && ownStale && res.rows.length) spent += await refreshOwnYandex(creds, site.id, own);
+  if (site && ownStale && res.rows.length) spent += await refreshOwnYandex(creds, site.id, own, market);
   await releaseUnusedUnits(userId, "keysso", units, spent);
   if (!res.rows.length) {
     return NextResponse.json({ ...base, rows: [], error: res.error ?? "empty", usage: await usage() }, { status: 502 });
@@ -343,7 +349,7 @@ async function yandexDemand(
       table: "DemandSearch",
       conflict: ["userId", "cacheKey"],
       values: {
-        userId, cacheKey, seed: normalizeKeyword(o.seed), country: YANDEX_MARKET, language: "ru", mode: "auto",
+        userId, cacheKey, seed: normalizeKeyword(o.seed), country: market, language: "ru", mode: "auto",
         source: "keysso", rows: JSON.stringify(rows), createdAt: new Date().toISOString(),
       },
       update: { source: "set", rows: "set", createdAt: "set" },

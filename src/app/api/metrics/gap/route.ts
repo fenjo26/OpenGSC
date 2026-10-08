@@ -6,7 +6,7 @@ import {
   fetchOrganicCompetitors, fetchOrganicKeywords,
   estimateCompetitorUnits, estimateOrganicKeywordUnits,
   SEMRUSH_COMPETITOR_UNITS_PER_ROW, SEMRUSH_ORGANIC_KEYWORD_UNITS_PER_ROW,
-  DEFAULT_BASE_URL, parseMetricsProvider, YANDEX_MARKET, keyssoListUnits,
+  DEFAULT_BASE_URL, parseMetricsProvider, YANDEX_MARKET, keyssoListUnits, parseKeyssoBase, yandexMarketKey,
 } from "@/lib/seo/metrics";
 import { readUsage, recordUsage, releaseUnusedUnits, withinCap, learnFieldSupport, unsupportedFields } from "@/lib/seo/metricsStore";
 import { runUpsert } from "@/lib/db/upsert";
@@ -49,10 +49,14 @@ export async function POST(req: Request) {
   if (!site) return NextResponse.json({ error: "Site not found" }, { status: 404 });
 
   const action = String(b.action ?? "read");
-  const country = String(b.country ?? "us").toLowerCase();
+  const rawCountry = String(b.country ?? "us").toLowerCase();
+  // The Yandex market is stored per region: `country` below is the storage key from here on
+  // ("yandex" for Moscow, "yandex_spb" …), so every query and write stays within one region.
+  const keyssoBase = parseKeyssoBase(b.keyssoBase);
+  const country = rawCountry === YANDEX_MARKET ? yandexMarketKey(keyssoBase) : rawCountry;
   // The Yandex market is Keys.so's alone, whatever the body says — and Keys.so serves no other
   // market here, so a Google country can never be filled with Yandex positions.
-  const yandex = country === YANDEX_MARKET;
+  const yandex = rawCountry === YANDEX_MARKET;
   const requested = parseMetricsProvider(b.provider);
   const provider = yandex ? "keysso" : requested === "keysso" ? "ahrefs" : requested;
   const apiKey = String(b.apiKey ?? "").trim();
@@ -179,7 +183,7 @@ export async function POST(req: Request) {
     await recordUsage(userId, provider, units);
 
     try {
-      const res = await fetchOrganicCompetitors({ provider, apiKey, baseUrl }, norm(site.url), { limit, country });
+      const res = await fetchOrganicCompetitors({ provider, apiKey, baseUrl, keyssoBase }, norm(site.url), { limit, country });
       if (res.error) return respond({ error: res.error }, 502);
       // Reserved `limit` competitors, billed for the ones that came back. Ahrefs returns far
       // fewer for a small domain, and the unused reservation must not eat the monthly cap.
@@ -215,7 +219,7 @@ export async function POST(req: Request) {
     // cap check honest either way.
     // Keys.so: a credit per 100-row page, plus — on the Yandex market — up to ten pages of the
     // site's own Yandex positions when they are missing or older than a week (the gap's "our" side).
-    const ownStale = yandex ? await ownYandexStale(site.id, norm(site.url)) : false;
+    const ownStale = yandex ? await ownYandexStale(site.id, norm(site.url), country) : false;
     const units = provider === "keysso"
       ? keyssoListUnits(limit) + (ownStale ? keyssoListUnits(OWN_YANDEX_ROWS) : 0)
       : provider === "semrush"
@@ -228,7 +232,7 @@ export async function POST(req: Request) {
 
     let res;
     try {
-      res = await fetchOrganicKeywords({ provider, apiKey, baseUrl }, competitor, {
+      res = await fetchOrganicKeywords({ provider, apiKey, baseUrl, keyssoBase }, competitor, {
         limit, country, withDifficulty, maxPosition,
       });
     } catch (e: any) {
@@ -256,7 +260,7 @@ export async function POST(req: Request) {
 
     let ownUnits = 0;
     if (yandex && ownStale && res.items.length) {
-      ownUnits = await refreshOwnYandex({ provider, apiKey, baseUrl }, site.id, norm(site.url));
+      ownUnits = await refreshOwnYandex({ provider, apiKey, baseUrl, keyssoBase }, site.id, norm(site.url), country);
     }
     const gotKw = Math.max(1, res.items.length);
     await releaseUnusedUnits(userId, provider, units, provider === "keysso" ? res.units + ownUnits
