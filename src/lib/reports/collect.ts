@@ -121,6 +121,10 @@ async function collectRows(siteId: string, w: ReportWindow, field: "query" | "ur
       by: [field],
       where: { siteId, searchType: "web", date: { gte: w.prevFrom, lt: w.prevTo }, [field]: { not: "" } },
       _sum: { clicks: true },
+      // Prisma requires an explicit orderBy whenever take/skip is used on groupBy; without one it
+      // falls back to the primary key (id), which is not in `by` → P2019, and Promise.all takes
+      // the whole Top queries / Top pages section down with it (issue #24).
+      orderBy: { _sum: { clicks: "desc" } },
       take: 5000,
     }),
   ]);
