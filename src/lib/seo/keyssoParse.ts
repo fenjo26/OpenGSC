@@ -158,3 +158,74 @@ export function keyssoNextStep(
   }
   return { action: "done" };
 }
+
+// ─── Yandex AI answers (`organic/ai-answers`, `organic/ai-concurents`) ─────────
+//
+// `ai_answer` arrives as HTML (Keys.so's own rendering, with `<a href>` source links). It is
+// never rendered: only the source hosts are read out of it, in order, so the panel can say
+// where in the answer's sources this site sits. Showing the answer text would mean shipping
+// third-party HTML into the page for very little — the question and the cited URL are the fact.
+
+export interface KeyssoAiAnswer {
+  query: string;
+  /** Wordstat broad frequency (`ws`) and exact-phrase frequency (`wsk`). */
+  ws: number | null;
+  wsk: number | null;
+  /** This site's first cited URL in the answer, and its 1-based place among the source hosts. */
+  url: string;
+  rank: number | null;
+  /** Distinct source hosts in answer order, capped — enough to see who stands beside us. */
+  sources: string[];
+}
+
+const SOURCE_CAP = 8;
+
+/** Hosts of every `href` in an answer, deduplicated, in order of appearance. */
+export function keyssoAnswerSources(html: string): { host: string; url: string }[] {
+  const out: { host: string; url: string }[] = [];
+  const seen = new Set<string>();
+  for (const m of String(html ?? "").matchAll(/href\s*=\s*["']([^"']+)["']/gi)) {
+    const url = m[1];
+    const host = cleanHost(url);
+    if (!host.includes(".") || seen.has(host)) continue;
+    seen.add(host);
+    out.push({ host, url });
+  }
+  return out;
+}
+
+const sameSite = (host: string, own: string) => host === own || host.endsWith(`.${own}`);
+
+export function mapKeyssoAiAnswer(r: Record<string, any>, ownDomain: string): KeyssoAiAnswer | null {
+  const query = String(ksPick(r, "word", "query", "query_text", "keyword") ?? "").trim();
+  if (!query) return null;
+  const own = cleanHost(ownDomain);
+  const sources = keyssoAnswerSources(String(ksPick(r, "ai_answer", "query_answer", "answer") ?? ""));
+  const idx = sources.findIndex(s => sameSite(s.host, own));
+  return {
+    query,
+    ws: ksNum(ksPick(r, "ws")),
+    wsk: ksNum(ksPick(r, "wsk")),
+    url: idx >= 0 ? sources[idx].url : "",
+    rank: idx >= 0 ? idx + 1 : null,
+    sources: sources.slice(0, SOURCE_CAP).map(s => s.host),
+  };
+}
+
+export interface KeyssoAiCompetitor {
+  domain: string;
+  /** Queries whose AI answers cite both this competitor and the site (`cnt`). */
+  shared: number | null;
+  /** All queries whose AI answers cite the competitor (`queries_in_ai_answers`). */
+  aiQueries: number | null;
+}
+
+export function mapKeyssoAiCompetitor(r: Record<string, any>): KeyssoAiCompetitor | null {
+  const domain = cleanHost(ksPick(r, "name", "domain"));
+  if (!domain.includes(".")) return null;
+  return {
+    domain,
+    shared: ksNum(ksPick(r, "cnt", "common", "shared")),
+    aiQueries: ksNum(ksPick(r, "queries_in_ai_answers", "ai_queries")),
+  };
+}

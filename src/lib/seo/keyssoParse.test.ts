@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   parseKeyssoEnvelope, mapKeyssoDashboard, mapKeyssoRefDomain, keyssoRemainingCredits,
   keyssoErrorText, keyssoNextStep, KEYSSO_202_DELAYS_MS, KEYSSO_ERROR_RETRIES,
+  keyssoAnswerSources, mapKeyssoAiAnswer, mapKeyssoAiCompetitor,
 } from "./keyssoParse";
 import {
   parseMetricsProvider, isKeywordCapable, domainUnits, estimateKeyssoProfileUnits,
@@ -105,4 +106,41 @@ test("provider wiring: parse, keyword guard, prices", () => {
   // Stats pair + one credit per page: wildberries' 119 961 domains = 1 200 pages + 2.
   assert.equal(estimateKeyssoProfileUnits(119961), 2 + Math.ceil(119961 / KEYSSO_REFDOMAIN_PAGE_SIZE));
   assert.equal(estimateKeyssoProfileUnits(0), 3);
+});
+
+// Trimmed from a live `organic/ai-answers` row (probe3, 2026-10-08): the answer is HTML with the
+// sources as <a href> — the same host can appear twice (inline and in the sources block).
+const LIVE_AI_ANSWER = {
+  word: "касторовое масло индийское отзывы", ws: 9, wsk: 5, superwsk: 1,
+  ai_answer: '<strong>Покупатели</strong> … <span class="ai-answer-link"><a href="https://reviews.yandex.ru/product/x" target="_blank">reviews.yandex.ru</a></span>'
+    + '<span class="ai-answer-link"><a href="https://market.yandex.ru/card/y/reviews">market.yandex.ru</a></span>'
+    + '<div class="ai-answer-sources"><a href="https://reviews.yandex.ru/product/x">reviews.yandex.ru</a>'
+    + '<a href="https://wildberries.ru/catalog/138996254/detail.aspx">wildberries.ru</a>'
+    + '<a href="https://ozon.ru/product/z/reviews/">ozon.ru</a></div>',
+};
+
+test("AI answer: sources are distinct hosts in order; our place and URL come from them", () => {
+  assert.deepEqual(keyssoAnswerSources(LIVE_AI_ANSWER.ai_answer).map(s => s.host),
+    ["reviews.yandex.ru", "market.yandex.ru", "wildberries.ru", "ozon.ru"]);
+  const a = mapKeyssoAiAnswer(LIVE_AI_ANSWER, "wildberries.ru")!;
+  assert.equal(a.query, "касторовое масло индийское отзывы");
+  assert.equal(a.wsk, 5);
+  assert.equal(a.rank, 3);
+  assert.equal(a.url, "https://wildberries.ru/catalog/138996254/detail.aspx");
+});
+
+test("AI answer: a subdomain counts as the site; an absent site leaves rank and URL empty", () => {
+  const sub = mapKeyssoAiAnswer({ word: "q", ai_answer: '<a href="https://m.example.ru/p">m</a>' }, "example.ru")!;
+  assert.equal(sub.rank, 1);
+  const none = mapKeyssoAiAnswer({ word: "q", ai_answer: '<a href="https://other.ru/">o</a>' }, "example.ru")!;
+  assert.equal(none.rank, null);
+  assert.equal(none.url, "");
+  // A lookalike suffix is not a subdomain.
+  assert.equal(mapKeyssoAiAnswer({ word: "q", ai_answer: '<a href="https://notexample.ru/">x</a>' }, "example.ru")!.rank, null);
+  assert.equal(mapKeyssoAiAnswer({ ai_answer: "" }, "example.ru"), null);
+});
+
+test("AI competitors: name, shared count and their own AI-answer reach", () => {
+  const c = mapKeyssoAiCompetitor({ id: 30079137, name: "sweetmarin.ru", cnt: 57, vis: 11165, queries_in_ai_answers: 560 })!;
+  assert.deepEqual(c, { domain: "sweetmarin.ru", shared: 57, aiQueries: 560 });
 });

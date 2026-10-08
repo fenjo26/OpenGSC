@@ -5,6 +5,7 @@
 // AI answers is the existing AeoTracker, Share of voice and Cited domains land with T7,
 // Mentions with T6. LLM Mentions (the DataForSEO index) already existed as BrandVisibility.
 
+import { useSyncExternalStore } from "react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { usePersistedState } from "@/lib/usePersistedState";
 import AeoTracker from "@/components/AeoTracker";
@@ -12,12 +13,20 @@ import BrandVisibility from "@/components/BrandVisibility";
 import AiShareOfVoice from "@/components/visibility/AiShareOfVoice";
 import CitedDomains from "@/components/visibility/CitedDomains";
 import MentionsPanel from "@/components/visibility/MentionsPanel";
+import YandexAiPanel from "@/components/visibility/YandexAiPanel";
+import { hasMetricsKey } from "@/lib/seo/metricsClient";
 
 // Sub-tab vocabulary. Allow-listed so a stale or foreign ?vis= value falls back to "ai" the
 // same way the site page validates ?tab=. "llm" is guest-hidden (see below).
-const VIS_TABS = ["ai", "sov", "mentions", "llm"] as const;
+const VIS_TABS = ["ai", "sov", "mentions", "llm", "yandex"] as const;
 type VisTab = typeof VIS_TABS[number];
 const isVisTab = (v: unknown): boolean => typeof v === "string" && (VIS_TABS as readonly string[]).includes(v);
+
+// Whether a Keys.so key is configured in this browser. Read through useSyncExternalStore so the
+// server pass (no localStorage) and the first client pass agree: false on the server, the real
+// answer once hydrated — no setState-in-effect, no hydration mismatch.
+const noop = () => () => {};
+const useKeyssoKey = () => useSyncExternalStore(noop, () => hasMetricsKey("keysso"), () => false);
 
 export default function VisibilityHub({
   siteDbId, domain, readOnly = false,
@@ -26,6 +35,8 @@ export default function VisibilityHub({
   // Deep-linkable sub-tab (?tab=aeo&vis=sov): read once on mount, mirrored back on change —
   // same URL-param store the site page uses for `tab`, so both survive refresh and share.
   const [vis, setVis] = usePersistedState<VisTab>(null, "ai", isVisTab, "vis");
+  // «Яндекс AI» only exists for users who connected Keys.so — everyone else sees the hub as before.
+  const keysso = useKeyssoKey();
 
   // The guest (read-only share) view keeps only the analytic sub-tabs: mentions carry
   // outreach actions T6 builds, LLM Mentions spends a DataForSEO key. Mirrors how the site
@@ -36,6 +47,7 @@ export default function VisibilityHub({
     ...(readOnly ? [] : [
       { key: "mentions" as const, label: t("visTabMentions") },
       { key: "llm" as const, label: t("visTabLlm") },
+      ...(keysso ? [{ key: "yandex" as const, label: t("visTabYandex") }] : []),
     ]),
   ];
   const active: VisTab = tabs.some(item => item.key === vis) ? vis : "ai";
@@ -68,6 +80,7 @@ export default function VisibilityHub({
       )}
       {active === "mentions" && <MentionsPanel siteDbId={siteDbId} domain={domain} readOnly={readOnly} />}
       {active === "llm" && <BrandVisibility siteDbId={siteDbId} />}
+      {active === "yandex" && <YandexAiPanel siteDbId={siteDbId} />}
     </div>
   );
 }

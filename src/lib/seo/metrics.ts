@@ -33,8 +33,9 @@ import {
   type IdeaMode, type MetricsCreds, type MetricsProvider, type SubscriptionInfo,
 } from "./metricsPricing";
 import {
-  keyssoErrorText, keyssoNextStep, keyssoRemainingCredits, mapKeyssoDashboard, mapKeyssoRefDomain,
-  parseKeyssoEnvelope,
+  keyssoErrorText, keyssoNextStep, keyssoRemainingCredits, mapKeyssoAiAnswer, mapKeyssoAiCompetitor,
+  mapKeyssoDashboard, mapKeyssoRefDomain, parseKeyssoEnvelope,
+  type KeyssoAiAnswer, type KeyssoAiCompetitor,
 } from "./keyssoParse";
 
 // The prices live next door so the browser can quote them without importing this module's
@@ -1272,6 +1273,52 @@ async function keyssoProfile(
   };
   if (partialError) result.error = partialError;
   return result;
+}
+
+/** What one Yandex AI-answers refresh costs: the answers page and the competitors page. */
+export const KEYSSO_AI_UNITS = 2;
+
+export interface YandexAiReport {
+  /** Queries whose Yandex AI answer cites the site (envelope `total`). */
+  total: number | null;
+  answers: KeyssoAiAnswer[];
+  competitorsTotal: number | null;
+  competitors: KeyssoAiCompetitor[];
+  fetchedAt: string;
+}
+
+/**
+ * Yandex AI-answer visibility for one domain (Moscow base — the only one these reports serve):
+ * the top 100 queries whose AI answer cites the site, by exact-phrase Wordstat frequency, plus
+ * the ten domains most often cited beside it. Two credits. If the gateway rejects the sort,
+ * the page is re-asked unsorted rather than failing — the order is a nicety, the rows are not.
+ */
+export async function fetchYandexAiReport(
+  creds: MetricsCreds, domain: string,
+): Promise<{ ok: true; report: YandexAiReport; units: number } | { ok: false; error: string; units: number }> {
+  if (creds.provider !== "keysso" || !creds.apiKey) return { ok: false, error: "no_key", units: 0 };
+  const base = { domain, base: "msk", page: "1" };
+  let answers = await keyssoGet(creds, "/report/simple/organic/ai-answers", { ...base, per_page: "100", sort: "wsk|desc" });
+  if (!answers.ok && answers.status >= 400 && answers.status < 500 && ![401, 402, 403, 429].includes(answers.status)) {
+    answers = await keyssoGet(creds, "/report/simple/organic/ai-answers", { ...base, per_page: "100" });
+  }
+  const comps = await keyssoGet(creds, "/report/simple/organic/ai-concurents", { ...base, per_page: "10" });
+  const units = (answers.ok ? 1 : 0) + (comps.ok ? 1 : 0);
+  if (!answers.ok) return { ok: false, error: answers.error, units };
+  const env = parseKeyssoEnvelope(answers.data);
+  const cenv = comps.ok ? parseKeyssoEnvelope(comps.data) : null;
+  return {
+    ok: true,
+    units,
+    report: {
+      total: env.total,
+      answers: env.rows.map(r => mapKeyssoAiAnswer(r, domain)).filter((r): r is KeyssoAiAnswer => !!r),
+      competitorsTotal: cenv?.total ?? null,
+      competitors: (cenv?.rows ?? []).map(mapKeyssoAiCompetitor)
+        .filter((r): r is KeyssoAiCompetitor => !!r && r.domain !== domain),
+      fetchedAt: new Date().toISOString(),
+    },
+  };
 }
 
 // ─── Competitors and their keywords ────────────────────────────────────────────
