@@ -202,6 +202,8 @@ A curated backlink inventory per site with liveness checks (is the link still th
 
 Search Console tells you how you are performing. It cannot tell you how much demand exists, how hard a keyword is to win, or who is winning instead of you. This module brings Ahrefs/Semrush/Majestic data in and crosses it with your GSC data — which is where the value is, because neither source has the other half.
 
+**Keys.so (Yandex / Runet)** is the fourth provider, for sites whose market is Yandex. It fills the backlink profile (its own tab, a separate `DR·KS` column in the merged table) and domain metrics from Keys.so's own link index, always labelled as such — its DR and referring-domain counts are not comparable with Ahrefs'. Keyword tools never run on it. It works with an official `api.keys.so` token or a GroupBuySEO key (`keysso-api.groupbuyseo.org`, one credit per request, ≈ $0.0002), and the settings screen checks the key for free and shows the remaining credits.
+
 - **Keyword weights** in Striking Distance and Rank Tracker — search volume, KD, CPC, and a **Potential** column: what a keyword could bring near the top of page one minus what it brings now. Impressions are demand filtered through your current visibility; volume is the market itself.
 - **Competitors** — pull a competitor's keywords and the join with your GSC data splits every row into three verdicts: *within reach* (you rank in the top 30 — improve that page, the URL is right there), *wrong page* (impressions but nothing wins — intent mismatch), *no content* (write it).
 - **Backlink profile** — referring domains, live and lost, with stored history and a lost-link alert. Sits alongside the manual backlink list, which answers a different question: did the link *you* built survive.

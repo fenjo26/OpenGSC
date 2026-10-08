@@ -3,6 +3,21 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
+## [Unreleased]
+
+### Added — Keys.so: a fourth metrics provider for the Yandex/Runet market
+
+- Settings → SEO Metrics: Keys.so joins Ahrefs/Semrush/Majestic with official (`api.keys.so`) and reseller (`keysso-api.groupbuyseo.org`) modes. The key travels in the `X-Keyso-TOKEN` header, never in the URL. The free `/limits/all` doubles as the key check: remaining credits on success, a named cause on 401 (wrong key) or 402 (out of credits).
+- Backlink profile: a Keys.so tab with its own live/lost history, and a `DR·KS` column in the merged table that appears only once a Keys.so pull exists. Keys.so's DR never lands in the Ahrefs DR column; the placard tags the source "Yandex / Runet".
+- Domain metrics: `domain_dashboard` + two one-row totals reads (3 credits). Keys.so DR goes to `dr` under provider `keysso`; Yandex visibility / top-50 stay in `payload` — no invented organic-traffic equivalent.
+- Transport: HTTP 202 ("report is building") is polled with its own back-off (3/6/12/24 s) and never treated as success; two requests in flight per key (in the live probe three of six parallel calls answered 429). Field mapping pinned against live gateway answers — notably `outlinks_count` is the donor's own outbound total and is not used as the link count to the target.
+- MCP: `get_domain_metrics` and `get_backlink_profile` accept `provider: "keysso"` (the latter also gains `provider` for every index — it used to read Ahrefs rows only).
+- Keyword-side calls answer `provider_unsupported` on any non-keyword provider (guard `isKeywordCapable`), so Yandex data can never fill a Google keyword screen; the warmup cron falls back to an Ahrefs/Semrush key the same way it does for Majestic.
+
+### Fixed
+
+- Backlink profile, Semrush tab: the RD/backlinks chips and the change figure read Ahrefs' snapshot history instead of Semrush's own.
+
 ## [1.9.1] — 2026-10-07
 
 The R+ wave: the v1.9.0 features grow the anti-footprint and repeatability layers the operator asked for after reviewing them.

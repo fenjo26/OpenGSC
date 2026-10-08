@@ -1,6 +1,6 @@
 "use client";
 
-// Everything about Ahrefs/Semrush in one screen.
+// Everything about the paid metrics providers (Ahrefs/Semrush/Majestic/Keys.so) in one screen.
 //
 // It used to be two: the key was typed under "API Keys" while the provider, host and spending
 // cap lived under "SEO Tools". One integration configured in two places is the kind of split
@@ -104,6 +104,7 @@ const OFFICIAL_DOCS: Record<MetricsProvider, string> = {
   ahrefs: "https://docs.ahrefs.com/",
   semrush: "https://developer.semrush.com/api/",
   majestic: "https://developer-support.majestic.com/api/",
+  keysso: "https://apidoc.keys.so/",
 };
 
 /** Shown under the key field so the destination is never implicit. */
@@ -111,12 +112,14 @@ const OFFICIAL_HOST: Record<MetricsProvider, string> = {
   ahrefs: "https://api.ahrefs.com",
   semrush: "https://api.semrush.com",
   majestic: "https://api.majestic.com",
+  keysso: "https://api.keys.so",
 };
 
 const PROVIDER_LABEL: Record<MetricsProvider, string> = {
   ahrefs: "Ahrefs",
   semrush: "Semrush",
   majestic: "Majestic",
+  keysso: "Keys.so",
 };
 
 export default function MetricsSettingsSection() {
@@ -129,7 +132,7 @@ export default function MetricsSettingsSection() {
   const [usage, setUsage] = useState<{ units: number; requests: number } | null>(null);
   // The provider's own balance (free endpoint), so step 4 can show the real "left of" figure
   // next to our own spend counter — and say when it is unavailable rather than stay silent.
-  const [sub, setSub] = useState<{ info: SubscriptionInfo | null } | null>(null);
+  const [sub, setSub] = useState<{ info: SubscriptionInfo | null; gatewayStatus?: number | null } | null>(null);
 
   // localStorage after mount only — reading it during render would make the first client pass
   // disagree with the server-rendered HTML.
@@ -161,8 +164,8 @@ export default function MetricsSettingsSection() {
       body: JSON.stringify({ provider, apiKey, baseUrl }),
     })
       .then(r => r.json())
-      .then(d => setSub({ info: d.info ?? null }))
-      .catch(() => setSub({ info: null }));
+      .then(d => setSub({ info: d.info ?? null, gatewayStatus: typeof d.gatewayStatus === "number" ? d.gatewayStatus : null }))
+      .catch(() => setSub({ info: null, gatewayStatus: null }));
   }, [provider, mode]);
 
   const chooseProvider = (p: MetricsProvider) => {
@@ -248,7 +251,7 @@ export default function MetricsSettingsSection() {
         {/* 1. Which data provider */}
         <span className="tool-section-label">{t("metricsStep1")}</span>
         <div style={{ display: "flex", gap: "8px", marginBottom: "18px", flexWrap: "wrap" }}>
-          {(["ahrefs", "semrush", "majestic"] as const).map(p => (
+          {(["ahrefs", "semrush", "majestic", "keysso"] as const).map(p => (
             <button key={p} className={provider === p ? "pill active" : "pill"}
               onClick={() => chooseProvider(p)} style={{ cursor: "pointer" }}>
               {PROVIDER_LABEL[p]}
@@ -263,6 +266,13 @@ export default function MetricsSettingsSection() {
         {provider === "majestic" && (
           <div style={{ margin: "-10px 0 18px", fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.55, maxWidth: "620px" }}>
             {t("metricsMajesticHint")}
+          </div>
+        )}
+        {/* Keys.so is another market, not another Ahrefs: said up front so nobody compares its
+            DR or refdomain count with Ahrefs' and draws a conclusion from two different indexes. */}
+        {provider === "keysso" && (
+          <div style={{ margin: "-10px 0 18px", fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.55, maxWidth: "620px" }}>
+            {t("metricsKeyssoHint")}
           </div>
         )}
 
@@ -304,7 +314,7 @@ export default function MetricsSettingsSection() {
             <input className="tool-input" value={customUrl} style={{ fontFamily: "monospace" }}
               onChange={e => setCustomUrl(e.target.value)}
               onBlur={() => setMetricsMode(provider, "custom", customUrl)}
-              placeholder={`https://api.${provider}.com`} />
+              placeholder={OFFICIAL_HOST[provider]} />
             <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "5px", lineHeight: 1.5 }}>
               {t("metricsBaseUrlHint")}
             </div>
@@ -351,7 +361,18 @@ export default function MetricsSettingsSection() {
             )}
             {subBalance?.reset && <span style={{ color: "var(--color-text-tertiary)" }}> · {t("blsrcResetAt")} {subBalance.reset}</span>}
             {subBalance?.expires && <span style={{ color: "var(--color-text-tertiary)" }}> · {t("blsrcKeyExpires")} {subBalance.expires}</span>}
-            {(provider === "ahrefs" || provider === "majestic") && sub && !sub.info && (
+            {/* Keys.so's free /limits/all is a better key check than any other provider has: a
+                real balance on success, and a refusal that names the cause on failure. */}
+            {provider === "keysso" && sub?.info?.unitsRemaining != null && (
+              <span> · {t("blsrcRemaining")} <strong style={{ color: "var(--color-text-primary)" }}>{sub.info.unitsRemaining.toLocaleString()}</strong> {t("blsrcKsCredits")}</span>
+            )}
+            {provider === "keysso" && sub && !sub.info && (sub.gatewayStatus === 401 || sub.gatewayStatus === 402) && (
+              <div style={{ marginTop: "4px", color: "var(--color-warning)" }}>
+                {sub.gatewayStatus === 401 ? t("metricsKeyssoBadKey") : t("blsrcKsOutOfCredits")}
+              </div>
+            )}
+            {(provider === "ahrefs" || provider === "majestic" || provider === "keysso") && sub && !sub.info
+              && !(provider === "keysso" && (sub.gatewayStatus === 401 || sub.gatewayStatus === 402)) && (
               <div style={{ marginTop: "4px", color: "var(--color-text-tertiary)" }}>{t("blsrcBalanceUnknown")}</div>
             )}
             {subBalance?.expiringSoon && (

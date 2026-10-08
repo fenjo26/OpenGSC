@@ -2960,7 +2960,7 @@
   "shareLinkProfile": "Backlink profile",
   "navMetrics": "SEO Metrics",
   "metricsStep1": "1 · Data provider",
-  "metricsProviderHint": "Ahrefs and Semrush cover keywords and links; Majestic covers links and Trust Flow only — but its link pulls cost a fraction of Ahrefs.",
+  "metricsProviderHint": "Ahrefs and Semrush cover keywords and links; Majestic covers links and Trust Flow only — but its link pulls cost a fraction of Ahrefs. Keys.so covers the Yandex/Runet market.",
   "metricsMajesticHint": "Majestic indexes links, not keywords. With Majestic active, the keyword tools keep running on your Ahrefs or Semrush key; the backlink profile and domain metrics use Majestic.",
   "metricsStep2": "2 · Where your key comes from",
   "metricsStep3": "3 · API key",
@@ -5152,5 +5152,15 @@
   "aeoDomainListsDesc": "Extra domains per category — merged over the built-in defaults (e.g. Greek market: news, forums, aggregators)",
   "aeoOtherShare": "other",
   "aeoOtherShareWarn": "A third of citations are unclassified — extend the domain lists",
-  "aeoListsSaved": "Lists saved"
+  "aeoListsSaved": "Lists saved",
+  "seoRoleKeysso": "Yandex/Runet: DR + referring domains",
+  "seoSetHintKeysso": "Keys.so — the Yandex/Runet index: its own DR, referring domains and backlinks. Works with an official Keys.so API token or a GroupBuySEO key (gbs_sk_live_…). A different market from Ahrefs — the numbers are not comparable.",
+  "seoSetInstrKeysso": "Paste a Keys.so API token (official) or your GroupBuySEO key (reseller mode). The key travels in the X-Keyso-TOKEN header, never in the URL.",
+  "metricsKeyssoHint": "Keys.so covers the Yandex/Runet market: its own DR and link index, a separate world from Ahrefs. With Keys.so active, the backlink profile and domain metrics use Keys.so (labelled as such); keyword tools keep running on your Ahrefs or Semrush key. One credit per request, $10 ≈ 50 000 requests on GroupBuySEO.",
+  "metricsKeyssoBadKey": "Keys.so rejected this key (401) — check that it is the right key for the selected mode and host.",
+  "blsrcKsOutOfCredits": "Keys.so: out of credits (402).",
+  "blsrcKsCredits": "credits",
+  "blpKsMarket": "Yandex / Runet",
+  "blpKsMarketHint": "Keys.so's own link index for the Yandex/Runet market — its counts and DR are not comparable with Ahrefs.",
+  "blpKsDrHint": "Keys.so DR (Yandex/Runet index) — a different scale from Ahrefs DR"
 }

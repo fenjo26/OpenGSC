@@ -6,9 +6,9 @@
 
 // From `metricsPricing`, not `metrics`: this file runs in the browser, and `metrics.ts` reaches
 // the provider log and through it the Prisma client. Prices are shared knowledge; sockets are not.
-import { MetricsProvider, UNIT_PRICE_USD, estimateCostUsd, estimateKeywordUnits, priceExpand, priceEnrich } from "./metricsPricing";
+import { MetricsProvider, parseMetricsProvider, UNIT_PRICE_USD, estimateCostUsd, estimateKeywordUnits, priceExpand, priceEnrich } from "./metricsPricing";
 
-export const METRICS_PROVIDERS: MetricsProvider[] = ["ahrefs", "semrush", "majestic"];
+export const METRICS_PROVIDERS: MetricsProvider[] = ["ahrefs", "semrush", "majestic", "keysso"];
 
 // Keyword-source pricing is defined in `metrics.ts` and re-exported here so the existing browser
 // imports (`priceExpand`/`priceEnrich` from `@/lib/seo/metricsClient`) keep working. The functions
@@ -38,6 +38,9 @@ export const RESELLER_BASE_URL: Record<MetricsProvider, string> = {
   // Majestic's gateway is wire-identical to api.majestic.com (same `cmd` + `app_api_key`), so
   // the official/reseller distinction is — as elsewhere — a host and a key, nothing else.
   majestic: "https://majestic-api.groupbuyseo.org",
+  // The Keys.so API gateway — not keys-so.groupbuyseo.org (the website proxy) and not
+  // api-keys-so.groupbuyseo.org (the SPA companion). Same paths and header as api.keys.so.
+  keysso: "https://keysso-api.groupbuyseo.org",
 };
 
 export interface MetricsClientCreds {
@@ -49,8 +52,7 @@ export interface MetricsClientCreds {
 
 export function getMetricsProvider(): MetricsProvider {
   if (typeof window === "undefined") return "ahrefs";
-  const p = localStorage.getItem("seoMetricsProvider");
-  return p === "semrush" || p === "majestic" ? p : "ahrefs";
+  return parseMetricsProvider(localStorage.getItem("seoMetricsProvider"));
 }
 
 export function getMetricsMode(provider?: MetricsProvider): MetricsMode {
@@ -115,8 +117,8 @@ export function getMetricsCreds(provider?: MetricsProvider): MetricsClientCreds 
 /**
  * Credentials for a keyword-side call (volumes, difficulty, ideas, organic rows).
  *
- * Majestic holds no keyword data, so a caller about to price or fetch keywords must not ride the
- * active provider when it is Majestic — the key would be sent to a provider that has nothing to
+ * Majestic holds no keyword data (and Keys.so's is Yandex's, a different market), so a caller
+ * about to price or fetch keywords must not ride the active provider when it is either — the key would be sent to a provider that has nothing to
  * answer with. Instead the call falls back to whichever keyword-capable key exists, Ahrefs
  * first, exactly the order the auto keyword-source chain walks. With neither key present the
  * Ahrefs-shaped empty creds come back and the route's `no_key` answers honestly.

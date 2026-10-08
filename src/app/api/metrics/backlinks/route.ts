@@ -4,7 +4,7 @@ import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import {
   fetchBacklinkProfile, fetchBacklinkStats, estimateProfileUnits, estimateMajesticProfileUnits,
-  estimateSemrushProfileUnits, parseMetricsProvider, REFDOMAIN_PAGE_SIZE, MetricsProvider,
+  estimateSemrushProfileUnits, estimateKeyssoProfileUnits, parseMetricsProvider, REFDOMAIN_PAGE_SIZE, MetricsProvider,
 } from "@/lib/seo/metrics";
 import { readUsage, recordUsage, releaseUnusedUnits, withinCap, UsageState } from "@/lib/seo/metricsStore";
 import {
@@ -18,7 +18,8 @@ import {
 // opt-in paid refresh. The stored side is what an imported CSV fills, so the whole tab works
 // with no key at all.
 //
-// `view` picks which stored rows come back: "ahrefs" or "majestic" read one provider's rows,
+// `view` picks which stored rows come back: "ahrefs", "majestic", "semrush" or "keysso" read one
+// provider's rows,
 // "all" (the default) merges both into unique domains — one row per domain carrying each
 // provider's number in its own column. The refresh pulls whichever providers the view needs
 // and the caller holds keys for; a merged refresh is two independent pulls, each metered and
@@ -41,6 +42,8 @@ export interface MergedRefDomain {
   tf: number | null;
   /** Semrush Authority Score, when Semrush has seen this donor. */
   as: number | null;
+  /** Keys.so DR (Yandex/Runet index) — its own column, never Ahrefs' DR. */
+  ks: number | null;
   cf: number | null;
   links: number | null;
   firstSeen: string;
@@ -63,6 +66,7 @@ function mergeRefDomains(all: RefDomainRecord[]): MergedRefDomain[] {
         dr: r.provider === "ahrefs" ? r.dr : null,
         tf: r.provider === "majestic" ? r.dr : null,
         as: r.provider === "semrush" ? r.dr : null,
+        ks: r.provider === "keysso" ? r.dr : null,
         cf: r.cf,
         links: r.linksToTarget,
         firstSeen: r.firstSeen,
@@ -77,7 +81,8 @@ function mergeRefDomains(all: RefDomainRecord[]): MergedRefDomain[] {
     }
     if (r.provider === "ahrefs") cur.dr = r.dr;
     else if (r.provider === "majestic") cur.tf = r.dr;
-    else cur.as = r.dr;
+    else if (r.provider === "keysso") cur.ks = r.dr;
+    else if (r.provider === "semrush") cur.as = r.dr;
     cur.cf = cur.cf ?? r.cf;
     cur.links = cur.links ?? r.linksToTarget;
     if (r.firstSeen && (!cur.firstSeen || r.firstSeen < cur.firstSeen)) cur.firstSeen = r.firstSeen;
@@ -93,7 +98,7 @@ function mergeRefDomains(all: RefDomainRecord[]): MergedRefDomain[] {
   // this ordering is a display heuristic, not a ranking.
   return [...byDomain.values()].sort((a, b) =>
     (a.lost ? 1 : 0) - (b.lost ? 1 : 0)
-    || Math.max(b.dr ?? 0, b.tf ?? 0, b.as ?? 0) - Math.max(a.dr ?? 0, a.tf ?? 0, a.as ?? 0));
+    || Math.max(b.dr ?? 0, b.tf ?? 0, b.as ?? 0, b.ks ?? 0) - Math.max(a.dr ?? 0, a.tf ?? 0, a.as ?? 0, a.ks ?? 0));
 }
 
 export async function POST(req: Request) {
@@ -134,7 +139,7 @@ export async function POST(req: Request) {
   if (!resolved) return NextResponse.json({ error: userId ? "Site not found" : "Unauthorized" }, { status: userId ? 404 : 401 });
   const target = resolved;
 
-  const view = b.view === "ahrefs" || b.view === "majestic" || b.view === "semrush" ? b.view : "all";
+  const view = b.view === "ahrefs" || b.view === "majestic" || b.view === "semrush" || b.view === "keysso" ? b.view : "all";
   // Legacy body.provider still names a single-provider refresh for old clients.
   const fetchProvider: MetricsProvider = view === "all"
     ? parseMetricsProvider(b.provider ?? "ahrefs")
@@ -155,11 +160,13 @@ export async function POST(req: Request) {
     ahrefs: await readSnapshots(target, 90, "ahrefs"),
     majestic: await readSnapshots(target, 90, "majestic"),
     semrush: await readSnapshots(target, 90, "semrush"),
+    keysso: await readSnapshots(target, 90, "keysso"),
   };
-  const usage: { ahrefs: UsageState | null; majestic: UsageState | null; semrush: UsageState | null } = {
+  const usage: Record<MetricsProvider, UsageState | null> = {
     ahrefs: userId ? await readUsage(userId, "ahrefs") : null,
     majestic: userId ? await readUsage(userId, "majestic") : null,
     semrush: userId ? await readUsage(userId, "semrush") : null,
+    keysso: userId ? await readUsage(userId, "keysso") : null,
   };
 
   const readRows = () => {
@@ -184,7 +191,7 @@ export async function POST(req: Request) {
 
   // ── The refresh: one independent pull per provider the view needs. ──
   const pulls: MetricsProvider[] = view === "all"
-    ? (["ahrefs", "majestic", "semrush"] as MetricsProvider[]).filter(p => credsFor(p).apiKey)
+    ? (["ahrefs", "majestic", "semrush", "keysso"] as MetricsProvider[]).filter(p => credsFor(p).apiKey)
     : [fetchProvider];
   if (!pulls.length) return respond({ error: "no_key" });
 
@@ -205,7 +212,9 @@ export async function POST(req: Request) {
       ? estimateMajesticProfileUnits(stats.totals.refDomainsTotal ?? REFDOMAIN_PAGE_SIZE)
       : p === "semrush"
         ? estimateSemrushProfileUnits(stats.totals.refDomainsTotal ?? REFDOMAIN_PAGE_SIZE)
-        : estimateProfileUnits(stats.totals.refDomainsTotal ?? REFDOMAIN_PAGE_SIZE);
+        : p === "keysso"
+          ? estimateKeyssoProfileUnits(stats.totals.refDomainsTotal ?? REFDOMAIN_PAGE_SIZE)
+          : estimateProfileUnits(stats.totals.refDomainsTotal ?? REFDOMAIN_PAGE_SIZE);
     if (!userId || !(await withinCap(userId, p, units, cap))) {
       errors[p] = "cap_exceeded";
       continue;
@@ -253,6 +262,7 @@ export async function POST(req: Request) {
     ahrefs: userId ? await readUsage(userId, "ahrefs") : null,
     majestic: userId ? await readUsage(userId, "majestic") : null,
     semrush: userId ? await readUsage(userId, "semrush") : null,
+    keysso: userId ? await readUsage(userId, "keysso") : null,
   };
 
   if (!pulledAny) {

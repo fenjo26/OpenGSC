@@ -5152,5 +5152,15 @@
   "aeoDomainListsDesc": "Domaines supplémentaires par catégorie — fusionnés aux valeurs par défaut (ex. marché grec)",
   "aeoOtherShare": "autre",
   "aeoOtherShareWarn": "Un tiers des citations non classées — étendre les listes de domaines",
-  "aeoListsSaved": "Listes enregistrées"
+  "aeoListsSaved": "Listes enregistrées",
+  "seoRoleKeysso": "Yandex/Runet : DR + domaines référents",
+  "seoSetHintKeysso": "Keys.so — l'index Yandex/Runet : son propre DR, domaines référents et backlinks. Fonctionne avec un jeton officiel Keys.so API ou une clé GroupBuySEO (gbs_sk_live_…). Un autre marché qu'Ahrefs — les chiffres ne sont pas comparables.",
+  "seoSetInstrKeysso": "Collez un jeton Keys.so API (mode officiel) ou votre clé GroupBuySEO (mode revendeur). La clé passe dans l'en-tête X-Keyso-TOKEN, jamais dans l'URL.",
+  "metricsKeyssoHint": "Keys.so couvre le marché Yandex/Runet : son propre DR et son index de liens, un monde distinct d'Ahrefs. Avec Keys.so actif, le profil de liens et les métriques de domaine utilisent Keys.so (étiqueté comme tel) ; les outils de mots-clés restent sur votre clé Ahrefs ou Semrush. Un crédit par requête, 10 $ ≈ 50 000 requêtes chez GroupBuySEO.",
+  "metricsKeyssoBadKey": "Keys.so a refusé cette clé (401) — vérifiez qu'elle correspond au mode et à l'hôte choisis.",
+  "blsrcKsOutOfCredits": "Keys.so : crédits épuisés (402).",
+  "blsrcKsCredits": "crédits",
+  "blpKsMarket": "Yandex / Runet",
+  "blpKsMarketHint": "L'index de liens propre à Keys.so pour le marché Yandex/Runet — ses chiffres et son DR ne sont pas comparables à Ahrefs.",
+  "blpKsDrHint": "DR Keys.so (index Yandex/Runet) — une échelle différente du DR Ahrefs"
 }

@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { rawQuery, rawExec } from "@/lib/db/raw";
 import { fetchKeywordMetrics, estimateKeywordUnits, type MetricsProvider } from "@/lib/seo/metrics";
-import { parseMetricsProvider } from "@/lib/seo/metricsPricing";
+import { isKeywordCapable, parseMetricsProvider } from "@/lib/seo/metricsPricing";
 import {
   readKeywordCache, writeKeywordCache, staleKeywords, recordUsage, releaseUnusedUnits,
   withinCap, normalizeKeyword,
@@ -66,13 +66,13 @@ async function readSettings(userId: string): Promise<{
     if (!raw) return blank;
     const s = JSON.parse(raw) as Record<string, any>;
 
-    // Warmup loads keyword weights, which Majestic cannot serve. An active Majestic provider
+    // Warmup loads keyword weights, which Majestic cannot serve (nor Keys.so, whose keywords
+    // are Yandex's). An active link-only provider
     // therefore runs the schedule on whichever keyword-capable key exists, Ahrefs first — the
     // same resolution the browser's keyword screens make client-side.
     const active = String(s.seoMetricsProvider ?? "ahrefs");
-    const candidates: MetricsProvider[] = active === "majestic"
-      ? ["ahrefs", "semrush"]
-      : [parseMetricsProvider(active)];
+    const activeP = parseMetricsProvider(active);
+    const candidates: MetricsProvider[] = isKeywordCapable(activeP) ? [activeP] : ["ahrefs", "semrush"];
     let provider: MetricsProvider = candidates[0];
     let apiKey = "";
     let baseUrl: string | undefined;

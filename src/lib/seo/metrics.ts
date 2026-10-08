@@ -1,7 +1,8 @@
-// Third-party SEO metrics (Ahrefs / Semrush / Majestic) behind one call surface, mirroring the
-// shape of `src/lib/llm.ts`: several providers, one signature, retries and normalization in one
-// place. Keyword data exists on Ahrefs and Semrush only; Majestic serves the backlink side and
-// answers keyword calls with `provider_unsupported` rather than a wrong request.
+// Third-party SEO metrics (Ahrefs / Semrush / Majestic / Keys.so) behind one call surface,
+// mirroring the shape of `src/lib/llm.ts`: several providers, one signature, retries and
+// normalization in one place. Keyword data exists on Ahrefs and Semrush only; Majestic and
+// Keys.so serve the backlink/domain side and answer keyword calls with `provider_unsupported`
+// rather than a wrong request (Keys.so's keywords are Yandex's — a different market).
 //
 // Three things about this module are load-bearing and easy to get wrong:
 //
@@ -27,9 +28,14 @@ import {
   SEMRUSH_COMPETITOR_UNITS_PER_ROW, SEMRUSH_IDEA_UNITS_PER_ROW, SEMRUSH_ORGANIC_KEYWORD_UNITS_PER_ROW,
   COMPETITOR_FIELDS, ORGANIC_KEYWORD_FIELDS, REFDOMAIN_FIELDS,
   estimateCompetitorUnits, estimateIdeaUnits, estimateOrganicKeywordUnits, estimateUnits,
-  gatewayStatusFromError, ideaEndpoint,
+  gatewayStatusFromError, ideaEndpoint, isKeywordCapable,
+  KEYSSO_REFDOMAIN_PAGE_SIZE, KEYSSO_STATS_UNITS,
   type IdeaMode, type MetricsCreds, type MetricsProvider, type SubscriptionInfo,
 } from "./metricsPricing";
+import {
+  keyssoErrorText, keyssoNextStep, keyssoRemainingCredits, mapKeyssoDashboard, mapKeyssoRefDomain,
+  parseKeyssoEnvelope,
+} from "./keyssoParse";
 
 // The prices live next door so the browser can quote them without importing this module's
 // network half — see the header of `metricsPricing.ts`. Re-exported wholesale, so every
@@ -52,9 +58,9 @@ function poolFor(key: string) {
   return p;
 }
 
-async function withSlot<T>(key: string, fn: () => Promise<T>): Promise<T> {
+async function withSlot<T>(key: string, fn: () => Promise<T>, max = MAX_IN_FLIGHT): Promise<T> {
   const pool = poolFor(key);
-  if (pool.active >= MAX_IN_FLIGHT) {
+  if (pool.active >= max) {
     await new Promise<void>(resolve => pool.queue.push(resolve));
   }
   pool.active++;
@@ -130,6 +136,7 @@ const subscriptionCache = new Map<string, { at: number; info: SubscriptionInfo }
 
 export async function fetchSubscriptionInfo(creds: MetricsCreds): Promise<SubscriptionResult> {
   if (!creds.apiKey) return { info: null, status: 0, error: "no_key" };
+  if (creds.provider === "keysso") return keyssoSubscription(creds);
   // Semrush's protocol has no equivalent report; Majestic's `GetSubscriptionInfo` reports the
   // pooled upstream plan, deliberately not the caller's own credit ledger. Both fall back to
   // our own estimate rather than quote somebody else's wallet.
@@ -425,6 +432,7 @@ export async function fetchBacklinkStats(
       totals: { refDomainsTotal: row.refDomains, backlinksTotal: row.backlinks },
     };
   }
+  if (creds.provider === "keysso") return keyssoBacklinkStats(creds, domain);
   if (creds.provider === "semrush") {
     const r = await semrushBacklinksCall(creds, {
       type: "backlinks_overview", target: domain, target_type: "root_domain",
@@ -607,6 +615,8 @@ export async function fetchBacklinkProfile(
   try {
     return creds.provider === "majestic"
       ? await majesticProfile(creds, domain, opts)
+      : creds.provider === "keysso"
+        ? await keyssoProfile(creds, domain, opts)
       : creds.provider === "semrush"
         ? await semrushProfile(creds, domain, opts)
         : await ahrefsProfile(creds, domain, opts);
@@ -1034,6 +1044,236 @@ async function majesticProfile(
   return result;
 }
 
+// ─── Keys.so ───────────────────────────────────────────────────────────────────
+//
+// The fourth provider: Yandex/Runet data (its own DR, its own link index). It never stands in
+// for Ahrefs — every screen that shows a Keys.so number names Keys.so — and it never feeds a
+// Google pipeline (keyword calls answer `provider_unsupported`, guarded by `isKeywordCapable`).
+//
+// Transport differs from the other three in two ways, both handled only in `keyssoGet`:
+// auth is the `X-Keyso-TOKEN` header (never the `auth-token` query param — keys stay out of
+// access logs), and HTTP 202 means "report is being built, ask again", which is free and is
+// polled with its own back-off rather than pushed through `requestWithRetry`, where it would
+// read as a success. Parsing and the retry plan live in `keyssoParse.ts` (pure, unit-tested).
+//
+// Concurrency is two in flight per key, not three: the gateway documents a 429 but not its
+// threshold, and the first live probe tripped it with a burst of six.
+
+const KEYSSO_MAX_IN_FLIGHT = 2;
+
+type KeyssoAnswer = { ok: true; data: any } | { ok: false; status: number; error: string };
+
+async function keyssoGet(creds: MetricsCreds, path: string, params: Record<string, string> = {}): Promise<KeyssoAnswer> {
+  const base = (creds.baseUrl || DEFAULT_BASE_URL.keysso).replace(/\/+$/, "");
+  const qs = new URLSearchParams(params).toString();
+  const url = `${base}${path}${qs ? `?${qs}` : ""}`;
+  const headers = { "X-Keyso-TOKEN": creds.apiKey, Accept: "application/json" };
+  let pending = 0;
+  let failures = 0;
+  for (let attempt = 1; ; attempt++) {
+    let res: Response;
+    let call: { finish: (o?: { error?: string }) => void };
+    try {
+      // The slot covers the request only — a 202 back-off sleeps outside it, so a report being
+      // built does not block the key's other reads.
+      ({ res, call } = await withSlot(`keysso:${creds.apiKey}`, () =>
+        loggedFetch(url, { headers, signal: AbortSignal.timeout(45_000) }, { provider: "keysso", attempt }),
+      KEYSSO_MAX_IN_FLIGHT));
+    } catch (e: any) {
+      const step = keyssoNextStep(599, pending, failures);
+      if (step.action !== "wait") return { ok: false, status: 0, error: String(e?.message ?? e) };
+      failures++;
+      await sleep(step.ms);
+      continue;
+    }
+    const step = keyssoNextStep(res.status, pending, failures);
+    if (step.action === "wait") {
+      call.finish(step.kind === "pending" ? undefined : { error: `keysso ${res.status}` });
+      if (step.kind === "pending") pending++; else failures++;
+      await sleep(step.ms + (step.kind === "retry" ? Math.random() * 400 : 0));
+      continue;
+    }
+    if (step.action === "give_up") {
+      call.finish({ error: step.reason });
+      return { ok: false, status: 202, error: step.reason };
+    }
+    if (!res.ok) {
+      call.finish({ error: `keysso ${res.status}` });
+      return { ok: false, status: res.status, error: keyssoErrorText(res.status, await res.text().catch(() => "")) };
+    }
+    call.finish();
+    const data = await res.json().catch(() => null);
+    if (data == null) return { ok: false, status: res.status, error: `keysso ${res.status}: response is not JSON` };
+    return { ok: true, data };
+  }
+}
+
+/** Free `/limits/all`: the GroupBuySEO balance, shaped like the official limits object. */
+async function keyssoSubscription(creds: MetricsCreds): Promise<SubscriptionResult> {
+  const base = (creds.baseUrl || DEFAULT_BASE_URL.keysso).replace(/\/+$/, "");
+  const cacheKey = `keysso|${creds.apiKey}|${base}`;
+  const hit = subscriptionCache.get(cacheKey);
+  if (hit && Date.now() - hit.at < SUBSCRIPTION_TTL_MS) return { info: hit.info, status: 200 };
+  const r = await keyssoGet(creds, "/limits/all");
+  // 402 here is the gateway refusing even the free call on an empty balance — the answer the
+  // settings screen needs is "out of credits", which the status alone already says.
+  if (!r.ok) return { info: null, status: r.status, error: r.error };
+  const info: SubscriptionInfo = {
+    unitsLimitApiKey: null, unitsUsageApiKey: null,
+    unitsLimitWorkspace: null, unitsUsageWorkspace: null,
+    usageResetDate: "", apiKeyExpirationDate: "",
+    fetchedAt: new Date().toISOString(),
+    unitsRemaining: keyssoRemainingCredits(r.data),
+  };
+  subscriptionCache.set(cacheKey, { at: Date.now(), info });
+  return { info, status: 200 };
+}
+
+/**
+ * Referring-domain and backlink totals from the `total` of two one-row pages — two credits,
+ * because billing is per request. The gateway applies `filter=status=1` (live links) to the
+ * links family by default, so both are live counts, the same meaning Ahrefs' `live*` carry.
+ */
+async function keyssoTotals(creds: MetricsCreds, domain: string) {
+  const one = { domain, per_page: "1", page: "1" };
+  const [rd, bl] = await Promise.all([
+    keyssoGet(creds, "/report/simple/links/backlinks-domains", one),
+    keyssoGet(creds, "/report/simple/links/backlinks", one),
+  ]);
+  return {
+    refDomains: rd.ok ? parseKeyssoEnvelope(rd.data).total : null,
+    backlinks: bl.ok ? parseKeyssoEnvelope(bl.data).total : null,
+    billed: (rd.ok ? 1 : 0) + (bl.ok ? 1 : 0),
+    error: !rd.ok ? rd.error : !bl.ok ? bl.error : null,
+    ok: rd.ok || bl.ok,
+  };
+}
+
+async function keyssoBacklinkStats(
+  creds: MetricsCreds, domain: string,
+): Promise<{ ok: true; raw: any; totals: BacklinkStatsTotals } | { ok: false; error: string }> {
+  const t = await keyssoTotals(creds, domain);
+  if (!t.ok) return { ok: false, error: t.error ?? "keysso empty" };
+  return {
+    ok: true,
+    raw: { refdomains: t.refDomains, backlinks: t.backlinks },
+    totals: { refDomainsTotal: t.refDomains, backlinksTotal: t.backlinks },
+  };
+}
+
+/**
+ * Keys.so domain card: `domain_dashboard` for DR (plus visibility / top-50 kept raw in the
+ * payload) and the two totals reads — three credits. `dr` here is Keys.so's DR, stored under
+ * provider `keysso` in the cache; it is never shown in an Ahrefs DR slot.
+ */
+async function keyssoDomain(creds: MetricsCreds, domain: string): Promise<MetricsResult<DomainMetric>> {
+  const [dash, totals] = await Promise.all([
+    keyssoGet(creds, "/report/simple/domain_dashboard", { domain, base: "msk" }),
+    keyssoTotals(creds, domain),
+  ]);
+  if (!dash.ok && !totals.ok) return { items: [], units: 0, error: dash.error };
+  const d = dash.ok ? mapKeyssoDashboard(dash.data) : null;
+  return {
+    // Billed per answered read; `domainUnits("keysso")` (3) is the reservation it reconciles.
+    units: (dash.ok ? 1 : 0) + totals.billed,
+    items: [{
+      domain,
+      dr: d?.dr ?? null,
+      refDomains: totals.refDomains,
+      backlinks: totals.backlinks,
+      orgTraffic: null,
+      orgKeywords: null,
+      orgCost: null,
+      payload: { source: "keysso", base: "msk", vis: d?.vis ?? null, it50: d?.it50 ?? null, dashboard: d?.raw ?? null },
+    }],
+  };
+}
+
+/** Hard stop for one pull: 2 000 pages × 100 rows. Far past any real profile, short of a loop. */
+const KEYSSO_MAX_PAGES = 2000;
+
+/**
+ * Keys.so referring domains. Pages with `page`/`per_page` and stops on the envelope's
+ * `last_page` (a short page only ends the pull when the envelope says nothing), so a gateway
+ * that quietly caps `per_page` costs extra pages, never missing rows. One credit per page.
+ * There is no server-side DR filter: `minDr` filters here, and a filtered run is a deliberate
+ * subset that never proves an absent donor lost (the route already treats it so).
+ */
+async function keyssoProfile(
+  creds: MetricsCreds,
+  domain: string,
+  opts: { minDr?: number; stats?: any } = {},
+): Promise<MetricsResult<BacklinkProfile> & { sawEnd?: boolean; unitsSpent?: number }> {
+  let stats = opts.stats ?? null;
+  if (!stats) {
+    const s = await keyssoBacklinkStats(creds, domain);
+    if (!s.ok) return { items: [], units: 0, error: s.error, unitsSpent: 0 };
+    stats = s.raw;
+  }
+  let unitsSpent = KEYSSO_STATS_UNITS;
+  const minDr = opts.minDr && opts.minDr > 0 ? opts.minDr : 0;
+  const refDomains: RefDomainItem[] = [];
+  const seen = new Set<string>();
+  let followKnown = 0;
+  let sawEnd = false;
+  let partialError = "";
+
+  for (let page = 1; page <= KEYSSO_MAX_PAGES; page++) {
+    const r = await keyssoGet(creds, "/report/simple/links/backlinks-domains", {
+      domain, page: String(page), per_page: String(KEYSSO_REFDOMAIN_PAGE_SIZE),
+    });
+    if (!r.ok) {
+      if (refDomains.length === 0 && page === 1) return { items: [], units: unitsSpent, error: r.error, unitsSpent };
+      partialError = r.error; // keep the pages already paid for, marked incomplete
+      break;
+    }
+    unitsSpent += 1;
+    const env = parseKeyssoEnvelope(r.data);
+    if (!env.rows.length) { sawEnd = true; break; }
+
+    let fresh = 0;
+    for (const raw of env.rows) {
+      const row = mapKeyssoRefDomain(raw);
+      if (!row || seen.has(row.refDomain)) continue;
+      seen.add(row.refDomain);
+      fresh++;
+      if (minDr && (row.dr == null || row.dr < minDr)) continue;
+      if (row.nofollow != null) followKnown++;
+      refDomains.push({
+        refDomain: row.refDomain,
+        dr: row.dr,
+        linksToTarget: row.linksToTarget,
+        dofollow: row.nofollow !== true,
+        firstSeen: row.firstSeen,
+        ip: row.ip,
+      });
+    }
+    const last = env.lastPage != null
+      ? page >= env.lastPage
+      : env.rows.length < KEYSSO_REFDOMAIN_PAGE_SIZE;
+    if (last) { sawEnd = true; break; }
+    if (fresh === 0) break; // the page repeated the previous one — same drift guard as the others
+  }
+
+  const dofollowCount = refDomains.filter(r => r.dofollow).length;
+  const result: MetricsResult<BacklinkProfile> & { sawEnd?: boolean; unitsSpent?: number } = {
+    units: unitsSpent,
+    unitsSpent,
+    sawEnd,
+    items: [{
+      refDomainsTotal: num(stats?.refdomains),
+      backlinksTotal: num(stats?.backlinks),
+      // Only when the rows carried a follow flag — never a fabricated 100%.
+      dofollowPct: followKnown > 0 && refDomains.length
+        ? Math.round((dofollowCount / refDomains.length) * 100)
+        : null,
+      refDomains,
+    }],
+  };
+  if (partialError) result.error = partialError;
+  return result;
+}
+
 // ─── Competitors and their keywords ────────────────────────────────────────────
 
 export interface CompetitorItem {
@@ -1059,7 +1299,7 @@ export async function fetchOrganicCompetitors(
   if (!normCountry(opts.country)) return { items: [], units: 0, error: "no_country" };
   // Majestic has no organic-search data at all — the honest answer is the same one Semrush-only
   // users got before their path existed, not a request its key cannot answer.
-  if (creds.provider === "majestic") return { items: [], units: 0, error: "provider_unsupported" };
+  if (!isKeywordCapable(creds.provider)) return { items: [], units: 0, error: "provider_unsupported" };
   if (creds.provider === "semrush") return semrushCompetitors(creds, domain, opts);
   return ahrefsCompetitors(creds, domain, opts);
 }
@@ -1151,7 +1391,7 @@ export async function fetchOrganicKeywords(
 ): Promise<MetricsResult<OrganicKeywordItem>> {
   if (!creds.apiKey) return { items: [], units: 0, error: "no_key" };
   if (!normCountry(opts.country)) return { items: [], units: 0, error: "no_country" };
-  if (creds.provider === "majestic") return { items: [], units: 0, error: "provider_unsupported" };
+  if (!isKeywordCapable(creds.provider)) return { items: [], units: 0, error: "provider_unsupported" };
   if (creds.provider === "semrush") return semrushOrganicKeywords(creds, domain, opts);
   return ahrefsOrganicKeywords(creds, domain, opts);
 }
@@ -1393,7 +1633,7 @@ export async function fetchKeywordIdeas(
 ): Promise<MetricsResult<KeywordMetric>> {
   if (!creds.apiKey) return { items: [], units: 0, error: "no_key" };
   if (!normCountry(opts.country)) return { items: [], units: 0, error: "no_country" };
-  if (creds.provider === "majestic") return { items: [], units: 0, error: "provider_unsupported" };
+  if (!isKeywordCapable(creds.provider)) return { items: [], units: 0, error: "provider_unsupported" };
   const s = seed.trim();
   if (!s) return { items: [], units: 0, error: "no_seed" };
   // Ahrefs takes the seed through a comma-separated parameter, so a comma cannot be expressed.
@@ -1549,7 +1789,7 @@ export async function fetchKeywordMetrics(
 ): Promise<MetricsResult<KeywordMetric>> {
   if (!creds.apiKey) return { items: [], units: 0, error: "no_key" };
   if (!normCountry(opts.country)) return { items: [], units: 0, error: "no_country" };
-  if (creds.provider === "majestic") return { items: [], units: 0, error: "provider_unsupported" };
+  if (!isKeywordCapable(creds.provider)) return { items: [], units: 0, error: "provider_unsupported" };
   try {
     return creds.provider === "semrush"
       ? await semrushKeywords(creds, keywords, opts)
@@ -1569,7 +1809,9 @@ export async function fetchDomainMetrics(
       ? await semrushDomain(creds, domain)
       : creds.provider === "majestic"
         ? await majesticDomain(creds, domain)
-        : await ahrefsDomain(creds, domain);
+        : creds.provider === "keysso"
+          ? await keyssoDomain(creds, domain)
+          : await ahrefsDomain(creds, domain);
   } catch (e: any) {
     return { items: [], units: 0, error: String(e?.message ?? e) };
   }

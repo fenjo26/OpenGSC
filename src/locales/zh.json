@@ -5152,5 +5152,15 @@
   "aeoDomainListsDesc": "按类别添加域名——叠加在内置默认之上（例如希腊市场）",
   "aeoOtherShare": "其他",
   "aeoOtherShareWarn": "三分之一的引用未分类——请扩充域名列表",
-  "aeoListsSaved": "列表已保存"
+  "aeoListsSaved": "列表已保存",
+  "seoRoleKeysso": "Yandex/俄语网络：DR + 引用域名",
+  "seoSetHintKeysso": "Keys.so —— Yandex/俄语网络索引：自有 DR、引用域名和反向链接。可使用官方 Keys.so API 令牌或 GroupBuySEO 密钥（gbs_sk_live_…）。与 Ahrefs 是不同的市场，数字不可比较。",
+  "seoSetInstrKeysso": "粘贴 Keys.so API 令牌（官方模式）或 GroupBuySEO 密钥（经销商模式）。密钥通过 X-Keyso-TOKEN 请求头发送，绝不放在 URL 中。",
+  "metricsKeyssoHint": "Keys.so 覆盖 Yandex/俄语网络市场：自有 DR 和链接索引，与 Ahrefs 是两个世界。启用 Keys.so 后，反向链接概况和域名指标使用 Keys.so（并会标注）；关键词工具继续使用你的 Ahrefs 或 Semrush 密钥。每次请求 1 个积分，GroupBuySEO 上 $10 ≈ 50 000 次请求。",
+  "metricsKeyssoBadKey": "Keys.so 拒绝了此密钥（401）——请检查它是否对应所选模式和主机。",
+  "blsrcKsOutOfCredits": "Keys.so：积分已用完（402）。",
+  "blsrcKsCredits": "积分",
+  "blpKsMarket": "Yandex / 俄语网络",
+  "blpKsMarketHint": "Keys.so 针对 Yandex/俄语网络市场的自有链接索引——其数量和 DR 不可与 Ahrefs 比较。",
+  "blpKsDrHint": "Keys.so DR（Yandex/俄语网络索引）——与 Ahrefs DR 是不同的标尺"
 }

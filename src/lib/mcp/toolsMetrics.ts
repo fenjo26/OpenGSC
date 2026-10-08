@@ -73,13 +73,15 @@ export const METRICS_TOOLS: McpTool[] = [
       "Referring domains, backlink count, estimated organic traffic and traffic value for one or more domains, " +
       "from the local cache. Read-only and free. Domain Rating is NOT here — it comes from a separate free " +
       "endpoint and is available for every site without any of this. Empty means not loaded, not zero. " +
-      "Provider chooses whose rows to read: ahrefs (default), semrush, or majestic (Majestic rows carry no traffic figures).",
+      "Provider chooses whose rows to read: ahrefs (default), semrush, majestic (no traffic figures), or keysso — " +
+      "Keys.so, the Yandex/Runet index: its `dr` is Keys.so's own DR (not comparable with Ahrefs DR), organic traffic " +
+      "fields stay null, and Yandex visibility/top-50/AI-answer counts ride in `payload` (vis, it50, dashboard).",
     cost: "local",
     inputSchema: {
       type: "object",
       properties: {
         domains: { type: "array", items: { type: "string" }, description: "Domains to look up (max 100)" },
-        provider: { type: "string", description: "ahrefs (default), semrush, or majestic" },
+        provider: { type: "string", description: "ahrefs (default), semrush, majestic, or keysso (Yandex/Runet)" },
       },
       required: ["domains"],
     },
@@ -108,7 +110,8 @@ export const METRICS_TOOLS: McpTool[] = [
       properties: {
         site: siteArg,
         includeLost: { type: "boolean", description: "Include referring domains recorded as lost. Default true" },
-        minDr: { type: "number", description: "Only return referring domains at or above this Domain Rating" },
+        provider: { type: "string", description: "Whose stored rows to read: ahrefs (default), semrush, majestic (dr = Trust Flow), keysso (dr = Keys.so DR, Yandex/Runet index), or all" },
+        minDr: { type: "number", description: "Only return referring domains at or above this rating (in the chosen provider's own scale)" },
         limit: { type: "number", description: "Max referring domains to return (default 100, max 500)" },
       },
       required: ["site"],
@@ -120,12 +123,15 @@ export const METRICS_TOOLS: McpTool[] = [
       const minDr = Number(args.minDr ?? 0);
       const limit = lim(args.limit, 100, 500);
 
-      const all = await readRefDomains(target, { includeLost, limit: 500 });
+      const provider = args.provider === "all" ? "all" : parseMetricsProvider(args.provider);
+      const all = await readRefDomains(target, { provider, includeLost, limit: 500 });
       const rows = all.filter(r => (r.dr ?? 0) >= minDr).slice(0, limit);
-      const history = await readSnapshots(target, 90);
+      // History is per provider; "all" has no merged series, so it reports the Ahrefs one as before.
+      const history = await readSnapshots(target, 90, provider === "all" ? "ahrefs" : provider);
 
       return {
         target,
+        provider,
         summary: {
           live: all.filter(r => !r.lost).length,
           lost: all.filter(r => r.lost).length,

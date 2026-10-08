@@ -15,7 +15,7 @@
 // in `metrics.ts`, which re-exports this whole module so every existing server-side import keeps
 // working unchanged.
 
-export type MetricsProvider = "ahrefs" | "semrush" | "majestic";
+export type MetricsProvider = "ahrefs" | "semrush" | "majestic" | "keysso";
 
 /**
  * Providers that can serve keyword-side calls (volumes, difficulty, ideas, organic rows).
@@ -23,6 +23,16 @@ export type MetricsProvider = "ahrefs" | "semrush" | "majestic";
  * keyword-side surface resolves off it onto whichever of these actually has a key.
  */
 export const KEYWORD_CAPABLE_PROVIDERS: MetricsProvider[] = ["ahrefs", "semrush"];
+
+/**
+ * Whether a provider can answer keyword-side calls. Keys.so has keyword data, but for a
+ * different market (Yandex/Runet, Wordstat volumes) — it stays off this list until a keyword
+ * surface is built for it on purpose, so a Google-market volume screen never quietly fills
+ * with Yandex numbers. Every "else → Ahrefs" dispatcher guards on this, not on one name.
+ */
+export function isKeywordCapable(p: MetricsProvider): boolean {
+  return KEYWORD_CAPABLE_PROVIDERS.includes(p);
+}
 
 export interface MetricsCreds {
   provider: MetricsProvider;
@@ -37,6 +47,9 @@ export const DEFAULT_BASE_URL: Record<MetricsProvider, string> = {
   // The official Majestic JSON API. Same wire protocol as the reseller gateway: host plus
   // `/api/json`, `app_api_key` query param, `cmd`. Only the key decides which one answers.
   majestic: "https://api.majestic.com",
+  // Keys.so — Yandex/Runet data. The GroupBuySEO gateway is wire-identical (same paths, same
+  // `X-Keyso-TOKEN` header), so official vs reseller is a host and a key, as for the others.
+  keysso: "https://api.keys.so",
 };
 
 /**
@@ -48,7 +61,7 @@ export const DEFAULT_BASE_URL: Record<MetricsProvider, string> = {
  * ahrefs, which keeps old clients (and hand-rolled curl calls) working unchanged.
  */
 export function parseMetricsProvider(v: unknown): MetricsProvider {
-  return v === "semrush" || v === "majestic" ? v : "ahrefs";
+  return v === "semrush" || v === "majestic" || v === "keysso" ? v : "ahrefs";
 }
 
 // ─── Cost model ────────────────────────────────────────────────────────────────
@@ -67,6 +80,8 @@ export const UNIT_PRICE_USD: Record<MetricsProvider, number> = {
   ahrefs: 0.0001,
   semrush: 0.00006,
   majestic: 0.000002,
+  // GroupBuySEO: $10 buys 50 000 credits, one credit per successful (2xx) read.
+  keysso: 0.0002,
 };
 
 export function estimateCostUsd(units: number, provider: MetricsProvider): number {
@@ -285,6 +300,12 @@ export interface SubscriptionInfo {
   apiKeyExpirationDate: string;
   /** When this answer was obtained — the "updated HH:MM" a balance placard shows. */
   fetchedAt: string;
+  /**
+   * A bare "what is left" for gateways that report no limit/usage pair. Keys.so's
+   * `/limits/all` on the GroupBuySEO gateway answers exactly this (allocated − used −
+   * reserved), so the placard shows "N left" there instead of an invented "of" figure.
+   */
+  unitsRemaining?: number | null;
 }
 
 /**
@@ -293,7 +314,7 @@ export interface SubscriptionInfo {
  * them; this lets a caller distinguish "key rejected" from "gateway down" without re-fetching.
  */
 export function gatewayStatusFromError(error: string | null | undefined): number | null {
-  const m = /^(?:ahrefs|semrush|majestic) (\d{3})/.exec(String(error ?? "").trim());
+  const m = /^(?:ahrefs|semrush|majestic|keysso) (\d{3})/.exec(String(error ?? "").trim());
   return m ? Number(m[1]) : null;
 }
 
@@ -339,6 +360,29 @@ export function estimateMajesticProfileUnits(domains: number): number {
   return MAJESTIC_STATS_UNITS + pages * MAJESTIC_REFDOMAIN_ANALYSIS_UNITS + rows;
 }
 
+// ─── Keys.so ────────────────────────────────────────────────────────────────────
+//
+// One credit per successful (2xx) GET, whatever the page size; 202 ("report is being built,
+// ask again"), 4xx and 5xx are free, and so is `/limits/all`. Billing is per request, not per
+// row, so the only thing page size changes is speed — which is why the profile pages big.
+
+/** Two `per_page=1` reads whose envelope `total` is the answer: refdomains and backlinks. */
+export const KEYSSO_STATS_UNITS = 2;
+
+/** `domain_dashboard` (1) plus the two totals reads — the full domain card. */
+export const KEYSSO_DOMAIN_UNITS = 3;
+
+/**
+ * Rows asked for per `backlinks-domains` page. The pull stops on the envelope's `last_page`,
+ * not on a short page, so a gateway that quietly caps lower costs extra pages, never rows.
+ */
+export const KEYSSO_REFDOMAIN_PAGE_SIZE = 100;
+
+/** Reserve for a Keys.so refdomain pull: the stats pair plus one credit per page. */
+export function estimateKeyssoProfileUnits(domains: number): number {
+  return KEYSSO_STATS_UNITS + Math.ceil(Math.max(1, domains) / KEYSSO_REFDOMAIN_PAGE_SIZE);
+}
+
 // ─── Semrush Backlinks (the /analytics/v1/ reports on the gateway) ─────────────
 
 /** `backlinks_overview` is the stats call: 40 units flat per request. */
@@ -365,6 +409,7 @@ export function estimateSemrushProfileUnits(domains: number): number {
 export function domainUnits(provider: MetricsProvider): number {
   if (provider === "majestic") return MAJESTIC_STATS_UNITS;
   if (provider === "semrush") return 10; // `domain_ranks`: 10 units per line, one line per domain
+  if (provider === "keysso") return KEYSSO_DOMAIN_UNITS;
   return DOMAIN_UNITS;
 }
 

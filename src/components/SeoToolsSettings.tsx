@@ -38,7 +38,7 @@ export const SEO_PROVIDERS: KeyCardProvider[] = [
 ];
 
 /**
- * Ahrefs and Semrush are deliberately NOT in SEO_PROVIDERS above.
+ * Ahrefs, Semrush, Majestic and Keys.so are deliberately NOT in SEO_PROVIDERS above.
  *
  * They are configured on their own settings screen together with the access mode, host and
  * spending cap, because those four things are one decision. Listing the key card here as well
@@ -49,6 +49,7 @@ export const METRICS_PROVIDER_CARDS: KeyCardProvider[] = [
   { id: "ahrefs", storageKey: "seoKey_ahrefs", name: "Ahrefs", roleKey: "seoRoleAhrefs", placeholder: "Ahrefs API v3 key", hintKey: "seoSetHintAhrefs", instrKey: "seoSetInstrAhrefs", docsUrl: "https://docs.ahrefs.com/", color: "#f76d01", logo: "A" },
   { id: "semrush", storageKey: "seoKey_semrush", name: "Semrush", roleKey: "seoRoleSemrush", placeholder: "Semrush API key", hintKey: "seoSetHintSemrush", instrKey: "seoSetInstrSemrush", docsUrl: "https://developer.semrush.com/api/", color: "#ff642d", logo: "S" },
   { id: "majestic", storageKey: "seoKey_majestic", name: "Majestic", roleKey: "seoRoleMajestic", placeholder: "Majestic API key", hintKey: "seoSetHintMajestic", instrKey: "seoSetInstrMajestic", docsUrl: "https://developer-support.majestic.com/api/", color: "#00A4E4", logo: "M" },
+  { id: "keysso", storageKey: "seoKey_keysso", name: "Keys.so", roleKey: "seoRoleKeysso", placeholder: "Keys.so API token / gbs_sk_live_…", hintKey: "seoSetHintKeysso", instrKey: "seoSetInstrKeysso", docsUrl: "https://apidoc.keys.so/", color: "#7C3AED", logo: "K" },
 ];
 
 // AEO citation-check engines that aren't already covered by the main AI provider keys

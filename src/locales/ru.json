@@ -2960,7 +2960,7 @@
   "shareLinkProfile": "Ссылочный профиль",
   "navMetrics": "SEO-метрики",
   "metricsStep1": "1 · Провайдер данных",
-  "metricsProviderHint": "Ahrefs и Semrush закрывают ключи и ссылки; Majestic — только ссылки и Trust Flow, зато его ссылочные прогрузки стоят в разы дешевле Ahrefs.",
+  "metricsProviderHint": "Ahrefs и Semrush закрывают ключи и ссылки; Majestic — только ссылки и Trust Flow, зато его ссылочные прогрузки стоят в разы дешевле Ahrefs. Keys.so — рынок Яндекса/Рунета.",
   "metricsMajesticHint": "Majestic индексирует ссылки, а не ключи. При активном Majestic ключевые инструменты продолжают работать на твоём ключе Ahrefs или Semrush, а ссылочный профиль и метрики домена идут через Majestic.",
   "metricsStep2": "2 · Откуда у вас ключ",
   "metricsStep3": "3 · Ключ API",
@@ -5152,5 +5152,15 @@
   "aeoDomainListsDesc": "Дополнительные домены по категориям — поверх встроенных дефолтов (например, греческий рынок: СМИ, форумы, агрегаторы)",
   "aeoOtherShare": "другое",
   "aeoOtherShareWarn": "Треть цитирований без категории — пополните списки доменов",
-  "aeoListsSaved": "Списки сохранены"
+  "aeoListsSaved": "Списки сохранены",
+  "seoRoleKeysso": "Яндекс/Рунет: DR + ссылающиеся домены",
+  "seoSetHintKeysso": "Keys.so — индекс Яндекса/Рунета: собственный DR, ссылающиеся домены и бэклинки. Работает с официальным токеном Keys.so API или ключом GroupBuySEO (gbs_sk_live_…). Это другой рынок, не Ahrefs — цифры не сравнимы.",
+  "seoSetInstrKeysso": "Вставь токен Keys.so API (официальный режим) или ключ GroupBuySEO (режим реселлера). Ключ передаётся в заголовке X-Keyso-TOKEN, никогда в URL.",
+  "metricsKeyssoHint": "Keys.so — это рынок Яндекса/Рунета: собственный DR и ссылочный индекс, отдельный мир от Ahrefs. При активном Keys.so ссылочный профиль и метрики домена идут через Keys.so (с подписью); ключевые инструменты продолжают работать на ключе Ahrefs или Semrush. Один кредит за запрос, на GroupBuySEO $10 ≈ 50 000 запросов.",
+  "metricsKeyssoBadKey": "Keys.so отклонил ключ (401) — проверь, что это ключ для выбранного режима и хоста.",
+  "blsrcKsOutOfCredits": "Keys.so: кредиты закончились (402).",
+  "blsrcKsCredits": "кредитов",
+  "blpKsMarket": "Яндекс / Рунет",
+  "blpKsMarketHint": "Собственный ссылочный индекс Keys.so для рынка Яндекса/Рунета — его цифры и DR не сравнимы с Ahrefs.",
+  "blpKsDrHint": "DR от Keys.so (индекс Яндекса/Рунета) — другая шкала, не Ahrefs DR"
 }

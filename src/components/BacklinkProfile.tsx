@@ -24,7 +24,7 @@ import { isGuestView, shareTokenFromPath } from "@/lib/shareParam";
 // The pure half of the metrics module — see its header. A client component importing
 // `@/lib/seo/metrics` drags the Prisma client into the browser bundle.
 import {
-  estimateProfileUnits, estimateMajesticProfileUnits, estimateSemrushProfileUnits,
+  estimateProfileUnits, estimateMajesticProfileUnits, estimateSemrushProfileUnits, estimateKeyssoProfileUnits,
   DEFAULT_BASE_URL, gatewayStatusFromError,
   type MetricsProvider, type SubscriptionInfo,
 } from "@/lib/seo/metricsPricing";
@@ -41,7 +41,7 @@ const fill = (s: string, vars: Record<string, string>) =>
  *  the DOM at a sane size instead of deciding how many domains the user may look at. */
 const TABLE_ROWS_PER_PAGE = 100;
 
-type View = "all" | "ahrefs" | "majestic" | "semrush";
+type View = "all" | "ahrefs" | "majestic" | "semrush" | "keysso";
 /** The providers this component can read or refresh — one tab each, plus the merged view. */
 type BlProvider = MetricsProvider;
 /** N2 sections inside the profile: the provider view plus toxicity/disavow/recovery.
@@ -57,6 +57,8 @@ interface Row {
   tf: number | null;
   /** Semrush Authority Score — populated in the semrush and all views. */
   as: number | null;
+  /** Keys.so DR — Yandex/Runet index, a different scale from Ahrefs DR; never merged into it. */
+  ks: number | null;
   cf: number | null;
   links: number | null;
   dofollow: boolean;
@@ -82,8 +84,11 @@ const fmt = (n: number | null | undefined) =>
   n == null ? "—" : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(Math.round(n));
 
 const PROVIDER_NAME: Record<MetricsProvider, string> = {
-  ahrefs: "Ahrefs", semrush: "Semrush", majestic: "Majestic",
+  ahrefs: "Ahrefs", semrush: "Semrush", majestic: "Majestic", keysso: "Keys.so",
 };
+
+const NO_PROVIDER = { ahrefs: null, majestic: null, semrush: null, keysso: null };
+const NO_HISTORY = { ahrefs: [], majestic: [], semrush: [], keysso: [] };
 
 /** Everything the source placard needs about where one provider's paid calls go. */
 interface SourceCfg {
@@ -110,7 +115,7 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
   // three render their own tab component below and skip the provider view entirely.
   const [section, setSection] = useState<Section>("profile");
   const [rows, setRows] = useState<Row[]>([]);
-  const [history, setHistory] = useState<{ ahrefs: Snapshot[]; majestic: Snapshot[]; semrush: Snapshot[] }>({ ahrefs: [], majestic: [], semrush: [] });
+  const [history, setHistory] = useState<Record<BlProvider, Snapshot[]>>(NO_HISTORY);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<React.ReactNode>("");
   const [showLost, setShowLost] = useState(false);
@@ -118,12 +123,15 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
 
   // Resolved in an effect, not during render: mode and host live in localStorage, and reading
   // them during the first pass would make the server HTML disagree with the client's.
-  const [srcs, setSrcs] = useState<Record<BlProvider, SourceCfg | null>>({ ahrefs: null, majestic: null, semrush: null });
-  const [usage, setUsage] = useState<Record<BlProvider, number | null>>({ ahrefs: null, majestic: null, semrush: null });
+  const [srcs, setSrcs] = useState<Record<BlProvider, SourceCfg | null>>(NO_PROVIDER);
+  const [usage, setUsage] = useState<Record<BlProvider, number | null>>(NO_PROVIDER);
   // The provider's own balance — free, cached 10 minutes server-side. Only Ahrefs' gateway
   // exposes one; Majestic's reported figure would be the pooled upstream wallet, so its
   // placard segment deliberately shows our own counter instead.
   const [balance, setBalance] = useState<{ info: SubscriptionInfo | null; gatewayStatus: number | null } | null>(null);
+  // Keys.so's gateway reports a bare remaining figure (free `/limits/all`) — no limit/usage
+  // pair — so it gets its own slot rather than being squeezed into the Ahrefs shape.
+  const [ksBalance, setKsBalance] = useState<{ remaining: number | null; gatewayStatus: number | null } | null>(null);
 
   useEffect(() => {
     if (guest) return;
@@ -139,12 +147,26 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
         hasKey: creds.apiKey.length > 4,
       };
     };
-    setSrcs({ ahrefs: build("ahrefs"), majestic: build("majestic"), semrush: build("semrush") });
+    setSrcs({ ahrefs: build("ahrefs"), majestic: build("majestic"), semrush: build("semrush"), keysso: build("keysso") });
   }, [guest]);
 
   const loadBalance = useCallback(async () => {
+    if (guest) return;
+    const ks = getMetricsCreds("keysso");
+    if (ks.apiKey.length > 4) {
+      fetch("/api/metrics/subscription", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: "keysso", apiKey: ks.apiKey, baseUrl: ks.baseUrl }),
+      })
+        .then(r => r.json())
+        .then(d => setKsBalance({
+          remaining: typeof d.info?.unitsRemaining === "number" ? d.info.unitsRemaining : null,
+          gatewayStatus: typeof d.gatewayStatus === "number" ? d.gatewayStatus : null,
+        }))
+        .catch(() => setKsBalance({ remaining: null, gatewayStatus: null }));
+    }
     const creds = getMetricsCreds("ahrefs");
-    if (guest || creds.apiKey.length <= 4) return;
+    if (creds.apiKey.length <= 4) return;
     try {
       const res = await fetch("/api/metrics/subscription", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -184,6 +206,7 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
     const credsA = getMetricsCreds("ahrefs");
     const credsM = getMetricsCreds("majestic");
     const credsS = getMetricsCreds("semrush");
+    const credsK = getMetricsCreds("keysso");
     const body: Record<string, unknown> = dropDomain ? { dropDomain } : { siteId: siteDbId, view, fetch: doFetch };
     if (dropDomain) { body.view = view; body.fetch = doFetch; }
     const token = shareTokenFromPath();
@@ -195,6 +218,7 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
         ahrefs: { apiKey: credsA.apiKey, baseUrl: credsA.baseUrl, cap: credsA.cap },
         majestic: { apiKey: credsM.apiKey, baseUrl: credsM.baseUrl, cap: credsM.cap },
         semrush: { apiKey: credsS.apiKey, baseUrl: credsS.baseUrl, cap: credsS.cap },
+        keysso: { apiKey: credsK.apiKey, baseUrl: credsK.baseUrl, cap: credsK.cap },
       };
     }
 
@@ -214,6 +238,7 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
           dr: merged ? (r.dr ?? null) : view === "ahrefs" ? (r.dr ?? null) : null,
           tf: merged ? (r.tf ?? null) : view === "majestic" ? (r.dr ?? null) : null,
           as: merged ? (r.as ?? null) : view === "semrush" ? (r.dr ?? null) : null,
+          ks: merged ? (r.ks ?? null) : view === "keysso" ? (r.dr ?? null) : null,
           cf: r.cf ?? null,
           links: r.links ?? r.linksToTarget ?? null,
           dofollow: r.dofollow !== false,
@@ -228,13 +253,14 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
       }));
     }
     if (d.history && typeof d.history === "object") {
-      setHistory({ ahrefs: d.history.ahrefs ?? [], majestic: d.history.majestic ?? [], semrush: d.history.semrush ?? [] });
+      setHistory({ ahrefs: d.history.ahrefs ?? [], majestic: d.history.majestic ?? [], semrush: d.history.semrush ?? [], keysso: d.history.keysso ?? [] });
     }
     if (d.usage && typeof d.usage === "object") {
       setUsage({
         ahrefs: d.usage.ahrefs?.units ?? null,
         majestic: d.usage.majestic?.units ?? null,
         semrush: d.usage.semrush?.units ?? null,
+        keysso: d.usage.keysso?.units ?? null,
       });
     }
     if (!res.ok && doFetch) {
@@ -285,13 +311,15 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
   const lost = useMemo(() => rows.filter(r => r.lost), [rows]);
 
   // Which providers this view reads and refreshes from.
-  const viewProviders: BlProvider[] = view === "all" ? ["ahrefs", "majestic", "semrush"] : [view];
+  const viewProviders: BlProvider[] = view === "all" ? ["ahrefs", "majestic", "semrush", "keysso"] : [view];
   const refreshable: BlProvider[] = viewProviders.filter(p => srcs[p]?.hasKey);
   const anyKey = refreshable.length > 0;
 
-  const histFor = (p: BlProvider) => history[p === "majestic" ? "majestic" : "ahrefs"] ?? [];
-  const latest = histFor(view === "majestic" ? "majestic" : "ahrefs").slice(-1)[0];
-  const previous = histFor(view === "majestic" ? "majestic" : "ahrefs")[0];
+  // Each provider's own snapshots. (Semrush used to read Ahrefs' history here — a provider tab
+  // showing another index's totals is exactly the mix-up the per-provider tabs exist to avoid.)
+  const histFor = (p: BlProvider) => history[p] ?? [];
+  const latest = histFor(view === "all" ? "ahrefs" : view).slice(-1)[0];
+  const previous = histFor(view === "all" ? "ahrefs" : view)[0];
 
   // Priced from each provider's last pull's real domain count — the same figure the server
   // reserves when it refreshes. Before the first pull there is no count to price from, and
@@ -305,6 +333,7 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
       if (rd == null) continue;
       const units = p === "majestic" ? estimateMajesticProfileUnits(rd)
         : p === "semrush" ? estimateSemrushProfileUnits(rd)
+        : p === "keysso" ? estimateKeyssoProfileUnits(rd)
         : estimateProfileUnits(rd);
       parts.push({ p, units });
       usd += estimateCostUsd(units, p);
@@ -359,12 +388,18 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
     return (
       <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
         <span>{withBalance ? `${PROVIDER_NAME[p]}: ` : ""}<strong style={{ color: "var(--color-text-primary)" }}>
-          {p === "ahrefs" ? "Ahrefs API v3" : p === "majestic" ? "Majestic API" : "Semrush API"}
+          {p === "ahrefs" ? "Ahrefs API v3" : p === "majestic" ? "Majestic API" : p === "keysso" ? "Keys.so API" : "Semrush API"}
         </strong></span>
+        {p === "keysso" && <span className="metric-chip" style={{ fontWeight: 500 }} title={t("blpKsMarketHint")}>{t("blpKsMarket")}</span>}
         <code style={{ fontFamily: "monospace", fontSize: "11px" }}>{src.host.replace(/^https?:\/\//, "")}</code>
         <span className="metric-chip" style={{ fontWeight: 500 }}>{modeLabel(src.mode)}</span>
         {src.hasKey ? (
-          p === "ahrefs" && remaining != null && balLimit != null
+          p === "keysso" && ksBalance?.gatewayStatus === 402
+            ? <span style={{ color: "var(--color-warning)" }}>{t("blsrcKsOutOfCredits")}{" "}
+                <a href={METRICS_GATEWAY_URL} target="_blank" rel="noreferrer noopener nofollow" style={{ color: "var(--color-accent-blue)" }}>{t("blsrcTopUp")}</a></span>
+          : p === "keysso" && ksBalance?.remaining != null
+            ? <span>{t("blsrcRemaining")} <strong style={{ color: "var(--color-text-primary)" }}>{ksBalance.remaining.toLocaleString()}</strong> {t("blsrcKsCredits")}</span>
+          : p === "ahrefs" && remaining != null && balLimit != null
             ? <span>{t("blsrcRemaining")} <strong style={{ color: "var(--color-text-primary)" }}>{remaining.toLocaleString()}</strong> {t("blsrcOf")} {balLimit.toLocaleString()}</span>
             : <span>
                 {t("blsrcBalanceUnknown")}
@@ -391,8 +426,12 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
   const showDr = view === "ahrefs" || view === "all";
   const showTf = view === "majestic" || view === "all";
   const showAs = view === "semrush" || view === "all";
+  // Keys.so's column only appears in the merged table once a Keys.so pull exists — most
+  // profiles are Google-market and an always-empty Yandex column would be noise.
+  const showKs = view === "keysso" || (view === "all" && rows.some(r => r.ks != null));
   const showCf = view === "majestic";
-  const showExtras = view !== "ahrefs";
+  // Keys.so rows carry no topic and no per-donor IP (its `ips` is a count), so no empty columns.
+  const showExtras = view !== "ahrefs" && view !== "keysso";
 
   return (
     <div className="panel" style={{ marginBottom: "16px" }}>
@@ -446,7 +485,7 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
           main table; the provider tabs show that source's own view and refresh its own key. */}
       {!guest && (
         <div style={{ display: "flex", gap: "6px", marginBottom: "12px", flexWrap: "wrap" }}>
-          {(["all", "ahrefs", "majestic", "semrush"] as const).map(v => (
+          {(["all", "ahrefs", "majestic", "semrush", "keysso"] as const).map(v => (
             <button key={v} className={view === v ? "pill active" : "pill"}
               onClick={() => setView(v)} style={{ cursor: "pointer" }}>
               {v === "all" ? t("blpTabAll") : PROVIDER_NAME[v]}
@@ -484,6 +523,8 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
                   chip("Ahrefs · RD", fmt(histFor("ahrefs").slice(-1)[0]!.refDomains))}
                 {histFor("majestic").slice(-1)[0]?.refDomains != null &&
                   chip("Majestic · RD", fmt(histFor("majestic").slice(-1)[0]!.refDomains))}
+                {histFor("keysso").slice(-1)[0]?.refDomains != null &&
+                  chip("Keys.so · RD", fmt(histFor("keysso").slice(-1)[0]!.refDomains), t("blpKsMarketHint"))}
                 {lost.length > 0 && chip(t("blpLost"), String(lost.length))}
               </>
             ) : (
@@ -514,6 +555,7 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
                   {showDr && <th style={thC}>DR</th>}
                   {showTf && <th style={thC}>TF</th>}
                   {showAs && <th style={thC}>AS</th>}
+                  {showKs && <th style={thC} title={t("blpKsDrHint")}>DR·KS</th>}
                   {showCf && <th style={thC}>CF</th>}
                   <th style={thC}>{t("blpLinks")}</th>
                   {showExtras && <th style={th}>{t("blpTopic")}</th>}
@@ -531,7 +573,7 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
                           show two. */}
                       {view === "all" && (
                         <span className="metric-chip" style={{ marginLeft: "6px", fontWeight: 500 }} title={r.providers.join(", ")}>
-                          {r.providers.map(x => x === "ahrefs" ? "A" : x === "majestic" ? "M" : "S").join("+")}
+                          {r.providers.map(x => x === "ahrefs" ? "A" : x === "majestic" ? "M" : x === "keysso" ? "K" : "S").join("+")}
                         </span>
                       )}
                       {r.dofollow === false && (
@@ -541,6 +583,7 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
                     {showDr && numCell(r.dr, r.dr != null ? drColor(r.dr) : undefined)}
                     {showTf && numCell(r.tf, r.tf != null ? drColor(r.tf) : undefined)}
                     {showAs && numCell(r.as, r.as != null ? drColor(r.as) : undefined)}
+                    {showKs && numCell(r.ks, r.ks != null ? drColor(r.ks) : undefined)}
                     {showCf && numCell(r.cf)}
                     <td style={{ ...cell, textAlign: "center", color: "var(--color-text-secondary)" }}>{r.links ?? "—"}</td>
                     {showExtras && <td style={{ ...cell, color: "var(--color-text-secondary)", fontSize: "12px", maxWidth: "180px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.topic}>
