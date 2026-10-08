@@ -122,7 +122,7 @@ export default function BrandVisibility({ siteDbId }: { siteDbId: string }) {
   const current = totals.find(x => x.platform === platform);
 
   return (
-    <div className="panel" style={{ marginTop: "12px" }}>
+    <div className="panel">
       <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", cursor: "pointer" }}
         onClick={() => setOpen(o => !o)}>
         <Sparkles size={16} style={{ color: "var(--color-accent-purple)" }} />

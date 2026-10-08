@@ -41,7 +41,12 @@ export default function VisibilityHub({
   const active: VisTab = tabs.some(item => item.key === vis) ? vis : "ai";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+    // The tab container every other site tab owns at its root (RankTracker: 28px 32px,
+    // BacklinkProfile gets the same wrap from the page). Without it the pill row and the
+    // sub-tab cards hug the viewport edge while AeoTracker's own 32px inset sits crooked
+    // below them — the hub is the tab now, so the inset lives here once, and the panels
+    // render bare (AeoTracker's own padding is stripped for the same reason).
+    <div style={{ padding: "28px 32px", display: "flex", flexDirection: "column", gap: "12px", width: "100%", boxSizing: "border-box" }}>
       <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
           {tabs.map(({ key, label }) => (

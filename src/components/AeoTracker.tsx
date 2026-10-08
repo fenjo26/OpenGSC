@@ -834,7 +834,9 @@ export default function AeoTracker({ siteDbId }: { siteDbId: string; domain?: st
   }, [rows, configuredEngines, scoreOf]);
 
   return (
-    <div style={{ padding: "28px 32px", display: "flex", flexDirection: "column", gap: "24px", width: "100%", boxSizing: "border-box" }}>
+    // No outer padding: rendered inside VisibilityHub, which owns the tab's 28px 32px inset
+    // (it had its own when it was the tab itself — keeping both would double the indent).
+    <div style={{ display: "flex", flexDirection: "column", gap: "24px", width: "100%", boxSizing: "border-box" }}>
 
       {/* ── Header ── */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "16px", flexWrap: "wrap" }}>
