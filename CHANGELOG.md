@@ -5,6 +5,11 @@ All notable changes to OpenGSC. Dates are release dates; the version shown in
 
 ## [Unreleased]
 
+### Fixed — scheduled digests reach every notification channel, not only Telegram/Slack (#25)
+
+- The digest cron selected only users with a Telegram bot or a Slack webhook, so a workspace with just the SMTP e-mail channel (or Discord, Teams, webhook, push) never got its scheduled digest, even though delivery itself already fanned out to every channel. The cron now asks `deliverableChannels(userId, "digest")` (same participation rules as `notifyUserDetailed`: channel on, Digest event allowed) and skips the user BEFORE building — an AI summary for nobody would spend credits.
+- Digest page: "Send" is enabled by any such channel; the warning and schedule note no longer say a Telegram bot is required. History records which channels actually accepted it (`sentTo` = "email", "telegram, email", …).
+
 ### Added — Keys.so: a fourth metrics provider for the Yandex/Runet market
 
 - Settings → SEO Metrics: Keys.so joins Ahrefs/Semrush/Majestic with official (`api.keys.so`) and reseller (`keysso-api.groupbuyseo.org`) modes. The key travels in the `X-Keyso-TOKEN` header, never in the URL. The free `/limits/all` doubles as the key check: remaining credits on success, a named cause on 401 (wrong key) or 402 (out of credits).

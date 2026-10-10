@@ -1,10 +1,11 @@
 // Digest scheduler — hourly tick (same in-process pattern as alert-cron). For every user
-// with digests enabled + Telegram connected, sends the digest when the configured hour
+// with digests enabled + at least one notification channel that takes "digest" events,
+// sends the digest when the configured hour
 // arrives: daily = every day at hourUtc, weekly = Mondays at hourUtc. lastSentAt inside
 // digestSettings prevents double sends across ticks/restarts.
 
 import { prisma } from "@/lib/prisma";
-import { notifyUser } from "@/lib/notify";
+import { notifyUserDetailed, deliverableChannels } from "@/lib/notify";
 import { buildDigest, aiSummary, getDigestSettings, saveDigestSettings } from "@/lib/digest";
 import type { NotifyLang } from "@/lib/notifyI18n";
 import { rawQuery } from "@/lib/db/raw";
@@ -20,17 +21,11 @@ export async function sendDigestNow(userId: string, tag: string, days: number, a
     const summary = await aiSummary(userId, content, lang);
     if (summary) full = `${content}\n\n${summary}`;
   }
-  const sent = await notifyUser(userId, full, { event: "digest" });
-  
-  let sentToVal: string | null = null;
-  if (sent) {
-    const creds = await rawQuery<{ telegramBotToken?: string; telegramChatId?: string; slackWebhook?: string }[]>(`SELECT telegramBotToken, telegramChatId, slackWebhook FROM "User" WHERE id = ?`, userId).then(rows => rows?.[0]).catch(() => null);
-    const hasTg = !!(creds?.telegramBotToken && creds?.telegramChatId);
-    const hasSlack = !!creds?.slackWebhook;
-    if (hasTg && hasSlack) sentToVal = "telegram, slack";
-    else if (hasTg) sentToVal = "telegram";
-    else if (hasSlack) sentToVal = "slack";
-  }
+  // sentTo lists the channels that actually accepted it ("email", "telegram, email", …).
+  const deliveries = await notifyUserDetailed(userId, full, { event: "digest" });
+  const okChannels = deliveries.filter(d => d.ok).map(d => d.channel);
+  const sent = okChannels.length > 0;
+  const sentToVal = sent ? okChannels.join(", ") : null;
 
   await prisma.digest.create({
     data: { userId, tag, days, content: full, sentTo: sentToVal },
@@ -42,8 +37,9 @@ async function tick() {
   let users: { id: string }[] = [];
   try {
     users = await rawQuery<{ id: string }[]>(
-      `SELECT id, digestSettings FROM "User"
-       WHERE (telegramBotToken IS NOT NULL AND telegramChatId IS NOT NULL OR slackWebhook IS NOT NULL) AND digestSettings IS NOT NULL`);
+      `SELECT id FROM "User" WHERE digestSettings IS NOT NULL`);
+    // No channel filter in SQL any more: email/Discord/Teams/webhook/push live in the
+    // notifyChannels JSON, so deliverableChannels() decides per user below (issue #25).
   } catch { return; } // not migrated yet
 
   const now = new Date();
@@ -63,6 +59,9 @@ async function tick() {
         const last = s.lastSentAt ? new Date(s.lastSentAt) : null;
         const windowMs = s.frequency === "daily" ? 20 * 3600_000 : 6 * 86_400_000;
         if (last && now.getTime() - last.getTime() < windowMs) return;
+
+        // Nobody to deliver to → don't build (an AI summary would spend credits for nothing).
+        if (!(await deliverableChannels(u.id, "digest")).length) return;
 
         await sendDigestNow(u.id, s.tag, s.days, s.ai, s.lang);
         await saveDigestSettings(u.id, { ...s, lastSentAt: now.toISOString() });

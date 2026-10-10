@@ -90,7 +90,7 @@ const STUBS: Record<string, string> = {
   "@/lib/rank": stub("rank.cjs", forward("rank", ["getUserSerpCreds", "checkSiteKeywords"], { RANK_STALE_MS: 72_000_000 })),
   "@/lib/aeoTracker": stub("aeoTracker.cjs", forward("aeo", ["getUserAeoCreds", "hasAnyAeoCreds", "siteAeoConfig", "checkSiteQuestions"], { AEO_STALE_MS: 86_400_000 })),
   "@/lib/clarityFetch": stub("clarityFetch.cjs", forward("clarity", ["runClarityFetch"])),
-  "@/lib/notify": stub("notify.cjs", forward("notify", ["notifyUser"])),
+  "@/lib/notify": stub("notify.cjs", forward("notify", ["notifyUser", "notifyUserDetailed", "deliverableChannels"])),
   "@/lib/digest": stub("digest.cjs", forward("digest", ["buildDigest", "aiSummary", "getDigestSettings", "saveDigestSettings"])),
   "@/lib/gscSync": stub("gscSync.cjs", forward("gsc", ["runGscSync", "isSyncInProgress"])),
   "@/lib/syncSchedule": stub("syncSchedule.cjs", forward("syncSchedule", ["getSyncSchedule", "saveSyncSchedule", "isDue"])),
@@ -246,9 +246,33 @@ test("digest-cron logs its calls against the user being digested", async () => {
     buildDigest: async () => ({ content: "c" }),
     aiSummary: async () => { await world.call(); return "s"; },
   };
-  world.notify = { notifyUser: async () => true };
+  // Issue #25: an e-mail-only workspace (no Telegram/Slack) is a digest recipient too.
+  world.notify = {
+    deliverableChannels: async () => ["email"],
+    notifyUserDetailed: async () => [{ channel: "email", ok: true }],
+  };
   const tick = await tickOf("digest", () => import("./digestScheduler"), "startDigestScheduler");
   assert.deepEqual(await rowsFrom(tick), [{ userId: "u-digest", feature: "digest-cron" }]);
+});
+
+test("digest-cron builds nothing (no AI spend) when no channel takes digests", async () => {
+  reset();
+  world.raw = { rawQuery: async (sql: string) => (String(sql).includes("digestSettings") ? [{ id: "u-none" }] : []), rawExec: async () => undefined };
+  world.prisma = { digest: { create: async () => ({}) } };
+  let built = false;
+  world.digest = {
+    getDigestSettings: async () => ({
+      enabled: true, hourUtc: new Date().getUTCHours(), frequency: "daily",
+      tag: "", days: 7, ai: true, lang: "en", lastSentAt: null,
+    }),
+    saveDigestSettings: async () => undefined,
+    buildDigest: async () => { built = true; return { content: "c" }; },
+    aiSummary: async () => { await world.call(); return "s"; },
+  };
+  world.notify = { deliverableChannels: async () => [], notifyUserDetailed: async () => [] };
+  const tick = await tickOf("digest", () => import("./digestScheduler"), "startDigestScheduler");
+  assert.deepEqual(await rowsFrom(tick), []);
+  assert.equal(built, false);
 });
 
 test("alert-cron logs its calls against the user being alerted", async () => {

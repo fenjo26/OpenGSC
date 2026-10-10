@@ -1,7 +1,7 @@
 "use client";
 
 // Digest tab — build a Markdown summary over all sites or one tag (a site network),
-// preview it on screen, send it to Telegram, and configure the recurring schedule.
+// preview it on screen, send it to any notification channel, and configure the recurring schedule.
 // Building happens server-side from the local metric store; the optional AI paragraph
 // uses the user's own AI key (server-side backup).
 
@@ -24,6 +24,12 @@ const PERIODS: { value: number; key: string }[] = [
   { value: 365, key: "digestPeriod365" },
   { value: 0,   key: "digestPeriodAll" },
 ];
+
+// History badge: sentTo is "telegram", "email", "telegram, email", … (issue #25).
+const CHANNEL_LABEL: Record<string, string> = {
+  telegram: "Telegram", slack: "Slack", email: "E-mail", discord: "Discord",
+  teams: "Teams", webhook: "Webhook", webpush: "Push",
+};
 
 export default function DigestPage() {
   const { t, language } = useLanguage() as any;
@@ -321,7 +327,7 @@ export default function DigestPage() {
                 <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", background: "rgba(255,255,255,0.06)", padding: "2px 8px", borderRadius: "4px" }}>
                   {d.days === 0 ? t("digestPeriodAllShort") : `${d.days}${t("digestDaysShort")}`}
                 </span>
-                {d.sentTo === "telegram" && <span style={{ fontSize: "10px", color: "#34c759", fontWeight: 600 }}>✓ Telegram</span>}
+                {d.sentTo && <span style={{ fontSize: "10px", color: "#34c759", fontWeight: 600 }}>✓ {String(d.sentTo).split(",").map((c: string) => CHANNEL_LABEL[c.trim()] ?? c.trim()).join(", ")}</span>}
                 <span style={{ flex: 1 }} />
                 <ChevronRight size={14} style={{ color: "var(--color-text-secondary)", opacity: 0.4 }} />
                 <button onClick={e => { e.stopPropagation(); removeDigest(d.id); }}

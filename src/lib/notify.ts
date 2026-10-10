@@ -139,6 +139,33 @@ export async function notifyUser(
   return deliveries.some(d => d.ok);
 }
 
+// Which channels WOULD take this event right now — the same participation rules as
+// notifyUserDetailed below, without sending anything. The digest cron asks before it builds
+// (an AI summary costs credits; building one nobody receives is waste) and the Digest page
+// uses it to enable "Send" for any channel, not only Telegram/Slack (issue #25: an SMTP-only
+// workspace never got its scheduled digest).
+export async function deliverableChannels(
+  userId: string,
+  event: import("@/lib/notify/types").NotifyEvent,
+): Promise<import("@/lib/notify/types").NotifyChannelId[]> {
+  const { readChannels } = await import("@/lib/notify/channels");
+  const { eventAllowed } = await import("@/lib/notify/format");
+  const cfg = await readChannels(userId);
+  const out: import("@/lib/notify/types").NotifyChannelId[] = [];
+  if (await getTelegramCreds(userId) && eventAllowed(cfg.telegramEvents, event)) out.push("telegram");
+  if (await getSlackWebhook(userId) && eventAllowed(cfg.slackEvents, event)) out.push("slack");
+  for (const id of ["discord", "teams", "email", "webhook"] as const) {
+    const ch = cfg[id];
+    if (ch && ch.on && eventAllowed(ch.events, event)) out.push(id);
+  }
+  try {
+    const push = await import("@/lib/push");
+    const subs = await push.listWorkspaceSubscriptions(userId);
+    if (subs.some(s => push.subscriptionAllows(s.events, event))) out.push("webpush");
+  } catch { /* PushSubscription not available */ }
+  return out;
+}
+
 // Wave-oct (CONTRACT.md §3): per-channel delivery detail. Fan-out is parallel (Promise.allSettled)
 // so one failing channel never breaks the others; true/ok when at least one delivered.
 export async function notifyUserDetailed(
