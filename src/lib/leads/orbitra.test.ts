@@ -6,14 +6,21 @@ import assert from "node:assert/strict";
 import { campaignAliasFor, normalizeOrbitraUrl } from "./orbitra";
 
 test("normalizeOrbitraUrl adds a scheme and drops the trailing slash", () => {
-  assert.equal(normalizeOrbitraUrl("tracker.example.com"), "https://tracker.example.com/");
-  assert.equal(normalizeOrbitraUrl("tracker.example.com/"), "https://tracker.example.com/");
-  assert.equal(normalizeOrbitraUrl("https://tracker.example.com///"), "https://tracker.example.com/");
+  assert.equal(normalizeOrbitraUrl("tracker.example.com"), "https://tracker.example.com");
+  assert.equal(normalizeOrbitraUrl("tracker.example.com/"), "https://tracker.example.com");
+  assert.equal(normalizeOrbitraUrl("https://tracker.example.com///"), "https://tracker.example.com");
   assert.equal(normalizeOrbitraUrl(" http://10.0.0.5/orbitra "), "http://10.0.0.5/orbitra");
 });
 
 test("normalizeOrbitraUrl strips query and hash, keeps the path", () => {
   assert.equal(normalizeOrbitraUrl("https://trk.example.com/base?action=x#frag"), "https://trk.example.com/base");
+});
+
+test("normalizeOrbitraUrl strips a pasted admin/MCP/api .php file", () => {
+  assert.equal(normalizeOrbitraUrl("https://trackerorbitra.de/admin.php"), "https://trackerorbitra.de");
+  assert.equal(normalizeOrbitraUrl("https://trackerorbitra.de/mcp.php?k=abc"), "https://trackerorbitra.de");
+  assert.equal(normalizeOrbitraUrl("https://t.example.com/orbitra/api.php"), "https://t.example.com/orbitra");
+  assert.equal(normalizeOrbitraUrl("https://t.example.com/orbitra/admin.php#/campaigns"), "https://t.example.com/orbitra");
 });
 
 test("normalizeOrbitraUrl rejects garbage", () => {

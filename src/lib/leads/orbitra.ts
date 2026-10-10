@@ -20,7 +20,12 @@ export class OrbitraError extends Error {
   }
 }
 
-/** https://tracker.example.com — scheme added when missing, query/hash/trailing slash dropped. */
+/**
+ * The tracker's BASE url (https://tracker.example.com, no trailing slash) — scheme added when
+ * missing, query/hash/trailing slash dropped, and a trailing *.php file stripped: operators
+ * paste the address bar (…/admin.php) or the MCP link (…/mcp.php?k=…), and keeping that file
+ * produced …/admin.php/api.php, which PHP answers with the admin page, never the API.
+ */
 export function normalizeOrbitraUrl(raw: string): string | null {
   let s = (raw || "").trim();
   if (!s) return null;
@@ -32,8 +37,8 @@ export function normalizeOrbitraUrl(raw: string): string | null {
     if (u.protocol !== "http:" && u.protocol !== "https:") return null;
     u.hash = "";
     u.search = "";
-    u.pathname = u.pathname.replace(/\/+$/, "") || "/";
-    return u.toString();
+    u.pathname = u.pathname.replace(/\/+$/, "").replace(/\/[^/]*\.php$/i, "");
+    return u.toString().replace(/\/+$/, "");
   } catch {
     return null;
   }
@@ -73,7 +78,9 @@ async function orbitraApi<T = unknown>(
   action: string,
   init?: { method?: "GET" | "POST"; body?: unknown },
 ): Promise<T> {
-  const target = `${cfg.url}/api.php?action=${encodeURIComponent(action)}`;
+  // Re-normalized on every call: rows saved before the *.php strip still hold …/admin.php.
+  const base = normalizeOrbitraUrl(cfg.url) ?? cfg.url.replace(/\/+$/, "");
+  const target = `${base}/api.php?action=${encodeURIComponent(action)}`;
   try {
     await assertSafeTarget(target, { allowPrivate: true });
     const res = await fetch(target, {
@@ -84,6 +91,8 @@ async function orbitraApi<T = unknown>(
       },
       body: init?.body ? JSON.stringify(init.body) : undefined,
       cache: "no-store",
+      // A hung tracker must not hang the request until the reverse proxy answers 504 HTML.
+      signal: AbortSignal.timeout(15_000),
     });
     const text = await res.text();
     if (!res.ok) throw new OrbitraError(`orbitra_http_${res.status}`, res.status);

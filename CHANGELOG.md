@@ -5,6 +5,10 @@ All notable changes to OpenGSC. Dates are release dates; the version shown in
 
 ## [Unreleased]
 
+### Fixed — Leads: the Orbitra tracker connection accepts the admin/MCP link
+
+- Operators paste the tracker's address bar (`…/admin.php`) or MCP link (`…/mcp.php?k=…`) into the Leads connection field; the panel then built `…/admin.php/api.php`, which PHP answers with the admin page instead of the API. `normalizeOrbitraUrl` now strips the trailing `*.php` file — at save time and again on every request, so already-stored values heal without re-saving. Tracker calls abort after 15 s instead of hanging until the reverse proxy's 504, and a failed connection check shows the HTTP status instead of a bare "(error)".
+
 ### Fixed — scheduled digests reach every notification channel, not only Telegram/Slack (#25)
 
 - The digest cron selected only users with a Telegram bot or a Slack webhook, so a workspace with just the SMTP e-mail channel (or Discord, Teams, webhook, push) never got its scheduled digest, even though delivery itself already fanned out to every channel. The cron now asks `deliverableChannels(userId, "digest")` (same participation rules as `notifyUserDetailed`: channel on, Digest event allowed) and skips the user BEFORE building — an AI summary for nobody would spend credits.

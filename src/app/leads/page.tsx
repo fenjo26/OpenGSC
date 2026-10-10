@@ -133,7 +133,7 @@ export default function LeadsPage() {
       });
       const d = await r.json().catch(() => ({}));
       if (d?.ok) { setOrb({ configured: true, url: d.url as string }); setOrbKey(""); setOrbMsg({ text: t("leadOrbSaved" as never), ok: true }); }
-      else setOrbMsg({ text: `${t("leadOrbFail" as never)} (${String(d?.error ?? "error")})`, ok: false });
+      else setOrbMsg({ text: `${t("leadOrbFail" as never)} (${String(d?.error ?? `HTTP ${r.status}`)})`, ok: false });
     } finally { setOrbBusy(false); }
   };
 
@@ -142,7 +142,7 @@ export default function LeadsPage() {
     try {
       const r = await fetch("/api/leads/orbitra", { method: "POST" });
       const d = await r.json().catch(() => ({}));
-      setOrbMsg(d?.ok ? { text: t("leadOrbTestOk" as never), ok: true } : { text: `${t("leadOrbFail" as never)} (${String(d?.error ?? "error")})`, ok: false });
+      setOrbMsg(d?.ok ? { text: t("leadOrbTestOk" as never), ok: true } : { text: `${t("leadOrbFail" as never)} (${String(d?.error ?? `HTTP ${r.status}`)})`, ok: false });
     } finally { setOrbBusy(false); }
   };
 
@@ -152,7 +152,7 @@ export default function LeadsPage() {
       const r = await fetch(`/api/leads/${id}/orbitra`, { method: "POST" });
       const d = await r.json().catch(() => ({}));
       if (d?.ok) load();
-      else setOrbMsg({ text: `${t("leadOrbFail" as never)} (${String(d?.error ?? "error")})`, ok: false });
+      else setOrbMsg({ text: `${t("leadOrbFail" as never)} (${String(d?.error ?? `HTTP ${r.status}`)})`, ok: false });
     } finally { setOrbLeadBusy(null); }
   };
 
