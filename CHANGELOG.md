@@ -3,7 +3,7 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
-## [Unreleased]
+## [1.9.2] — 2026-10-10
 
 ### Added — DataForSEO: a fifth backlink provider, pay-as-you-go (#26)
 
