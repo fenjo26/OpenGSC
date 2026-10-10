@@ -5211,5 +5211,12 @@
   "blsyncErrNoKey": "No Ahrefs key. Add one in Settings → Metrics.",
   "blsyncErrCap": "The monthly unit cap would be exceeded.",
   "blsyncErrSemrush": "Sync works with Ahrefs only — add an Ahrefs key.",
-  "blpShortfall": "The provider returned only {pulled} of {total} referring domains, so this is a sample, not the full profile. Nothing was marked as lost."
+  "blpShortfall": "The provider returned only {pulled} of {total} referring domains, so this is a sample, not the full profile. Nothing was marked as lost.",
+  "mlLinkText": "Surrounding text (optional)",
+  "mlLinkTextHint": "One line up to 1000 characters with $LINK exactly once — the link goes in its place. Empty = the bare link only. Applied to every row.",
+  "mlLinkRowInvalid": "The service would reject this order — row",
+  "mlBonusEstimate": "Estimate: the service adds a bonus per row (+30% articles, +20% links); the exact number comes back with the order.",
+  "mlUnitPrice": "Price per placement",
+  "mlNoWebsites": "The service has no free sites for this order right now. Nothing was charged.",
+  "mlRefunded": "refunded"
 }

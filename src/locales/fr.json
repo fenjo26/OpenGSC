@@ -5211,5 +5211,12 @@
   "blsyncErrNoKey": "Aucune clé Ahrefs. Ajoutez-en une dans Paramètres → Métriques.",
   "blsyncErrCap": "Le plafond mensuel d'unités serait dépassé.",
   "blsyncErrSemrush": "La synchronisation ne fonctionne qu'avec Ahrefs — ajoutez une clé Ahrefs.",
-  "blpShortfall": "Le fournisseur n'a renvoyé que {pulled} domaines référents sur {total} : c'est un échantillon, pas le profil complet. Rien n'a été marqué comme perdu."
+  "blpShortfall": "Le fournisseur n'a renvoyé que {pulled} domaines référents sur {total} : c'est un échantillon, pas le profil complet. Rien n'a été marqué comme perdu.",
+  "mlLinkText": "Texte autour du lien (facultatif)",
+  "mlLinkTextHint": "Une ligne de 1000 caractères max avec $LINK exactement une fois — le lien prend sa place. Vide = lien seul. S'applique à toutes les lignes.",
+  "mlLinkRowInvalid": "Le service refuserait cette commande — ligne",
+  "mlBonusEstimate": "Estimation : le service ajoute un bonus par ligne (+30 % articles, +20 % liens) ; le nombre exact arrive avec la commande.",
+  "mlUnitPrice": "Prix par placement",
+  "mlNoWebsites": "Le service n'a actuellement aucun site disponible pour cette commande. Rien n'a été débité.",
+  "mlRefunded": "remboursé"
 }

@@ -14,14 +14,21 @@ import { rawQuery, rawExec } from "@/lib/db/raw";
 
 export const PROVIDER_FIELDLINK = "fieldlink";
 export const PROVIDER_MAGIC369 = "magic369";
-export type MagicProviderId = "fieldlink" | "magic369";
+/** 369Team homepage links (POST /link-orders) — same token and balance as PROVIDER_MAGIC369,
+ *  but a separate product with its own order-id space, so it is its own provider id: the
+ *  ledger, the tracker and the order views must know which endpoint an order id belongs to. */
+export const PROVIDER_MAGIC369_LINKS = "magic369links";
+export type MagicProviderId = "fieldlink" | "magic369" | "magic369links";
 
 export function isMagicProviderId(v: unknown): v is MagicProviderId {
-  return v === PROVIDER_FIELDLINK || v === PROVIDER_MAGIC369;
+  return v === PROVIDER_FIELDLINK || v === PROVIDER_MAGIC369 || v === PROVIDER_MAGIC369_LINKS;
 }
 
 export function providerName(p: string): string {
-  return p === PROVIDER_MAGIC369 ? "369Team" : p === PROVIDER_FIELDLINK ? "FieldLink" : p;
+  return p === PROVIDER_MAGIC369 ? "369Team"
+    : p === PROVIDER_MAGIC369_LINKS ? "369Team · links"
+    : p === PROVIDER_FIELDLINK ? "FieldLink"
+    : p;
 }
 
 export interface PurchaseInput {

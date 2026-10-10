@@ -55,7 +55,7 @@ after(async () => {
 
 test("pure: placements from provider payloads", async () => {
   const {
-    placementsFromFieldLink, placementsFromMagic369,
+    placementsFromFieldLink, placementsFromMagic369, placementsFromMagic369Links,
     isFieldLinkTerminal, isMagic369Terminal, mergeSources,
   } = await import("./tracking");
 
@@ -79,6 +79,17 @@ test("pure: placements from provider payloads", async () => {
     { donorUrl: "https://donor.com/art-1", targetUrl: "https://me.com/page" },
   ]);
 
+  // 369Team homepage links: the donor is the homepage (page_url), website as the fallback.
+  const links: unknown[] = [
+    { id: 1, url: "https://me.com/page", anchor: "a", text: "", website: "donor.com", pageUrl: "https://donor.com/", publishedAt: null },
+    { id: 2, url: "https://me.com/page", anchor: "a", text: "", website: "other.net", pageUrl: "", publishedAt: null },
+    { id: 3, url: "", anchor: "a", text: "", website: "x.org", pageUrl: "https://x.org/", publishedAt: null },
+  ];
+  assert.deepEqual(placementsFromMagic369Links(links as never), [
+    { donorUrl: "https://donor.com/", targetUrl: "https://me.com/page" },
+    { donorUrl: "https://other.net/", targetUrl: "https://me.com/page" },
+  ]);
+
   assert.equal(isFieldLinkTerminal("completed"), true);
   assert.equal(isFieldLinkTerminal("partial"), true);
   assert.equal(isFieldLinkTerminal("failed"), true);
@@ -86,6 +97,11 @@ test("pure: placements from provider payloads", async () => {
   assert.equal(isMagic369Terminal({ status: "processing" }), false);
   assert.equal(isMagic369Terminal({ status: "processing", finalizedAt: "2026-10-01" }), true);
   assert.equal(isMagic369Terminal({ status: "completed" }), true);
+  // spec v1.1 status enum: partially_completed is final, the live ones are not
+  assert.equal(isMagic369Terminal({ status: "partially_completed" }), true);
+  for (const live of ["awaiting_content", "generating", "queued", "in_progress"]) {
+    assert.equal(isMagic369Terminal({ status: live }), false);
+  }
 
   assert.equal(mergeSources("", "purchase"), "purchase");
   assert.equal(mergeSources("api", "purchase"), "api,purchase");

@@ -8,7 +8,7 @@
 import { getUserSettings } from "@/lib/mcp/shared";
 import { FieldLinkClient, FIELDLINK_DEFAULT_BASE, POST_UNIT_MINOR } from "./fieldlink";
 import { Magic369Client, MAGIC369_DEFAULT_BASE } from "./magic369";
-import { PROVIDER_FIELDLINK, PROVIDER_MAGIC369 } from "./purchases";
+import { PROVIDER_FIELDLINK, PROVIDER_MAGIC369, PROVIDER_MAGIC369_LINKS, type MagicProviderId } from "./purchases";
 
 const envToken = (name: string) => (process.env[name] ?? "").trim() || undefined;
 
@@ -41,18 +41,20 @@ export async function magic369ClientFor(userId: string): Promise<Magic369Client 
 }
 
 export interface MagicProviderInfo {
-  id: typeof PROVIDER_FIELDLINK | typeof PROVIDER_MAGIC369;
+  id: MagicProviderId;
   name: string;
   /** Balance unit for labelling sums in the UI ("cr." / "tok."). */
   unit: string;
   configured: boolean;
   balanceMinor: number | null;
-  /** Current price of one placement, minor units; null when unknown. */
+  /** Current price of one placement, minor units; null when unknown. For 369Team articles this
+   *  is the FIRST volume tier — larger orders are cheaper, the quote applies the real tier. */
   priceMinor: number | null;
   error: string | null;
 }
 
-/** Live balances of both providers — the buy modal picks its default provider by them. */
+/** Live balances of every provider — the buy modal picks its default provider by them. 369Team
+ *  appears twice (articles and homepage links): one token, one balance, two products. */
 export async function magicProviderInfos(userId: string): Promise<MagicProviderInfo[]> {
   const fieldlink = await fieldLinkClientFor(userId);
   const m369 = await magic369ClientFor(userId);
@@ -65,13 +67,14 @@ export async function magicProviderInfos(userId: string): Promise<MagicProviderI
       : Promise.resolve({ configured: false, balanceMinor: null, priceMinor: null, error: null }),
     m369
       ? m369.balance()
-        .then(b => ({ configured: true, balanceMinor: b.balanceMinor as number | null, priceMinor: b.priceMinor as number | null, error: null as string | null }))
-        .catch((e: Error) => ({ configured: true, balanceMinor: null, priceMinor: null, error: e.message }))
-      : Promise.resolve({ configured: false, balanceMinor: null, priceMinor: null, error: null }),
+        .then(b => ({ configured: true, balanceMinor: b.balanceMinor as number | null, priceMinor: b.priceMinor as number | null, linkPriceMinor: b.linkPriceMinor as number | null, error: null as string | null }))
+        .catch((e: Error) => ({ configured: true, balanceMinor: null, priceMinor: null, linkPriceMinor: null, error: e.message }))
+      : Promise.resolve({ configured: false, balanceMinor: null, priceMinor: null, linkPriceMinor: null, error: null }),
   ]);
 
   return [
     { id: PROVIDER_FIELDLINK, name: "FieldLink", unit: "cr.", configured: fl.configured, balanceMinor: fl.balanceMinor, priceMinor: fl.priceMinor, error: fl.error },
     { id: PROVIDER_MAGIC369, name: "369Team", unit: "tok.", configured: m.configured, balanceMinor: m.balanceMinor, priceMinor: m.priceMinor, error: m.error },
+    { id: PROVIDER_MAGIC369_LINKS, name: "369Team · links", unit: "tok.", configured: m.configured, balanceMinor: m.balanceMinor, priceMinor: m.linkPriceMinor, error: m.error },
   ];
 }

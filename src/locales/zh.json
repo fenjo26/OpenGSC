@@ -5211,5 +5211,12 @@
   "blsyncErrNoKey": "没有 Ahrefs 密钥。请在 设置 → 指标 中添加。",
   "blsyncErrCap": "将超出每月点数上限。",
   "blsyncErrSemrush": "同步仅支持 Ahrefs——请添加 Ahrefs 密钥。",
-  "blpShortfall": "服务商只返回了 {total} 个引用域名中的 {pulled} 个，这只是样本而非完整档案。未将任何域名标记为已丢失。"
+  "blpShortfall": "服务商只返回了 {total} 个引用域名中的 {pulled} 个，这只是样本而非完整档案。未将任何域名标记为已丢失。",
+  "mlLinkText": "链接周边文字（可选）",
+  "mlLinkTextHint": "单行，最多 1000 个字符，必须恰好包含一个 $LINK（链接将替换它）。留空 = 仅放置链接。适用于所有行。",
+  "mlLinkRowInvalid": "服务将拒绝此订单 — 行",
+  "mlBonusEstimate": "估算：服务按每行赠送（文章 +30%，链接 +20%）；确切数量以订单返回为准。",
+  "mlUnitPrice": "单次投放价格",
+  "mlNoWebsites": "该服务目前没有可用于此订单的站点。未扣费。",
+  "mlRefunded": "已退款"
 }

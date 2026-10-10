@@ -1394,7 +1394,7 @@ model Annotation {
 model MagicPurchase {
   id        String   @id @default(cuid())
   siteId    String
-  provider  String   // "fieldlink" | "magic369"
+  provider  String   // "fieldlink" | "magic369" (369Team articles) | "magic369links" (369Team homepage links)
   orderId   String
   taskId    String?  // FieldLink only; 369Team has tasks nowhere, only orders
   query     String   // the striking-distance query this row was bought for

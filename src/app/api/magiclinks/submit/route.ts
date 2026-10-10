@@ -2,11 +2,14 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { fieldLinkClientFor, magic369ClientFor } from "@/lib/magiclinks/providers";
-import { validateBrief, FieldLinkError, type FieldLinkBrief } from "@/lib/magiclinks/fieldlink";
-import { toMagic369Rows, Magic369Error } from "@/lib/magiclinks/magic369";
+import { FieldLinkError } from "@/lib/magiclinks/fieldlink";
+import {
+  toMagic369Rows, toMagic369LinkRows, quoteArticles, quoteLinks, Magic369Error,
+} from "@/lib/magiclinks/magic369";
+import { parseRequestItems } from "@/lib/magiclinks/requestItems";
 import {
   recordPurchases, orderRecorded, isMagicProviderId, PROVIDER_FIELDLINK, PROVIDER_MAGIC369,
-  type PurchaseInput,
+  PROVIDER_MAGIC369_LINKS, type PurchaseInput,
 } from "@/lib/magiclinks/purchases";
 
 // POST /api/magiclinks/submit — the only route in this feature that spends money, and the only
@@ -14,7 +17,8 @@ import {
 //
 // Both providers re-check the price at this boundary against the amount the operator confirmed
 // (expectedMinor): FieldLink enforces it server-side via its 409 PRICE_CHANGED header contract,
-// 369Team is checked here because its API would happily charge whatever is current. The ledger
+// 369Team is checked here because its API would happily charge whatever is current — with the
+// same tier/link-price arithmetic the quote used (quoteArticles / quoteLinks). The ledger
 // trace is written only after the provider accepted the order — a task without a payment is
 // not a purchase.
 
@@ -40,26 +44,6 @@ function parseContext(raw: unknown): ContextRow[] {
       anchor: r?.anchor != null ? String(r.anchor) : undefined,
     };
   }).filter(c => c.siteId && c.targetUrl);
-}
-
-function parseItems(raw: unknown): FieldLinkBrief[] | string {
-  if (!Array.isArray(raw) || raw.length === 0) return "empty selection";
-  const out: FieldLinkBrief[] = [];
-  for (let i = 0; i < raw.length; i++) {
-    const r = raw[i] as Record<string, unknown> | null;
-    try {
-      out.push(validateBrief({
-        targetUrl: String(r?.targetUrl ?? ""),
-        query: String(r?.query ?? ""),
-        anchor: String(r?.anchor ?? r?.query ?? ""),
-        language: String(r?.language ?? ""),
-        count: Number(r?.count),
-      }, i));
-    } catch (e) {
-      return (e as Error).message;
-    }
-  }
-  return out;
 }
 
 /** Only sites the caller owns may receive ledger rows. Unowned ids are dropped, not errors —
@@ -90,7 +74,7 @@ export async function POST(req: Request) {
     if (provider === PROVIDER_FIELDLINK) {
       return await submitFieldLink(String(b?.taskId ?? ""), expectedMinor, context, fallbackSiteId, owned, userId);
     }
-    return await submitMagic369(b?.items, b?.context, expectedMinor, fallbackSiteId, owned, userId);
+    return await submitMagic369(provider, b?.items, b?.context, expectedMinor, fallbackSiteId, owned, userId);
   } catch (e: any) {
     if (e instanceof FieldLinkError || e instanceof Magic369Error) {
       if (e.code === "PRICE_CHANGED") {
@@ -98,6 +82,10 @@ export async function POST(req: Request) {
       }
       if (e.status === 402) {
         return NextResponse.json({ error: "insufficient_balance", message: e.message }, { status: 402 });
+      }
+      // 369Team: no donor sites free for this order right now. Nothing was charged.
+      if (e.code === "no_websites_available") {
+        return NextResponse.json({ error: "no_websites_available", message: e.message }, { status: 422 });
       }
       return NextResponse.json({ error: "provider_error", message: e.message, code: e.code }, { status: e.status >= 400 && e.status < 500 ? e.status : 502 });
     }
@@ -177,27 +165,41 @@ async function submitFieldLink(
 }
 
 async function submitMagic369(
+  provider: typeof PROVIDER_MAGIC369 | typeof PROVIDER_MAGIC369_LINKS,
   rawItems: unknown, rawContext: unknown, expectedMinor: number,
   fallbackSiteId: string, owned: Set<string>, userId: string,
 ) {
   const client = await magic369ClientFor(userId);
   if (!client) return NextResponse.json({ error: "not_configured", message: "369Team token is not set" }, { status: 400 });
 
-  const items = parseItems(rawItems);
+  const links = provider === PROVIDER_MAGIC369_LINKS;
+  const items = parseRequestItems(rawItems, { links });
   if (typeof items === "string") return NextResponse.json({ error: "bad_brief", message: items }, { status: 400 });
+  // Rows are built BEFORE the money check: a row the service would refuse (unknown language
+  // name, bad $LINK text) stops here with nothing charged.
+  let orderRows: ReturnType<typeof toMagic369Rows> | ReturnType<typeof toMagic369LinkRows>;
+  try {
+    orderRows = links ? toMagic369LinkRows(items) : toMagic369Rows(items);
+  } catch (e) {
+    return NextResponse.json({ error: "bad_brief", message: (e as Error).message }, { status: 400 });
+  }
   const context = parseContext(rawContext);
   // The raw rows keep siteId per item, aligned by index — the validated briefs strip it.
   const rawRows = (Array.isArray(rawItems) ? rawItems : []) as Array<Record<string, unknown>>;
 
   const balance = await client.balance();
-  const total = items.reduce((s, b) => s + (b.count ?? 1), 0);
-  const amountMinor = total * balance.priceMinor;
+  const counts = items.map(it => it.count ?? 1);
+  const q = links ? quoteLinks(balance, counts) : quoteArticles(balance, counts);
+  if (!q) {
+    return NextResponse.json({ error: "no_link_price", message: "369Team did not report link_price in /balance" }, { status: 502 });
+  }
+  const amountMinor = q.amountMinor;
   if (amountMinor !== expectedMinor) {
     return NextResponse.json({
       error: "price_changed",
       message: "The price changed while you were confirming. Quote again.",
       quote: {
-        amountMinor, placementCount: total, bonusCount: 0, balanceMinor: balance.balanceMinor,
+        amountMinor, placementCount: q.paid, bonusCount: q.bonus, unitMinor: q.priceMinor, balanceMinor: balance.balanceMinor,
         shortfallMinor: Math.max(0, amountMinor - balance.balanceMinor), canSubmit: balance.balanceMinor >= amountMinor,
       },
     }, { status: 409 });
@@ -208,7 +210,9 @@ async function submitMagic369(
 
   let created: Awaited<ReturnType<typeof client.createOrder>>;
   try {
-    created = await client.createOrder(toMagic369Rows(items));
+    created = links
+      ? await client.createLinkOrder(orderRows as ReturnType<typeof toMagic369LinkRows>)
+      : await client.createOrder(orderRows as ReturnType<typeof toMagic369Rows>);
   } catch (e) {
     if (e instanceof Magic369Error) throw e;
     // A timeout or a cut-off AFTER the send: the service may have charged already, and the API
@@ -234,19 +238,20 @@ async function submitMagic369(
         quantity: Number(brief.count ?? 1),
         taskId: null,
         orderId: created.orderId,
-        provider: PROVIDER_MAGIC369,
+        provider,
       };
     })
     .filter((r): r is PurchaseInput => r !== null);
   if (rows.length) await recordPurchases(rows);
 
   return NextResponse.json({
-    provider: PROVIDER_MAGIC369,
+    provider,
     orderId: created.orderId,
     order: {
       id: created.orderId,
       status: created.status,
       rowCount: created.totalCount,
+      bonusCount: created.bonusCount,
       amountMinor: created.totalPriceMinor,
       balanceAfterMinor: created.balanceAfterMinor,
     },

@@ -5211,5 +5211,12 @@
   "blsyncErrNoKey": "Kein Ahrefs-Schlüssel. Fügen Sie einen unter Einstellungen → Metriken hinzu.",
   "blsyncErrCap": "Das monatliche Einheitenlimit würde überschritten.",
   "blsyncErrSemrush": "Die Synchronisierung funktioniert nur mit Ahrefs — fügen Sie einen Ahrefs-Schlüssel hinzu.",
-  "blpShortfall": "Der Anbieter lieferte nur {pulled} von {total} verweisenden Domains — das ist eine Stichprobe, nicht das vollständige Profil. Nichts wurde als verloren markiert."
+  "blpShortfall": "Der Anbieter lieferte nur {pulled} von {total} verweisenden Domains — das ist eine Stichprobe, nicht das vollständige Profil. Nichts wurde als verloren markiert.",
+  "mlLinkText": "Umgebender Text (optional)",
+  "mlLinkTextHint": "Eine Zeile bis 1000 Zeichen mit genau einem $LINK — dort steht der Link. Leer = nur der Link. Gilt für alle Zeilen.",
+  "mlLinkRowInvalid": "Der Dienst würde diese Bestellung ablehnen — Zeile",
+  "mlBonusEstimate": "Schätzung: Der Dienst gibt pro Zeile einen Bonus (+30 % Artikel, +20 % Links); die genaue Zahl kommt mit der Bestellung.",
+  "mlUnitPrice": "Preis pro Platzierung",
+  "mlNoWebsites": "Der Dienst hat gerade keine freien Seiten für diese Bestellung. Es wurde nichts abgebucht.",
+  "mlRefunded": "erstattet"
 }

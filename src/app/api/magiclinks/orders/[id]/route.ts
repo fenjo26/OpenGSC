@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { fieldLinkClientFor, magic369ClientFor } from "@/lib/magiclinks/providers";
-import { isMagicProviderId, PROVIDER_FIELDLINK } from "@/lib/magiclinks/purchases";
+import { isMagicProviderId, PROVIDER_FIELDLINK, PROVIDER_MAGIC369, PROVIDER_MAGIC369_LINKS } from "@/lib/magiclinks/purchases";
 import {
   importPurchasedPlacements,
   isFieldLinkTerminal,
@@ -10,9 +10,10 @@ import {
   orderOwner,
   placementsFromFieldLink,
   placementsFromMagic369,
+  placementsFromMagic369Links,
 } from "@/lib/magiclinks/tracking";
 
-// GET /api/magiclinks/orders/[id]?provider=fieldlink|magic369 — one order in full: per-row
+// GET /api/magiclinks/orders/[id]?provider=fieldlink|magic369|magic369links — one order in full: per-row
 // progress, publication URLs and (FieldLink) indexing state.
 //
 // Opening a detail view is also the fast path of the tracking loop: the placements this order
@@ -65,36 +66,51 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
 
     const client = await magic369ClientFor(userId);
     if (!client) return NextResponse.json({ error: "not_configured" }, { status: 400 });
-    const [order, articles] = await Promise.all([
-      client.order(id),
-      client.orderArticles(id).catch(() => []),
+    const links = provider === PROVIDER_MAGIC369_LINKS;
+    const [order, articles, placed] = await Promise.all([
+      links ? client.linkOrder(id) : client.order(id),
+      links ? Promise.resolve([]) : client.orderArticles(id).catch(() => []),
+      links ? client.linkOrderLinks(id).catch(() => []) : Promise.resolve([]),
     ]);
+    const kind = links ? PROVIDER_MAGIC369_LINKS : PROVIDER_MAGIC369;
     void (async () => {
       const owner = await orderOwner(id);
       if (!owner || owner.trackedAt) return;
       await importPurchasedPlacements({
-        siteId: owner.siteId, provider: "magic369", orderId: id,
-        placements: placementsFromMagic369(articles),
+        siteId: owner.siteId, provider: kind, orderId: id,
+        placements: links ? placementsFromMagic369Links(placed) : placementsFromMagic369(articles),
       });
-      if (isMagic369Terminal(order)) await markOrderTracked("magic369", id);
+      if (isMagic369Terminal(order)) await markOrderTracked(kind, id);
     })().catch(() => { /* same as above */ });
     return NextResponse.json({
       provider,
       order,
-      rows: order.items.map(it => ({
-        id: `${id}:${it.url}:${it.anchor}`,
-        status: it.published >= it.count ? "completed" : it.failed >= it.count ? "failed" : "processing",
-        targetUrl: it.url,
-        anchor: it.anchor,
-        language: it.language,
-        quantity: it.count,
-        isBonus: false,
-        destination: null,
-        donor: null,
-        error: null,
-        indexing: null,
-      })),
+      rows: order.items.map(it => {
+        // A row is done when everything it owes — paid plus bonus — is published or failed.
+        const owed = it.count + it.bonusCount;
+        return {
+          id: `${id}:${it.url}:${it.anchor}`,
+          status: it.published >= owed ? "completed"
+            : it.failed >= owed ? "failed"
+            : it.published + it.failed >= owed ? "partial"
+            : "processing",
+          targetUrl: it.url,
+          anchor: it.anchor,
+          language: it.language,
+          text: it.text,
+          quantity: it.count,
+          bonusCount: it.bonusCount,
+          published: it.published,
+          failed: it.failed,
+          isBonus: false,
+          destination: null,
+          donor: null,
+          error: null,
+          indexing: null,
+        };
+      }),
       articles,
+      links: placed,
     });
   } catch (e: any) {
     console.error("[MagicLinks] order detail failed", e);

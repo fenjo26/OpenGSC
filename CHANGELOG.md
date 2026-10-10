@@ -5,6 +5,15 @@ All notable changes to OpenGSC. Dates are release dates; the version shown in
 
 ## [Unreleased]
 
+### Fixed — 369Team (magiclinks.online) purchases match the API spec v1.1; homepage links added
+
+- Article price now follows the vendor's volume tiers (`price_tiers` from `GET /balance`): the tier is picked by the whole order's paid count, exactly as the service charges. The quote used to multiply by `price_per_placement` — the first-tier price — so large orders showed more than would be charged and could be blocked as "not enough tokens" when the balance was in fact sufficient.
+- The +30% bonus per row is shown (estimate in the quote, the exact `bonus_count` from the order), and order lists show paid + bonus and the `refunded` amount. The old code claimed 369Team had no bonus.
+- Article languages leave in the form the spec documents (`English`, `German`, `Dutch`, `Русский` …) instead of native names (`Deutsch`, `Nederlands`); the picker still shows native names.
+- The final status `partially_completed` now stops the placement tracker polling (it only knew `partial`). `no_websites_available` (422) gets its own message: nothing was charged.
+- New provider «369Team · links» — homepage links (`POST /link-orders`, flat `link_price`, +20% bonus): optional one-line surrounding text with `$LINK`, anchors up to 200 characters, each validated before anything is charged. Orders, detail view, CSV (donor homepage) and the placement tracker cover it; ledger rows use provider `magic369links`, no schema change.
+- Publication URLs of 369Team orders now appear in the order detail on /magiclinks (previously only in the CSV).
+
 ### Fixed — Leads: the Orbitra tracker connection accepts the admin/MCP link
 
 - Operators paste the tracker's address bar (`…/admin.php`) or MCP link (`…/mcp.php?k=…`) into the Leads connection field; the panel then built `…/admin.php/api.php`, which PHP answers with the admin page instead of the API. `normalizeOrbitraUrl` now strips the trailing `*.php` file — at save time and again on every request, so already-stored values heal without re-saving. Tracker calls abort after 15 s instead of hanging until the reverse proxy's 504, and a failed connection check shows the HTTP status instead of a bare "(error)".

@@ -19,9 +19,9 @@ import { rawQuery, rawExec } from "@/lib/db/raw";
 import { normalizeBacklinkUrl, donorHostOf } from "@/lib/seo/backlinkImport";
 import { backlinksNotMigrated } from "@/lib/backlinks/store";
 import { fieldLinkClientFor, magic369ClientFor } from "./providers";
-import { PROVIDER_FIELDLINK, PROVIDER_MAGIC369, providerName, type MagicProviderId } from "./purchases";
+import { PROVIDER_FIELDLINK, PROVIDER_MAGIC369_LINKS, providerName, type MagicProviderId } from "./purchases";
 import type { FieldLinkRow } from "./fieldlink";
-import type { Magic369Article, Magic369OrderStatus } from "./magic369";
+import type { Magic369Article, Magic369Link, Magic369OrderStatus } from "./magic369";
 
 /** One bought placement: a donor page that should be linking at one of our pages. */
 export interface PurchasedPlacement {
@@ -54,15 +54,35 @@ export function placementsFromMagic369(articles: Magic369Article[]): PurchasedPl
   return out;
 }
 
+/** 369Team homepage links: the donor is the homepage the link sits on (page_url). The spec
+ *  documents page_url as the site's homepage; website is the fallback when it is empty. */
+export function placementsFromMagic369Links(links: Magic369Link[]): PurchasedPlacement[] {
+  const out: PurchasedPlacement[] = [];
+  for (const l of links) {
+    let donorUrl = String(l.pageUrl ?? "").trim();
+    if (!donorUrl && l.website) {
+      const w = String(l.website).trim();
+      donorUrl = /^https?:\/\//i.test(w) ? w : `https://${w}/`;
+    }
+    const targetUrl = String(l.url ?? "").trim();
+    if (donorUrl && targetUrl) out.push({ donorUrl, targetUrl });
+  }
+  return out;
+}
+
 /** Terminal = the provider will publish nothing else under this order, so the tracking pass can
  *  stop polling it. "partial" is terminal the same way: what failed will not appear later. */
 export function isFieldLinkTerminal(status: string): boolean {
   return status === "completed" || status === "partial" || status === "failed";
 }
 
+/** 369Team status enum (spec v1.1): awaiting_content, generating, queued, in_progress — live;
+ *  completed, partially_completed, failed — final. finalized_at is set on the final ones. The
+ *  older "partial"/"cancelled" spellings stay accepted: harmless, and cheap insurance. */
 export function isMagic369Terminal(order: { status: string; finalizedAt?: string | null }): boolean {
   return !!order.finalizedAt
     || order.status === "completed"
+    || order.status === "partially_completed"
     || order.status === "partial"
     || order.status === "failed"
     || order.status === "cancelled";
@@ -315,6 +335,13 @@ export async function syncOrderPlacements(
     const { order, rows } = await client.order(orderId);
     placements = placementsFromFieldLink(rows);
     terminal = isFieldLinkTerminal(order.status);
+  } else if (provider === PROVIDER_MAGIC369_LINKS) {
+    const client = await magic369ClientFor(userId);
+    if (!client) return null;
+    const order: Magic369OrderStatus = await client.linkOrder(orderId);
+    const links = await client.linkOrderLinks(orderId).catch(() => []);
+    placements = placementsFromMagic369Links(links);
+    terminal = isMagic369Terminal(order);
   } else {
     const client = await magic369ClientFor(userId);
     if (!client) return null;

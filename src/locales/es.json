@@ -5211,5 +5211,12 @@
   "blsyncErrNoKey": "No hay clave de Ahrefs. Añade una en Ajustes → Métricas.",
   "blsyncErrCap": "Se superaría el límite mensual de unidades.",
   "blsyncErrSemrush": "La sincronización solo funciona con Ahrefs: añade una clave de Ahrefs.",
-  "blpShortfall": "El proveedor devolvió solo {pulled} de {total} dominios de referencia, así que es una muestra, no el perfil completo. No se marcó nada como perdido."
+  "blpShortfall": "El proveedor devolvió solo {pulled} de {total} dominios de referencia, así que es una muestra, no el perfil completo. No se marcó nada como perdido.",
+  "mlLinkText": "Texto alrededor del enlace (opcional)",
+  "mlLinkTextHint": "Una línea de hasta 1000 caracteres con $LINK exactamente una vez — el enlace ocupa su lugar. Vacío = solo el enlace. Se aplica a todas las filas.",
+  "mlLinkRowInvalid": "El servicio rechazaría este pedido — fila",
+  "mlBonusEstimate": "Estimación: el servicio añade un bono por fila (+30% artículos, +20% enlaces); el número exacto llega con el pedido.",
+  "mlUnitPrice": "Precio por colocación",
+  "mlNoWebsites": "El servicio no tiene sitios libres para este pedido ahora mismo. No se ha cobrado nada.",
+  "mlRefunded": "reembolsado"
 }

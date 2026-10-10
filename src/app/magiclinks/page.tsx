@@ -4,14 +4,15 @@ import { useCallback, useEffect, useState } from "react";
 import { RefreshCw, Download, ChevronDown, Link2 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 
-// /magiclinks — the purchase history of both providers in one list.
+// /magiclinks — the purchase history of every provider in one list (369Team articles and
+// 369Team homepage links are separate products with separate order ids, so separate rows).
 //
 // The page exists even with nothing configured (the nav item is always visible for the same
 // reason /serp-monitor's is): it explains what is missing and where to put it, instead of the
 // feature disappearing and looking absent.
 
 interface OrderRow {
-  provider: "fieldlink" | "magic369";
+  provider: "fieldlink" | "magic369" | "magic369links";
   providerName: string;
   orderId: string;
   createdAt: string | null;
@@ -20,6 +21,9 @@ interface OrderRow {
   completedCount: number;
   failedCount: number;
   amountMinor: number | null;
+  /** 369Team: free bonus placements on top of the paid ones. */
+  bonusCount?: number;
+  refundedMinor?: number;
   hosts: string[];
   quantity: number;
   queries: string[];
@@ -53,6 +57,10 @@ interface PulseProvider {
 
 const money = (minor: number | null) => (minor == null ? "—" : `${(minor / 100).toFixed(minor % 100 === 0 ? 0 : 2)}`);
 const unitOf = (p: string) => (p === "fieldlink" ? "cr." : "tok.");
+const providerColor = (p: string) =>
+  p === "fieldlink" ? { fg: "#3B82F6", bg: "rgba(59,130,246,0.12)" }
+  : p === "magic369links" ? { fg: "#F59E0B", bg: "rgba(245,158,11,0.12)" }
+  : { fg: "#10B981", bg: "rgba(16,185,129,0.12)" };
 const pathOf = (url: string) => { try { return new URL(url).pathname || "/"; } catch { return url; } };
 const hostOf = (url: string | null) => { if (!url) return ""; try { return new URL(url).host; } catch { return url; } };
 
@@ -122,7 +130,21 @@ export default function MagicLinksPage() {
     try {
       const res = await fetch(`/api/magiclinks/orders/${encodeURIComponent(o.orderId)}?provider=${o.provider}`);
       const d = await res.json();
-      setDetail(Array.isArray(d?.rows) ? d.rows : null);
+      const rows: DetailRow[] = Array.isArray(d?.rows) ? d.rows : [];
+      // 369Team keeps publication URLs apart from its per-row progress: articles for article
+      // orders, links (donor homepage) for link orders. Shown under the progress rows.
+      const published: DetailRow[] = [
+        ...(Array.isArray(d?.articles) ? d.articles : []).map((a: { id: number; url: string; anchor: string; publishedUrl: string }) => ({
+          id: `a${a.id}`, status: "published", targetUrl: a.url, anchor: a.anchor, quantity: 1,
+          destination: a.publishedUrl || null, indexing: null, error: null,
+        })),
+        ...(Array.isArray(d?.links) ? d.links : []).map((l: { id: number; url: string; anchor: string; pageUrl: string; website: string }) => ({
+          id: `l${l.id}`, status: "published", targetUrl: l.url, anchor: l.anchor, quantity: 1,
+          destination: l.pageUrl || (l.website ? `https://${l.website}/` : null), indexing: null, error: null,
+        })),
+      ];
+      const all = [...rows, ...published];
+      setDetail(all.length ? all : null);
     } catch { setDetail(null); }
     setDetailLoading(false);
   };
@@ -190,7 +212,7 @@ export default function MagicLinksPage() {
           )}
           {pulse.map(p => (
             <div key={p.provider} style={{ display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap", padding: "6px 0", fontSize: "12px" }}>
-              <span style={{ fontSize: "10px", fontWeight: 700, padding: "2px 7px", borderRadius: "10px", color: p.provider === "fieldlink" ? "#3B82F6" : "#10B981", background: p.provider === "fieldlink" ? "rgba(59,130,246,0.12)" : "rgba(16,185,129,0.12)" }}>
+              <span style={{ fontSize: "10px", fontWeight: 700, padding: "2px 7px", borderRadius: "10px", color: providerColor(p.provider).fg, background: providerColor(p.provider).bg }}>
                 {p.name}
               </span>
               <span style={{ color: "var(--color-text-secondary)" }}>
@@ -230,7 +252,7 @@ export default function MagicLinksPage() {
               <div style={{ display: "grid", gridTemplateColumns: "100px 90px 1fr 120px 110px 90px 36px", gap: "10px", alignItems: "center", padding: "12px 16px", fontSize: "12px" }}>
                 <div style={{ color: "var(--color-text-secondary)", fontFamily: "monospace" }}>{o.createdAt ? o.createdAt.slice(0, 10) : "—"}</div>
                 <div>
-                  <span style={{ fontSize: "10px", fontWeight: 700, padding: "2px 7px", borderRadius: "10px", color: o.provider === "fieldlink" ? "#3B82F6" : "#10B981", background: o.provider === "fieldlink" ? "rgba(59,130,246,0.12)" : "rgba(16,185,129,0.12)" }}>
+                  <span style={{ fontSize: "10px", fontWeight: 700, padding: "2px 7px", borderRadius: "10px", color: providerColor(o.provider).fg, background: providerColor(o.provider).bg }}>
                     {o.providerName}
                   </span>
                 </div>
@@ -243,7 +265,7 @@ export default function MagicLinksPage() {
                   </div>
                 </div>
                 <div style={{ color: "var(--color-text-secondary)", fontFamily: "monospace" }} title={t("mlColLinks")}>
-                  {o.quantity} {t("mlLinksWord")}
+                  {o.quantity} {t("mlLinksWord")}{o.bonusCount ? ` +${o.bonusCount} ${t("mlBonus")}` : ""}
                 </div>
                 <div>
                   <div style={{ fontSize: "11px", fontWeight: 600, color: o.status === "completed" ? "#10B981" : o.status === "failed" ? "#EF4444" : "var(--color-text-secondary)" }}>{o.status}</div>
@@ -251,6 +273,7 @@ export default function MagicLinksPage() {
                 </div>
                 <div style={{ color: "var(--color-text-primary)", fontWeight: 600, fontFamily: "monospace" }}>
                   {money(o.amountMinor)} <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{unitOf(o.provider)}</span>
+                  {o.refundedMinor ? <div style={{ fontSize: "10px", color: "#10B981", fontWeight: 500 }}>↩ {money(o.refundedMinor)} {t("mlRefunded")}</div> : null}
                 </div>
                 <div style={{ display: "flex", gap: "4px", justifyContent: "flex-end" }}>
                   <a href={`/api/magiclinks/orders/${encodeURIComponent(o.orderId)}/csv?provider=${o.provider}`} title={t("mlDownloadCsv")}
@@ -273,7 +296,7 @@ export default function MagicLinksPage() {
                     <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", padding: "8px 0" }}>{t("mlNoDetail")}</div>
                   ) : detail.map(r => (
                     <div key={r.id} style={{ display: "flex", gap: "10px", alignItems: "center", padding: "5px 0", fontSize: "11.5px", fontFamily: "monospace" }}>
-                      <span style={{ width: "70px", flexShrink: 0, color: r.status === "completed" ? "#10B981" : r.status === "failed" ? "#EF4444" : "var(--color-text-tertiary)" }}>{r.status}</span>
+                      <span style={{ width: "70px", flexShrink: 0, color: r.status === "completed" || r.status === "published" ? "#10B981" : r.status === "failed" ? "#EF4444" : "var(--color-text-tertiary)" }}>{r.status}</span>
                       <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--color-text-secondary)" }} title={`${r.targetUrl} · ${r.anchor}`}>
                         {r.anchor} → {pathOf(r.targetUrl)}
                       </span>

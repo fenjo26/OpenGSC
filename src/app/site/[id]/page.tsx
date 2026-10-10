@@ -4268,7 +4268,7 @@ interface AnnotationNote {
   endDate?: string | null;
   /** Link purchases only: how many placements the order bought. */
   mlQuantity?: number | null;
-  /** Link purchases only: provider id ("fieldlink" | "magic369"). */
+  /** Link purchases only: provider id ("fieldlink" | "magic369" | "magic369links"). */
   mlProvider?: string | null;
   /** Link purchases only: the provider's order id, linking to /magiclinks. */
   orderId?: string | null;
@@ -4424,7 +4424,7 @@ function AnnotationsTab({ period, setPeriod, periodOptions, customDays, onSetupB
         // Purchases carry their own short label — quantity × provider — instead of the server's
         // English fallback title.
         label: n.kind === "purchase"
-          ? t("mlMarker").replace("{n}", String(n.mlQuantity ?? "?")).replace("{p}", n.mlProvider === "magic369" ? "369" : "FL")
+          ? t("mlMarker").replace("{n}", String(n.mlQuantity ?? "?")).replace("{p}", String(n.mlProvider ?? "").startsWith("magic369") ? "369" : "FL")
           : undefined,
       }))
       .filter((n): n is { id: string; title: string; x: string; kind?: "note" | "purchase"; label?: string } => n.x !== null);
@@ -4561,7 +4561,7 @@ function AnnotationsTab({ period, setPeriod, periodOptions, customDays, onSetupB
             <div style={{ padding: "18px 24px 18px 0" }}>
               <div style={{ fontSize: "13px", fontWeight: 700, color: note.kind === "purchase" ? "#7C3AED" : "var(--color-text-primary)", marginBottom: "4px" }}>
                 {note.kind === "purchase"
-                  ? t("mlPurchaseRow").replace("{n}", String(note.mlQuantity ?? "?")).replace("{p}", note.mlProvider === "magic369" ? "369Team" : "FieldLink")
+                  ? t("mlPurchaseRow").replace("{n}", String(note.mlQuantity ?? "?")).replace("{p}", String(note.mlProvider ?? "").startsWith("magic369") ? "369Team" : "FieldLink")
                   : note.title}
               </div>
               <div style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
@@ -5474,10 +5474,10 @@ export default function SitePage({
       if (!x) continue;
       out.push({
         id: `purchase-${p.orderId}`,
-        title: `${p.quantity} links · ${p.provider === "magic369" ? "369Team" : "FieldLink"} · ${p.orderId}`,
+        title: `${p.quantity} links · ${p.provider.startsWith("magic369") ? "369Team" : "FieldLink"} · ${p.orderId}`,
         x,
         kind: "purchase",
-        label: `${p.quantity}×${p.provider === "magic369" ? "369" : "FL"}`,
+        label: `${p.quantity}×${p.provider.startsWith("magic369") ? "369" : "FL"}`,
       });
     }
     return out;

@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { fieldLinkClientFor, magic369ClientFor } from "@/lib/magiclinks/providers";
-import { isMagicProviderId, PROVIDER_FIELDLINK } from "@/lib/magiclinks/purchases";
+import { isMagicProviderId, PROVIDER_FIELDLINK, PROVIDER_MAGIC369_LINKS } from "@/lib/magiclinks/purchases";
 
 // GET /api/magiclinks/orders/[id]/csv?provider=… — the publication URLs of a paid order, as a
-// CSV. FieldLink publishes destination per completed row; 369Team exposes an articles list.
+// CSV. FieldLink publishes destination per completed row; 369Team exposes an articles list for
+// article orders and a links list (donor homepage) for homepage-link orders.
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,12 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
         ...orderRows
           .filter(r => r.result?.destination)
           .map(r => [r.input?.targetUrl ?? "", r.input?.anchor ?? "", r.status, r.result?.destination ?? ""])];
+    } else if (provider === PROVIDER_MAGIC369_LINKS) {
+      const client = await magic369ClientFor(userId);
+      if (!client) return NextResponse.json({ error: "not_configured" }, { status: 400 });
+      const links = await client.linkOrderLinks(id);
+      rows = [["url", "anchor", "text", "website", "page_url", "published_at"],
+        ...links.map(l => [l.url, l.anchor, l.text, l.website, l.pageUrl, l.publishedAt ?? ""])];
     } else {
       const client = await magic369ClientFor(userId);
       if (!client) return NextResponse.json({ error: "not_configured" }, { status: 400 });
