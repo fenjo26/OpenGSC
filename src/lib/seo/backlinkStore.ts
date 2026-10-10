@@ -194,14 +194,16 @@ export interface Snapshot {
 export async function writeSnapshot(
   target: string,
   s: { refDomains?: number | null; backlinks?: number | null; dofollowPct?: number | null },
-  opts: { provider?: string; source?: "api" | "csv" } = {},
+  // `date` backfills a past day (DataForSEO's monthly history import); "history" marks such a
+  // row so it can never be mistaken for a pull this instance made.
+  opts: { provider?: string; source?: "api" | "csv" | "history"; date?: string } = {},
 ): Promise<void> {
   try {
     await runUpsert({
       table: "BacklinkSnapshot",
       conflict: ["target", "date", "provider"],
       values: {
-        target: normDomain(target), date: today(), provider: opts.provider ?? "ahrefs",
+        target: normDomain(target), date: opts.date ?? today(), provider: opts.provider ?? "ahrefs",
         refDomains: s.refDomains ?? null,
         backlinks: s.backlinks ?? null,
         dofollowPct: s.dofollowPct ?? null,

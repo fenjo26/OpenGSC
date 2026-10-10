@@ -15,7 +15,7 @@
 // in `metrics.ts`, which re-exports this whole module so every existing server-side import keeps
 // working unchanged.
 
-export type MetricsProvider = "ahrefs" | "semrush" | "majestic" | "keysso";
+export type MetricsProvider = "ahrefs" | "semrush" | "majestic" | "keysso" | "dataforseo";
 
 /**
  * Providers that can serve keyword-side calls (volumes, difficulty, ideas, organic rows).
@@ -52,6 +52,9 @@ export const DEFAULT_BASE_URL: Record<MetricsProvider, string> = {
   // Keys.so — Yandex/Runet data. The GroupBuySEO gateway is wire-identical (same paths, same
   // `X-Keyso-TOKEN` header), so official vs reseller is a host and a key, as for the others.
   keysso: "https://api.keys.so",
+  // DataForSEO Backlinks API. One host, no reseller: the credential is the same "login:password"
+  // (or Base64 token) the SERP and keyword-demand modules already read from `seoKey_dataforseo`.
+  dataforseo: "https://api.dataforseo.com",
 };
 
 /**
@@ -63,7 +66,7 @@ export const DEFAULT_BASE_URL: Record<MetricsProvider, string> = {
  * ahrefs, which keeps old clients (and hand-rolled curl calls) working unchanged.
  */
 export function parseMetricsProvider(v: unknown): MetricsProvider {
-  return v === "semrush" || v === "majestic" || v === "keysso" ? v : "ahrefs";
+  return v === "semrush" || v === "majestic" || v === "keysso" || v === "dataforseo" ? v : "ahrefs";
 }
 
 // ─── Cost model ────────────────────────────────────────────────────────────────
@@ -84,6 +87,11 @@ export const UNIT_PRICE_USD: Record<MetricsProvider, number> = {
   majestic: 0.000002,
   // GroupBuySEO: $10 buys 50 000 credits, one credit per successful (2xx) read.
   keysso: 0.0002,
+  // DataForSEO bills in dollars, not units. One "unit" on its meter is one micro-dollar, so the
+  // shared reserve → reconcile machinery (recordUsage / withinCap / releaseUnusedUnits) works
+  // unchanged and every figure stays an integer: $0.024 per request = 24 000 units, $0.000036
+  // per row = 36 units. Screens show these as dollars (`formatProviderUnits`), never as units.
+  dataforseo: 0.000001,
 };
 
 export function estimateCostUsd(units: number, provider: MetricsProvider): number {
@@ -316,7 +324,7 @@ export interface SubscriptionInfo {
  * them; this lets a caller distinguish "key rejected" from "gateway down" without re-fetching.
  */
 export function gatewayStatusFromError(error: string | null | undefined): number | null {
-  const m = /^(?:ahrefs|semrush|majestic|keysso) (\d{3})/.exec(String(error ?? "").trim());
+  const m = /^(?:ahrefs|semrush|majestic|keysso|dataforseo) (\d{3})/.exec(String(error ?? "").trim());
   return m ? Number(m[1]) : null;
 }
 
@@ -452,6 +460,63 @@ export function estimateKeyssoProfileUnits(domains: number): number {
   return KEYSSO_STATS_UNITS + Math.ceil(Math.max(1, domains) / KEYSSO_REFDOMAIN_PAGE_SIZE);
 }
 
+// ─── DataForSEO Backlinks API ───────────────────────────────────────────────────
+//
+// Pay-as-you-go since 2026-07-01 (the $100/month minimum was dropped, rates +20%):
+// $0.024 per request plus $0.000036 per returned row, up to 1 000 rows a request. Every
+// response carries its real `cost`, which is what the meter is reconciled to — these constants
+// only price a request before it is sent. Units below are micro-dollars (see UNIT_PRICE_USD).
+
+/** One request, any endpoint of the Backlinks API: $0.024. */
+export const DATAFORSEO_REQUEST_UNITS = 24_000;
+/** One returned row (a backlink, a referring domain, a history month): $0.000036. */
+export const DATAFORSEO_ROW_UNITS = 36;
+/** Rows per page — the API maximum, so the per-request fee is paid as rarely as possible. */
+export const DATAFORSEO_PAGE_SIZE = 1000;
+/** `summary/live`: one request, one result row. */
+export const DATAFORSEO_STATS_UNITS = DATAFORSEO_REQUEST_UNITS + DATAFORSEO_ROW_UNITS;
+
+/** A paged pull of `rows` rows: one request fee per page plus the rows themselves. */
+export function estimateDataforseoRowsUnits(rows: number): number {
+  const n = Math.max(0, Math.ceil(rows));
+  const pages = Math.max(1, Math.ceil(n / DATAFORSEO_PAGE_SIZE));
+  return pages * DATAFORSEO_REQUEST_UNITS + n * DATAFORSEO_ROW_UNITS;
+}
+
+/** Reserve for a refdomain pull: the summary it is priced from plus the pages of domains. */
+export function estimateDataforseoProfileUnits(domains: number): number {
+  return DATAFORSEO_STATS_UNITS + estimateDataforseoRowsUnits(Math.max(1, domains));
+}
+
+/** Months of history the "load history" button asks for, and what that one request costs. */
+export const DATAFORSEO_HISTORY_MONTHS = 12;
+export const DATAFORSEO_HISTORY_UNITS = DATAFORSEO_REQUEST_UNITS + DATAFORSEO_ROW_UNITS * (DATAFORSEO_HISTORY_MONTHS + 1);
+
+/** Weeks of new/lost the timeseries panel asks for, and what that one request costs. */
+export const DATAFORSEO_NEWLOST_WEEKS = 12;
+export const DATAFORSEO_NEWLOST_UNITS = DATAFORSEO_REQUEST_UNITS + DATAFORSEO_ROW_UNITS * (DATAFORSEO_NEWLOST_WEEKS + 1);
+
+/**
+ * A meter figure in the provider's own currency, for screens: DataForSEO's micro-dollar units
+ * as dollars, every other provider's units as a plain count. One helper so no screen ever prints
+ * "24 000 units" for what is really two and a half cents.
+ */
+export function formatProviderUnits(units: number, provider: MetricsProvider): string {
+  if (provider === "dataforseo") {
+    const usd = units * UNIT_PRICE_USD.dataforseo;
+    if (usd <= 0) return "$0";
+    // Four decimals under a dollar: a summary costs $0.0240, and "$0.02" would hide the
+    // difference between one request and two, which is the whole price model here.
+    return usd < 1 ? `$${usd.toFixed(4)}` : `$${usd.toFixed(2)}`;
+  }
+  return Math.round(units).toLocaleString();
+}
+
+/** Whether a provider's meter is money rather than units (drives "$" fields in settings). */
+export function metersInDollars(provider: MetricsProvider): boolean {
+  return provider === "dataforseo";
+}
+
 // ─── Semrush Backlinks (the /analytics/v1/ reports on the gateway) ─────────────
 
 /** `backlinks_overview` is the stats call: 40 units flat per request. */
@@ -479,6 +544,7 @@ export function domainUnits(provider: MetricsProvider): number {
   if (provider === "majestic") return MAJESTIC_STATS_UNITS;
   if (provider === "semrush") return 10; // `domain_ranks`: 10 units per line, one line per domain
   if (provider === "keysso") return KEYSSO_DOMAIN_UNITS;
+  if (provider === "dataforseo") return DATAFORSEO_STATS_UNITS;
   return DOMAIN_UNITS;
 }
 

@@ -14,7 +14,7 @@ import { profileForDomain, registryAnswerable, apexOf } from "@/lib/drops/regist
 import type { AvailabilityResult } from "@/lib/drops/types";
 import { drForDomains, resolveDrKey } from "@/lib/drops/drFree";
 import {
-  AHREFS_UNIT_FLOOR, KEYSSO_STATS_UNITS, MAJESTIC_STATS_UNITS, SEMRUSH_BACKLINKS_OVERVIEW_UNITS,
+  AHREFS_UNIT_FLOOR, DATAFORSEO_STATS_UNITS, KEYSSO_STATS_UNITS, MAJESTIC_STATS_UNITS, SEMRUSH_BACKLINKS_OVERVIEW_UNITS,
   fetchBacklinkStats, parseMetricsProvider, type MetricsProvider,
 } from "@/lib/seo/metrics";
 import { recordUsage, releaseUnusedUnits, withinCap } from "@/lib/seo/metricsStore";
@@ -283,6 +283,7 @@ async function enrichDr(opts: { limit: number; userId: string; hostIds?: number[
 function refdomainStatsUnits(provider: MetricsProvider): number {
   if (provider === "majestic") return MAJESTIC_STATS_UNITS;
   if (provider === "keysso") return KEYSSO_STATS_UNITS; // two one-row totals reads
+  if (provider === "dataforseo") return DATAFORSEO_STATS_UNITS; // one summary request, micro-dollar units
   if (provider === "semrush") return SEMRUSH_BACKLINKS_OVERVIEW_UNITS;
   return AHREFS_UNIT_FLOOR;
 }

@@ -14,17 +14,19 @@
 // lost verdicts, its own history) and refresh from its own key, whatever the active provider
 // in Settings is.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link2, Loader2, RefreshCw, TrendingDown } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { History, Link2, Loader2, RefreshCw, TrendingDown } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import {
-  getMetricsCreds, getMetricsMode, estimateCostUsd, formatUsd, type MetricsMode,
+  getMetricsCreds, getMetricsMode, getMetricsProvider, estimateCostUsd, formatUsd, type MetricsMode,
 } from "@/lib/seo/metricsClient";
 import { isGuestView, shareTokenFromPath } from "@/lib/shareParam";
 // The pure half of the metrics module — see its header. A client component importing
 // `@/lib/seo/metrics` drags the Prisma client into the browser bundle.
 import {
   estimateProfileUnits, estimateMajesticProfileUnits, estimateSemrushProfileUnits, estimateKeyssoProfileUnits,
+  estimateDataforseoProfileUnits, formatProviderUnits, metersInDollars,
+  DATAFORSEO_HISTORY_UNITS, DATAFORSEO_NEWLOST_UNITS,
   DEFAULT_BASE_URL, gatewayStatusFromError,
   type MetricsProvider, type SubscriptionInfo,
 } from "@/lib/seo/metricsPricing";
@@ -41,7 +43,7 @@ const fill = (s: string, vars: Record<string, string>) =>
  *  the DOM at a sane size instead of deciding how many domains the user may look at. */
 const TABLE_ROWS_PER_PAGE = 100;
 
-type View = "all" | "ahrefs" | "majestic" | "semrush" | "keysso";
+type View = "all" | "ahrefs" | "majestic" | "semrush" | "keysso" | "dataforseo";
 /** The providers this component can read or refresh — one tab each, plus the merged view. */
 type BlProvider = MetricsProvider;
 /** N2 sections inside the profile: the provider view plus toxicity/disavow/recovery.
@@ -59,6 +61,8 @@ interface Row {
   as: number | null;
   /** Keys.so DR — Yandex/Runet index, a different scale from Ahrefs DR; never merged into it. */
   ks: number | null;
+  /** DataForSEO rank, 0–100 — its own index and scale; never merged into Ahrefs DR. */
+  dfs: number | null;
   cf: number | null;
   links: number | null;
   dofollow: boolean;
@@ -73,6 +77,17 @@ interface Row {
 
 interface Snapshot { date: string; refDomains: number | null; backlinks: number | null; dofollowPct: number | null }
 
+/** DataForSEO's extras for the site, as /api/metrics/backlinks returns them (a free local read). */
+interface DfsExtras {
+  rank: number | null;
+  spamScore: number | null;
+  brokenBacklinks: number | null;
+  refMainDomains: number | null;
+  checkedAt: string | null;
+  newLost: { points: Array<{ date: string; newBacklinks: number; lostBacklinks: number; newRefDomains: number; lostRefDomains: number }>; checkedAt: string } | null;
+  historyPoints: number;
+}
+
 function drColor(dr: number) {
   if (dr >= 70) return "var(--color-success)";
   if (dr >= 50) return "var(--color-accent-green)";
@@ -84,11 +99,11 @@ const fmt = (n: number | null | undefined) =>
   n == null ? "—" : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(Math.round(n));
 
 const PROVIDER_NAME: Record<MetricsProvider, string> = {
-  ahrefs: "Ahrefs", semrush: "Semrush", majestic: "Majestic", keysso: "Keys.so",
+  ahrefs: "Ahrefs", semrush: "Semrush", majestic: "Majestic", keysso: "Keys.so", dataforseo: "DataForSEO",
 };
 
-const NO_PROVIDER = { ahrefs: null, majestic: null, semrush: null, keysso: null };
-const NO_HISTORY = { ahrefs: [], majestic: [], semrush: [], keysso: [] };
+const NO_PROVIDER = { ahrefs: null, majestic: null, semrush: null, keysso: null, dataforseo: null };
+const NO_HISTORY = { ahrefs: [], majestic: [], semrush: [], keysso: [], dataforseo: [] };
 
 /** Everything the source placard needs about where one provider's paid calls go. */
 interface SourceCfg {
@@ -132,6 +147,18 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
   // Keys.so's gateway reports a bare remaining figure (free `/limits/all`) — no limit/usage
   // pair — so it gets its own slot rather than being squeezed into the Ahrefs shape.
   const [ksBalance, setKsBalance] = useState<{ remaining: number | null; gatewayStatus: number | null } | null>(null);
+  // DataForSEO's free user_data: the account balance in micro-dollar units, or the refusal code.
+  const [dfsBalance, setDfsBalance] = useState<{ remaining: number | null; gatewayStatus: number | null } | null>(null);
+  const [dfsExtras, setDfsExtras] = useState<DfsExtras | null>(null);
+  const [dfsBusy, setDfsBusy] = useState<"" | "history" | "newlost">("");
+  // The DataForSEO credential is shared with SERP and keyword demand, so holding it does NOT
+  // mean "pull my backlinks from DataForSEO too". The merged view's refresh includes DataForSEO
+  // only once the user chose it as the metrics provider or already has a DataForSEO profile —
+  // otherwise "Refresh all" would start spending on an account that was bought for SERP checks.
+  // Its own tab always refreshes from it: opening that tab is the choice. A ref, not state, so
+  // `call` (whose identity drives the load effect) does not change when history arrives.
+  const [dfsActive, setDfsActive] = useState(false);
+  const dfsInAll = useRef(false);
 
   useEffect(() => {
     if (guest) return;
@@ -147,7 +174,8 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
         hasKey: creds.apiKey.length > 4,
       };
     };
-    setSrcs({ ahrefs: build("ahrefs"), majestic: build("majestic"), semrush: build("semrush"), keysso: build("keysso") });
+    setSrcs({ ahrefs: build("ahrefs"), majestic: build("majestic"), semrush: build("semrush"), keysso: build("keysso"), dataforseo: build("dataforseo") });
+    setDfsActive(getMetricsProvider() === "dataforseo");
   }, [guest]);
 
   const loadBalance = useCallback(async () => {
@@ -164,6 +192,19 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
           gatewayStatus: typeof d.gatewayStatus === "number" ? d.gatewayStatus : null,
         }))
         .catch(() => setKsBalance({ remaining: null, gatewayStatus: null }));
+    }
+    const dfs = getMetricsCreds("dataforseo");
+    if (dfs.apiKey.length > 4) {
+      fetch("/api/metrics/subscription", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: "dataforseo", apiKey: dfs.apiKey }),
+      })
+        .then(r => r.json())
+        .then(d => setDfsBalance({
+          remaining: typeof d.info?.unitsRemaining === "number" ? d.info.unitsRemaining : null,
+          gatewayStatus: typeof d.gatewayStatus === "number" ? d.gatewayStatus : null,
+        }))
+        .catch(() => setDfsBalance({ remaining: null, gatewayStatus: null }));
     }
     const creds = getMetricsCreds("ahrefs");
     if (creds.apiKey.length <= 4) return;
@@ -190,6 +231,20 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
   // is what made this screen undiagnosable, so each gets its own sentence.
   const gatewayNotice = useCallback((raw: string, host: string): React.ReactNode => {
     const gw = gatewayStatusFromError(raw);
+    // DataForSEO is its own account, not a GroupBuySEO wallet: its refusals get its own words
+    // and its own top-up link (403 = the Backlinks API is not enabled on that account).
+    if (/^dataforseo /.test(String(raw ?? ""))) {
+      return gw === 401 ? t("metricsDfsBadKey")
+        : gw === 402 ? (<>
+            {t("blsrcDfsNoFunds")}{" "}
+            <a href="https://app.dataforseo.com/" target="_blank" rel="noreferrer noopener nofollow"
+              style={{ color: "var(--color-accent-blue)" }}>{t("blsrcTopUp")}</a>
+          </>)
+        : gw === 403 ? t("blsrcDfsNoAccess")
+        : gw === 429 ? t("blsrcErr429")
+        : gw != null && gw >= 500 ? t("blsrcErr502")
+        : null;
+    }
     return gw === 401 ? fill(t("blsrcErr401"), { host })
       : gw === 402 ? (<>
           {fill(t("blsrcErr402"), { host })}{" "}
@@ -207,6 +262,7 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
     const credsM = getMetricsCreds("majestic");
     const credsS = getMetricsCreds("semrush");
     const credsK = getMetricsCreds("keysso");
+    const credsD = getMetricsCreds("dataforseo");
     const body: Record<string, unknown> = dropDomain ? { dropDomain } : { siteId: siteDbId, view, fetch: doFetch };
     if (dropDomain) { body.view = view; body.fetch = doFetch; }
     const token = shareTokenFromPath();
@@ -219,6 +275,9 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
         majestic: { apiKey: credsM.apiKey, baseUrl: credsM.baseUrl, cap: credsM.cap },
         semrush: { apiKey: credsS.apiKey, baseUrl: credsS.baseUrl, cap: credsS.cap },
         keysso: { apiKey: credsK.apiKey, baseUrl: credsK.baseUrl, cap: credsK.cap },
+        ...(view === "dataforseo" || dfsInAll.current
+          ? { dataforseo: { apiKey: credsD.apiKey, baseUrl: credsD.baseUrl, cap: credsD.cap } }
+          : {}),
       };
     }
 
@@ -239,6 +298,7 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
           tf: merged ? (r.tf ?? null) : view === "majestic" ? (r.dr ?? null) : null,
           as: merged ? (r.as ?? null) : view === "semrush" ? (r.dr ?? null) : null,
           ks: merged ? (r.ks ?? null) : view === "keysso" ? (r.dr ?? null) : null,
+          dfs: merged ? (r.dfs ?? null) : view === "dataforseo" ? (r.dr ?? null) : null,
           cf: r.cf ?? null,
           links: r.links ?? r.linksToTarget ?? null,
           dofollow: r.dofollow !== false,
@@ -253,14 +313,16 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
       }));
     }
     if (d.history && typeof d.history === "object") {
-      setHistory({ ahrefs: d.history.ahrefs ?? [], majestic: d.history.majestic ?? [], semrush: d.history.semrush ?? [], keysso: d.history.keysso ?? [] });
+      setHistory({ ahrefs: d.history.ahrefs ?? [], majestic: d.history.majestic ?? [], semrush: d.history.semrush ?? [], keysso: d.history.keysso ?? [], dataforseo: d.history.dataforseo ?? [] });
     }
+    if (d.dataforseo && typeof d.dataforseo === "object") setDfsExtras(d.dataforseo as DfsExtras);
     if (d.usage && typeof d.usage === "object") {
       setUsage({
         ahrefs: d.usage.ahrefs?.units ?? null,
         majestic: d.usage.majestic?.units ?? null,
         semrush: d.usage.semrush?.units ?? null,
         keysso: d.usage.keysso?.units ?? null,
+        dataforseo: d.usage.dataforseo?.units ?? null,
       });
     }
     if (!res.ok && doFetch) {
@@ -308,6 +370,33 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
   // each view is a different slice of the same stored table.
   useEffect(() => { setTablePage(1); call(false).catch(() => {}); }, [call]);
 
+  // The two one-request DataForSEO extras: twelve months of history into the snapshot series,
+  // and weekly new/lost. Explicit buttons with their price on them — never on page load.
+  async function runDfsOp(op: "history" | "newlost") {
+    if (!siteDbId || dfsBusy) return;
+    setDfsBusy(op); setNotice("");
+    try {
+      const c = getMetricsCreds("dataforseo");
+      const res = await fetch("/api/metrics/backlinks/dataforseo", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ siteId: siteDbId, op, apiKey: c.apiKey, cap: c.cap }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (d.dataforseo) setDfsExtras(d.dataforseo as DfsExtras);
+      if (d.usage && typeof d.usage.units === "number") setUsage(u => ({ ...u, dataforseo: Number(d.usage.units) }));
+      if (!res.ok) {
+        const e = String(d.error ?? "");
+        setNotice(e === "cap_exceeded" ? t("kwCapExceeded")
+          : e === "no_key" ? t("blsrcNoKey")
+          : gatewayNotice(e, DEFAULT_BASE_URL.dataforseo) ?? (e || t("blpFailed")));
+      } else if (op === "history") {
+        setNotice(fill(t("blpDfsHistoryDone"), { n: String(d.result?.written ?? 0) }));
+        await call(false);
+      }
+    } catch { setNotice(t("blpFailed")); }
+    setDfsBusy("");
+  }
+
   async function refresh() {
     if (busy) return;
     setBusy(true); setNotice("");
@@ -316,10 +405,16 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
   }
 
   const live = useMemo(() => rows.filter(r => !r.lost), [rows]);
+  useEffect(() => {
+    dfsInAll.current = dfsActive || (history.dataforseo?.length ?? 0) > 0;
+  }, [dfsActive, history]);
   const lost = useMemo(() => rows.filter(r => r.lost), [rows]);
 
   // Which providers this view reads and refreshes from.
-  const viewProviders: BlProvider[] = view === "all" ? ["ahrefs", "majestic", "semrush", "keysso"] : [view];
+  const dfsOptedIn = dfsActive || (history.dataforseo?.length ?? 0) > 0;
+  const viewProviders: BlProvider[] = view === "all"
+    ? (["ahrefs", "majestic", "semrush", "keysso", "dataforseo"] as BlProvider[]).filter(p => p !== "dataforseo" || dfsOptedIn)
+    : [view];
   const refreshable: BlProvider[] = viewProviders.filter(p => srcs[p]?.hasKey);
   const anyKey = refreshable.length > 0;
 
@@ -342,6 +437,7 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
       const units = p === "majestic" ? estimateMajesticProfileUnits(rd)
         : p === "semrush" ? estimateSemrushProfileUnits(rd)
         : p === "keysso" ? estimateKeyssoProfileUnits(rd)
+        : p === "dataforseo" ? estimateDataforseoProfileUnits(rd)
         : estimateProfileUnits(rd);
       parts.push({ p, units });
       usd += estimateCostUsd(units, p);
@@ -396,7 +492,7 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
     return (
       <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
         <span>{withBalance ? `${PROVIDER_NAME[p]}: ` : ""}<strong style={{ color: "var(--color-text-primary)" }}>
-          {p === "ahrefs" ? "Ahrefs API v3" : p === "majestic" ? "Majestic API" : p === "keysso" ? "Keys.so API" : "Semrush API"}
+          {p === "ahrefs" ? "Ahrefs API v3" : p === "majestic" ? "Majestic API" : p === "keysso" ? "Keys.so API" : p === "dataforseo" ? "DataForSEO Backlinks API" : "Semrush API"}
         </strong></span>
         {p === "keysso" && <span className="metric-chip" style={{ fontWeight: 500 }} title={t("blpKsMarketHint")}>{t("blpKsMarket")}</span>}
         <code style={{ fontFamily: "monospace", fontSize: "11px" }}>{src.host.replace(/^https?:\/\//, "")}</code>
@@ -405,6 +501,15 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
           p === "keysso" && ksBalance?.gatewayStatus === 402
             ? <span style={{ color: "var(--color-warning)" }}>{t("blsrcKsOutOfCredits")}{" "}
                 <a href={METRICS_GATEWAY_URL} target="_blank" rel="noreferrer noopener nofollow" style={{ color: "var(--color-accent-blue)" }}>{t("blsrcTopUp")}</a></span>
+          : p === "dataforseo" && dfsBalance?.gatewayStatus != null && [401, 402, 403].includes(dfsBalance.gatewayStatus)
+            ? <span style={{ color: "var(--color-warning)" }}>
+                {dfsBalance.gatewayStatus === 401 ? t("metricsDfsBadKey") : dfsBalance.gatewayStatus === 402 ? t("blsrcDfsNoFunds") : t("blsrcDfsNoAccess")}{" "}
+                {dfsBalance.gatewayStatus !== 401 && <a href="https://app.dataforseo.com/" target="_blank" rel="noreferrer noopener nofollow" style={{ color: "var(--color-accent-blue)" }}>{t("blsrcTopUp")}</a>}
+              </span>
+          : p === "dataforseo" && dfsBalance?.remaining != null
+            ? <span>{t("blsrcDfsBalance")} <strong style={{ color: "var(--color-text-primary)" }}>{formatProviderUnits(dfsBalance.remaining, "dataforseo")}</strong>
+                {used > 0 && <> · {t("metricsUsage")}: <strong style={{ color: "var(--color-text-primary)" }}>{formatProviderUnits(used, "dataforseo")}</strong></>}
+              </span>
           : p === "keysso" && ksBalance?.remaining != null
             ? <span>{t("blsrcRemaining")} <strong style={{ color: "var(--color-text-primary)" }}>{ksBalance.remaining.toLocaleString()}</strong> {t("blsrcKsCredits")}</span>
           : p === "ahrefs" && remaining != null && balLimit != null
@@ -412,8 +517,8 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
             : <span>
                 {t("blsrcBalanceUnknown")}
                 {unitsLeft != null
-                  ? <> · {fill(t("blsrcUnitsLeft"), { n: unitsLeft.toLocaleString() })}</>
-                  : used > 0 && <> · {t("metricsUsage")}: <strong style={{ color: "var(--color-text-primary)" }}>{used.toLocaleString()}</strong> {t("metricsUnits")}</>}
+                  ? <> · {fill(t("blsrcUnitsLeft"), { n: formatProviderUnits(unitsLeft, p) })}</>
+                  : used > 0 && <> · {t("metricsUsage")}: <strong style={{ color: "var(--color-text-primary)" }}>{formatProviderUnits(used, p)}</strong>{metersInDollars(p) ? "" : ` ${t("metricsUnits")}`}</>}
               </span>
         ) : (
           <span style={{ color: "var(--color-text-tertiary)" }}>{t("blsrcNoKey")}</span>
@@ -437,9 +542,11 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
   // Keys.so's column only appears in the merged table once a Keys.so pull exists — most
   // profiles are Google-market and an always-empty Yandex column would be noise.
   const showKs = view === "keysso" || (view === "all" && rows.some(r => r.ks != null));
+  // Same rule for DataForSEO's rank: its own column, shown once a DataForSEO pull exists.
+  const showDfs = view === "dataforseo" || (view === "all" && rows.some(r => r.dfs != null));
   const showCf = view === "majestic";
   // Keys.so rows carry no topic and no per-donor IP (its `ips` is a count), so no empty columns.
-  const showExtras = view !== "ahrefs" && view !== "keysso";
+  const showExtras = view !== "ahrefs" && view !== "keysso" && view !== "dataforseo";
 
   return (
     <div className="panel" style={{ marginBottom: "16px" }}>
@@ -450,7 +557,7 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
         {!guest && section === "profile" && <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
           {estimate != null && (
             <span className="metric-cost">
-              {estimate.parts.map(({ p, units }) => `${PROVIDER_NAME[p]} ${units.toLocaleString()}`).join(" + ")}
+              {estimate.parts.map(({ p, units }) => `${PROVIDER_NAME[p]} ${formatProviderUnits(units, p)}`).join(" + ")}
               {" "}· ≈ {formatUsd(estimate.usd)}
             </span>
           )}
@@ -493,7 +600,7 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
           main table; the provider tabs show that source's own view and refresh its own key. */}
       {!guest && (
         <div style={{ display: "flex", gap: "6px", marginBottom: "12px", flexWrap: "wrap" }}>
-          {(["all", "ahrefs", "majestic", "semrush", "keysso"] as const).map(v => (
+          {(["all", "ahrefs", "majestic", "semrush", "keysso", "dataforseo"] as const).map(v => (
             <button key={v} className={view === v ? "pill active" : "pill"}
               onClick={() => setView(v)} style={{ cursor: "pointer" }}>
               {v === "all" ? t("blpTabAll") : PROVIDER_NAME[v]}
@@ -517,6 +624,62 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
         <div style={{ marginBottom: "12px", fontSize: "12px", color: "var(--color-text-secondary)" }}>{notice}</div>
       )}
 
+      {/* DataForSEO's own extras — rank, spam score, broken links — plus the two one-request
+          reports. Only on its tab: they are DataForSEO's figures and say so by where they live. */}
+      {!guest && view === "dataforseo" && (
+        <div className="privacy-blur-all" style={{ marginBottom: "14px" }}>
+          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center", marginBottom: "10px" }}>
+            {dfsExtras?.rank != null && chip(t("blpDfsRank"), String(Math.round(dfsExtras.rank)), t("blpDfsRankHint"))}
+            {dfsExtras?.spamScore != null && chip(t("blpDfsSpam"), String(Math.round(dfsExtras.spamScore)), t("blpDfsSpamHint"))}
+            {dfsExtras?.brokenBacklinks != null && chip(t("blpDfsBroken"), fmt(dfsExtras.brokenBacklinks))}
+            {siteDbId && srcs.dataforseo?.hasKey && (
+              <span style={{ marginLeft: "auto", display: "inline-flex", gap: "8px", flexWrap: "wrap" }}>
+                <button className="metric-action" onClick={() => { void runDfsOp("history"); }} disabled={!!dfsBusy}
+                  title={t("blpDfsHistoryHint")}>
+                  {dfsBusy === "history" ? <Loader2 size={13} className="spin" /> : <History size={13} />}
+                  {t("blpDfsHistory")} · ≈ {formatProviderUnits(DATAFORSEO_HISTORY_UNITS, "dataforseo")}
+                </button>
+                <button className="metric-action" onClick={() => { void runDfsOp("newlost"); }} disabled={!!dfsBusy}
+                  title={t("blpDfsNewLostHint")}>
+                  {dfsBusy === "newlost" ? <Loader2 size={13} className="spin" /> : <TrendingDown size={13} />}
+                  {t("blpDfsNewLost")} · ≈ {formatProviderUnits(DATAFORSEO_NEWLOST_UNITS, "dataforseo")}
+                </button>
+              </span>
+            )}
+          </div>
+          {dfsExtras?.newLost && dfsExtras.newLost.points.length > 0 && (
+            <div style={{ overflowX: "auto", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ background: "var(--color-bg)", borderBottom: "1px solid var(--color-border)" }}>
+                    <th style={th}>{t("blpDfsWeek")}</th>
+                    <th style={thC}>{t("blpDfsNewLinks")}</th>
+                    <th style={thC}>{t("blpDfsLostLinks")}</th>
+                    <th style={thC}>{t("blpDfsNewDomains")}</th>
+                    <th style={thC}>{t("blpDfsLostDomains")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...dfsExtras.newLost.points].reverse().map(pt => (
+                    <tr key={pt.date} style={{ borderBottom: "1px solid var(--color-border)" }}>
+                      <td style={{ ...cell, fontSize: "12px", color: "var(--color-text-secondary)" }}>{pt.date}</td>
+                      <td style={{ ...cell, textAlign: "center", color: pt.newBacklinks ? "var(--color-success)" : "var(--color-text-secondary)" }}>{pt.newBacklinks ? `+${pt.newBacklinks}` : "0"}</td>
+                      <td style={{ ...cell, textAlign: "center", color: pt.lostBacklinks ? "var(--color-warning)" : "var(--color-text-secondary)" }}>{pt.lostBacklinks ? `−${pt.lostBacklinks}` : "0"}</td>
+                      <td style={{ ...cell, textAlign: "center", color: pt.newRefDomains ? "var(--color-success)" : "var(--color-text-secondary)" }}>{pt.newRefDomains ? `+${pt.newRefDomains}` : "0"}</td>
+                      <td style={{ ...cell, textAlign: "center", color: pt.lostRefDomains ? "var(--color-warning)" : "var(--color-text-secondary)" }}>{pt.lostRefDomains ? `−${pt.lostRefDomains}` : "0"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div style={{ padding: "6px 12px", fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+                {t("blpDfsNewLostHint")} · {new Date(dfsExtras.newLost.checkedAt).toLocaleString(undefined, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+
       {rows.length === 0 ? (
         <div style={{ padding: "28px", textAlign: "center", border: "1px dashed var(--color-border)", borderRadius: "var(--radius-md)", fontSize: "13px", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
           {t("blpEmpty")}
@@ -533,6 +696,8 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
                   chip("Majestic · RD", fmt(histFor("majestic").slice(-1)[0]!.refDomains))}
                 {histFor("keysso").slice(-1)[0]?.refDomains != null &&
                   chip("Keys.so · RD", fmt(histFor("keysso").slice(-1)[0]!.refDomains), t("blpKsMarketHint"))}
+                {histFor("dataforseo").slice(-1)[0]?.refDomains != null &&
+                  chip("DataForSEO · RD", fmt(histFor("dataforseo").slice(-1)[0]!.refDomains))}
                 {lost.length > 0 && chip(t("blpLost"), String(lost.length))}
               </>
             ) : (
@@ -564,6 +729,7 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
                   {showTf && <th style={thC}>TF</th>}
                   {showAs && <th style={thC}>AS</th>}
                   {showKs && <th style={thC} title={t("blpKsDrHint")}>DR·KS</th>}
+                  {showDfs && <th style={thC} title={t("blpDfsRankHint")}>Rank·DFS</th>}
                   {showCf && <th style={thC}>CF</th>}
                   <th style={thC}>{t("blpLinks")}</th>
                   {showExtras && <th style={th}>{t("blpTopic")}</th>}
@@ -581,7 +747,7 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
                           show two. */}
                       {view === "all" && (
                         <span className="metric-chip" style={{ marginLeft: "6px", fontWeight: 500 }} title={r.providers.join(", ")}>
-                          {r.providers.map(x => x === "ahrefs" ? "A" : x === "majestic" ? "M" : x === "keysso" ? "K" : "S").join("+")}
+                          {r.providers.map(x => x === "ahrefs" ? "A" : x === "majestic" ? "M" : x === "keysso" ? "K" : x === "dataforseo" ? "D" : "S").join("+")}
                         </span>
                       )}
                       {r.dofollow === false && (
@@ -592,6 +758,7 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
                     {showTf && numCell(r.tf, r.tf != null ? drColor(r.tf) : undefined)}
                     {showAs && numCell(r.as, r.as != null ? drColor(r.as) : undefined)}
                     {showKs && numCell(r.ks, r.ks != null ? drColor(r.ks) : undefined)}
+                    {showDfs && numCell(r.dfs, r.dfs != null ? drColor(r.dfs) : undefined)}
                     {showCf && numCell(r.cf)}
                     <td style={{ ...cell, textAlign: "center", color: "var(--color-text-secondary)" }}>{r.links ?? "—"}</td>
                     {showExtras && <td style={{ ...cell, color: "var(--color-text-secondary)", fontSize: "12px", maxWidth: "180px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.topic}>
@@ -606,7 +773,7 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
                   </tr>
                 ))}
                 {visible.length === 0 && (
-                  <tr><td colSpan={9} style={{ ...cell, textAlign: "center", color: "var(--color-text-secondary)", padding: "24px" }}>
+                  <tr><td colSpan={10} style={{ ...cell, textAlign: "center", color: "var(--color-text-secondary)", padding: "24px" }}>
                     {showLost ? <><TrendingDown size={14} style={{ verticalAlign: "-2px", marginRight: "6px" }} />{t("blpNoLost")}</> : t("blpEmpty")}
                   </td></tr>
                 )}

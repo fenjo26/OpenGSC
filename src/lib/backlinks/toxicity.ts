@@ -37,7 +37,7 @@ export const MARKER_GROUPS: readonly string[] = MARKERS.map((g) => g.code);
  *  Marker and anchor codes keep their drops names (`pharma`, `anchor_adult`, `alien_script`,
  *  `anchor_alien_script`); the structure of a live donor has no drops counterpart, so those
  *  codes are new and namespaced by this module. */
-export const BL_STRUCT_SIGNALS = ["sitewide_low_dr", "out_of_content", "donor_parked"] as const;
+export const BL_STRUCT_SIGNALS = ["sitewide_low_dr", "out_of_content", "donor_parked", "provider_spam"] as const;
 
 /** Level thresholds, in the DEFAULT_TOXIC_AT spirit of the drops classifier. */
 export const TOX_TOXIC_AT = 60;
@@ -55,7 +55,14 @@ export const TOX_WEIGHTS = {
   sitewideLowDr: 40,
   outOfContent: 25,
   donorParked: 45,
+  // DataForSEO's per-link spam score (issue #26). The provider's opinion, not our evidence:
+  // weighted to make a donor suspicious on its own, and toxic only together with one more
+  // signal of ours — never a verdict by itself.
+  providerSpam: 30,
 } as const;
+
+/** DataForSEO spam score (0–100) at or above which a donor's links count as provider-flagged. */
+export const PROVIDER_SPAM_AT = 70;
 
 export function anchorMarkerWeight(groupWeight: number): number {
   return Math.min(60, Math.max(20, Math.round(groupWeight) + 15));
@@ -123,6 +130,8 @@ export interface DonorLink {
   apiSnippet: string;
   apiDr: number | null;
   apiContent: boolean;
+  /** DataForSEO's spam score of this link, 0–100; absent/null for every other provider. */
+  apiSpamScore?: number | null;
 }
 
 /** All links of one donor plus the classification context. */
@@ -253,6 +262,15 @@ export function classifyDonor(input: DonorInput): DonorVerdict {
   }
   if (isParked(title || (input.deepTitle ?? ""))) {
     add({ code: "donor_parked", weight: TOX_WEIGHTS.donorParked });
+  }
+  // The highest spam score any of the donor's links carries — a donor is as spammy as its
+  // worst placement, the same reasoning as DR being read as the freshest maximum above.
+  const spam = input.links.reduce<number | null>(
+    (acc, l) => (l.apiSpamScore == null ? acc : Math.max(acc ?? 0, l.apiSpamScore)),
+    null,
+  );
+  if (spam != null && spam >= PROVIDER_SPAM_AT) {
+    add({ code: "provider_spam", weight: TOX_WEIGHTS.providerSpam, detail: `spam ${spam}` });
   }
 
   // 5. Score and level. No anchor, no page text and no structural signal → unknown: there was

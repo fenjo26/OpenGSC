@@ -5,6 +5,18 @@ All notable changes to OpenGSC. Dates are release dates; the version shown in
 
 ## [Unreleased]
 
+### Added — DataForSEO: a fifth backlink provider, pay-as-you-go (#26)
+
+- Settings → SEO Metrics: DataForSEO joins Ahrefs/Semrush/Majestic/Keys.so. It reuses the credential SERP and keyword demand already read (`seoKey_dataforseo`, `login:password` or the Base64 token), so nothing new has to be connected. Official host only — there is no reseller. The free `appendix/user_data` is the key check and shows the account balance in dollars; 401 (bad credentials), 402 (balance) and 403 (Backlinks API not enabled on the account) each get their own message.
+- Billing is DataForSEO's own: $0.024 per request + $0.000036 per row since the 2026-07-01 pricing update (no monthly minimum). The meter counts micro-dollars, so the existing reserve → reconcile → monthly cap machinery works unchanged, and every screen shows DataForSEO spend in dollars, never in "units". Each pull is reconciled to the `cost` DataForSEO reports, including overages.
+- Backlink profile: a DataForSEO tab (summary + every referring domain, paged by 1 000, live/lost by diffing as for the other providers) and a `Rank·DFS` column in the merged table. DataForSEO rank is requested on the 0–100 scale and is never shown as Ahrefs DR. The tab also shows the profile's spam score and broken-backlink count, and two priced one-request buttons: **12-month history** (monthly totals backfilled into the trend, never overwriting a day this instance measured) and **new / lost by week** (last 12 weeks, cached).
+- Holding a DataForSEO key for SERP does not make "Refresh all" spend on DataForSEO: the merged view includes it only once DataForSEO is the chosen metrics provider or a DataForSEO profile already exists.
+- Per-link export: `/api/backlinks/sync` takes `provider: "dataforseo"` (live AND lost links via `backlinks_status_type: all`, paged by `search_after_token`), priced by a `limit: 1` read before anything else is spent. Rows are restated in the Ahrefs all-backlinks shape, so new/lost events, the digest and toxicity work unchanged. The Toxicity tab gets a «Links from DataForSEO» loader.
+- Toxicity: DataForSEO's per-link spam score is stored in the new nullable `SiteBacklink.apiSpamScore` and becomes the `provider_spam` signal (score ≥ 70, weight 30) — enough to make a donor suspicious, toxic only together with one of our own signals.
+- Optional weekly auto-refresh (off by default): summary + referring domains for every site, or that plus the per-link export, always inside the user's monthly cap. The lost-link alert now also covers DataForSEO pulls (labelled `DFS`, not `DR`).
+- Domain metrics and MCP (`get_domain_metrics`, `get_backlink_profile`) accept `dataforseo`. Keyword-side calls refuse it (`isKeywordCapable`) — DataForSEO keyword data keeps its own path.
+- **Schema:** one nullable column, `SiteBacklink.apiSpamScore`. Run `npx prisma db push` (the updater and the Docker entrypoint already do).
+
 ### Fixed — 369Team (magiclinks.online) purchases match the API spec v1.1; homepage links added
 
 - Article price now follows the vendor's volume tiers (`price_tiers` from `GET /balance`): the tier is picked by the whole order's paid count, exactly as the service charges. The quote used to multiply by `price_per_placement` — the first-tier price — so large orders showed more than would be charged and could be blocked as "not enough tokens" when the balance was in fact sufficient.

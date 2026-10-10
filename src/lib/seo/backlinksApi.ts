@@ -200,6 +200,12 @@ export interface MappedBacklinkRow {
   apiSnippet: string;
   apiFirstSeen: string;
   apiLastSeen: string;
+  /**
+   * DataForSEO's per-link spam score (0–100). Only the DataForSEO export carries it — Ahrefs and
+   * Keys.so rows leave it null, and `upsertFromApi` only writes the column when it is set, so
+   * those providers keep working on an instance whose schema has not been pushed yet.
+   */
+  apiSpamScore: number | null;
 }
 
 const str = (v: unknown) => (v == null ? "" : String(v));
@@ -245,6 +251,7 @@ export function mapApiRow(raw: any): MappedBacklinkRow | null {
     apiSnippet: `${str(raw?.snippet_left)} ${str(raw?.snippet_right)}`.replace(/\s+/g, " ").trim().slice(0, 500),
     apiFirstSeen: str(raw?.first_seen_link).slice(0, 10),
     apiLastSeen: str(raw?.last_seen).slice(0, 10),
+    apiSpamScore: numOrNull(raw?.backlink_spam_score),
   };
 }
 

@@ -134,6 +134,8 @@ const CLASSIFY_SELECT = {
   apiSnippet: true,
   apiDr: true,
   apiContent: true,
+  // DataForSEO's per-link spam score (issue #26) — null on every other provider's rows.
+  apiSpamScore: true,
   toxLevel: true,
   toxCheckedAt: true,
 } as const;
@@ -209,6 +211,7 @@ export async function recalcSiteToxicity(
       apiSnippet: String(r.apiSnippet ?? ""),
       apiDr: r.apiDr == null ? null : Number(r.apiDr),
       apiContent: !!r.apiContent,
+      apiSpamScore: (r as { apiSpamScore?: number | null }).apiSpamScore ?? null,
     });
     byDonor.set(domain, list);
   }

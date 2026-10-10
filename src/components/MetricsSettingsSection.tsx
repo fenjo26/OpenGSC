@@ -1,6 +1,6 @@
 "use client";
 
-// Everything about the paid metrics providers (Ahrefs/Semrush/Majestic/Keys.so) in one screen.
+// Everything about the paid metrics providers (Ahrefs/Semrush/Majestic/Keys.so/DataForSEO) in one screen.
 //
 // It used to be two: the key was typed under "API Keys" while the provider, host and spending
 // cap lived under "SEO Tools". One integration configured in two places is the kind of split
@@ -25,7 +25,9 @@ import {
 } from "@/lib/seo/metricsClient";
 import { getAhrefsDrKey, setAhrefsDrKey } from "@/lib/seo/keys";
 import type { MetricsProvider, SubscriptionInfo } from "@/lib/seo/metricsPricing";
-import { parseMetricsProvider, KEYSSO_BASES, keyssoBaseLabel } from "@/lib/seo/metricsPricing";
+import {
+  parseMetricsProvider, KEYSSO_BASES, keyssoBaseLabel, formatProviderUnits, metersInDollars, UNIT_PRICE_USD,
+} from "@/lib/seo/metricsPricing";
 
 // ─── Ahrefs free Domain Rating key ──────────────────────────────────────────────
 // Unrelated to the paid Site Explorer integration below: this key only unlocks the free
@@ -106,6 +108,7 @@ const OFFICIAL_DOCS: Record<MetricsProvider, string> = {
   semrush: "https://developer.semrush.com/api/",
   majestic: "https://developer-support.majestic.com/api/",
   keysso: "https://apidoc.keys.so/",
+  dataforseo: "https://app.dataforseo.com/api-access",
 };
 
 /** Shown under the key field so the destination is never implicit. */
@@ -114,6 +117,7 @@ const OFFICIAL_HOST: Record<MetricsProvider, string> = {
   semrush: "https://api.semrush.com",
   majestic: "https://api.majestic.com",
   keysso: "https://api.keys.so",
+  dataforseo: "https://api.dataforseo.com",
 };
 
 const PROVIDER_LABEL: Record<MetricsProvider, string> = {
@@ -121,7 +125,12 @@ const PROVIDER_LABEL: Record<MetricsProvider, string> = {
   semrush: "Semrush",
   majestic: "Majestic",
   keysso: "Keys.so",
+  dataforseo: "DataForSEO",
 };
+
+/** Micro-dollar meter units ↔ the dollars the DataForSEO cap field shows. */
+const unitsToUsd = (u: number) => u * UNIT_PRICE_USD.dataforseo;
+const usdToUnits = (usd: number) => Math.round(usd / UNIT_PRICE_USD.dataforseo);
 
 export default function MetricsSettingsSection() {
   const { t, language } = useLanguage();
@@ -131,6 +140,9 @@ export default function MetricsSettingsSection() {
   const [mode, setMode] = useState<MetricsMode>("official");
   const [customUrl, setCustomUrl] = useState("");
   const [cap, setCap] = useState("");
+  // DataForSEO's weekly refresh (off / referring domains / + all links). Mirrored to the server
+  // under the `seoMetrics` prefix, where the scheduler reads it.
+  const [dfsAuto, setDfsAuto] = useState("off");
   const [usage, setUsage] = useState<{ units: number; requests: number } | null>(null);
   // The provider's own balance (free endpoint), so step 4 can show the real "left of" figure
   // next to our own spend counter — and say when it is unavailable rather than stay silent.
@@ -146,7 +158,13 @@ export default function MetricsSettingsSection() {
   useEffect(() => {
     setMode(getMetricsMode(provider));
     setCustomUrl(localStorage.getItem(`seoMetricsBaseUrl_${provider}`) || "");
-    setCap(localStorage.getItem(`seoMetricsCap_${provider}`) || "");
+    {
+      // The DataForSEO cap is stored in meter units (micro-dollars) like every other provider's,
+      // and shown in dollars — nobody budgets "12 500 000 units".
+      const raw = localStorage.getItem(`seoMetricsCap_${provider}`) || "";
+      setCap(raw && metersInDollars(provider) ? String(unitsToUsd(Number(raw))) : raw);
+    }
+    setDfsAuto(localStorage.getItem("seoMetricsAuto_dataforseo") || "off");
     fetch(`/api/metrics/usage?provider=${provider}`)
       .then(r => (r.ok ? r.json() : null))
       .then(d => { if (d) setUsage({ units: Number(d.units || 0), requests: Number(d.requests || 0) }); })
@@ -184,7 +202,8 @@ export default function MetricsSettingsSection() {
   };
 
   const saveCap = (v: string) => {
-    const n = Math.max(0, Number(v) || 0);
+    const entered = Math.max(0, Number(v) || 0);
+    const n = metersInDollars(provider) ? usdToUnits(entered) : entered;
     if (n > 0) localStorage.setItem(`seoMetricsCap_${provider}`, String(n));
     else localStorage.removeItem(`seoMetricsCap_${provider}`);
   };
@@ -254,7 +273,7 @@ export default function MetricsSettingsSection() {
         {/* 1. Which data provider */}
         <span className="tool-section-label">{t("metricsStep1")}</span>
         <div style={{ display: "flex", gap: "8px", marginBottom: "18px", flexWrap: "wrap" }}>
-          {(["ahrefs", "semrush", "majestic", "keysso"] as const).map(p => (
+          {(["ahrefs", "semrush", "majestic", "keysso", "dataforseo"] as const).map(p => (
             <button key={p} className={provider === p ? "pill active" : "pill"}
               onClick={() => chooseProvider(p)} style={{ cursor: "pointer" }}>
               {PROVIDER_LABEL[p]}
@@ -278,6 +297,13 @@ export default function MetricsSettingsSection() {
             {t("metricsKeyssoHint")}
           </div>
         )}
+        {/* DataForSEO: pay-as-you-go dollars, one credential shared with SERP and keyword demand,
+            and a rank that is its own scale — all three said before anyone compares numbers. */}
+        {provider === "dataforseo" && (
+          <div style={{ margin: "-10px 0 18px", fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.55, maxWidth: "620px" }}>
+            {t("metricsDfsHint")}
+          </div>
+        )}
         {/* The one Keys.so-specific setting: which Yandex region the region-scoped reports read.
             Here, once, rather than a selector on every screen that uses it. */}
         {provider === "keysso" && (
@@ -295,8 +321,9 @@ export default function MetricsSettingsSection() {
         <span className="tool-section-label">{t("metricsStep2")}</span>
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "12px" }}>
           {modeOption("official", t("metricsModeOfficial"), t("metricsModeOfficialDesc"))}
-          {modeOption("reseller", t("metricsModeReseller"), t("metricsModeResellerDesc"))}
-          {modeOption("custom", t("metricsModeCustom"), t("metricsModeCustomDesc"))}
+          {/* DataForSEO has no reseller gateway — offering one would invent a host. */}
+          {provider !== "dataforseo" && modeOption("reseller", t("metricsModeReseller"), t("metricsModeResellerDesc"))}
+          {provider !== "dataforseo" && modeOption("custom", t("metricsModeCustom"), t("metricsModeCustomDesc"))}
         </div>
 
         {mode === "official" && (
@@ -360,13 +387,15 @@ export default function MetricsSettingsSection() {
         <span className="tool-section-label">{t("metricsStep4")}</span>
         <div style={{ display: "flex", alignItems: "flex-end", gap: "16px", flexWrap: "wrap" }}>
           <div style={{ maxWidth: "220px" }}>
-            <span className="tool-field-label">{t("metricsCap")}</span>
-            <input className="tool-input" value={cap} inputMode="numeric" placeholder={t("metricsCapPh")}
-              onChange={e => setCap(e.target.value.replace(/[^0-9]/g, ""))}
+            <span className="tool-field-label">{metersInDollars(provider) ? t("metricsCapUsd") : t("metricsCap")}</span>
+            <input className="tool-input" value={cap} inputMode={metersInDollars(provider) ? "decimal" : "numeric"} placeholder={t("metricsCapPh")}
+              onChange={e => setCap(metersInDollars(provider)
+                ? e.target.value.replace(",", ".").replace(/[^0-9.]/g, "")
+                : e.target.value.replace(/[^0-9]/g, ""))}
               onBlur={() => saveCap(cap)} />
           </div>
           <div style={{ paddingBottom: "9px", fontSize: "12px", color: "var(--color-text-secondary)" }}>
-            {t("metricsUsage")}: <strong style={{ color: "var(--color-text-primary)" }}>{(usage?.units ?? 0).toLocaleString()}</strong> {t("metricsUnits")}
+            {t("metricsUsage")}: <strong style={{ color: "var(--color-text-primary)" }}>{formatProviderUnits(usage?.units ?? 0, provider)}</strong>{metersInDollars(provider) ? "" : ` ${t("metricsUnits")}`}
             {usage?.requests ? <span style={{ color: "var(--color-text-tertiary)" }}> · {usage.requests} {t("metricsRequests")}</span> : null}
             {/* The provider's own numbers beside ours: our counter refunds on failure and cannot
                 see top-ups made at the gateway, so it is an estimate and is labelled when the
@@ -380,6 +409,15 @@ export default function MetricsSettingsSection() {
                 real balance on success, and a refusal that names the cause on failure. */}
             {provider === "keysso" && sub?.info?.unitsRemaining != null && (
               <span> · {t("blsrcRemaining")} <strong style={{ color: "var(--color-text-primary)" }}>{sub.info.unitsRemaining.toLocaleString()}</strong> {t("blsrcKsCredits")}</span>
+            )}
+            {/* DataForSEO's free user_data is the real account balance, in dollars. */}
+            {provider === "dataforseo" && sub?.info?.unitsRemaining != null && (
+              <span> · {t("blsrcDfsBalance")} <strong style={{ color: "var(--color-text-primary)" }}>{formatProviderUnits(sub.info.unitsRemaining, "dataforseo")}</strong></span>
+            )}
+            {provider === "dataforseo" && sub && !sub.info && (sub.gatewayStatus === 401 || sub.gatewayStatus === 402 || sub.gatewayStatus === 403) && (
+              <div style={{ marginTop: "4px", color: "var(--color-warning)" }}>
+                {sub.gatewayStatus === 401 ? t("metricsDfsBadKey") : sub.gatewayStatus === 402 ? t("blsrcDfsNoFunds") : t("blsrcDfsNoAccess")}
+              </div>
             )}
             {provider === "keysso" && sub && !sub.info && (sub.gatewayStatus === 401 || sub.gatewayStatus === 402) && (
               <div style={{ marginTop: "4px", color: "var(--color-warning)" }}>
@@ -398,6 +436,28 @@ export default function MetricsSettingsSection() {
         <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "6px", lineHeight: 1.5, maxWidth: "620px" }}>
           {t("metricsCapHint")}
         </div>
+
+        {/* 5. DataForSEO only: the weekly refresh. Off until chosen — it spends money on its own,
+            so it is a deliberate switch next to the cap that bounds it, never a default. */}
+        {provider === "dataforseo" && (
+          <div style={{ marginTop: "18px" }}>
+            <span className="tool-section-label">{t("metricsDfsAuto")}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+              <select className="tool-input inline" value={dfsAuto}
+                onChange={e => {
+                  setDfsAuto(e.target.value);
+                  // Written as "off" rather than removed: the server mirror merges what it is sent,
+                  // and a removed key could leave a stale "weekly" spending on the server.
+                  localStorage.setItem("seoMetricsAuto_dataforseo", e.target.value);
+                }}>
+                <option value="off">{t("metricsDfsAutoOff")}</option>
+                <option value="weekly">{t("metricsDfsAutoWeekly")}</option>
+                <option value="weekly_links">{t("metricsDfsAutoWeeklyLinks")}</option>
+              </select>
+              <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.5, flex: "1 1 320px" }}>{t("metricsDfsAutoHint")}</span>
+            </div>
+          </div>
+        )}
       </div>
 
       <KeywordSourceSettings />

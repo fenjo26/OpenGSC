@@ -5,6 +5,7 @@ import { rawQuery } from "@/lib/db/raw";
 import { estimateCostUsd, MetricsCreds, fetchKeyssoBacklinksPage, KEYSSO_BACKLINK_PAGE_SIZE } from "@/lib/seo/metrics";
 import { recordUsage, releaseUnusedUnits, withinCap } from "@/lib/seo/metricsStore";
 import { normDomain } from "@/lib/seo/backlinkStore";
+import { resolveDataforseoCreds, startDataforseoExport } from "@/lib/seo/dataforseoBacklinks";
 import {
   EXPORT_PAGE_SIZE, PROBE_UNITS, STATS_UNITS,
   cachedPaginationMode, estimateExportUnits, fetchBacklinksStats,
@@ -16,6 +17,8 @@ import {
 // Full backlink export from Ahrefs — the api writer of the backlinks v2 wave.
 // POST /api/backlinks/sync { siteId, provider?, confirm?, apiKey?, baseUrl?, cap? }
 //   provider "keysso" → the same export from Keys.so's Runet index (1 credit per 100 links);
+//   provider "dataforseo" → the same export from DataForSEO, live and lost links
+//                           ($0.024 per 1 000-link page + $0.000036 per link);
 //   anything else → Ahrefs, as before.
 //   without confirm → { confirmRequired: true, estimate } — the price, nothing spent beyond the
 //                     one stats call that priced it
@@ -46,6 +49,12 @@ export async function POST(req: Request) {
   if (!target) return NextResponse.json({ error: "bad_site_url" }, { status: 400 });
 
   if (b.provider === "keysso") return keyssoSync(userId, siteId, target, b, confirm, cap);
+  if (b.provider === "dataforseo") {
+    const creds = await resolveDataforseoCreds(userId, b);
+    if (!creds) return NextResponse.json({ error: "no_key" }, { status: 400 });
+    const r = await startDataforseoExport({ userId, siteId, target, creds, cap, confirm });
+    return NextResponse.json(r.body, { status: r.status });
+  }
 
   const resolved = await resolveAhrefsCreds(userId, b);
   if (resolved === "semrush") return NextResponse.json({ error: "provider_unsupported" }, { status: 400 });

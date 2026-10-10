@@ -179,7 +179,7 @@ test("данные глубокой проверки участвуют в ве�
 });
 
 test("список структурных сигналов зафиксирован", () => {
-  assert.deepEqual([...BL_STRUCT_SIGNALS], ["sitewide_low_dr", "out_of_content", "donor_parked"]);
+  assert.deepEqual([...BL_STRUCT_SIGNALS], ["sitewide_low_dr", "out_of_content", "donor_parked", "provider_spam"]);
 });
 
 /* ------------------------------------------------------------------ */
@@ -211,4 +211,41 @@ test("переоптимизация: доля выше 30% и минимум а
   assert.equal(atThirty.pct, 30);
   assert.equal(atThirty.over, false);
   assert.equal(overOptimization(["best price"], domain).over, false); // мало анкоров — не судим
+});
+
+/* ------------------------------------------------------------------ */
+/* спам-оценка DataForSEO (issue #26) — мнение провайдера, не приговор  */
+/* ------------------------------------------------------------------ */
+
+test("высокая спам-оценка DataForSEO одна делает донора suspicious, но не toxic", () => {
+  const v = classifyDonor(donor([link({ apiAnchor: "transfer", apiSpamScore: 85 })]));
+  assert.ok(v.signals.includes("provider_spam"));
+  assert.equal(v.level, "suspicious");
+});
+
+test("спам-оценка ниже порога и её отсутствие сигнала не дают", () => {
+  assert.ok(!classifyDonor(donor([link({ apiAnchor: "transfer", apiSpamScore: 69 })])).signals.includes("provider_spam"));
+  assert.ok(!classifyDonor(donor([link({ apiAnchor: "transfer", apiSpamScore: null })])).signals.includes("provider_spam"));
+  assert.ok(!classifyDonor(donor([link({ apiAnchor: "transfer" })])).signals.includes("provider_spam"));
+});
+
+test("спам-оценка + сильный собственный сигнал → toxic; донор оценивается по худшей ссылке", () => {
+  const links = Array.from({ length: 25 }, (_, i) => link({ apiDr: 2, apiSpamScore: i === 3 ? 90 : 10 }));
+  const v = classifyDonor(donor(links));
+  assert.ok(v.signals.includes("provider_spam"));
+  assert.ok(v.signals.includes("sitewide_low_dr"));
+  assert.equal(v.level, "toxic");
+});
+
+test("спам-оценка + слабый сигнал (вне контента) остаётся suspicious", () => {
+  const links = Array.from({ length: 10 }, () => link({ apiContent: false, apiSpamScore: 90 }));
+  const v = classifyDonor(donor(links));
+  assert.ok(v.signals.includes("out_of_content"));
+  assert.equal(v.level, "suspicious");
+});
+
+test("одна спам-оценка без анкора и текста — уже есть что судить (не unknown)", () => {
+  const v = classifyDonor(donor([link({ apiSpamScore: 95 })]));
+  assert.notEqual(v.level, "unknown");
+  assert.ok(BL_STRUCT_SIGNALS.includes("provider_spam"));
 });

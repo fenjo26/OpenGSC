@@ -57,6 +57,10 @@ export async function register() {
     // button uses. Both halves are free and degrade silently before `db push`.
     const { startBacklinkVerifyScheduler } = await import('@/lib/backlinks/verifyScheduler');
     startBacklinkVerifyScheduler();
+    // Weekly DataForSEO backlink refresh (issue #26). Spends money, so — like warmup — it does
+    // nothing until a user switches it on in Settings → SEO Metrics, and stays inside their cap.
+    const { startDataforseoBacklinkScheduler } = await import('@/lib/seo/dataforseoBacklinkScheduler');
+    startDataforseoBacklinkScheduler();
     // ─── R+ wave schedulers (pre-wired stubs; owning agents fill the tick bodies) ────
     // Geo-grid presets: fires scheduled scans (cron matcher, high-water lastFireAt) and
     // never back-fills missed ticks — a grid run costs gridSize² queries.

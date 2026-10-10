@@ -15,8 +15,8 @@
 // build break; the cast makes the module compile before and after the client catches up.
 
 import { prisma } from "@/lib/prisma";
-import { MetricsCreds, fetchKeyssoBacklinksPage } from "@/lib/seo/metrics";
-import { releaseUnusedUnits } from "@/lib/seo/metricsStore";
+import { MetricsCreds, fetchKeyssoBacklinksPage, fetchDataforseoBacklinksPage } from "@/lib/seo/metrics";
+import { recordUsage, releaseUnusedUnits } from "@/lib/seo/metricsStore";
 import {
   MappedBacklinkRow, PaginationMode, ExistingApiState,
   mapApiRow, planEvents, probePagination, fetchBacklinksPage,
@@ -104,6 +104,9 @@ export async function upsertFromApi(
       apiFirstSeen: row.apiFirstSeen,
       apiLastSeen: row.apiLastSeen,
       apiFetchedAt: opts.fetchedAt,
+      // Only DataForSEO rows carry it. Left out of the write entirely otherwise, so an Ahrefs or
+      // Keys.so export never names a column an un-pushed schema does not have yet.
+      ...(row.apiSpamScore != null ? { apiSpamScore: row.apiSpamScore } : {}),
     };
 
     try {
@@ -377,5 +380,74 @@ export async function runKeyssoBacklinkExport(opts: ExportRunOpts): Promise<void
     });
   } finally {
     await releaseUnusedUnits(userId, "keysso", opts.reservedUnits, state.unitsSpent);
+  }
+}
+
+// ─── DataForSEO export ───────────────────────────────────────────────────────
+
+/** Hard stop for one DataForSEO run: 20 000 pages × 1 000 links. Far past a real profile, short of a loop. */
+const DATAFORSEO_MAX_EXPORT_PAGES = 20000;
+
+/**
+ * The same export from DataForSEO's index (issue #26). Rows arrive restated in the Ahrefs
+ * all-backlinks shape (`dfsBacklinkToExportRow`), so `upsertFromApi` and its event planner are
+ * shared unchanged; the per-link spam score rides along into `apiSpamScore`.
+ *
+ * `backlinks_status_type: all` returns live AND lost links with `is_lost`, so — unlike the
+ * live-only Keys.so export — this run sees removals the provider itself recorded, the same way
+ * the Ahrefs all-time pull does. Paging is by `search_after_token`; the listing ends on an empty
+ * page or a missing token, and the run is `complete` only then. Metered on `dataforseo` in
+ * micro-dollar units, reconciled to the `cost` DataForSEO reports per page.
+ */
+export async function runDataforseoBacklinkExport(opts: ExportRunOpts): Promise<void> {
+  const { syncId, siteId, userId, target, creds } = opts;
+  const state: ExportSummary = {
+    rowsSeen: 0, pagesPulled: 0, unitsSpent: 0, complete: false,
+    paginationMode: "dataforseo_token", slicesUsed: false, slicesTruncated: false, notes: [],
+  };
+  try {
+    let token: string | null = null;
+    for (let page = 1; page <= DATAFORSEO_MAX_EXPORT_PAGES; page++) {
+      await heartbeatApiSync(syncId, { stage: "pull", unitsSpent: state.unitsSpent });
+      const res = await fetchDataforseoBacklinksPage(creds, target, { token });
+      state.unitsSpent += res.units;
+      if (res.error) throw new Error(res.error);
+      if (!res.itemsCount) { state.complete = true; break; }
+      if (res.rows.length) await upsertFromApi(siteId, res.rows, { fetchedAt: new Date() });
+      state.rowsSeen += res.rows.length;
+      state.pagesPulled++;
+      const progress = opts.live && opts.live > 0
+        ? Math.min(99, Math.floor((state.rowsSeen / opts.live) * 100))
+        : 0;
+      await heartbeatApiSync(syncId, {
+        stage: "persist", progress, rowsSeen: state.rowsSeen,
+        pagesPulled: state.pagesPulled, unitsSpent: state.unitsSpent,
+      });
+      if (!res.token || res.token === token) { state.complete = true; break; }
+      token = res.token;
+    }
+    await finishApiSync(syncId, {
+      status: "completed", stage: "completed", progress: 100, complete: state.complete,
+      rowsSeen: state.rowsSeen, pagesPulled: state.pagesPulled, unitsSpent: state.unitsSpent,
+      summary: JSON.stringify(state), error: null,
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    state.notes.push(message);
+    await finishApiSync(syncId, {
+      status: "error", stage: "error", complete: false,
+      rowsSeen: state.rowsSeen, pagesPulled: state.pagesPulled, unitsSpent: state.unitsSpent,
+      summary: JSON.stringify(state),
+      error: message.slice(0, 500),
+    });
+  } finally {
+    // DataForSEO reports what each page really cost. Below the reservation the difference is
+    // refunded; above it (the listing grew between the quote and the run) the overage is
+    // recorded, so the month's meter never shows less than was actually billed.
+    if (state.unitsSpent > opts.reservedUnits) {
+      await recordUsage(userId, "dataforseo", state.unitsSpent - opts.reservedUnits);
+    } else {
+      await releaseUnusedUnits(userId, "dataforseo", opts.reservedUnits, state.unitsSpent);
+    }
   }
 }

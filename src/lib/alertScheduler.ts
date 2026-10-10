@@ -275,14 +275,19 @@ async function checkUser(userId: string, s: AlertSettings): Promise<Pending[]> {
     const since = new Date(Date.now() - 26 * 3600_000).toISOString().slice(0, 10);
     for (const site of sites) {
       const target = site.url.replace(/^https?:\/\//, "").replace(/^sc-domain:/, "").replace(/^www\./, "").split("/")[0];
-      const lost = await lostSince(target, since, s.lostLink.minDr);
+      // Ahrefs DR, plus DataForSEO's own rank for sites refreshed from it (issue #26) — the
+      // threshold applies to each on its own 0–100 scale, and the message names which one.
+      const lost = [
+        ...(await lostSince(target, since, s.lostLink.minDr)).map(l => ({ ...l, scale: "DR" })),
+        ...(await lostSince(target, since, s.lostLink.minDr, "dataforseo")).map(l => ({ ...l, scale: "DFS" })),
+      ].filter((l, i, all) => all.findIndex(x => x.refDomain === l.refDomain) === i);
       if (!lost.length) continue;
       out.push({
         type: "lost_link", siteId: site.id,
         title: L.lostLinkTitle(String(siteName.get(site.id))),
         message: L.lostLinkMsg(
           String(siteName.get(site.id)), lost.length,
-          lost.slice(0, 5).map(l => `${l.refDomain} (DR ${Math.round(l.dr)})`).join(", "),
+          lost.slice(0, 5).map(l => `${l.refDomain} (${l.scale} ${Math.round(l.dr)})`).join(", "),
           s.lostLink.minDr,
         ),
         // Per day, not per domain: five links lost at once is one piece of news, not five.

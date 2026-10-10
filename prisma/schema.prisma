@@ -468,6 +468,9 @@ model SiteBacklink {
   apiSnippet    String    @default("")      // snippet_left + snippet_right, truncated to 500
   apiFirstSeen  String    @default("")      // YYYY-MM-DD, as the API returns it — no timezone to lose
   apiLastSeen   String    @default("")
+  // DataForSEO's per-link spam score, 0–100 (issue #26). Null for every other provider — it is
+  // their opinion of the link, an extra toxicity signal, never a replacement for our own rules.
+  apiSpamScore  Int?
   apiFetchedAt  DateTime?
 
   // --- what our own page fetch says ---

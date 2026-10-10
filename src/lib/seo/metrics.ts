@@ -1,4 +1,4 @@
-// Third-party SEO metrics (Ahrefs / Semrush / Majestic / Keys.so) behind one call surface,
+// Third-party SEO metrics (Ahrefs / Semrush / Majestic / Keys.so / DataForSEO) behind one call surface,
 // mirroring the shape of `src/lib/llm.ts`: several providers, one signature, retries and
 // normalization in one place. Keyword data exists on Ahrefs and Semrush only; Majestic and
 // Keys.so serve the backlink/domain side and answer keyword calls with `provider_unsupported`
@@ -30,6 +30,7 @@ import {
   estimateCompetitorUnits, estimateIdeaUnits, estimateOrganicKeywordUnits, estimateUnits,
   gatewayStatusFromError, ideaEndpoint, isKeywordCapable, parseKeyssoBase,
   KEYSSO_REFDOMAIN_PAGE_SIZE, KEYSSO_STATS_UNITS,
+  DATAFORSEO_PAGE_SIZE, DATAFORSEO_STATS_UNITS, DATAFORSEO_HISTORY_MONTHS, DATAFORSEO_NEWLOST_WEEKS,
   type IdeaMode, type MetricsCreds, type MetricsProvider, type SubscriptionInfo,
 } from "./metricsPricing";
 import {
@@ -39,6 +40,11 @@ import {
   mapKeyssoKeyword, type KeyssoKeyword,
   type KeyssoAiAnswer, type KeyssoAiCompetitor,
 } from "./keyssoParse";
+import {
+  dfsAuth, dfsBalanceUsd, dfsDofollowPct, dfsTarget, dfsUsdToUnits, mapDfsBacklinksResult, mapDfsHistory,
+  mapDfsNewLost, mapDfsRefDomain, mapDfsSummary, monthsAgo, parseDfsEnvelope,
+  type DfsHistoryPoint, type DfsNewLostPoint, type DfsSummary,
+} from "./dataforseoBacklinksParse";
 
 // The prices live next door so the browser can quote them without importing this module's
 // network half — see the header of `metricsPricing.ts`. Re-exported wholesale, so every
@@ -140,6 +146,7 @@ const subscriptionCache = new Map<string, { at: number; info: SubscriptionInfo }
 export async function fetchSubscriptionInfo(creds: MetricsCreds): Promise<SubscriptionResult> {
   if (!creds.apiKey) return { info: null, status: 0, error: "no_key" };
   if (creds.provider === "keysso") return keyssoSubscription(creds);
+  if (creds.provider === "dataforseo") return dataforseoSubscription(creds);
   // Semrush's protocol has no equivalent report; Majestic's `GetSubscriptionInfo` reports the
   // pooled upstream plan, deliberately not the caller's own credit ledger. Both fall back to
   // our own estimate rather than quote somebody else's wallet.
@@ -451,6 +458,7 @@ export async function fetchBacklinkStats(
     };
   }
   if (creds.provider === "keysso") return keyssoBacklinkStats(creds, domain);
+  if (creds.provider === "dataforseo") return dataforseoBacklinkStats(creds, domain);
   if (creds.provider === "semrush") {
     const r = await semrushBacklinksCall(creds, {
       type: "backlinks_overview", target: domain, target_type: "root_domain",
@@ -668,6 +676,8 @@ export async function fetchBacklinkProfile(
       ? await majesticProfile(creds, domain, opts)
       : creds.provider === "keysso"
         ? await keyssoProfile(creds, domain, opts)
+      : creds.provider === "dataforseo"
+        ? await dataforseoProfile(creds, domain, opts)
       : creds.provider === "semrush"
         ? await semrushProfile(creds, domain, opts)
         : await ahrefsProfile(creds, domain, opts);
@@ -1536,6 +1546,306 @@ export async function fetchYandexAiReport(
   };
 }
 
+// ─── DataForSEO Backlinks API ──────────────────────────────────────────────────
+//
+// The fifth provider (issue #26): pay-as-you-go dollars instead of units, and the same
+// credential the SERP and demand modules already use (`seoKey_dataforseo`). Its `rank` is its
+// own authority score, requested on the 0–100 scale and stored under provider `dataforseo` —
+// never shown as Ahrefs DR. Keyword-side calls answer `provider_unsupported` through
+// `isKeywordCapable`: DataForSEO keyword data has its own path (keywordSource.ts / demand.ts).
+//
+// Transport rules, all in `dfsCall`:
+//   • every Live endpoint takes an ARRAY of one task, and answers with a three-level envelope —
+//     `parseDfsEnvelope` checks HTTP, envelope and task status (a task can fail inside a 200);
+//   • the meter is reconciled to the `cost` DataForSEO itself reports, in micro-dollar units —
+//     never to our estimate;
+//   • 429 and 5xx are retried with back-off, everything else is final (a bad credential or an
+//     empty balance fails identically on every attempt).
+// The API allows 30 simultaneous calls per account; six per credential keeps this instance a
+// polite neighbour to the SERP and demand modules sharing the same account.
+
+const DFS_MAX_IN_FLIGHT = 6;
+const DFS_TIMEOUT_MS = 60_000;
+
+type DfsAnswer =
+  | { ok: true; result: any; units: number; status: 200 }
+  | { ok: false; status: number; error: string; units: number };
+
+async function dfsCall(
+  creds: MetricsCreds, path: string, task?: Record<string, unknown>,
+): Promise<DfsAnswer> {
+  const base = (creds.baseUrl || DEFAULT_BASE_URL.dataforseo).replace(/\/+$/, "");
+  const url = `${base}${path}`;
+  const init: RequestInit = task
+    ? {
+        method: "POST",
+        headers: { Authorization: `Basic ${dfsAuth(creds.apiKey)}`, "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify([task]),
+      }
+    : { method: "GET", headers: { Authorization: `Basic ${dfsAuth(creds.apiKey)}`, Accept: "application/json" } };
+
+  let units = 0;
+  let last: DfsAnswer = { ok: false, status: 0, error: "dataforseo: request failed", units: 0 };
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    let res: Response;
+    let call: { finish: (o?: { error?: string; costUsd?: number | null }) => void };
+    try {
+      ({ res, call } = await withSlot(`dataforseo:${creds.apiKey}`, () =>
+        loggedFetch(url, { ...init, signal: AbortSignal.timeout(DFS_TIMEOUT_MS) }, { provider: "dataforseo", attempt }),
+      DFS_MAX_IN_FLIGHT));
+    } catch (e: any) {
+      last = { ok: false, status: 0, error: `dataforseo 0: ${String(e?.cause?.code || e?.message || e)}`, units };
+      if (attempt < 3) { await sleep(800 * 2 ** (attempt - 1) + Math.random() * 400); continue; }
+      return last;
+    }
+    const data = await res.json().catch(() => null);
+    const env = parseDfsEnvelope(res.status, data);
+    units += dfsUsdToUnits(env.costUsd);
+    if (env.ok) {
+      call.finish({ costUsd: env.costUsd });
+      return { ok: true, result: env.result, units, status: 200 };
+    }
+    call.finish({ error: env.error, costUsd: env.costUsd });
+    last = { ok: false, status: env.status, error: env.error, units };
+    if ((env.status === 429 || env.status >= 500) && attempt < 3) {
+      await sleep(800 * 2 ** (attempt - 1) + Math.random() * 400);
+      continue;
+    }
+    return last;
+  }
+  return last;
+}
+
+/** The free `appendix/user_data`: the account balance, as meter units (micro-dollars). */
+async function dataforseoSubscription(creds: MetricsCreds): Promise<SubscriptionResult> {
+  const cacheKey = `dataforseo|${creds.apiKey}`;
+  const hit = subscriptionCache.get(cacheKey);
+  if (hit && Date.now() - hit.at < SUBSCRIPTION_TTL_MS) return { info: hit.info, status: 200 };
+  const r = await dfsCall(creds, "/v3/appendix/user_data");
+  if (!r.ok) return { info: null, status: r.status, error: r.error };
+  const balance = dfsBalanceUsd(r.result);
+  const info: SubscriptionInfo = {
+    unitsLimitApiKey: null, unitsUsageApiKey: null,
+    unitsLimitWorkspace: null, unitsUsageWorkspace: null,
+    usageResetDate: "", apiKeyExpirationDate: "",
+    fetchedAt: new Date().toISOString(),
+    unitsRemaining: balance == null ? null : dfsUsdToUnits(balance),
+  };
+  subscriptionCache.set(cacheKey, { at: Date.now(), info });
+  return { info, status: 200 };
+}
+
+/** What every Backlinks call shares: the 0–100 rank scale and the site's subdomains included. */
+const dfsCommon = (domain: string) => ({
+  target: dfsTarget(domain),
+  include_subdomains: true,
+  exclude_internal_backlinks: true,
+  rank_scale: "one_hundred",
+});
+
+/** `summary/live` — totals, rank, spam score. One request; the stats every pull is priced from. */
+export async function fetchDataforseoSummary(
+  creds: MetricsCreds, domain: string,
+): Promise<{ ok: true; summary: DfsSummary; units: number } | { ok: false; error: string; units: number }> {
+  const r = await dfsCall(creds, "/v3/backlinks/summary/live", { ...dfsCommon(domain), backlinks_status_type: "live" });
+  if (!r.ok) return { ok: false, error: r.error, units: r.units };
+  if (!r.result) return { ok: false, error: "dataforseo 404: no summary for this target", units: r.units };
+  return { ok: true, summary: mapDfsSummary(r.result), units: r.units };
+}
+
+async function dataforseoBacklinkStats(
+  creds: MetricsCreds, domain: string,
+): Promise<{ ok: true; raw: any; totals: BacklinkStatsTotals } | { ok: false; error: string }> {
+  const s = await fetchDataforseoSummary(creds, domain);
+  if (!s.ok) return { ok: false, error: s.error };
+  return {
+    ok: true,
+    // `units` rides in raw so the profile pull meters what the summary really cost, whoever
+    // fetched it (the route fetches it to price the pull, then hands it over).
+    raw: { ...s.summary, units: s.units, source: "dataforseo" },
+    totals: { refDomainsTotal: s.summary.refDomains, backlinksTotal: s.summary.backlinks },
+  };
+}
+
+/** DataForSEO domain card: the summary alone. `dr` is DataForSEO rank under provider `dataforseo`. */
+async function dataforseoDomain(creds: MetricsCreds, domain: string): Promise<MetricsResult<DomainMetric>> {
+  const s = await fetchDataforseoSummary(creds, domain);
+  if (!s.ok) return { items: [], units: s.units, error: s.error };
+  return {
+    units: s.units,
+    items: [{
+      domain,
+      dr: s.summary.rank,
+      refDomains: s.summary.refDomains,
+      backlinks: s.summary.backlinks,
+      orgTraffic: null,
+      orgKeywords: null,
+      orgCost: null,
+      payload: {
+        source: "dataforseo", rankScale: 100, rank: s.summary.rank, spamScore: s.summary.spamScore,
+        brokenBacklinks: s.summary.brokenBacklinks, refMainDomains: s.summary.refMainDomains,
+      },
+    }],
+  };
+}
+
+/** Hard stop for one refdomain pull: 2 000 pages × 1 000 rows. Far past a real profile, short of a loop. */
+const DFS_MAX_PAGES = 2000;
+
+/**
+ * DataForSEO referring domains, paged by `offset` in pages of 1 000 (one request fee each).
+ * Ordered by rank then domain so pages cannot reshuffle between requests; an account whose API
+ * refuses the sort (an unknown order field answers 400) is retried once without it, and the
+ * shortfall check then catches any drift. The pull ends on an empty page or once `total_count`
+ * rows were seen — never on a short page alone. A failure after page one keeps the paid pages
+ * and reports partial, so nothing absent is marked lost.
+ */
+async function dataforseoProfile(
+  creds: MetricsCreds,
+  domain: string,
+  opts: { minDr?: number; stats?: any } = {},
+): Promise<MetricsResult<BacklinkProfile> & { sawEnd?: boolean; unitsSpent?: number; shortfall?: RefdomainShortfall }> {
+  let stats = opts.stats ?? null;
+  if (!stats || stats.source !== "dataforseo") {
+    const s = await dataforseoBacklinkStats(creds, domain);
+    if (!s.ok) return { items: [], units: 0, error: s.error, unitsSpent: 0 };
+    stats = s.raw;
+  }
+  let unitsSpent = Number(stats.units ?? DATAFORSEO_STATS_UNITS) || 0;
+  const minDr = opts.minDr && opts.minDr > 0 ? opts.minDr : 0;
+  const refDomains: RefDomainItem[] = [];
+  const seen = new Set<string>();
+  let sawEnd = false;
+  let partialError = "";
+  let total: number | null = null;
+  let ordered = true;
+
+  for (let page = 0; page < DFS_MAX_PAGES; page++) {
+    const task: Record<string, unknown> = {
+      ...dfsCommon(domain),
+      backlinks_status_type: "live",
+      limit: DATAFORSEO_PAGE_SIZE,
+      offset: page * DATAFORSEO_PAGE_SIZE,
+    };
+    if (ordered) task.order_by = ["rank,desc", "domain,asc"];
+    if (minDr) task.filters = ["rank", ">=", minDr];
+    let r = await dfsCall(creds, "/v3/backlinks/referring_domains/live", task);
+    unitsSpent += r.units;
+    if (!r.ok && page === 0 && ordered && r.status === 400) {
+      ordered = false;
+      delete task.order_by;
+      r = await dfsCall(creds, "/v3/backlinks/referring_domains/live", task);
+      unitsSpent += r.units;
+    }
+    if (!r.ok) {
+      if (page === 0) return { items: [], units: unitsSpent, error: r.error, unitsSpent };
+      partialError = r.error;
+      break;
+    }
+    const items: any[] = Array.isArray(r.result?.items) ? r.result.items : [];
+    if (total == null) total = num(r.result?.total_count);
+    if (!items.length) { sawEnd = true; break; }
+
+    let fresh = 0;
+    for (const raw of items) {
+      const row = mapDfsRefDomain(raw);
+      if (!row || seen.has(row.refDomain)) continue;
+      seen.add(row.refDomain);
+      fresh++;
+      refDomains.push({
+        refDomain: row.refDomain,
+        dr: row.rank,
+        linksToTarget: row.linksToTarget,
+        dofollow: row.dofollow,
+        firstSeen: row.firstSeen,
+      });
+    }
+    if (total != null && (page + 1) * DATAFORSEO_PAGE_SIZE >= total) { sawEnd = true; break; }
+    if (fresh === 0) break; // the page repeated the previous one — drift, not the end
+  }
+
+  const summaryLike: DfsSummary = {
+    rank: num(stats.rank), backlinks: num(stats.backlinks), refDomains: num(stats.refDomains),
+    refMainDomains: num(stats.refMainDomains), refDomainsNofollow: num(stats.refDomainsNofollow),
+    brokenBacklinks: num(stats.brokenBacklinks), spamScore: num(stats.spamScore), firstSeen: String(stats.firstSeen ?? ""),
+  };
+  const shortfall = sawEnd ? refdomainShortfall(refDomains.length, total ?? summaryLike.refDomains, minDr) : null;
+  const result: MetricsResult<BacklinkProfile> & { sawEnd?: boolean; unitsSpent?: number; shortfall?: RefdomainShortfall } = {
+    units: unitsSpent,
+    unitsSpent,
+    // A sample that merely reached its end is not a complete listing.
+    sawEnd: sawEnd && !shortfall,
+    items: [{
+      refDomainsTotal: summaryLike.refDomains,
+      backlinksTotal: summaryLike.backlinks,
+      dofollowPct: dfsDofollowPct(summaryLike),
+      refDomains,
+    }],
+  };
+  if (shortfall) result.shortfall = shortfall;
+  if (partialError) result.error = partialError;
+  return result;
+}
+
+export interface DataforseoBacklinksPage {
+  rows: Record<string, unknown>[];
+  itemsCount: number;
+  totalCount: number | null;
+  token: string | null;
+  units: number;
+  error?: string;
+}
+
+/**
+ * One page of the per-link export (`backlinks/live`, `backlinks_status_type: all` — live and
+ * lost links both, so the export sees removals the way the Ahrefs all-time pull does). Paging is
+ * by `search_after_token`: `offset` stops at 20 000, the token does not, and every other
+ * parameter must repeat exactly, which is why `limit` is fixed here rather than passed in.
+ * `limit: 1` is the pricing read — its `total_count` is the size of the export.
+ */
+export async function fetchDataforseoBacklinksPage(
+  creds: MetricsCreds, target: string, q: { token?: string | null; priceOnly?: boolean } = {},
+): Promise<DataforseoBacklinksPage> {
+  const task: Record<string, unknown> = {
+    ...dfsCommon(target),
+    mode: "as_is",
+    backlinks_status_type: "all",
+    limit: q.priceOnly ? 1 : DATAFORSEO_PAGE_SIZE,
+  };
+  if (q.token) task.search_after_token = q.token;
+  const r = await dfsCall(creds, "/v3/backlinks/backlinks/live", task);
+  if (!r.ok) return { rows: [], itemsCount: 0, totalCount: null, token: null, units: r.units, error: r.error };
+  const p = mapDfsBacklinksResult(r.result);
+  return { rows: p.rows, itemsCount: p.itemsCount, totalCount: p.totalCount, token: p.searchAfterToken, units: r.units };
+}
+
+/** Monthly profile history (`history/live`) for the last `months` months — one request. */
+export async function fetchDataforseoHistory(
+  creds: MetricsCreds, target: string, months = DATAFORSEO_HISTORY_MONTHS,
+): Promise<{ points: DfsHistoryPoint[]; units: number; error?: string }> {
+  const r = await dfsCall(creds, "/v3/backlinks/history/live", {
+    target: dfsTarget(target), rank_scale: "one_hundred",
+    date_from: monthsAgo(new Date(), months),
+    date_to: new Date().toISOString().slice(0, 10),
+  });
+  if (!r.ok) return { points: [], units: r.units, error: r.error };
+  return { points: mapDfsHistory(r.result), units: r.units };
+}
+
+/** New/lost backlinks and domains per week (`timeseries_new_lost_summary/live`) — one request. */
+export async function fetchDataforseoNewLost(
+  creds: MetricsCreds, target: string, weeks = DATAFORSEO_NEWLOST_WEEKS,
+): Promise<{ points: DfsNewLostPoint[]; units: number; error?: string }> {
+  const from = new Date(Date.now() - weeks * 7 * 86_400_000).toISOString().slice(0, 10);
+  const r = await dfsCall(creds, "/v3/backlinks/timeseries_new_lost_summary/live", {
+    target: dfsTarget(target), include_subdomains: true, group_range: "week",
+    date_from: from < "2019-01-30" ? "2019-01-30" : from,
+    date_to: new Date().toISOString().slice(0, 10),
+  });
+  if (!r.ok) return { points: [], units: r.units, error: r.error };
+  return { points: mapDfsNewLost(r.result), units: r.units };
+}
+
 // ─── Competitors and their keywords ────────────────────────────────────────────
 
 export interface CompetitorItem {
@@ -2075,7 +2385,9 @@ export async function fetchDomainMetrics(
         ? await majesticDomain(creds, domain)
         : creds.provider === "keysso"
           ? await keyssoDomain(creds, domain)
-          : await ahrefsDomain(creds, domain);
+          : creds.provider === "dataforseo"
+            ? await dataforseoDomain(creds, domain)
+            : await ahrefsDomain(creds, domain);
   } catch (e: any) {
     return { items: [], units: 0, error: String(e?.message ?? e) };
   }
