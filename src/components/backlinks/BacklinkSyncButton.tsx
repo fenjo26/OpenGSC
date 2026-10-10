@@ -2,6 +2,12 @@
 
 // «Export all backlinks» — the button for POST /api/backlinks/sync.
 //
+// It exports from the provider selected in Settings → SEO Metrics (issue #26 follow-up): Ahrefs,
+// DataForSEO or Keys.so, named on the button and in the quote. It used to be hard-wired to
+// Ahrefs, so a user who had switched to DataForSEO was quoted an Ahrefs export ($3.33) for a
+// profile DataForSEO would export for a few cents. Semrush and Majestic have no per-link export
+// here; with either selected the button stays on Ahrefs and says so.
+//
 // That route fills SiteBacklink, the per-link inventory (anchors, donor DR, snippets) the Toxicity
 // module classifies. Nothing in the UI called it, so a site with an Ahrefs key and no CSV had an
 // empty toxicity report with no way to fill it. This is that way.
@@ -15,9 +21,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Download, Loader2, X } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
-import { formatUsd, getMetricsCreds } from "@/lib/seo/metricsClient";
+import { formatUsd, getMetricsCreds, getMetricsProvider } from "@/lib/seo/metricsClient";
+import {
+  AHREFS_UNIT_FLOOR, DATAFORSEO_REQUEST_UNITS, DATAFORSEO_ROW_UNITS, formatProviderUnits, gatewayStatusFromError,
+} from "@/lib/seo/metricsPricing";
 
-interface Estimate { rows: number; pages: number; units: number; usd: number; paginationMode: string | null }
+interface Estimate { rows: number; pages: number; units: number; usd: number; paginationMode?: string | null }
+
+/** The providers /api/backlinks/sync can export from. */
+type ExportProvider = "ahrefs" | "dataforseo" | "keysso";
+const EXPORT_LABEL: Record<ExportProvider, string> = { ahrefs: "Ahrefs", dataforseo: "DataForSEO", keysso: "Keys.so" };
+
+/** The selected metrics provider, or Ahrefs when the selected one has no per-link export. */
+function exportProvider(): ExportProvider {
+  const p = getMetricsProvider();
+  return p === "dataforseo" || p === "keysso" ? p : "ahrefs";
+}
 interface Run {
   id: string; status: string; rowsSeen?: number; pagesPulled?: number; unitsSpent?: number;
   complete?: boolean; error?: string | null;
@@ -43,6 +62,24 @@ export default function BacklinkSyncButton({
   const [run, setRun] = useState<Run | null>(null);
   const [message, setMessage] = useState<{ kind: "ok" | "warn" | "err"; text: string } | null>(null);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Read after mount (localStorage), so the server HTML and the first client pass agree.
+  const [provider, setProvider] = useState<ExportProvider>("ahrefs");
+  useEffect(() => {
+    const id = setTimeout(() => setProvider(exportProvider()), 0);
+    return () => clearTimeout(id);
+  }, []);
+  const label = EXPORT_LABEL[provider];
+
+  /** A spend in the provider's own currency: dollars for DataForSEO, credits/units otherwise. */
+  const costText = useCallback((p: ExportProvider, units: number, usd?: number) =>
+    p === "dataforseo" ? `≈ ${formatProviderUnits(units, "dataforseo")}`
+      : `${units.toLocaleString()} ${p === "keysso" ? t("blsrcKsCredits") : t("metricsUnits")}${usd != null ? ` · ≈ ${formatUsd(usd)}` : ""}`,
+  [t]);
+  /** What the pricing read itself cost — the figure the quote note names. */
+  const priceReadCost = (p: ExportProvider) =>
+    p === "dataforseo" ? formatProviderUnits(DATAFORSEO_REQUEST_UNITS + DATAFORSEO_ROW_UNITS, "dataforseo")
+      : p === "keysso" ? `1 ${t("blsrcKsCredits")}`
+      : `${AHREFS_UNIT_FLOOR} ${t("metricsUnits")}`;
   const onFinishedRef = useRef(onFinished);
   useEffect(() => { onFinishedRef.current = onFinished; }, [onFinished]);
 
@@ -53,20 +90,32 @@ export default function BacklinkSyncButton({
 
   const errorText = useCallback((status: number, code: unknown): string => {
     const c = String(code ?? "");
-    if (c === "no_key") return t("blsyncErrNoKey");
+    if (c === "no_key") return fill(t("blsyncErrNoKey"), { provider: label });
+    // Provider refusals carry their own diagnosis — said in that provider's words.
+    const gw = gatewayStatusFromError(c);
+    if (/^dataforseo /.test(c) && gw != null) {
+      if (gw === 401) return t("metricsDfsBadKey");
+      if (gw === 402) return t("blsrcDfsNoFunds");
+      if (gw === 403) return t("blsrcDfsNoAccess");
+    }
+    if (/^keysso /.test(c) && gw === 402) return t("blsrcKsOutOfCredits");
+    if (/^keysso /.test(c) && gw === 401) return t("metricsKeyssoBadKey");
     if (c === "cap_exceeded") return t("blsyncErrCap");
     if (c === "provider_unsupported") return t("blsyncErrSemrush");
     if (c === "already_running") return t("blsyncAlreadyRunning");
     return c ? `${t("blsyncFailed")}: ${c.slice(0, 200)}` : `${t("blsyncFailed")} (${status})`;
-  }, [t]);
+  }, [t, label]);
 
   const post = useCallback(async (confirm: boolean) => {
-    const c = getMetricsCreds("ahrefs");
+    // Resolved at click time too: Settings may have changed in another tab since mount.
+    const p = exportProvider();
+    setProvider(p);
+    const c = getMetricsCreds(p);
     const res = await fetch("/api/backlinks/sync", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        siteId: siteDbId, confirm,
+        siteId: siteDbId, confirm, provider: p,
         // Browser-held key first, like every /api/metrics call; empty falls back to the server mirror.
         apiKey: c.apiKey || undefined, baseUrl: c.baseUrl || undefined, cap: c.cap || undefined,
       }),
@@ -90,7 +139,11 @@ export default function BacklinkSyncButton({
           body: JSON.stringify({ siteId: siteDbId }),
         });
       } catch { /* the hourly scheduler recalculates anyway */ }
-      const counts = `${(r.rowsSeen ?? 0).toLocaleString()} ${t("blsyncRows")} · ${r.pagesPulled ?? 0} ${t("blsyncPages")} · ${(r.unitsSpent ?? 0).toLocaleString()} ${t("blsyncUnits")}`;
+      const p = exportProvider();
+      const spent = p === "dataforseo"
+        ? fill(t("blsyncSpent"), { cost: formatProviderUnits(r.unitsSpent ?? 0, "dataforseo") })
+        : `${(r.unitsSpent ?? 0).toLocaleString()} ${t("blsyncUnits")}`;
+      const counts = `${EXPORT_LABEL[p]} · ${(r.rowsSeen ?? 0).toLocaleString()} ${t("blsyncRows")} · ${r.pagesPulled ?? 0} ${t("blsyncPages")} · ${spent}`;
       setMessage(r.complete === false
         ? { kind: "warn", text: `${t("blsyncPartial")} ${t("blsyncPartialHint")} ${counts}` }
         : { kind: "ok", text: `${t("blsyncDone")} · ${counts}` });
@@ -189,7 +242,7 @@ export default function BacklinkSyncButton({
       <button
         onClick={() => { void quote(); }}
         disabled={busy}
-        title={t("blsyncHint")}
+        title={fill(t("blsyncHint"), { provider: label })}
         style={{
           display: "inline-flex", alignItems: "center", gap: "6px",
           padding: compact ? "5px 12px" : "7px 13px", borderRadius: compact ? "6px" : "8px",
@@ -203,7 +256,7 @@ export default function BacklinkSyncButton({
         {phase === "quoting" ? t("blsyncChecking")
           : phase === "running" || phase === "starting"
             ? `${t("blsyncRunning")}${run?.rowsSeen ? ` ${run.rowsSeen.toLocaleString()} ${t("blsyncRows")}` : ""}`
-            : t("blsyncStart")}
+            : `${t("blsyncStart")} · ${label}`}
       </button>
 
       {message && (
@@ -228,12 +281,14 @@ export default function BacklinkSyncButton({
             <h3 style={{ fontSize: "15px", fontWeight: 700, color: "var(--color-text-primary)", margin: 0 }}>{t("blsyncTitle")}</h3>
             <div style={{ fontSize: "14px", fontWeight: 600, color: "var(--color-text-primary)" }}>
               {fill(t("blsyncEstimate"), {
+                provider: label,
                 rows: estimate.rows.toLocaleString(),
-                units: estimate.units.toLocaleString(),
-                usd: formatUsd(estimate.usd),
+                cost: costText(provider, estimate.units, estimate.usd),
               })}
             </div>
-            <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>{t("blsyncQuoteNote")}</div>
+            <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+              {fill(t("blsyncQuoteNote"), { cost: priceReadCost(provider) })}
+            </div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
               <button onClick={cancel}
                 style={{ padding: "7px 14px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "transparent", color: "var(--color-text-secondary)", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>

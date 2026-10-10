@@ -3,6 +3,14 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
+## [Unreleased]
+
+### Fixed — «Export all backlinks» follows the selected provider (#26)
+
+- The button was hard-wired to Ahrefs: with DataForSEO selected it still quoted an Ahrefs export (≈ $3.33 for ~1 660 links on the reporter's site) for a profile DataForSEO exports for a few cents. It now exports from the provider selected in Settings → SEO Metrics — Ahrefs, DataForSEO or Keys.so — and names it on the button, in the quote and in the result line. Semrush and Majestic have no per-link export, so with either selected it stays on Ahrefs and says "Ahrefs".
+- The quote is in the provider's own currency (dollars for DataForSEO, credits for Keys.so, units for Ahrefs), and the note names what the pricing read actually cost instead of a fixed "50 units". Key and balance errors are named per provider (401/402/403).
+- The separate «Links from DataForSEO» button on the Toxicity tab is gone — the main button covers it. The «Links from Keys.so» loader stays while another provider is selected (a second market, not a duplicate) and hides when Keys.so is the selected one.
+
 ## [1.9.2] — 2026-10-10
 
 ### Added — DataForSEO: a fifth backlink provider, pay-as-you-go (#26)

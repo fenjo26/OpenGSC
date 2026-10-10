@@ -3581,7 +3581,7 @@
   "blsyncRows": "Links",
   "blsyncPages": "Seiten geholt",
   "blsyncUnits": "Einheiten verbraucht",
-  "blsyncEstimate": "Etwa {rows} Links · {units} Einheiten · ≈ {usd}",
+  "blsyncEstimate": "{provider}: etwa {rows} Links · {cost}",
   "blsyncConfirm": "Export starten",
   "blsyncCancel": "Abbrechen",
   "blsyncPartial": "Teilweiser Export — aus diesem Lauf wurden keine Verluste erfasst.",
@@ -5205,10 +5205,10 @@
   "dmYandexOwnStale": "Deine Yandex-Positionen fehlen oder sind älter als eine Woche — der nächste Lauf aktualisiert sie (bis zu 10 Credits, im Preis enthalten).",
   "metricsKeyssoRegion": "Yandex-Region",
   "metricsKeyssoRegionHint": "Wird vom Yandex-Markt in Wettbewerber und Nachfrage sowie von Yandex Direct im Anzeigen-Tab genutzt. Yandex-KI-Antworten gibt es nur für Moskau; DR und Links hängen nicht von der Region ab.",
-  "blsyncHint": "Lädt die vollständige Liste einzelner Links (Anker, Spender-DR, Snippets) von Ahrefs. Genau diese klassifiziert das Toxizitätsmodul. Kostet Einheiten — der Preis wird vorab angezeigt und muss bestätigt werden.",
-  "blsyncQuoteNote": "Die Prüfung der Profilgröße hat bereits 50 Einheiten gekostet. Bis zu Ihrer Bestätigung wird nichts weiter ausgegeben. Der Endbetrag kann niedriger ausfallen, wenn der Anbieter weniger Links liefert.",
+  "blsyncHint": "Lädt die vollständige Liste einzelner Links (Anker, Spender-Rating, Snippets) von {provider} — dem unter Einstellungen → SEO-Metriken gewählten Anbieter. Genau diese klassifiziert das Toxizitätsmodul. Kostenpflichtig — der Preis wird vorab angezeigt und muss bestätigt werden.",
+  "blsyncQuoteNote": "Die Prüfung der Profilgröße hat bereits {cost} gekostet. Bis zu Ihrer Bestätigung wird nichts weiter ausgegeben. Der Endbetrag kann niedriger ausfallen, wenn der Anbieter weniger Links liefert.",
   "blsyncChecking": "Profilgröße wird geprüft…",
-  "blsyncErrNoKey": "Kein Ahrefs-Schlüssel. Fügen Sie einen unter Einstellungen → Metriken hinzu.",
+  "blsyncErrNoKey": "Kein {provider}-Schlüssel. Fügen Sie einen unter Einstellungen → SEO-Metriken hinzu.",
   "blsyncErrCap": "Das monatliche Einheitenlimit würde überschritten.",
   "blsyncErrSemrush": "Die Synchronisierung funktioniert nur mit Ahrefs — fügen Sie einen Ahrefs-Schlüssel hinzu.",
   "blpShortfall": "Der Anbieter lieferte nur {pulled} von {total} verweisenden Domains — das ist eine Stichprobe, nicht das vollständige Profil. Nichts wurde als verloren markiert.",
@@ -5245,7 +5245,6 @@
   "blpDfsLostLinks": "− Links",
   "blpDfsNewDomains": "+ Domains",
   "blpDfsLostDomains": "− Domains",
-  "blDfsLoad": "Links von DataForSEO",
-  "blDfsHint": "Alle Backlinks dieser Website von DataForSEO laden (aktiv und verloren, mit Ankern und DataForSEOs Spam-Score), dann die Toxizität neu bewerten. Der erste Klick ermittelt nur den Preis (0,024 $).",
-  "blToxSignal_provider_spam": "Hoher DataForSEO-Spam-Score bei den Links dieses Spenders"
+  "blToxSignal_provider_spam": "Hoher DataForSEO-Spam-Score bei den Links dieses Spenders",
+  "blsyncSpent": "{cost} ausgegeben"
 }

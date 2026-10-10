@@ -3581,7 +3581,7 @@
   "blsyncRows": "liens",
   "blsyncPages": "pages récupérées",
   "blsyncUnits": "unités dépensées",
-  "blsyncEstimate": "Environ {rows} liens · {units} unités · ≈ {usd}",
+  "blsyncEstimate": "{provider} : environ {rows} liens · {cost}",
   "blsyncConfirm": "Lancer l’export",
   "blsyncCancel": "Annuler",
   "blsyncPartial": "Export partiel — aucune perte n’a été enregistrée à partir de cette exécution.",
@@ -5205,10 +5205,10 @@
   "dmYandexOwnStale": "Vos positions Yandex manquent ou datent de plus d'une semaine — la prochaine exécution les actualise (jusqu'à 10 crédits, inclus dans le prix).",
   "metricsKeyssoRegion": "Région Yandex",
   "metricsKeyssoRegionHint": "Utilisée par le marché Yandex dans Concurrents et Demande, et par Yandex Direct dans l'onglet Publicité. Les réponses IA de Yandex n'existent que pour Moscou ; le DR et les liens ne dépendent pas de la région.",
-  "blsyncHint": "Récupère depuis Ahrefs la liste complète des liens (ancres, DR du donneur, extraits). C'est l'inventaire que classe le module Toxicité. Cela consomme des unités : le prix s'affiche et vous confirmez d'abord.",
-  "blsyncQuoteNote": "La vérification de la taille du profil a déjà coûté 50 unités. Rien d'autre n'est dépensé avant votre confirmation. La facture finale peut être plus basse si le fournisseur renvoie moins de liens.",
+  "blsyncHint": "Récupère depuis {provider} — le fournisseur choisi dans Paramètres → Métriques SEO — la liste complète des liens (ancres, note du donneur, extraits). C'est l'inventaire que classe le module Toxicité. C'est payant : le prix s'affiche et vous confirmez d'abord.",
+  "blsyncQuoteNote": "La vérification de la taille du profil a déjà coûté {cost}. Rien d'autre n'est dépensé avant votre confirmation. La facture finale peut être plus basse si le fournisseur renvoie moins de liens.",
   "blsyncChecking": "Vérification de la taille du profil…",
-  "blsyncErrNoKey": "Aucune clé Ahrefs. Ajoutez-en une dans Paramètres → Métriques.",
+  "blsyncErrNoKey": "Aucune clé {provider}. Ajoutez-en une dans Paramètres → Métriques SEO.",
   "blsyncErrCap": "Le plafond mensuel d'unités serait dépassé.",
   "blsyncErrSemrush": "La synchronisation ne fonctionne qu'avec Ahrefs — ajoutez une clé Ahrefs.",
   "blpShortfall": "Le fournisseur n'a renvoyé que {pulled} domaines référents sur {total} : c'est un échantillon, pas le profil complet. Rien n'a été marqué comme perdu.",
@@ -5245,7 +5245,6 @@
   "blpDfsLostLinks": "− liens",
   "blpDfsNewDomains": "+ domaines",
   "blpDfsLostDomains": "− domaines",
-  "blDfsLoad": "Liens depuis DataForSEO",
-  "blDfsHint": "Charger tous les backlinks de ce site depuis DataForSEO (actifs et perdus, avec ancres et score de spam DataForSEO), puis recalculer la toxicité. Le premier clic ne fait qu'estimer le prix (0,024 $).",
-  "blToxSignal_provider_spam": "Score de spam DataForSEO élevé sur les liens de ce donneur"
+  "blToxSignal_provider_spam": "Score de spam DataForSEO élevé sur les liens de ce donneur",
+  "blsyncSpent": "{cost} dépensés"
 }

@@ -3581,7 +3581,7 @@
   "blsyncRows": "links",
   "blsyncPages": "pages fetched",
   "blsyncUnits": "units spent",
-  "blsyncEstimate": "About {rows} links · {units} units · ≈ {usd}",
+  "blsyncEstimate": "{provider}: about {rows} links · {cost}",
   "blsyncConfirm": "Start export",
   "blsyncCancel": "Cancel",
   "blsyncPartial": "Partial export — losses were not recorded from this run.",
@@ -5205,10 +5205,10 @@
   "dmYandexOwnStale": "Your Yandex positions are missing or older than a week — the next run refreshes them (up to 10 credits, included in the price).",
   "metricsKeyssoRegion": "Yandex region",
   "metricsKeyssoRegionHint": "Used by the Yandex market in Competitors and Demand and by Yandex Direct on the Ads tab. Yandex AI answers exist for Moscow only; DR and links do not depend on the region.",
-  "blsyncHint": "Pulls the full list of individual links (anchors, donor DR, snippets) from Ahrefs. This is the inventory the Toxicity module classifies. It costs units — you see the price and confirm first.",
-  "blsyncQuoteNote": "Checking the profile size already used 50 units. Nothing more is spent until you confirm. The final bill can be lower if the provider returns fewer links.",
+  "blsyncHint": "Pulls the full list of individual links (anchors, donor rating, snippets) from {provider} — the provider selected in Settings → SEO Metrics. This is the inventory the Toxicity module classifies. It costs money — you see the price and confirm first.",
+  "blsyncQuoteNote": "Checking the profile size already cost {cost}. Nothing more is spent until you confirm. The final bill can be lower if the provider returns fewer links.",
   "blsyncChecking": "Checking profile size…",
-  "blsyncErrNoKey": "No Ahrefs key. Add one in Settings → Metrics.",
+  "blsyncErrNoKey": "No {provider} key. Add one in Settings → SEO Metrics.",
   "blsyncErrCap": "The monthly unit cap would be exceeded.",
   "blsyncErrSemrush": "Sync works with Ahrefs only — add an Ahrefs key.",
   "blpShortfall": "The provider returned only {pulled} of {total} referring domains, so this is a sample, not the full profile. Nothing was marked as lost.",
@@ -5245,7 +5245,6 @@
   "blpDfsLostLinks": "− links",
   "blpDfsNewDomains": "+ domains",
   "blpDfsLostDomains": "− domains",
-  "blDfsLoad": "Links from DataForSEO",
-  "blDfsHint": "Load every backlink of this site (live and lost, with anchors and DataForSEO's spam score) from DataForSEO, then re-score toxicity. The first click only prices the run ($0.024).",
-  "blToxSignal_provider_spam": "High DataForSEO spam score on this donor's links"
+  "blToxSignal_provider_spam": "High DataForSEO spam score on this donor's links",
+  "blsyncSpent": "{cost} spent"
 }

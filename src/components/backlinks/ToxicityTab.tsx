@@ -15,26 +15,27 @@ import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { MARKER_GROUPS, type ToxLevel } from "@/lib/backlinks/toxicity";
 import { shareTokenFromPath } from "@/lib/shareParam";
 import BacklinkSyncButton from "@/components/backlinks/BacklinkSyncButton";
-import { getMetricsCreds, hasMetricsKey, formatUsd } from "@/lib/seo/metricsClient";
-import { formatProviderUnits } from "@/lib/seo/metricsPricing";
+import { getMetricsCreds, getMetricsProvider, hasMetricsKey, formatUsd } from "@/lib/seo/metricsClient";
 
 // Keys.so key present in this browser? false on the server pass, real once hydrated.
 const noopSubscribe = () => () => {};
 const useKeyssoKey = () => useSyncExternalStore(noopSubscribe, () => hasMetricsKey("keysso"), () => false);
-const useDfsKey = () => useSyncExternalStore(noopSubscribe, () => hasMetricsKey("dataforseo"), () => false);
+// Whether Keys.so is the selected metrics provider — then the main export button already
+// exports from it, and the separate Keys.so loader would be a duplicate.
+const useKeyssoActive = () => useSyncExternalStore(noopSubscribe, () => getMetricsProvider() === "keysso", () => false);
 
 type KsEstimate = { rows: number; units: number; usd: number };
 
 /**
- * «Ссылки из Keys.so» / «Ссылки из DataForSEO»: fills the site's backlink rows (anchors
- * included) from that provider's index, so this tab has anchors to judge for sites Ahrefs barely
- * sees — or for users with no Ahrefs key at all. Two clicks by design — the first only prices the
- * run (one paid read), the second spends; then the tab re-scores itself. Rendered only for users
- * holding that provider's key. DataForSEO rows also carry its per-link spam score, which the
- * classifier reads as one more signal (`provider_spam`).
+ * «Ссылки из Keys.so»: fills the site's backlink rows (anchors included) from Keys.so's Runet
+ * index, so this tab has anchors to judge for sites Ahrefs barely sees. Two clicks by design —
+ * the first only prices the run (1 credit), the second spends; then the tab re-scores itself.
+ * Rendered only for users with a Keys.so key while Keys.so is NOT the selected provider (then the
+ * main export button already exports from it). DataForSEO needs no loader of its own: the main
+ * export button follows the selected provider.
  */
 function ProviderLinksLoader({ siteDbId, provider, onDone }: {
-  siteDbId: string; provider: "keysso" | "dataforseo"; onDone: () => Promise<void>;
+  siteDbId: string; provider: "keysso"; onDone: () => Promise<void>;
 }) {
   const { t } = useLanguage();
   const [est, setEst] = useState<KsEstimate | null>(null);
@@ -53,9 +54,6 @@ function ProviderLinksLoader({ siteDbId, provider, onDone }: {
     : e === "already_running" ? t("blKsRunning")
     : /^keysso 402/.test(e) ? t("blsrcKsOutOfCredits")
     : /^keysso 401/.test(e) ? t("metricsKeyssoBadKey")
-    : /^dataforseo 402/.test(e) ? t("blsrcDfsNoFunds")
-    : /^dataforseo 401/.test(e) ? t("metricsDfsBadKey")
-    : /^dataforseo 403/.test(e) ? t("blsrcDfsNoAccess")
     : e;
 
   const quote = async () => {
@@ -91,23 +89,17 @@ function ProviderLinksLoader({ siteDbId, provider, onDone }: {
     <span style={{ display: "inline-flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
       {phase === "quote" && est ? (
         <>
-          {provider === "keysso" ? (
-            <span className="metric-cost" title={t("blpKsMarketHint")}>
-              Keys.so · ≈ {est.rows.toLocaleString()} {t("blKsLinks")} · {est.units.toLocaleString()} {t("blsrcKsCredits")} · ≈ {formatUsd(est.usd)}
-            </span>
-          ) : (
-            <span className="metric-cost">
-              DataForSEO · ≈ {est.rows.toLocaleString()} {t("blKsLinks")} · ≈ {formatProviderUnits(est.units, "dataforseo")}
-            </span>
-          )}
+          <span className="metric-cost" title={t("blpKsMarketHint")}>
+            Keys.so · ≈ {est.rows.toLocaleString()} {t("blKsLinks")} · {est.units.toLocaleString()} {t("blsrcKsCredits")} · ≈ {formatUsd(est.usd)}
+          </span>
           <button className="metric-action" onClick={() => { void start(); }}>{t("blKsConfirm")}</button>
           <button className="pill" style={{ cursor: "pointer" }} onClick={() => { setPhase("idle"); setEst(null); }}>{t("cancel")}</button>
         </>
       ) : (
         <button className="metric-action" onClick={() => { void quote(); }} disabled={phase !== "idle"}
-          title={provider === "keysso" ? t("blKsHint") : t("blDfsHint")}>
+          title={t("blKsHint")}>
           {phase === "idle" ? <Download size={13} /> : <Loader2 size={13} className="spin" />}
-          {phase === "running" ? t("blKsRunning") : provider === "keysso" ? t("blKsLoad") : t("blDfsLoad")}
+          {phase === "running" ? t("blKsRunning") : t("blKsLoad")}
         </button>
       )}
       {msg && <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>{msg}</span>}
@@ -156,7 +148,7 @@ export function signalLabel(t: (k: never) => string, code: string): string {
 export default function ToxicityTab({ siteDbId, guest }: { siteDbId: string; guest: boolean }) {
   const { t } = useLanguage();
   const keysso = useKeyssoKey();
-  const dfs = useDfsKey();
+  const keyssoActive = useKeyssoActive();
   const [data, setData] = useState<ToxicityOverviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -329,10 +321,12 @@ export default function ToxicityTab({ siteDbId, guest }: { siteDbId: string; gue
         </div>
         {!guest && (
           <span style={{ marginLeft: "auto", display: "inline-flex", gap: "8px", flexWrap: "wrap", alignItems: "flex-start" }}>
-            {keysso && <ProviderLinksLoader siteDbId={siteDbId} provider="keysso" onDone={() => run(0)} />}
-            {dfs && <ProviderLinksLoader siteDbId={siteDbId} provider="dataforseo" onDone={() => run(0)} />}
+            {/* Keys.so keeps its own loader while another provider is selected: it is a second
+                market (Runet), not a cheaper copy of the selected one. DataForSEO has none — the
+                export button below follows the selected provider and covers it. */}
+            {keysso && !keyssoActive && <ProviderLinksLoader siteDbId={siteDbId} provider="keysso" onDone={() => run(0)} />}
             {/* The donors this tab classifies come from the per-link inventory, not from the
-                referring-domains profile above — this fills it from Ahrefs. */}
+                referring-domains profile above — this fills it from the selected provider. */}
             <BacklinkSyncButton compact siteDbId={siteDbId} onFinished={() => { void load(); }} />
             <button className="metric-action" onClick={() => { void run(0); }} disabled={busy || loading}
               title={data?.lastRun ? new Date(data.lastRun).toLocaleString() : String(t("blToxNotRun" as never))}>

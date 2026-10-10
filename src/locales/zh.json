@@ -3581,7 +3581,7 @@
   "blsyncRows": "链接",
   "blsyncPages": "已获取页面",
   "blsyncUnits": "已消耗单位",
-  "blsyncEstimate": "约 {rows} 条链接 · {units} 个单位 · ≈ {usd}",
+  "blsyncEstimate": "{provider}：约 {rows} 条链接 · {cost}",
   "blsyncConfirm": "开始导出",
   "blsyncCancel": "取消",
   "blsyncPartial": "部分导出——本次运行未记录任何丢失。",
@@ -5205,10 +5205,10 @@
   "dmYandexOwnStale": "你在 Yandex 的排名缺失或已超过一周——下次运行会更新（最多 10 个积分，已含在价格中）。",
   "metricsKeyssoRegion": "Yandex 地区",
   "metricsKeyssoRegionHint": "用于“竞争对手”和“需求”中的 Yandex 市场，以及广告标签中的 Yandex Direct。Yandex AI 回答仅限莫斯科；DR 和链接与地区无关。",
-  "blsyncHint": "从 Ahrefs 拉取完整的外链清单（锚文本、来源 DR、片段），毒性模块正是对它进行分类。会消耗点数——先显示价格并等待你确认。",
-  "blsyncQuoteNote": "检查档案规模已消耗 50 点数。在你确认之前不会再扣费。如果服务商返回的外链更少，最终费用可能更低。",
+  "blsyncHint": "从 {provider}（设置 → SEO 指标 中选定的服务商）拉取完整的外链清单（锚文本、来源评分、片段），毒性模块正是对它进行分类。需要付费——先显示价格并等待你确认。",
+  "blsyncQuoteNote": "检查档案规模已花费 {cost}。在你确认之前不会再扣费。如果服务商返回的外链更少，最终费用可能更低。",
   "blsyncChecking": "正在检查档案规模…",
-  "blsyncErrNoKey": "没有 Ahrefs 密钥。请在 设置 → 指标 中添加。",
+  "blsyncErrNoKey": "没有 {provider} 密钥。请在 设置 → SEO 指标 中添加。",
   "blsyncErrCap": "将超出每月点数上限。",
   "blsyncErrSemrush": "同步仅支持 Ahrefs——请添加 Ahrefs 密钥。",
   "blpShortfall": "服务商只返回了 {total} 个引用域名中的 {pulled} 个，这只是样本而非完整档案。未将任何域名标记为已丢失。",
@@ -5245,7 +5245,6 @@
   "blpDfsLostLinks": "− 链接",
   "blpDfsNewDomains": "+ 域名",
   "blpDfsLostDomains": "− 域名",
-  "blDfsLoad": "来自 DataForSEO 的链接",
-  "blDfsHint": "从 DataForSEO 加载本站的全部反向链接（有效与已丢失，含锚文本和 DataForSEO 垃圾评分），然后重新评估毒性。第一次点击只计算价格（$0.024）。",
-  "blToxSignal_provider_spam": "该来源域名链接的 DataForSEO 垃圾评分很高"
+  "blToxSignal_provider_spam": "该来源域名链接的 DataForSEO 垃圾评分很高",
+  "blsyncSpent": "已花费 {cost}"
 }

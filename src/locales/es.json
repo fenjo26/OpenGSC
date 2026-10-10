@@ -3581,7 +3581,7 @@
   "blsyncRows": "enlaces",
   "blsyncPages": "páginas obtenidas",
   "blsyncUnits": "unidades gastadas",
-  "blsyncEstimate": "Unos {rows} enlaces · {units} unidades · ≈ {usd}",
+  "blsyncEstimate": "{provider}: unos {rows} enlaces · {cost}",
   "blsyncConfirm": "Iniciar exportación",
   "blsyncCancel": "Cancelar",
   "blsyncPartial": "Exportación parcial — no se registraron pérdidas en esta ejecución.",
@@ -5205,10 +5205,10 @@
   "dmYandexOwnStale": "Tus posiciones en Yandex faltan o tienen más de una semana: la próxima ejecución las actualiza (hasta 10 créditos, incluidos en el precio).",
   "metricsKeyssoRegion": "Región de Yandex",
   "metricsKeyssoRegionHint": "La usan el mercado Yandex en Competidores y Demanda, y Yandex Direct en la pestaña de anuncios. Las respuestas IA de Yandex solo existen para Moscú; el DR y los enlaces no dependen de la región.",
-  "blsyncHint": "Descarga de Ahrefs la lista completa de enlaces (anclas, DR del donante, fragmentos). Es el inventario que clasifica el módulo de toxicidad. Consume unidades: primero ves el precio y confirmas.",
-  "blsyncQuoteNote": "Comprobar el tamaño del perfil ya costó 50 unidades. No se gasta nada más hasta que confirmes. El total puede ser menor si el proveedor devuelve menos enlaces.",
+  "blsyncHint": "Descarga de {provider} — el proveedor elegido en Ajustes → Métricas SEO — la lista completa de enlaces (anclas, valoración del donante, fragmentos). Es el inventario que clasifica el módulo de toxicidad. Tiene coste: primero ves el precio y confirmas.",
+  "blsyncQuoteNote": "Comprobar el tamaño del perfil ya costó {cost}. No se gasta nada más hasta que confirmes. El total puede ser menor si el proveedor devuelve menos enlaces.",
   "blsyncChecking": "Comprobando el tamaño del perfil…",
-  "blsyncErrNoKey": "No hay clave de Ahrefs. Añade una en Ajustes → Métricas.",
+  "blsyncErrNoKey": "No hay clave de {provider}. Añade una en Ajustes → Métricas SEO.",
   "blsyncErrCap": "Se superaría el límite mensual de unidades.",
   "blsyncErrSemrush": "La sincronización solo funciona con Ahrefs: añade una clave de Ahrefs.",
   "blpShortfall": "El proveedor devolvió solo {pulled} de {total} dominios de referencia, así que es una muestra, no el perfil completo. No se marcó nada como perdido.",
@@ -5245,7 +5245,6 @@
   "blpDfsLostLinks": "− enlaces",
   "blpDfsNewDomains": "+ dominios",
   "blpDfsLostDomains": "− dominios",
-  "blDfsLoad": "Enlaces desde DataForSEO",
-  "blDfsHint": "Cargar todos los backlinks de este sitio desde DataForSEO (activos y perdidos, con anclas y la puntuación de spam de DataForSEO) y volver a puntuar la toxicidad. El primer clic solo calcula el precio (0,024 $).",
-  "blToxSignal_provider_spam": "Puntuación de spam de DataForSEO alta en los enlaces de este donante"
+  "blToxSignal_provider_spam": "Puntuación de spam de DataForSEO alta en los enlaces de este donante",
+  "blsyncSpent": "{cost} gastados"
 }
