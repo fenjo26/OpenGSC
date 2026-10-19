@@ -43,7 +43,8 @@ export async function magic369ClientFor(userId: string): Promise<Magic369Client 
 export interface MagicProviderInfo {
   id: BuyProductId;
   name: string;
-  /** Balance unit for labelling sums in the UI ("cr." / "tok."). */
+  /** Balance unit for labelling sums in the UI: "cr." (FieldLink credits) or "$" (369 Links
+   *  Market — its API says "tokens", but the vendor prices and tops up in US dollars 1:1). */
   unit: string;
   configured: boolean;
   balanceMinor: number | null;
@@ -76,7 +77,7 @@ export async function magicProviderInfos(userId: string): Promise<MagicProviderI
   return [
     { id: PROVIDER_FIELDLINK, name: "FieldLink · Posts", unit: "cr.", configured: fl.configured, balanceMinor: fl.balanceMinor, priceMinor: fl.priceMinor, error: fl.error },
     { id: PROVIDER_FIELDLINK_LINKS, name: "FieldLink · Homepage links", unit: "cr.", configured: fl.configured, balanceMinor: fl.balanceMinor, priceMinor: LINK_TIERS[0].creditsMinor, error: fl.error },
-    { id: PROVIDER_MAGIC369, name: "369 Links Market · Magic links", unit: "tok.", configured: m.configured, balanceMinor: m.balanceMinor, priceMinor: m.priceMinor, error: m.error },
-    { id: PROVIDER_MAGIC369_LINKS, name: "369 Links Market · Homepage links", unit: "tok.", configured: m.configured, balanceMinor: m.balanceMinor, priceMinor: m.linkPriceMinor, error: m.error },
+    { id: PROVIDER_MAGIC369, name: "369 Links Market · Magic links", unit: "$", configured: m.configured, balanceMinor: m.balanceMinor, priceMinor: m.priceMinor, error: m.error },
+    { id: PROVIDER_MAGIC369_LINKS, name: "369 Links Market · Homepage links", unit: "$", configured: m.configured, balanceMinor: m.balanceMinor, priceMinor: m.linkPriceMinor, error: m.error },
   ];
 }

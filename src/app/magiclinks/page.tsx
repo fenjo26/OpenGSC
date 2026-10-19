@@ -56,7 +56,8 @@ interface PulseProvider {
 }
 
 const money = (minor: number | null) => (minor == null ? "—" : `${(minor / 100).toFixed(minor % 100 === 0 ? 0 : 2)}`);
-const unitOf = (p: string) => (p === "fieldlink" ? "cr." : "tok.");
+// 369 Links Market's API calls its unit "tokens", but they are US dollars 1:1.
+const unitOf = (p: string) => (p === "fieldlink" ? "cr." : "$");
 const providerColor = (p: string) =>
   p === "fieldlink" ? { fg: "#3B82F6", bg: "rgba(59,130,246,0.12)" }
   : p === "magic369links" ? { fg: "#F59E0B", bg: "rgba(245,158,11,0.12)" }
@@ -272,7 +273,9 @@ export default function MagicLinksPage() {
                   <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", fontFamily: "monospace" }}>{o.completedCount}/{o.rowCount}</div>
                 </div>
                 <div style={{ color: "var(--color-text-primary)", fontWeight: 600, fontFamily: "monospace" }}>
-                  {money(o.amountMinor)} <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{unitOf(o.provider)}</span>
+                  {o.provider === "fieldlink"
+                    ? <>{money(o.amountMinor)} <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{unitOf(o.provider)}</span></>
+                    : <>${money(o.amountMinor)}</>}
                   {o.refundedMinor ? <div style={{ fontSize: "10px", color: "#10B981", fontWeight: 500 }}>↩ {money(o.refundedMinor)} {t("mlRefunded")}</div> : null}
                 </div>
                 <div style={{ display: "flex", gap: "4px", justifyContent: "flex-end" }}>

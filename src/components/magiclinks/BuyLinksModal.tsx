@@ -63,6 +63,12 @@ type AnchorMode = "exact" | "diluted" | "url" | "domain";
 const hostOf = (url: string) => { try { return new URL(url).host.replace(/^www\./, ""); } catch { return ""; } };
 const money = (minor: number | null | undefined) =>
   minor == null ? "—" : `${(minor / 100).toFixed(minor % 100 === 0 ? 0 : 2)}`;
+/** A sum with its unit: dollars lead ("$15", "−$15"), credits trail ("15 cr."). */
+const amt = (minor: number | null | undefined, unit: string | undefined) => {
+  if (minor == null) return "—";
+  if (unit === "$") return `${minor < 0 ? "−" : ""}$${money(Math.abs(minor))}`;
+  return unit ? `${money(minor)} ${unit}` : money(minor);
+};
 
 export default function BuyLinksModal({ siteId, rows, onClose, onDone }: {
   siteId?: string;
@@ -79,6 +85,9 @@ export default function BuyLinksModal({ siteId, rows, onClose, onDone }: {
   const [flTier, setFlTier] = useState<string>("traffic_0_1");
   const [flHint, setFlHint] = useState("");
   const [count, setCount] = useState(5);
+  // The field keeps what is being typed ("" while the old digit is erased); the number used for
+  // pricing is clamped to 1-250 and the field snaps back to it on blur.
+  const [countText, setCountText] = useState("5");
   const [langs, setLangs] = useState<Record<string, string>>({});
   const [quote, setQuote] = useState<QuoteResponse | null>(null);
   const [busy, setBusy] = useState(false);
@@ -280,7 +289,7 @@ export default function BuyLinksModal({ siteId, rows, onClose, onDone }: {
                         }}>
                         <div>{v.name}{!configured ? ` · ${t("mlNotSet")}` : ""}</div>
                         <div style={{ fontSize: "11px", fontWeight: 500, fontFamily: "monospace" }}>
-                          {p.error ? t("mlProviderError") : p.balanceMinor != null ? `${t("mlBalance")}: ${money(p.balanceMinor)} ${p.unit}` : "…"}
+                          {p.error ? t("mlProviderError") : p.balanceMinor != null ? `${t("mlBalance")}: ${amt(p.balanceMinor, p.unit)}` : "…"}
                         </div>
                       </button>
                     );
@@ -304,7 +313,7 @@ export default function BuyLinksModal({ siteId, rows, onClose, onDone }: {
                             color: on ? "#7C3AED" : "var(--color-text-secondary)",
                           }}>
                           {t(PRODUCT_LABEL_KEYS[p.id])}
-                          {p.priceMinor != null ? <span style={{ fontWeight: 500, fontFamily: "monospace", marginLeft: "6px", opacity: 0.8 }}>{t("mlFrom")} {money(p.priceMinor)}</span> : null}
+                          {p.priceMinor != null ? <span style={{ fontWeight: 500, fontFamily: "monospace", marginLeft: "6px", opacity: 0.8 }}>{t("mlFrom")} {amt(p.priceMinor, p.unit)}</span> : null}
                         </button>
                       );
                     })}
@@ -316,8 +325,15 @@ export default function BuyLinksModal({ siteId, rows, onClose, onDone }: {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
                 <label style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                   <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{t("mlCountPerRow")}</span>
-                  <input type="number" min={1} max={250} value={count}
-                    onChange={e => { setCount(Math.max(1, Math.min(250, Number(e.target.value) || 1))); setQuote(null); }}
+                  <input type="number" min={1} max={250} value={countText}
+                    onChange={e => {
+                      const raw = e.target.value.replace(/[^0-9]/g, "").slice(0, 3);
+                      setCountText(raw);
+                      const n = Number(raw);
+                      if (raw && n >= 1) setCount(Math.min(250, n));
+                      setQuote(null);
+                    }}
+                    onBlur={() => setCountText(String(count))}
                     style={{ ...inp, width: "100%", boxSizing: "border-box" }} />
                 </label>
                 {!isLinks && hosts.slice(0, 1).map(h => (
@@ -430,24 +446,24 @@ export default function BuyLinksModal({ siteId, rows, onClose, onDone }: {
                   {quote.unitMinor != null && (
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
                       <span style={{ color: "var(--color-text-secondary)" }}>{t("mlUnitPrice")}</span>
-                      <span style={{ fontFamily: "monospace", color: "var(--color-text-primary)" }}>{money(quote.unitMinor)} {provider?.unit ?? ""}</span>
+                      <span style={{ fontFamily: "monospace", color: "var(--color-text-primary)" }}>{amt(quote.unitMinor, provider?.unit)}</span>
                     </div>
                   )}
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span style={{ color: "var(--color-text-secondary)" }}>{t("mlTotal")}</span>
-                    <span style={{ fontFamily: "monospace", fontWeight: 700, color: "#7C3AED" }}>{money(quote.amountMinor)} {provider?.unit ?? ""}</span>
+                    <span style={{ fontFamily: "monospace", fontWeight: 700, color: "#7C3AED" }}>{amt(quote.amountMinor, provider?.unit)}</span>
                   </div>
                   {quote.balanceMinor != null && (
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
                       <span style={{ color: "var(--color-text-secondary)" }}>{t("mlBalanceAfter")}</span>
-                      <span style={{ fontFamily: "monospace", color: quote.shortfallMinor > 0 ? "#EF4444" : "var(--color-text-primary)" }}>{money(quote.balanceMinor - quote.amountMinor)} {provider?.unit ?? ""}</span>
+                      <span style={{ fontFamily: "monospace", color: quote.shortfallMinor > 0 ? "#EF4444" : "var(--color-text-primary)" }}>{amt(quote.balanceMinor - quote.amountMinor, provider?.unit)}</span>
                     </div>
                   )}
                   {quote.indexingIncluded && (
                     <div style={{ color: "#F59E0B", fontSize: "11px", lineHeight: 1.5 }}>{t("mlIndexingLocked")}</div>
                   )}
                   {quote.shortfallMinor > 0 && (
-                    <div style={{ color: "#EF4444", fontSize: "11px" }}>{t("mlShortfall")}: {money(quote.shortfallMinor)} {provider?.unit ?? ""}</div>
+                    <div style={{ color: "#EF4444", fontSize: "11px" }}>{t("mlShortfall")}: {amt(quote.shortfallMinor, provider?.unit)}</div>
                   )}
                 </div>
               )}
@@ -467,7 +483,7 @@ export default function BuyLinksModal({ siteId, rows, onClose, onDone }: {
                 ) : (
                   <button onClick={doPay} disabled={busy || !quote.canSubmit}
                     style={{ padding: "9px 16px", borderRadius: "9px", border: "none", background: busy || !quote.canSubmit ? "rgba(124,58,237,0.25)" : "#7C3AED", color: "#fff", fontSize: "12px", fontWeight: 700, cursor: busy ? "wait" : quote.canSubmit ? "pointer" : "not-allowed" }}>
-                    {busy ? t("mlPaying") : `${t("mlPay")} · ${money(quote.amountMinor)} ${provider?.unit ?? ""}`}
+                    {busy ? t("mlPaying") : `${t("mlPay")} · ${amt(quote.amountMinor, provider?.unit)}`}
                   </button>
                 )}
               </div>
