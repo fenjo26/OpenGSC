@@ -1,9 +1,11 @@
 // MCP tools for the app surfaces that live outside the GSC core (tools.ts).
 //
 // Everything here is read-only. Most of it is a Prisma read over data the app has
-// already synced; the two exceptions are labeled in their descriptions and in `cost`:
-// get_analytics calls GA4 on the user's own OAuth (quota), and get_engine_performance
-// can hit Bing/Yandex live when the cached snapshot is cold.
+// already synced; the exceptions are labeled in their descriptions and in `cost`:
+// get_analytics calls GA4 on the user's own OAuth (quota), get_engine_performance
+// can hit Bing/Yandex live when the cached snapshot is cold, and magiclinks_queue_donors
+// writes — it puts purchased donor pages into the local indexer queue (still free, still
+// the user's own data).
 //
 // These reimplement the computation of their `/api/**` counterparts rather than calling
 // them over HTTP: those routes authenticate with a session cookie, which an MCP request
@@ -21,6 +23,7 @@ import { aggregateSnapshots } from "@/lib/clarityParse";
 import { rawQuery } from "@/lib/db/raw";
 import { findDecayingPages } from "@/lib/decay/query";
 import { DEFAULT_MIN_PREVIOUS } from "@/lib/decay/logic";
+import { queuePurchasedDonors } from "@/lib/magiclinks/toIndexer";
 
 // CTR by position, Backlinko 2023 — the same table the CTR Benchmark tab uses.
 const CTR_BENCHMARKS: Record<number, number> = {
@@ -533,6 +536,41 @@ export const DATA_TOOLS: McpTool[] = [
         },
         domains: byDomain,
         neverCrawled: byDomain.filter(d => d.botHits.google === 0).map(d => d.domain),
+      };
+    },
+  },
+
+  {
+    name: "magiclinks_queue_donors",
+    cost: "local",
+    description:
+      "Send PURCHASED backlink donor pages (FieldLink / 369 Links Market orders from /magiclinks) into the private indexer queue (/indexer), so the doorway network serves them to crawlers. Mirrors the page's buttons. Modes: orderId queues that one order's donors; all=true queues every purchased donor NOT PROVEN indexed (includes never-checked — the no-extra-steps path); the default queues only donors the xr pass proved out of the index. Upserts per (doorway, url), so re-running re-exposes instead of duplicating; global modes cap at 200 per call.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        orderId: { type: "string", description: "One provider order id — queue just its donor pages (no cap)" },
+        all: { type: "boolean", description: "true = every purchased donor not proven indexed; default = only xr-proven not_indexed" },
+      },
+    },
+    handler: async (userId, args) => {
+      const r = await queuePurchasedDonors(userId, {
+        orderId: args.orderId ? String(args.orderId) : undefined,
+        all: !!args.all,
+      });
+      if (!r.ok) {
+        const hint = r.reason === "no_indexer_domains"
+          ? "No active doorway domains — add them in /indexer first."
+          : r.reason === "not_migrated"
+            ? "Backlinks v2 tables are not migrated (prisma db push)."
+            : "No such order for this workspace.";
+        return { error: r.reason, hint };
+      }
+      return {
+        queued: r.queued,
+        candidates: r.candidates,
+        doorwayDomains: r.domains,
+        ...(r.capped ? { capped: true, cap: 200, note: "Cap reached — call again for the next batch." } : {}),
+        skippedIndexed: r.skippedIndexed,
       };
     },
   },

@@ -98,9 +98,13 @@ export default function MagicLinksPage() {
   // Both donor-index actions are portfolio-wide (the pulse itself is) and paid in different
   // currencies: the xr check spends the XML River balance per URL, the indexer queue is free.
   const xrTotals = pulse.reduce((a, p) => ({ xrUnchecked: a.xrUnchecked + p.xrUnchecked, notIndexed: a.notIndexed + p.notIndexed }), { xrUnchecked: 0, notIndexed: 0 });
+  const totalPlacements = pulse.reduce((a, p) => a + p.placements, 0);
   const [xrChecking, setXrChecking] = useState(false);
   const [queueing, setQueueing] = useState(false);
+  const [queueingAll, setQueueingAll] = useState(false);
   const [xrNote, setXrNote] = useState<string | null>(null);
+  const [detailQueueId, setDetailQueueId] = useState<string | null>(null);
+  const [detailNote, setDetailNote] = useState<string | null>(null);
   const runXrCheck = async () => {
     setXrChecking(true); setXrNote(null);
     try {
@@ -117,16 +121,41 @@ export default function MagicLinksPage() {
     try {
       const r = await fetch("/api/magiclinks/donors-indexer", { method: "POST" });
       const d = await r.json();
-      if (!r.ok) setXrNote(d?.error === "no_indexer_domains" ? t("mlPulseNoIndexer") : String(d?.error ?? "failed"));
+      if (!r.ok) setXrNote(d?.error === "no_indexer_domains" ? t("mlPulseNoIndexer") : String(d?.error ?? d?.message ?? "failed"));
       else setXrNote(t("mlPulseQueued").replace("{n}", String(d.queued ?? 0)).replace("{d}", String(d.domains ?? 0)));
     } catch { setXrNote("failed"); }
     setQueueing(false);
+  };
+  // The ungated path: everything purchased that is not proven indexed, no xr pass needed first.
+  const queueAllToIndexer = async () => {
+    setQueueingAll(true); setXrNote(null);
+    try {
+      const r = await fetch("/api/magiclinks/donors-indexer", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ all: true }),
+      });
+      const d = await r.json();
+      if (!r.ok) setXrNote(d?.error === "no_indexer_domains" ? t("mlPulseNoIndexer") : d?.error === "not_migrated" ? t("mlPulseNotMigrated") : String(d?.error ?? "failed"));
+      else setXrNote(t("mlPulseQueued").replace("{n}", String(d.queued ?? 0)).replace("{d}", String(d.domains ?? 0)) + (d.capped ? ` ${t("mlPulseQueuedCap")}` : ""));
+    } catch { setXrNote("failed"); }
+    setQueueingAll(false);
+  };
+  const queueOrderToIndexer = async (o: OrderRow) => {
+    setDetailQueueId(o.orderId); setDetailNote(null);
+    try {
+      const r = await fetch(`/api/magiclinks/orders/${encodeURIComponent(o.orderId)}/indexer`, { method: "POST" });
+      const d = await r.json();
+      if (!r.ok) setDetailNote(d?.error === "no_indexer_domains" ? t("mlPulseNoIndexer") : d?.error === "not_migrated" ? t("mlPulseNotMigrated") : String(d?.error ?? "failed"));
+      else if (!d.candidates) setDetailNote(t("mlOrderNothingQueued"));
+      else setDetailNote(t("mlPulseQueued").replace("{n}", String(d.queued ?? 0)).replace("{d}", String(d.domains ?? 0)) + (d.skippedIndexed ? ` ${t("mlOrderSkippedIndexed").replace("{n}", String(d.skippedIndexed))}` : ""));
+    } catch { setDetailNote("failed"); }
+    setDetailQueueId(null);
   };
 
   const openDetail = async (o: OrderRow) => {
     if (openId === o.orderId) { setOpenId(null); return; }
     setOpenId(o.orderId);
     setDetail(null);
+    setDetailNote(null);
     setDetailLoading(true);
     try {
       const res = await fetch(`/api/magiclinks/orders/${encodeURIComponent(o.orderId)}?provider=${o.provider}`);
@@ -194,16 +223,23 @@ export default function MagicLinksPage() {
             <div style={{ fontSize: "12px", fontWeight: 700, color: "var(--color-text-primary)" }}>{t("mlPulseTitle")}</div>
             <div style={{ flex: 1 }} />
             {xrTotals.xrUnchecked > 0 && (
-              <button onClick={runXrCheck} disabled={xrChecking || queueing}
+              <button onClick={runXrCheck} disabled={xrChecking || queueing || queueingAll}
                 title={t("mlPulseXrHint")}
                 style={{ display: "flex", alignItems: "center", gap: "6px", padding: "5px 12px", borderRadius: "7px", border: "1px solid var(--color-border)", background: "var(--color-bg)", color: "var(--color-text-secondary)", fontSize: "11.5px", fontWeight: 600, cursor: "pointer" }}>
                 {xrChecking ? "…" : t("mlPulseXrCheck").replace("{n}", String(xrTotals.xrUnchecked))}
               </button>
             )}
-            {xrTotals.notIndexed > 0 && (
-              <button onClick={queueToIndexer} disabled={xrChecking || queueing}
-                title={t("mlPulseQueueHint")}
+            {totalPlacements > 0 && (
+              <button onClick={queueAllToIndexer} disabled={queueingAll}
+                title={t("mlPulseQueueAllHint")}
                 style={{ display: "flex", alignItems: "center", gap: "6px", padding: "5px 12px", borderRadius: "7px", border: "1px solid rgba(124,58,237,0.35)", background: "rgba(124,58,237,0.08)", color: "#7C3AED", fontSize: "11.5px", fontWeight: 600, cursor: "pointer" }}>
+                {queueingAll ? "…" : t("mlPulseQueueAll").replace("{n}", String(totalPlacements))}
+              </button>
+            )}
+            {xrTotals.notIndexed > 0 && (
+              <button onClick={queueToIndexer} disabled={xrChecking || queueing || queueingAll}
+                title={t("mlPulseQueueHint")}
+                style={{ display: "flex", alignItems: "center", gap: "6px", padding: "5px 12px", borderRadius: "7px", border: "1px solid var(--color-border)", background: "var(--color-bg)", color: "var(--color-text-secondary)", fontSize: "11.5px", fontWeight: 600, cursor: "pointer" }}>
                 {queueing ? "…" : t("mlPulseToIndexer").replace("{n}", String(xrTotals.notIndexed))}
               </button>
             )}
@@ -297,7 +333,19 @@ export default function MagicLinksPage() {
                     <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", padding: "8px 0" }}>{t("loading")}</div>
                   ) : !detail || detail.length === 0 ? (
                     <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", padding: "8px 0" }}>{t("mlNoDetail")}</div>
-                  ) : detail.map(r => (
+                  ) : (
+                    <>
+                      {/* Placements of THIS order → indexer queue, one click, no xr pass needed */}
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "7px 0", borderBottom: "1px solid var(--color-border)", marginBottom: "6px" }}>
+                        {detailNote && <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.4 }}>{detailNote}</span>}
+                        <span style={{ flex: 1 }} />
+                        <button onClick={() => queueOrderToIndexer(o)} disabled={detailQueueId === o.orderId}
+                          title={t("mlOrderQueueHint")}
+                          style={{ display: "flex", alignItems: "center", gap: "6px", padding: "4px 11px", borderRadius: "7px", border: "1px solid rgba(124,58,237,0.35)", background: "rgba(124,58,237,0.08)", color: "#7C3AED", fontSize: "11px", fontWeight: 600, cursor: "pointer" }}>
+                          {detailQueueId === o.orderId ? "…" : t("mlOrderToIndexer")}
+                        </button>
+                      </div>
+                      {detail.map(r => (
                     <div key={r.id} style={{ display: "flex", gap: "10px", alignItems: "center", padding: "5px 0", fontSize: "11.5px", fontFamily: "monospace" }}>
                       <span style={{ width: "70px", flexShrink: 0, color: r.status === "completed" || r.status === "published" ? "#10B981" : r.status === "failed" ? "#EF4444" : "var(--color-text-tertiary)" }}>{r.status}</span>
                       <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--color-text-secondary)" }} title={`${r.targetUrl} · ${r.anchor}`}>
@@ -316,7 +364,9 @@ export default function MagicLinksPage() {
                         <span style={{ flexShrink: 0, color: "var(--color-text-tertiary)" }}>—</span>
                       )}
                     </div>
-                  ))}
+                      ))}
+                    </>
+                  )}
                 </div>
               )}
             </div>
