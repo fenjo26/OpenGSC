@@ -2,7 +2,7 @@
 // filtered Search Analytics data (e.g. Rank Tracker: per-keyword GSC series).
 // Same account-fallback pattern as /api/gsc/site.
 
-import { google } from 'googleapis';
+import { google, type webmasters_v3 } from 'googleapis';
 import { prisma } from '@/lib/prisma';
 import { classifyGscFailure, type GscFailure } from '@/lib/gsc/gscFailure';
 
@@ -52,6 +52,9 @@ export interface GscQueryOpts {
   filters?: { dimension: string; operator: string; expression: string }[];
 }
 
+/** One Search Analytics row as Google returns it (keys, clicks, impressions, ctr, position). */
+export type GscRow = webmasters_v3.Schema$ApiDataRow;
+
 export interface GscStatusResult<T> {
   rows: T[];
   /** Why every linked account failed — null when Google answered. "quota" outranks
@@ -59,7 +62,9 @@ export interface GscStatusResult<T> {
   failure: GscFailure | null;
 }
 
-async function queryGscOnce<T>(accounts: GscAccount[], siteUrl: string, opts: GscQueryOpts): Promise<GscStatusResult<T>> {
+// T defaults to the real row type: without the default every untyped caller (queryGsc,
+// queryGscStrict) got `unknown[]` after the #38 refactor and stopped type-checking.
+async function queryGscOnce<T = GscRow>(accounts: GscAccount[], siteUrl: string, opts: GscQueryOpts): Promise<GscStatusResult<T>> {
   let failure: GscFailure | null = null;
   for (const account of accounts) {
     try {
@@ -93,7 +98,7 @@ export async function queryGsc(accounts: GscAccount[], siteUrl: string, opts: Gs
 }
 
 /** The account-fallback loop with the failure reason attached (see GscStatusResult). */
-export async function queryGscWithStatus<T>(accounts: GscAccount[], siteUrl: string, opts: GscQueryOpts) {
+export async function queryGscWithStatus<T = GscRow>(accounts: GscAccount[], siteUrl: string, opts: GscQueryOpts) {
   return queryGscOnce<T>(accounts, siteUrl, opts);
 }
 
