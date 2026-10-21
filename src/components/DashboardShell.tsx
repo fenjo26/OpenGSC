@@ -152,6 +152,14 @@ const SUPPORT_PARTNERS = [
     tileBg: "#0b0e16",
     imgStyle: { maxHeight: "30px" } as React.CSSProperties,
   },
+  {
+    id: "Proxy1024",
+    name: "1024proxy",
+    href: "https://1024proxy.com/?kwd=channel-fj",
+    logo: "/partners/1024proxy-logo.svg",
+    tileBg: "#ffffff",
+    imgStyle: { maxWidth: "84px", maxHeight: "24px" } as React.CSSProperties,
+  },
 ] as const;
 
 function FeedbackModal({ mode, onClose }: { mode: "feedback" | "thanks"; onClose: () => void }) {
