@@ -1993,6 +1993,107 @@ model DropDonorPlacement {
   @@index([assetId, active])
 }
 
+// ─── PBN restore + bulk link injector ────────────────────────────────────────
+// A dropped domain is restored from a Wayback snapshot to disk, then money-site links are
+// injected into its real content (never dumped at the top of <body>, never with any marker).
+// See docs/tasks/pbn/CONTRACT.md. JSON columns are String (no Json type on SQLite); string
+// members of composite keys stay <=191 chars (VARCHAR(191) on MySQL).
+
+/// One restored drop: the chosen snapshot, what was fetched, and where it lives on disk.
+model PbnSite {
+  id          String   @id @default(cuid())
+  userId      String
+  domain      String
+  /// Chosen snapshot, YYYYMMDDhhmmss.
+  snapshotTimestamp String?
+  /// scanning | fetching | ready | partial | error — honest about partial fetches.
+  status      String   @default("scanning")
+  pagesRequested Int   @default(0)
+  pagesRestored  Int   @default(0)
+  /// JSON: [{ path, reason }] — pages that could not be fetched, reported, never hidden.
+  pagesFailed String  @default("[]")
+  /// JSON: { archiveRefsRewritten, externalLinksStripped, trackersRemoved, jsLinksStripped }
+  cleanedStats String @default("{}")
+  /// Relative dir under data/pbn/<userId>/ where the cleaned site is written.
+  diskPath    String?
+  errorText   String?
+  /// Optional link to an acquired drop (DropAsset) and/or a serving doorway (IndexerDomain).
+  assetDomain String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  pages PbnPage[]
+  links PbnLink[]
+
+  @@unique([userId, domain])
+  @@index([userId, status])
+}
+
+/// One restored page and the link-placement candidates found in it.
+model PbnPage {
+  id        String  @id @default(cuid())
+  siteId    String
+  path      String
+  title     String?
+  textChars Int     @default(0)
+  /// JSON: [{ tag, textLength }] — leaf text blocks a link can go into; empty = needs a paragraph.
+  blocks    String  @default("[]")
+  /// ok | needs_paragraph | skipped
+  status    String  @default("ok")
+
+  site PbnSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([siteId])
+}
+
+/// A bulk campaign: one money target, an anchor list with per-kind shares, applied to N sites.
+model PbnCampaign {
+  id        String  @id @default(cuid())
+  userId    String
+  targetUrl String
+  /// JSON: [{ text, kind }] — kind is exact|brand|url|generic.
+  anchors   String  @default("[]")
+  /// JSON: { exact, brand, url, generic } weights.
+  shares    String  @default("{}")
+  /// homepage_only | sitewide_footer | combo_both
+  scope     String  @default("homepage_only")
+  /// JSON: { dofollow, nofollow, sponsored } weights.
+  relShares String  @default("{}")
+  /// JSON: string[] of PbnSite ids this campaign applies to.
+  siteIds   String  @default("[]")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+/// One placed (or skipped) link on a restored site. Declarative: the file on disk is rewritten
+/// from these rows, so re-applying a campaign is idempotent.
+model PbnLink {
+  id        String  @id @default(cuid())
+  siteId    String
+  campaignId String?
+  /// "/" | "*" | a concrete page path.
+  pagePath  String
+  anchorText String
+  /// exact | brand | url | generic
+  anchorKind String  @default("generic")
+  targetUrl String
+  /// dofollow | nofollow | sponsored
+  rel       String  @default("dofollow")
+  /// content | nav | footer — where in the page the link sits.
+  placement String  @default("content")
+  surroundingText String?
+  /// placed | skipped
+  status    String  @default("placed")
+  skipReason String?
+  createdAt DateTime @default(now())
+
+  site PbnSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([siteId])
+}
+
 // ─── SERP Monitor (full top-N snapshots per market) ──────────────────────────
 // A project is a market (engine · country · language · device) plus a keyword set. Every run
 // stores the whole top-N per keyword; diffs are host-level and computed once, at write time.
