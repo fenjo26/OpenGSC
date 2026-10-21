@@ -14,7 +14,8 @@ import { buildCdxUrl, parseCdxJson, usableRows, rawSnapshotUrl, extractTitle, ex
 import { fetchWaybackUrls } from "@/lib/drops/legacyUrls";
 import { scoreSnapshot, pickBestSnapshot, type SnapshotMetrics, type SnapshotScore } from "./score";
 import { cleanHtml } from "./clean";
-import { findTextBlocks, choosePlacement, buildAnchorTag, injectIntoBlock, type Rel } from "./place";
+import { findTextBlocks, choosePlacement, planRel, type Rel } from "./place";
+export { planRel, renderPage, type RenderLink } from "./place";
 import { planAnchors, type AnchorSpec, type AnchorShares } from "./anchors";
 
 const ARCHIVE_ZONE = "web.archive.org";
@@ -107,7 +108,19 @@ function pageFilePath(root: string, urlPath: string): string {
   else if (!/\.[a-z0-9]{1,6}$/i.test(p)) p += "/index.html";
   // защита от выхода за корень
   const full = path.normalize(path.join(root, p));
-  return full.startsWith(root) ? full : path.join(root, "index.html");
+  return (full === root || full.startsWith(root + path.sep)) ? full : path.join(root, "index.html");
+}
+
+const ASSET_CAP = 400;
+
+/** Относительные ссылки на свои ассеты (img/script/link) — их и качаем из архива. */
+function collectSameOriginAssets(html: string): string[] {
+  const out = new Set<string>();
+  const add = (u: string | undefined) => { if (u && !/^(https?:)?\/\//i.test(u) && !/^data:/i.test(u) && !/^javascript:/i.test(u)) out.add(u.split("#")[0]); };
+  for (const m of html.matchAll(/<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi)) add(m[1]);
+  for (const m of html.matchAll(/<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi)) add(m[1]);
+  for (const m of html.matchAll(/<link\b[^>]*\bhref\s*=\s*["']([^"']+)["']/gi)) add(m[1]);
+  return [...out];
 }
 
 export interface RestoreResult {
@@ -115,8 +128,10 @@ export interface RestoreResult {
   pagesRestored: number;
   remaining: number;
   done: boolean;
+  assetsRestored: number;
+  assetsFailed: number;
   pagesFailed: { path: string; reason: string }[];
-  cleanedStats: { archiveRefsRewritten: number; externalLinksStripped: number; trackersRemoved: number; jsLinksStripped: number };
+  cleanedStats: { archiveRefsRewritten: number; externalLinksStripped: number; trackersRemoved: number; jsLinksStripped: number; foreignAssetsStripped: number };
   pages: { path: string; title?: string; textChars: number; blocks: { tag: string; textLength: number }[]; status: string }[];
 }
 
@@ -149,10 +164,13 @@ export async function restoreSite(
   }
 
   await fs.mkdir(diskDir, { recursive: true });
-  const stats = { archiveRefsRewritten: 0, externalLinksStripped: 0, trackersRemoved: 0, jsLinksStripped: 0 };
+  const stats = { archiveRefsRewritten: 0, externalLinksStripped: 0, trackersRemoved: 0, jsLinksStripped: 0, foreignAssetsStripped: 0 };
   const failed: { path: string; reason: string }[] = [];
   const pages: RestoreResult["pages"] = [];
   let restored = 0;
+  let assetsRestored = 0;
+  let assetsFailed = 0;
+  const assetSeen = new Set<string>();
 
   const pathList = [...paths];
   let processed = 0;
@@ -189,6 +207,7 @@ export async function restoreSite(
     stats.externalLinksStripped += cleaned.stats.externalLinksStripped;
     stats.trackersRemoved += cleaned.stats.trackersRemoved;
     stats.jsLinksStripped += cleaned.stats.jsLinksStripped;
+    stats.foreignAssetsStripped += cleaned.stats.foreignAssetsStripped;
 
     const file = pageFilePath(diskDir, p);
     await fs.mkdir(path.dirname(file), { recursive: true });
@@ -201,10 +220,31 @@ export async function restoreSite(
       path: p, title: extractTitle(cleaned.html) || undefined, textChars: text.length,
       blocks, status: blocks.length ? "ok" : "needs_paragraph",
     });
+
+    // Свои ассеты этой страницы: качаем из архива (im_) на диск, лимит на сайт. Не скачалось —
+    // ссылка остаётся относительной (битая, но НЕ хотлинк и НЕ выдуманная заглушка).
+    for (const rel of collectSameOriginAssets(cleaned.html)) {
+      if (assetSeen.size >= ASSET_CAP) break;
+      let absPath: string;
+      try { absPath = new URL(rel, `https://${host}${p}`).pathname; } catch { continue; }
+      if (assetSeen.has(absPath)) continue;
+      assetSeen.add(absPath);
+      const file = pageFilePath(diskDir, absPath);
+      try { await fs.access(file); assetsRestored++; continue; } catch { /* нет — качаем */ }
+      if (Date.now() > deadline) break;
+      try {
+        const res = await cdxGate(() => fetch(`https://web.archive.org/web/${snapshotTimestamp}im_/https://${host}${absPath}`, { timeoutMs: 20_000, maxBytes: 8 * 1024 * 1024 }));
+        if (res.status >= 400) { assetsFailed++; continue; }
+        const buf = Buffer.from(await res.arrayBuffer());
+        await fs.mkdir(path.dirname(file), { recursive: true });
+        await fs.writeFile(file, buf);
+        assetsRestored++;
+      } catch { assetsFailed++; }
+    }
   }
 
   const remaining = Math.max(0, pathList.length - processed);
-  return { pagesRequested: paths.size, pagesRestored: restored, remaining, done: remaining === 0, pagesFailed: failed, cleanedStats: stats, pages };
+  return { pagesRequested: paths.size, pagesRestored: restored, remaining, done: remaining === 0, assetsRestored, assetsFailed, pagesFailed: failed, cleanedStats: stats, pages };
 }
 
 // ─── Применение кампании ссылок ──────────────────────────────────────────────
@@ -230,22 +270,12 @@ export interface AppliedLink {
   skipReason?: string;
 }
 
-function pickRel(relShares: Partial<Record<Rel, number>>, i: number): Rel {
-  const kinds: Rel[] = ["dofollow", "nofollow", "sponsored"];
-  const weights = kinds.map(k => Math.max(0, relShares[k] ?? (k === "dofollow" ? 1 : 0)));
-  const total = weights.reduce((s, w) => s + w, 0) || 1;
-  // детерминированно по позиции: порог по накопленной доле
-  const pos = ((i + 0.5) / Math.max(1, total)) % 1;
-  let acc = 0;
-  for (let k = 0; k < kinds.length; k++) { acc += weights[k] / total; if (pos <= acc) return kinds[k]; }
-  return "dofollow";
-}
 
 /**
- * Применить кампанию к набору сайтов: анкоры по долям (planAnchors), на главной каждого сайта —
- * контекстная ссылка в найденный блок; нет блока → LLM-абзац (если дан генератор). Пишем файл
- * на диск (главную) и возвращаем список размещений для записи PbnLink. Сквозные и внутренние
- * страницы — следующий слой; здесь базовый путь «морда».
+ * Применить кампанию: анкоры по долям (planAnchors), rel по долям (planRel), на главной каждого
+ * сайта — контекстная ссылка в найденный блок; нет блока → LLM-абзац. ДИСК НЕ ПИШЕТСЯ: ссылки
+ * хранятся декларативно в PbnLink, а в файл запекаются только при отдаче (renderPage) — поэтому
+ * повторное применение не плодит дублей, а смена анкора/таргета не требует перезаливки.
  */
 export async function applyCampaignToSites(
   sites: CampaignSite[],
@@ -257,40 +287,32 @@ export async function applyCampaignToSites(
   generate?: GenerateSurrounding,
 ): Promise<AppliedLink[]> {
   const plan = planAnchors(anchors, shares, sites.length, seed);
+  const rels = planRel(relShares, sites.length, seed);
   const out: AppliedLink[] = [];
 
   for (let i = 0; i < sites.length; i++) {
     const site = sites[i];
     const anchor = plan.assignments[i];
-    const rel = pickRel(relShares, i);
-    if (!anchor) { out.push({ siteId: site.siteId, pagePath: "/", anchorText: "", anchorKind: "generic", targetUrl, rel, placement: "content", status: "skipped", skipReason: "no_anchor" }); continue; }
+    const rel = rels[i] ?? "dofollow";
+    const base = { siteId: site.siteId, pagePath: "/", targetUrl, rel };
+    if (!anchor) { out.push({ ...base, anchorText: "", anchorKind: "generic", placement: "content", status: "skipped", skipReason: "no_anchor" }); continue; }
+    const row = { ...base, anchorText: anchor.text, anchorKind: anchor.kind };
 
-    const indexFile = path.join(site.diskDir, "index.html");
     let html = "";
-    try { html = await fs.readFile(indexFile, "utf8"); }
-    catch { out.push({ siteId: site.siteId, pagePath: "/", anchorText: anchor.text, anchorKind: anchor.kind, targetUrl, rel, placement: "content", status: "skipped", skipReason: "no_index_file" }); continue; }
+    try { html = await fs.readFile(path.join(site.diskDir, "index.html"), "utf8"); }
+    catch { out.push({ ...row, placement: "content", status: "skipped", skipReason: "no_index_file" }); continue; }
 
     const choice = choosePlacement(html, anchor.text);
-    const tag = buildAnchorTag(targetUrl, anchor.text, rel);
-
     if (choice.needsParagraph || !choice.block) {
-      // Нет подходящего блока. Генерируем абзац под тему страницы, если дан генератор; иначе —
-      // честный skip, НЕ дамп в начало body.
-      if (!generate) { out.push({ siteId: site.siteId, pagePath: "/", anchorText: anchor.text, anchorKind: anchor.kind, targetUrl, rel, placement: "content", status: "skipped", skipReason: "no_content_block" }); continue; }
+      if (!generate) { out.push({ ...row, placement: "content", status: "skipped", skipReason: "no_content_block" }); continue; }
       const surrounding = await generate(pageText(html), anchor.text, extractHtmlLang(html));
-      if (!surrounding || !surrounding.includes("{link}")) { out.push({ siteId: site.siteId, pagePath: "/", anchorText: anchor.text, anchorKind: anchor.kind, targetUrl, rel, placement: "content", status: "skipped", skipReason: "no_paragraph_generated" }); continue; }
-      // Вставляем абзац перед </body>, но это сгенерированный текст, не голый анкор.
-      const para = `<p>${surrounding.replace("{link}", tag)}</p>`;
-      const body = /<\/body>/i.test(html) ? html.replace(/<\/body>/i, `${para}</body>`) : html + para;
-      await fs.writeFile(indexFile, body, "utf8");
-      out.push({ siteId: site.siteId, pagePath: "/", anchorText: anchor.text, anchorKind: anchor.kind, targetUrl, rel, placement: "content", surroundingText: surrounding, status: "placed" });
+      if (!surrounding || !surrounding.includes("{link}")) { out.push({ ...row, placement: "content", status: "skipped", skipReason: "no_paragraph_generated" }); continue; }
+      out.push({ ...row, placement: "footer", surroundingText: surrounding, status: "placed" });  // footer = appended generated paragraph
       continue;
     }
-
     const surrounding = generate ? await generate(choice.block.text, anchor.text, extractHtmlLang(html)) : undefined;
-    const injected = injectIntoBlock(html, choice.block, tag, surrounding);
-    await fs.writeFile(indexFile, injected, "utf8");
-    out.push({ siteId: site.siteId, pagePath: "/", anchorText: anchor.text, anchorKind: anchor.kind, targetUrl, rel, placement: "content", surroundingText: surrounding, status: "placed" });
+    out.push({ ...row, placement: "content", surroundingText: surrounding, status: "placed" });
   }
   return out;
 }
+

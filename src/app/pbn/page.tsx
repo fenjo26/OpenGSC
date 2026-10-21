@@ -138,8 +138,8 @@ export default function PbnPage() {
           <label style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{tt("pbnScope")}:{" "}
             <select value={scope} onChange={e => setScope(e.target.value)} style={{ ...inp, fontSize: 12 }}>
               <option value="homepage_only">{tt("pbnScopeHome")}</option>
-              <option value="sitewide_footer">{tt("pbnScopeSitewide")}</option>
-              <option value="combo_both">{tt("pbnScopeCombo")}</option>
+              <option value="sitewide_footer" disabled>{tt("pbnScopeSitewide")} — soon</option>
+              <option value="combo_both" disabled>{tt("pbnScopeCombo")} — soon</option>
             </select>
           </label>
           <label style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{tt("pbnAnchors")} ({tt("pbnAnchorKind")}: text :: exact|brand|url|generic)</label>

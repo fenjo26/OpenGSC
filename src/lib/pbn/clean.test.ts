@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cleanHtml, unwrapArchiveUrls, stripExternalLinks, residualFootprints } from "./clean";
+import { cleanHtml, unwrapArchiveUrls, stripExternalLinks, stripForeignAssets, residualFootprints } from "./clean";
 
 test("archive-wrapped own asset becomes a local path", () => {
   const html = `<img src="https://web.archive.org/web/20040121214835im_/http://pets.com/images/pixel.gif">`;
@@ -47,4 +47,14 @@ test("residualFootprints catches WayForge markers", () => {
   const f = residualFootprints(dirty);
   assert.ok(f.includes("data-wf-reconstructed"));
   assert.ok(f.includes("data-wf-injected"));
+});
+
+test("foreign assets are dropped, not hotlinked; own assets kept", () => {
+  const html = `<img src="https://other-cdn.com/a.jpg"><img src="/images/own.gif"><script src="https://evil.com/x.js"></script><link href="https://cdn.other.com/s.css" rel="stylesheet">`;
+  const r = stripForeignAssets(html, "pets.com");
+  assert.ok(r.count >= 3, `count ${r.count}`);
+  assert.ok(!r.html.includes("other-cdn.com"));
+  assert.ok(!r.html.includes("evil.com"));
+  assert.ok(!r.html.includes("cdn.other.com"));
+  assert.ok(r.html.includes('src="/images/own.gif"'), "own asset kept");
 });

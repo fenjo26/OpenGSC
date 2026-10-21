@@ -95,7 +95,8 @@ export type Rel = "dofollow" | "nofollow" | "sponsored";
 
 /** Тег <a> БЕЗ маркеров: только href и, при необходимости, rel. Никаких data-* и классов. */
 export function buildAnchorTag(targetUrl: string, anchorText: string, rel: Rel): string {
-  const href = /^https?:\/\//i.test(targetUrl) ? targetUrl : `https://${targetUrl}`;
+  const raw = /^https?:\/\//i.test(targetUrl) ? targetUrl : `https://${targetUrl}`;
+  const href = raw.replace(/&/g, "&amp;").replace(/"/g, "%22").replace(/</g, "%3C").replace(/>/g, "%3E");
   const relAttr = rel === "dofollow" ? "" : ` rel="${rel === "sponsored" ? "sponsored" : "nofollow"}"`;
   const safe = anchorText.replace(/[<>]/g, "");
   return `<a href="${href}"${relAttr}>${safe}</a>`;
@@ -117,4 +118,63 @@ export function injectIntoBlock(
     : anchorTag;
   const addition = surrounding ? ` ${sentence}` : ` ${sentence}`;
   return html.slice(0, block.innerEnd) + addition + html.slice(block.innerEnd);
+}
+
+// ─── rel-доли и рендер ссылок при отдаче (чистые, тестируемые) ───────────────
+
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+
+/** Rel по долям на `count` сайтов: наибольший остаток + детерминированное перемешивание.
+ *  Заменяет сломанный pickRel (делил позицию на сумму весов → всем доставался dofollow). */
+export function planRel(relShares: Partial<Record<Rel, number>>, count: number, seed: number): Rel[] {
+  const kinds: Rel[] = ["dofollow", "nofollow", "sponsored"];
+  const weights = kinds.map(k => Math.max(0, relShares[k] ?? (k === "dofollow" ? 1 : 0)));
+  const total = weights.reduce((s, w) => s + w, 0) || 1;
+  const raw = weights.map(w => (w / total) * count);
+  const quota = raw.map(Math.floor);
+  let assigned = quota.reduce((s, q) => s + q, 0);
+  const rema = raw.map((r, i) => ({ i, f: r - Math.floor(r) })).sort((a, b) => b.f - a.f);
+  for (let r = 0; assigned < count; r++, assigned++) quota[rema[r % rema.length].i] += 1;
+  const pool: Rel[] = [];
+  kinds.forEach((k, i) => { for (let j = 0; j < quota[i]; j++) pool.push(k); });
+  const rng = mulberry32(seed ^ 0x9e3779b9);
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  return pool;
+}
+
+export interface RenderLink {
+  pagePath: string;
+  anchorText: string;
+  targetUrl: string;
+  rel: string;
+  placement: string;           // content | footer | nav
+  surroundingText?: string;
+  status: string;              // только placed рендерится
+}
+
+/**
+ * Запечь ссылки в страницу ПРИ ОТДАЧЕ. На вход — ЧИСТАЯ (pristine) страница с диска и строки
+ * ссылок этой страницы; на выход — HTML с внедрёнными ссылками. Детерминированно: место ищется
+ * тем же choosePlacement по чистому HTML, поэтому повторный рендер идемпотентен, а правка строки
+ * ссылки сразу меняет выдачу без перезаливки файла.
+ */
+export function renderPage(pristineHtml: string, links: RenderLink[]): string {
+  let html = pristineHtml;
+  for (const l of links) {
+    if (l.status !== "placed") continue;
+    const tag = buildAnchorTag(l.targetUrl, l.anchorText, (l.rel as Rel) || "dofollow");
+    if (l.placement === "footer" || l.placement === "nav") {
+      const sentence = l.surroundingText && l.surroundingText.includes("{link}") ? l.surroundingText.replace("{link}", tag) : tag;
+      const para = `<p>${sentence}</p>`;
+      html = /<\/body>/i.test(html) ? html.replace(/<\/body>/i, `${para}</body>`) : html + para;
+    } else {
+      const choice = choosePlacement(html, l.anchorText);
+      if (choice.block) html = injectIntoBlock(html, choice.block, tag, l.surroundingText);
+      else html = /<\/body>/i.test(html) ? html.replace(/<\/body>/i, `<p>${tag}</p></body>`) : html + `<p>${tag}</p>`;
+    }
+  }
+  return html;
 }

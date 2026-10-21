@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { findTextBlocks, choosePlacement, buildAnchorTag, injectIntoBlock } from "./place";
+import { findTextBlocks, choosePlacement, buildAnchorTag, injectIntoBlock, planRel, renderPage, type RenderLink } from "./place";
 import { residualFootprints } from "./clean";
 
 const PARA = "This is a substantial paragraph of real content about dog grooming and pet care that easily clears the one hundred and fifty character minimum needed for a natural in-content link placement.";
@@ -60,4 +60,48 @@ test("bare anchor (no surrounding) still has no footprint", () => {
   const out = injectIntoBlock(html, choice.block!, tag);
   assert.deepEqual(residualFootprints(out), []);
   assert.ok(out.includes('rel="sponsored"'));
+});
+
+test("buildAnchorTag escapes quotes and brackets in the URL (no attribute break-out)", () => {
+  const tag = buildAnchorTag('https://x.com/a"onmouseover="alert(1)', "hi", "dofollow");
+  assert.ok(!tag.includes('"onmouseover'), tag);
+  assert.ok(tag.includes("%22"));
+});
+
+test("planRel distributes by shares, not all-dofollow (the pickRel bug)", () => {
+  const rels = planRel({ dofollow: 80, nofollow: 15, sponsored: 5 }, 20, 7);
+  assert.equal(rels.length, 20);
+  const n = (k: string) => rels.filter(r => r === k).length;
+  assert.equal(n("dofollow"), 16);
+  assert.equal(n("nofollow"), 3);
+  assert.equal(n("sponsored"), 1);
+});
+
+test("planRel is deterministic per seed", () => {
+  assert.deepEqual(planRel({ dofollow: 1, nofollow: 1 }, 10, 3), planRel({ dofollow: 1, nofollow: 1 }, 10, 3));
+});
+
+test("renderPage is idempotent: rendering twice from pristine gives the same output", () => {
+  const pristine = `<html><body><td>${PARA}</td></body></html>`;
+  const links: RenderLink[] = [{ pagePath: "/", anchorText: "dog grooming", targetUrl: "https://example.com/m", rel: "dofollow", placement: "content", status: "placed" }];
+  const once = renderPage(pristine, links);
+  const twice = renderPage(pristine, links);
+  assert.equal(once, twice);
+  // and exactly one injected link (no accumulation across renders)
+  assert.equal((once.match(/example\.com/g) || []).length, 1);
+});
+
+test("renderPage footer placement appends a generated paragraph, no footprint", () => {
+  const pristine = `<html><body><p>${PARA}</p></body></html>`;
+  const links: RenderLink[] = [{ pagePath: "*", anchorText: "x", targetUrl: "https://e.com", rel: "sponsored", placement: "footer", surroundingText: "See {link} for more.", status: "placed" }];
+  const out = renderPage(pristine, links);
+  assert.ok(out.includes("See <a"));
+  assert.ok(out.includes('rel="sponsored"'));
+  assert.deepEqual(residualFootprints(out), []);
+});
+
+test("renderPage skips non-placed links", () => {
+  const pristine = `<html><body><td>${PARA}</td></body></html>`;
+  const out = renderPage(pristine, [{ pagePath: "/", anchorText: "a", targetUrl: "https://e.com", rel: "dofollow", placement: "content", status: "skipped" }]);
+  assert.ok(!out.includes("e.com"));
 });

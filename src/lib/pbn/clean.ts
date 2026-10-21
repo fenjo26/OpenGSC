@@ -24,6 +24,7 @@ export interface CleanResult {
     externalLinksStripped: number;  // исходящих на чужие домены снято (href → без ссылки)
     trackersRemoved: number;        // GA/Metrika/GTM-скриптов удалено
     jsLinksStripped: number;        // javascript:-ссылок снято
+    foreignAssetsStripped: number;  // img/script/link на чужой хост снято (без хотлинка)
   };
 }
 
@@ -92,11 +93,37 @@ export function stripExternalLinks(html: string, domain: string): { html: string
   return { html: out, external, js };
 }
 
+/**
+ * Снять ссылки на ЧУЖИЕ ассеты (img/script/link на другой хост) — иначе восстановленный сайт
+ * хотлинкает картинки и скрипты с живого чужого домена (след + зависимость). Свои (относительные
+ * или на свой хост) остаются — их качает движок восстановления.
+ */
+export function stripForeignAssets(html: string, domain: string): { html: string; count: number } {
+  const host = domain.replace(/^www\./, "").toLowerCase();
+  let count = 0;
+  const foreign = (url: string): boolean => {
+    if (!/^(https?:)?\/\//i.test(url)) return false; // относительный — свой
+    const h = hostOf(url.startsWith("//") ? "https:" + url : url);
+    return !!h && h !== host && !h.endsWith("." + host);
+  };
+  // <img ... src="...foreign..."> → убрать src (пустая картинка, НЕ заглушка и НЕ хотлинк)
+  let out = html.replace(/<img\b[^>]*>/gi, tag => {
+    const src = /\bsrc\s*=\s*["']([^"']*)["']/i.exec(tag)?.[1] ?? "";
+    if (src && foreign(src)) { count++; return tag.replace(/\bsrc\s*=\s*["'][^"']*["']/i, 'alt=""'); }
+    return tag;
+  });
+  // <script src="...foreign..."> и <link href="...foreign..."> → удалить тег целиком
+  out = out.replace(/<script\b[^>]*\bsrc\s*=\s*["']([^"']*)["'][^>]*>\s*<\/script>/gi, (tag, src: string) => { if (foreign(src)) { count++; return ""; } return tag; });
+  out = out.replace(/<link\b[^>]*\bhref\s*=\s*["']([^"']*)["'][^>]*>/gi, (tag, href: string) => { if (foreign(href)) { count++; return ""; } return tag; });
+  return { html: out, count };
+}
+
 /** Полная чистка одним проходом. */
 export function cleanHtml(html: string, opts: CleanOptions): CleanResult {
   const a = unwrapArchiveUrls(html, opts.domain);
   const t = stripTrackers(a.html);
-  const e = stripExternalLinks(t.html, opts.domain);
+  const fa = stripForeignAssets(t.html, opts.domain);
+  const e = stripExternalLinks(fa.html, opts.domain);
   return {
     html: e.html,
     stats: {
@@ -104,6 +131,7 @@ export function cleanHtml(html: string, opts: CleanOptions): CleanResult {
       externalLinksStripped: e.external,
       trackersRemoved: t.count,
       jsLinksStripped: e.js,
+      foreignAssetsStripped: fa.count,
     },
   };
 }
