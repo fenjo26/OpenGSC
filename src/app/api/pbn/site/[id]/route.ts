@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { getSite, listPages, listLinks, updateSite, pbnSchemaMissing } from "@/lib/pbn/store";
-import { siteDiskDir } from "@/lib/pbn/restore";
-import { promises as fs } from "node:fs";
+import { siteDiskDir, wipeDirIfNewSnapshot } from "@/lib/pbn/restore";
 
 export const dynamic = "force-dynamic";
 
@@ -35,9 +34,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (!ts) return NextResponse.json({ error: "bad_snapshot" }, { status: 400 });
     // Новый снимок — старые файлы на диске больше не актуальны: чистим каталог, иначе restoreSite
     // засчитает уже лежащие файлы как «восстановленные» и оставит контент прошлого снимка.
+    // Тот же ts → каталог не трогаем (возобновляемая выкачка сохраняется).
     const site = await getSite(userId, id);
-    if (site) { try { await fs.rm(siteDiskDir(userId, site.domain), { recursive: true, force: true }); } catch { /* каталога могло не быть */ } }
-    await updateSite(userId, id, { snapshotTimestamp: ts, status: "scanning", pagesRestored: 0, diskPath: null });
+    const wiped = site ? await wipeDirIfNewSnapshot(site.snapshotTimestamp, ts, siteDiskDir(userId, site.domain)) : false;
+    await updateSite(userId, id, { snapshotTimestamp: ts, status: "scanning", pagesRestored: 0, ...(wiped ? { diskPath: null } : {}) });
     return NextResponse.json({ ok: true });
   } catch (e) {
     if (pbnSchemaMissing(e)) return NextResponse.json({ error: "pbn_not_migrated" }, { status: 503 });

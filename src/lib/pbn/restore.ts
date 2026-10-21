@@ -15,7 +15,7 @@ import { fetchWaybackUrls } from "@/lib/drops/legacyUrls";
 import { scoreSnapshot, pickBestSnapshot, type SnapshotMetrics, type SnapshotScore } from "./score";
 import { cleanHtml } from "./clean";
 import { findTextBlocks, choosePlacement, planRel, type Rel } from "./place";
-export { planRel, renderPage, type RenderLink } from "./place";
+export { planRel, renderPage, linksForPage, type RenderLink } from "./place";
 import { planAnchors, type AnchorSpec, type AnchorShares } from "./anchors";
 
 const ARCHIVE_ZONE = "web.archive.org";
@@ -99,6 +99,19 @@ export function siteDiskDir(userId: string, domain: string): string {
   return path.join(process.cwd(), "data", "pbn", safeDir(userId), safeDir(domain));
 }
 
+/**
+ * Смена снимка аннулирует прежнюю выкачку: если у сайта уже записан ДРУГОЙ snapshotTimestamp,
+ * каталог на диске надо вычистить — иначе restoreSite засчитает лежащие файлы прошлого снимка
+ * как восстановленные и склеит контент двух эпох. Тот же ts → каталог не трогаем
+ * (возобновляемость). Вызывается там, где восстановление реально входит: POST /api/pbn/restore,
+ * MCP pbn_restore и PATCH смены снимка.
+ */
+export async function wipeDirIfNewSnapshot(prevTs: string | null | undefined, nextTs: string, diskDir: string): Promise<boolean> {
+  if (!prevTs || prevTs === nextTs) return false;
+  await fs.rm(diskDir, { recursive: true, force: true });
+  return true;
+}
+
 /** Относительный путь страницы → имя файла на диске. "/" → index.html, "/a/b" → a/b/index.html */
 function pageFilePath(root: string, urlPath: string): string {
   let p = urlPath.split("?")[0].split("#")[0];
@@ -172,6 +185,33 @@ export async function restoreSite(
   let assetsFailed = 0;
   const assetSeen = new Set<string>();
 
+  // Выкачка своих ассетов страницы. Вызывается и для свежескачанных страниц, и для уже лежащих
+  // (возобновление): прошлый слайс мог упереться в дедлайн посреди ассетов страницы, а её файл
+  // уже существовал бы — без этого повтора хвост ассетов оставался невыкачанным навсегда.
+  // Существующие файлы пропускаются дешёвой проверкой, качаются только отсутствующие.
+  const fetchAssets = async (html: string, pagePath: string): Promise<void> => {
+    // Свои ассеты страницы: качаем из архива (im_) на диск, лимит на сайт. Не скачалось —
+    // ссылка остаётся относительной (битая, но НЕ хотлинк и НЕ выдуманная заглушка).
+    for (const rel of collectSameOriginAssets(html)) {
+      if (assetSeen.size >= ASSET_CAP) break;
+      let absPath: string;
+      try { absPath = new URL(rel, `https://${host}${pagePath}`).pathname; } catch { continue; }
+      if (assetSeen.has(absPath)) continue;
+      assetSeen.add(absPath);
+      const file = pageFilePath(diskDir, absPath);
+      try { await fs.access(file); assetsRestored++; continue; } catch { /* нет — качаем */ }
+      if (Date.now() > deadline) break;
+      try {
+        const res = await cdxGate(() => fetch(`https://web.archive.org/web/${snapshotTimestamp}im_/https://${host}${absPath}`, { timeoutMs: 20_000, maxBytes: 8 * 1024 * 1024 }));
+        if (res.status >= 400) { assetsFailed++; continue; }
+        const buf = Buffer.from(await res.arrayBuffer());
+        await fs.mkdir(path.dirname(file), { recursive: true });
+        await fs.writeFile(file, buf);
+        assetsRestored++;
+      } catch { assetsFailed++; }
+    }
+  };
+
   const pathList = [...paths];
   let processed = 0;
   for (const p of pathList) {
@@ -185,6 +225,9 @@ export async function restoreSite(
         const t0 = pageText(existing);
         const b0 = findTextBlocks(existing).map(b => ({ tag: b.tag, textLength: b.textLength }));
         pages.push({ path: p, title: extractTitle(existing) || undefined, textChars: t0.length, blocks: b0, status: b0.length ? "ok" : "needs_paragraph" });
+        // Ассеты этой страницы могли оборваться на дедлайне прошлого слайса — добираем.
+        await fetchAssets(existing, p);
+        if (Date.now() > deadline) break;
       }
       continue;
     } catch { /* файла нет — качаем ниже */ }
@@ -221,26 +264,7 @@ export async function restoreSite(
       blocks, status: blocks.length ? "ok" : "needs_paragraph",
     });
 
-    // Свои ассеты этой страницы: качаем из архива (im_) на диск, лимит на сайт. Не скачалось —
-    // ссылка остаётся относительной (битая, но НЕ хотлинк и НЕ выдуманная заглушка).
-    for (const rel of collectSameOriginAssets(cleaned.html)) {
-      if (assetSeen.size >= ASSET_CAP) break;
-      let absPath: string;
-      try { absPath = new URL(rel, `https://${host}${p}`).pathname; } catch { continue; }
-      if (assetSeen.has(absPath)) continue;
-      assetSeen.add(absPath);
-      const file = pageFilePath(diskDir, absPath);
-      try { await fs.access(file); assetsRestored++; continue; } catch { /* нет — качаем */ }
-      if (Date.now() > deadline) break;
-      try {
-        const res = await cdxGate(() => fetch(`https://web.archive.org/web/${snapshotTimestamp}im_/https://${host}${absPath}`, { timeoutMs: 20_000, maxBytes: 8 * 1024 * 1024 }));
-        if (res.status >= 400) { assetsFailed++; continue; }
-        const buf = Buffer.from(await res.arrayBuffer());
-        await fs.mkdir(path.dirname(file), { recursive: true });
-        await fs.writeFile(file, buf);
-        assetsRestored++;
-      } catch { assetsFailed++; }
-    }
+    await fetchAssets(cleaned.html, p);
   }
 
   const remaining = Math.max(0, pathList.length - processed);

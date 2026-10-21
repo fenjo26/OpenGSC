@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
-import { makePbnFetch, restoreSite, siteDiskDir } from "@/lib/pbn/restore";
+import { makePbnFetch, restoreSite, siteDiskDir, wipeDirIfNewSnapshot } from "@/lib/pbn/restore";
 import { createOrGetSite, updateSite, replacePages, pbnSchemaMissing } from "@/lib/pbn/store";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +22,9 @@ export async function POST(req: Request) {
 
     const site = await createOrGetSite(userId, domain);
     const diskDir = siteDiskDir(userId, domain);
+    // Другой снимок — прежняя выкачка недействительна: чистим каталог ДО restoreSite, иначе
+    // файлы прошлого снимка засчитаются как восстановленные (смешение контента двух эпох).
+    await wipeDirIfNewSnapshot(site.snapshotTimestamp, snapshotTimestamp, diskDir);
     await updateSite(userId, site.id, { status: "fetching", snapshotTimestamp });
 
     const fetch = await makePbnFetch(userId);

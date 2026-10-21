@@ -6,7 +6,7 @@ import { promises as fs } from "node:fs";
 import type { McpTool } from "./shared";
 import { assertConfirmed, confirmArg, resolveAiCreds } from "./shared";
 import { fetchLLM } from "@/lib/llm";
-import { makePbnFetch, prescanDomain, restoreSite, siteDiskDir, applyCampaignToSites, type CampaignSite, type GenerateSurrounding } from "@/lib/pbn/restore";
+import { makePbnFetch, prescanDomain, restoreSite, siteDiskDir, applyCampaignToSites, wipeDirIfNewSnapshot, renderPage, linksForPage, type CampaignSite, type GenerateSurrounding, type RenderLink } from "@/lib/pbn/restore";
 import { seedFromString, type AnchorSpec, type AnchorShares } from "@/lib/pbn/anchors";
 import type { Rel } from "@/lib/pbn/place";
 import { buildZip, type ZipEntry } from "@/lib/pbn/zip";
@@ -47,6 +47,9 @@ export const PBN_TOOLS: McpTool[] = [
       const pageCap = Number(args.pageCap) || undefined;
       const site = await createOrGetSite(userId, domain);
       const diskDir = siteDiskDir(userId, domain);
+      // Как POST /api/pbn/restore: другой снимок аннулирует прежнюю выкачку — чистим каталог,
+      // иначе файлы прошлого снимка засчитаются как восстановленные.
+      await wipeDirIfNewSnapshot(site.snapshotTimestamp, snapshotTimestamp, diskDir);
       await updateSite(userId, site.id, { status: "fetching", snapshotTimestamp });
       const fetch = await makePbnFetch(userId);
       // Несколько слайсов подряд, но под общим дедлайном — агент получает завершённый сайт чаще.
@@ -127,22 +130,35 @@ export const PBN_TOOLS: McpTool[] = [
     name: "pbn_export_zip",
     cost: "local",
     idempotent: false,
-    description: "Write a ready-to-host ZIP of a restored site (plus bot-shield .htaccess and robots.txt) to disk; refuses if any page still carries a footprint (archive.org or injected markers). Returns the file path and size.",
+    description: "Write a ready-to-host ZIP of a restored site with the campaign's links rendered into the HTML at export (exactly like the UI's ZIP button — disk files stay pristine), plus bot-shield .htaccess and robots.txt; refuses if any rendered page still carries a footprint (archive.org or injected markers). Returns the file path and size.",
     inputSchema: { type: "object", properties: { siteId: { type: "string" } }, required: ["siteId"] },
     handler: async (userId, args) => {
       const site = await getSite(userId, String(args.siteId ?? ""));
       if (!site?.diskPath) throw new Error("site not restored");
       const root = path.resolve(site.diskPath);
-      const entries: ZipEntry[] = [];
+      const files: { rel: string; full: string }[] = [];
       const walk = async (dir: string): Promise<void> => {
         for (const ent of await fs.readdir(dir, { withFileTypes: true })) {
           const full = path.join(dir, ent.name);
           if (ent.isDirectory()) await walk(full);
-          else entries.push({ path: path.relative(root, full).split(path.sep).join("/"), data: await fs.readFile(full) });
+          else files.push({ rel: path.relative(root, full).split(path.sep).join("/"), full });
         }
       };
       await walk(root);
-      for (const e of entries) if (/\.html?$/i.test(e.path)) { const f = residualFootprints(e.data.toString("utf8")); if (f.length) throw new Error(`footprint in ${e.path}: ${f.join(", ")}`); }
+      // Зеркало /api/pbn/site/:id/zip: ссылки рендерятся в HTML при экспорте (диск чистый),
+      // футпринт-гейт проверяет именно отрендеренный HTML. Фильтр linksForPage общий с роутом.
+      const links = (await listLinks(String(args.siteId ?? ""))) as unknown as RenderLink[];
+      const entries: ZipEntry[] = [];
+      for (const f of files) {
+        let data = await fs.readFile(f.full);
+        if (/\.html?$/i.test(f.rel)) {
+          const rendered = renderPage(data.toString("utf8"), linksForPage(links, f.rel));
+          const found = residualFootprints(rendered);
+          if (found.length) throw new Error(`footprint in ${f.rel}: ${found.join(", ")}`);
+          data = Buffer.from(rendered, "utf8");
+        }
+        entries.push({ path: f.rel, data });
+      }
       entries.push({ path: ".htaccess", data: Buffer.from("RewriteEngine On\nRewriteCond %{HTTP_USER_AGENT} (AhrefsBot|SemrushBot|MJ12bot|DotBot|rogerbot|BLEXBot) [NC]\nRewriteRule .* - [F,L]\n") });
       entries.push({ path: "robots.txt", data: Buffer.from("User-agent: AhrefsBot\nDisallow: /\nUser-agent: SemrushBot\nDisallow: /\nUser-agent: MJ12bot\nDisallow: /\n") });
       const zip = buildZip(entries);

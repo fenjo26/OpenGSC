@@ -1,6 +1,6 @@
 import { workspaceUserId } from "@/lib/team/workspace";
 import { getSite, listLinks } from "@/lib/pbn/store";
-import { renderPage, type RenderLink } from "@/lib/pbn/restore";
+import { renderPage, linksForPage, type RenderLink } from "@/lib/pbn/restore";
 import { buildZip, type ZipEntry } from "@/lib/pbn/zip";
 import { residualFootprints } from "@/lib/pbn/clean";
 import { promises as fs } from "node:fs";
@@ -34,9 +34,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   for (const f of files) {
     let data = await fs.readFile(f.full);
     if (/\.html?$/i.test(f.rel)) {
-      const pageRel = "/" + f.rel.replace(/index\.html$/i, "").replace(/\/$/, "");
-      const forPage = links.filter(l => l.status === "placed" && (l.pagePath === pageRel || l.pagePath === "*" || (f.rel === "index.html" && l.pagePath === "/")));
-      const rendered = renderPage(data.toString("utf8"), forPage);
+      const rendered = renderPage(data.toString("utf8"), linksForPage(links, f.rel));
       const found = residualFootprints(rendered);
       if (found.length) return new Response(`footprint in ${f.rel}: ${found.join(", ")}`, { status: 409 });
       data = Buffer.from(rendered, "utf8");

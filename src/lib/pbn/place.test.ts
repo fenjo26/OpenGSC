@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { findTextBlocks, choosePlacement, buildAnchorTag, injectIntoBlock, planRel, renderPage, type RenderLink } from "./place";
+import { findTextBlocks, choosePlacement, buildAnchorTag, injectIntoBlock, planRel, renderPage, linksForPage, type RenderLink } from "./place";
 import { residualFootprints } from "./clean";
 
 const PARA = "This is a substantial paragraph of real content about dog grooming and pet care that easily clears the one hundred and fifty character minimum needed for a natural in-content link placement.";
@@ -104,4 +104,12 @@ test("renderPage skips non-placed links", () => {
   const pristine = `<html><body><td>${PARA}</td></body></html>`;
   const out = renderPage(pristine, [{ pagePath: "/", anchorText: "a", targetUrl: "https://e.com", rel: "dofollow", placement: "content", status: "skipped" }]);
   assert.ok(!out.includes("e.com"));
+});
+
+test("linksForPage: root file, concrete page and sitewide star — one filter for UI zip and MCP export", () => {
+  const mk = (pagePath: string): RenderLink => ({ pagePath, anchorText: "a", targetUrl: "https://e.com", rel: "dofollow", placement: "content", status: "placed" });
+  const links = [mk("/"), mk("/about"), mk("*"), { ...mk("/"), status: "skipped" }];
+  assert.deepEqual(linksForPage(links, "index.html").map(l => l.pagePath), ["/", "*"]);
+  assert.deepEqual(linksForPage(links, "about/index.html").map(l => l.pagePath), ["/about", "*"]);
+  assert.deepEqual(linksForPage(links, "a/b.html").map(l => l.pagePath), ["*"]);
 });

@@ -178,3 +178,17 @@ export function renderPage(pristineHtml: string, links: RenderLink[]): string {
   }
   return html;
 }
+
+/**
+ * Ссылки, которые рендерятся в файл `fileRel` (путь внутри сайта: "index.html" — морда,
+ * "about/index.html" — раздел). Общий фильтр для ZIP-роута и MCP-экспорта: UI и MCP обязаны
+ * собирать ссылки одинаково (правило «MCP = UI»), поэтому логика — в одном месте, а не в двух
+ * копиях, которые разъедутся при первой же правке.
+ */
+export function linksForPage(links: RenderLink[], fileRel: string): RenderLink[] {
+  if (fileRel === "index.html") {
+    return links.filter(l => l.status === "placed" && (l.pagePath === "/" || l.pagePath === "*"));
+  }
+  const pageRel = "/" + fileRel.replace(/index\.html$/i, "").replace(/\/$/, "");
+  return links.filter(l => l.status === "placed" && (l.pagePath === pageRel || l.pagePath === "*"));
+}
