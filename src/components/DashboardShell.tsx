@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import PasswordChangeGate from "@/components/PasswordChangeGate";
 import { useSession, signOut } from "next-auth/react";
 import { useState, useEffect, useRef, Suspense } from "react";
-import { LogOut, Sparkles, Globe, Newspaper, LayoutDashboard, TrendingUp, Anchor, BarChart2, Radar, Server, ClipboardCheck, Menu, Boxes, Waves, FileText, Inbox, ChevronDown, Link2, Send, Network } from "lucide-react";
+import { LogOut, Sparkles, Globe, Newspaper, LayoutDashboard, TrendingUp, Anchor, BarChart2, Radar, Server, ClipboardCheck, Menu, Boxes, Waves, FileText, Inbox, ChevronDown, Link2, Send, Network, Recycle } from "lucide-react";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { useTheme } from "@/lib/ThemeContext";
 import { useLayout } from "@/lib/LayoutContext";
@@ -529,8 +529,10 @@ function useNavItems(): NavItem[] {
     // ─── network: the link network, in the order the work happens ───────────────────────
     // Drops first: find and buy the domains the network is built from.
     { href: "/drops", label: t("dropsNavTitle"), key: "drops", icon: <Boxes size={14} />, group: "network" as const },
-    // Then serve them: the doorways and the bot log. (The PBN builder, /pbn, goes between
-    // these two once it exists — see claude/pbn-restore-plan.md, P7a.)
+    // Restore a drop from Wayback and inject money-site links into its real content — the
+    // thing a bought drop becomes before it serves. Between buying (/drops) and serving (/indexer).
+    { href: "/pbn", label: t("pbnNavTitle"), key: "pbn", icon: <Recycle size={14} />, group: "network" as const },
+    // Then serve them: the doorways and the bot log.
     { href: "/indexer", label: t("indexerNavTitle"), key: "indexer", icon: <Globe size={14} />, group: "network" as const },
     // Bought links: money leaves for somebody else's placements, and the striking table's buy
     // buttons lead here for the history. Always visible, like /serp-monitor:

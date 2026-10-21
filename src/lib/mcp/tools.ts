@@ -44,6 +44,7 @@ import { DEMAND_TOOLS } from "./toolsDemand";
 import { OUTREACH_TOOLS } from "./toolsOutreach";
 import { SOURCE_AUDIT_TOOLS } from "./toolsSourceAudit";
 import { DROPS_TOOLS } from "./toolsDrops";
+import { PBN_TOOLS } from "./toolsPbn";
 import { SERPMON_TOOLS } from "./toolsSerpMon";
 // Wave-oct contour arrays (CONTRACT.md §5) — empty stubs until their tasks land:
 // toolsMeta (T1), toolsUptime (T2), toolsIndex (T4), toolsMentions (T6), toolsVisibility (T7).
@@ -826,7 +827,7 @@ const CORE_TOOLS: McpTool[] = [
 
 // The single registry the route handler sees. Order matters only for readability in
 // tools/list — agents pick by name, and get_capabilities groups them by cost.
-export const MCP_TOOLS: McpTool[] = [...CORE_TOOLS, ...DATA_TOOLS, ...METRICS_TOOLS, ...DEMAND_TOOLS, ...OPTIMIZE_TOOLS, ...OUTREACH_TOOLS, ...SOURCE_AUDIT_TOOLS, ...DROPS_TOOLS, ...SERPMON_TOOLS, ...META_TOOLS, ...UPTIME_TOOLS, ...INDEX_TOOLS, ...MENTIONS_TOOLS, ...VISIBILITY_TOOLS, ...FOOTPRINT_TOOLS, ...BACKLINK_TOX_TOOLS, ...LOCAL_TOOLS, ...TRENDS_TOOLS, ...PLAGIARISM_TOOLS, ...REPORTS_TOOLS, ...LEADS_TOOLS, ...CONTEXT_TOOLS, ...PUBLISH_TOOLS];
+export const MCP_TOOLS: McpTool[] = [...CORE_TOOLS, ...DATA_TOOLS, ...METRICS_TOOLS, ...DEMAND_TOOLS, ...OPTIMIZE_TOOLS, ...OUTREACH_TOOLS, ...SOURCE_AUDIT_TOOLS, ...DROPS_TOOLS, ...PBN_TOOLS, ...SERPMON_TOOLS, ...META_TOOLS, ...UPTIME_TOOLS, ...INDEX_TOOLS, ...MENTIONS_TOOLS, ...VISIBILITY_TOOLS, ...FOOTPRINT_TOOLS, ...BACKLINK_TOX_TOOLS, ...LOCAL_TOOLS, ...TRENDS_TOOLS, ...PLAGIARISM_TOOLS, ...REPORTS_TOOLS, ...LEADS_TOOLS, ...CONTEXT_TOOLS, ...PUBLISH_TOOLS];
 
 // A duplicate name would silently shadow a tool in findTool, and the failure would look
 // like "that tool ignores half its arguments" rather than "there are two of them".
