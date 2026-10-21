@@ -18,10 +18,9 @@
 // confirm: true, and run on the key in User.seoSettings.
 
 import { prisma, dbAny } from "@/lib/prisma";
-import { rawQuery } from "@/lib/db/raw";
 import {
   McpTool, lim, pct, r1, sinceDate, resolveSite, siteArg,
-  resolveAiCreds, resolveAiFallbacks, resolveSerpCreds, resolveKeywordSource, resolveActivePolicy, taskForJobType, assertConfirmed, confirmArg, parseJson,
+  resolveAiCreds, resolveKeywordSource, resolveActivePolicy, assertConfirmed, confirmArg, parseJson,
 } from "./shared";
 import { expandKeywords } from "@/lib/seo/keywordSource";
 import { defaultLanguageFor } from "@/lib/seo/regions";
@@ -38,6 +37,12 @@ import { coerceOutline } from "./outlineShape";
 import { saveJobToHistory } from "@/lib/seo/historyServer";
 import { pickLiveProvider } from "@/lib/seo/providerPing";
 import { pathOf, urlMatches, urlFragmentMatches } from "./urlMatch";
+import { resolveJobPayload, fetchSavedOutline } from "@/lib/seo/jobPayload";
+import {
+  createGenBatch, listGenBatches, getGenBatch,
+  pauseBatch, resumeBatch, cancelBatch, retryBatchFailures,
+} from "@/lib/seo/genQueue/queue";
+import type { BatchItemInput } from "@/lib/seo/genQueue/plan";
 
 const jobs = () => dbAny.seoJob;
 
@@ -69,29 +74,6 @@ interface GenJobResult {
 // (what get_generations lists — the same records the browser's structure picker syncs from),
 // then a completed outline/outline_auto SeoJob — so the jobId the agent just polled works as
 // the outlineId of the follow-up text job with zero extra calls.
-async function fetchSavedOutline(userId: string, outlineId: string): Promise<{ outline: unknown; keyword: string } | null> {
-  const id = outlineId.trim();
-  if (!id) return null;
-  try {
-    const rows = await rawQuery<{ keyword: string | null; data: string | null }[]>(
-      `SELECT keyword, data FROM "SeoHistory" WHERE id = ? AND userId = ?`, id, userId);
-    if (rows.length) {
-      const outline = coerceOutline(parseJson(rows[0].data));
-      if (outline) return { outline, keyword: String(rows[0].keyword ?? "") };
-    }
-  } catch { /* table not migrated → try the job row */ }
-  try {
-    const job = await jobs().findFirst({
-      where: { id, userId, status: "completed", type: { in: ["outline", "outline_auto"] } },
-    });
-    if (job) {
-      const outline = coerceOutline(parseJson(job.result));
-      if (outline) return { outline, keyword: String(job.keyword ?? "") };
-    }
-  } catch { /* not migrated either → caller reports the miss */ }
-  return null;
-}
-
 // ─── completed jobs → the shared History store ─────────────────────────────────────
 // The browser imports finished jobs into localStorage History (and backs it up to SeoHistory,
 // which get_generations reads and the structure picker syncs from). MCP-started jobs used to
@@ -494,58 +476,10 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
       if (!["outline", "outline_auto", "text", "analysis", "landing", "cluster"].includes(type)) {
         throw new Error(`Unknown job type: ${type}`);
       }
-      // Resolve against the SAME per-task override the equivalent SEO Tools page would use, so a
-      // job started by an agent runs on the model the user configured for that step rather than
-      // silently falling back to the SEO-wide one.
-      const creds = await resolveAiCreds(userId, args, taskForJobType(type));
-      if (!creds.aiApiKey) throw new Error("No AI key is configured on this instance (SEO Tools → Settings).");
-
-      // outline, outline_auto, landing and cluster run SERP calls to scrape competitor context
-      // before touching the AI provider — resolve serpCreds so `payload.serpKey` and `payload.serpProvider`
-      // are passed through for all generation jobs over MCP.
-      const serpCreds = (type === "outline" || type === "outline_auto" || type === "landing" || type === "cluster")
-        ? await resolveSerpCreds(userId, args)
-        : null;
-
-      // The tool pages send the active policy in the request body; nothing here did, so every
-      // agent-started job generated with no editorial policy whatsoever. An explicit `policy` in
-      // args still wins, and an instance with no policies stored resolves to undefined — same
-      // payload as before.
-      const policy = (args.payload as { policy?: unknown })?.policy ?? (await resolveActivePolicy(userId, args));
-
-      // The Text page's form fields, hoisted to top-level args so an agent drives the same knobs
-      // the UI exposes. They land in the payload exactly as the browser posts them, and an
-      // explicit payload field still wins. `keyword` belongs here too: the schema always
-      // documented it as a top-level argument, but it was only ever written to the job ROW —
-      // the pipeline read payload.keyword, so an agent following the docs got `no_keyword`
-      // unless it ALSO nested the keyword inside payload.
-      const knobs: Record<string, unknown> = {};
-        for (const k of ["keyword", "language", "country", "tone", "promptType", "custom", "sourceMode", "includeToc", "targetWordCount", "temperature", "bannedWords", "judge", "chunkSections", "forbiddenBrands", "marksScrub"]) {
-        if (args[k] !== undefined && args[k] !== null) knobs[k] = args[k];
-      }
-      const payload: Record<string, unknown> = { ...knobs, ...((args.payload as object) ?? {}), ...creds, ...(serpCreds ?? {}), ...(policy ? { policy } : {}) };
-
-      // The QA judge (outline/text/landing results) runs on its own per-task slot — the same
-      // "judge" resolution the tool pages use, so server jobs and browser runs judge with the
-      // same model. Fields are ignored by the pipelines that don't judge.
-      try {
-        const jc = await resolveAiCreds(userId, {}, "judge");
-        payload.judgeProvider = jc.aiProvider;
-        payload.judgeApiKey = jc.aiApiKey;
-        if (jc.model) payload.judgeModel = jc.model;
-        if (jc.aiBaseUrl) payload.judgeBaseUrl = jc.aiBaseUrl;
-      } catch { /* judging falls back to the writer's provider */ }
-
-      // Standby providers for the outline step. An agent-started job is the LEAST supervised
-      // path in the product — nobody is watching a progress bar to notice the configured
-      // provider has started discarding finished generations — so it is the path that most
-      // needs to be able to finish on a different one.
-      if (!payload.aiFallbacks) {
-        try {
-          const alts = await resolveAiFallbacks(userId, creds.aiProvider);
-          if (alts.length) payload.aiFallbacks = alts;
-        } catch { /* a missing safety net must not block the job */ }
-      }
+      // Creds/SERP/policy/judge/fallbacks resolve through the ONE shared path
+      // (src/lib/seo/jobPayload.ts) — the same resolution the jobs API and the
+      // batch queue use, so the three paths cannot drift apart again.
+      const { payload } = await resolveJobPayload(userId, type, args);
 
       // The Outline page's "load keywords" step, server-side: pull real ideas with volumes
       // from the provider the user configured (Ahrefs/Semrush/DataForSEO, resolved the same
@@ -783,9 +717,132 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
           } : {}),
         };
       } catch (e) {
-        if (String((e as Error)?.message ?? "").startsWith("Job not found")) throw e;
+        if (String((e as Error)?.message ?? e).startsWith("Job not found")) throw e;
         return { count: 0, jobs: [], note: "SeoJob table not available on this instance (run: npx prisma db push)." };
       }
+    },
+  },
+
+  {
+    name: "create_generation_batch",
+    cost: "paid",
+    description:
+      "PAID — spends the instance owner's own AI credits and needs confirm: true. Order THOUSANDS of pages in one call: the server queue drains them under the workspace's concurrency setting (2–4 by default), so the provider never sees a burst. Each page runs the full pipeline — outline (SERP scrape, MAP/REDUCE fact grounding), then text (chunked writing, judge) — through the same path start_generation_job uses. Poll the BATCH with get_batch_status (counts, ETA, per-item states), NOT get_generation_job per item, and poll rarely (minutes, not seconds). Items are keyword orders: keywordIdeas is not available inside batches — research keywords first (get_keyword_demand / research_keywords). Exact duplicates (same keyword + country + language) are dropped and reported; keywords already present in this instance's History are reported as alreadyGenerated (still created — you decide). circuit breaker: pauseAfterErrors consecutive item errors (default 5) pause the batch and alert the operator. Idempotent: pass the same clientBatchId to retry a timed-out create without double-ordering. A page-bound item with siteId inherits that site's Project Memory (writing preferences, positioning) as its writing instruction.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        confirm: confirmArg,
+        name: { type: "string", description: "Batch name shown in SEO Tools → Batch (default \"Batch\")" },
+        pipeline: { type: "string", enum: ["outline", "outline_text"], description: "outline = outlines only; outline_text (default) = each outline is followed by its text automatically" },
+        keywords: { type: "array", items: { type: "string" }, description: "Simple form: keyword list, all items share `defaults`" },
+        items: {
+          type: "array",
+          description: "Full form (wins over keywords): per-item orders with overrides",
+          items: {
+            type: "object",
+            properties: {
+              keyword: { type: "string", description: "The page's target keyword (required)" },
+              siteId: { type: "string", description: "Site row id (list_sites): binds the item to that site's Project Memory context" },
+              priority: { type: "number", description: "-100..100, higher runs first (default 0)" },
+              payload: { type: "object", description: "Per-item knob overrides: language, country, tone, targetWordCount, promptType, custom, sourceMode, includeToc, temperature, bannedWords, forbiddenBrands, judge, marksScrub, chunkSections, policyName. Knobs only — provider keys are resolved server-side at run time and never stored." },
+            },
+            required: ["keyword"],
+          },
+        },
+        defaults: { type: "object", description: "Shared knobs applied to every item unless the item overrides them (same field names as item.payload)" },
+        clientBatchId: { type: "string", description: "Idempotency key: a repeat create with the same value returns the existing batch (existing: true) instead of ordering twice" },
+        pauseAfterErrors: { type: "number", description: "Consecutive item errors before the batch auto-pauses (default 5, 0 disables)" },
+      },
+      required: ["confirm"],
+    },
+    handler: async (userId, args) => {
+      assertConfirmed(args, "create_generation_batch");
+      const pipeline = args.pipeline === "outline" ? "outline" as const : "outline_text" as const;
+      const items: BatchItemInput[] = Array.isArray(args.items)
+        ? (args.items as BatchItemInput[]).filter(x => x && typeof x.keyword === "string" && String(x.keyword).trim())
+        : Array.isArray(args.keywords)
+          ? (args.keywords as unknown[]).filter((k): k is string => typeof k === "string" && k.trim().length > 0).map(keyword => ({ keyword }))
+          : [];
+      if (!items.length) throw new Error("No items: pass keywords (string[]) or items ([{ keyword, … }]).");
+
+      const r = await createGenBatch(userId, {
+        name: String(args.name ?? ""),
+        pipeline,
+        items,
+        defaults: (args.defaults && typeof args.defaults === "object") ? args.defaults as Record<string, unknown> : undefined,
+        pauseAfterErrors: args.pauseAfterErrors == null ? undefined : Number(args.pauseAfterErrors),
+        clientBatchId: args.clientBatchId == null ? undefined : String(args.clientBatchId),
+      });
+
+      const warnings: string[] = [];
+      if (r.skippedDuplicates.length) warnings.push(`${r.skippedDuplicates.length} exact duplicate(s) dropped: ${r.skippedDuplicates.slice(0, 10).join(", ")}${r.skippedDuplicates.length > 10 ? "…" : ""}`);
+      if (r.alreadyGenerated.length) warnings.push(`${r.alreadyGenerated.length} keyword(s) already exist in History (created anyway, verify intent): ${r.alreadyGenerated.slice(0, 10).join(", ")}${r.alreadyGenerated.length > 10 ? "…" : ""}`);
+      return {
+        ...r,
+        estimatedCallsNote: `≈${r.estimatedCalls} provider calls (rough midpoint — outlines ≈7, texts ≈8 each)`,
+        ...(warnings.length ? { warnings } : {}),
+        next: r.existing
+          ? "This clientBatchId already existed — nothing new was ordered. Track progress with get_batch_status."
+          : `The queue is draining now (see the workspace's concurrency setting). Poll get_batch_status with batchId "${r.batchId}" every few MINUTES; each page takes minutes, so a batch of hundreds takes hours by design. Texts land in SEO Tools → History / get_generations as they finish.`,
+      };
+    },
+  },
+
+  {
+    name: "get_batch_status",
+    cost: "local",
+    description:
+      "FREE: batch status — counters per item state (queued/running/completed/error/skipped), ETA at the workspace's concurrency, the circuit-breaker state, and a paged item list. WITHOUT batchId it lists all batches. This is THE polling tool for a generation batch — do not poll get_generation_job per item; finished items are already in History (get_generations).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        batchId: { type: "string", description: "One batch's detail (omit to list all batches)" },
+        status: { type: "string", enum: ["queued", "running", "completed", "error", "skipped"], description: "Item filter for the detail list" },
+        limit: { type: "number", description: "Items per page (default 100, max 500)" },
+        offset: { type: "number", description: "Pagination offset (the response carries nextOffset)" },
+      },
+    },
+    handler: async (userId, args) => {
+      const batchId = String(args.batchId ?? "").trim();
+      if (!batchId) {
+        const batches = await listGenBatches(userId);
+        return {
+          count: batches.length, batches,
+          note: batches.length ? "Pass batchId for the item list. Poll this every few minutes while anything is queued/running." : "No batches yet — create_generation_batch orders pages.",
+        };
+      }
+      const r = await getGenBatch(userId, batchId, {
+        status: args.status ? String(args.status) : undefined,
+        limit: args.limit == null ? undefined : Number(args.limit),
+        offset: args.offset == null ? undefined : Number(args.offset),
+      });
+      if (!r) throw new Error(`Batch not found: ${batchId}`);
+      return r;
+    },
+  },
+
+  {
+    name: "batch_action",
+    cost: "local",
+    description:
+      "FREE: control a generation batch. pause stops picking new items (running ones finish — killing a mid-generation job wastes what was already paid); resume clears the error streak and restarts picking (use after the provider is healthy again); cancel skips everything still queued; retry requeues the batch's terminal errors AND skips with a fresh attempt budget. A batch auto-paused by the circuit breaker (statusReason \"auto_paused_errors\") needs exactly this: fix the provider, then resume + retry.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        batchId: { type: "string", description: "The batch to act on" },
+        action: { type: "string", enum: ["pause", "resume", "cancel", "retry"], description: "What to do" },
+      },
+      required: ["batchId", "action"],
+    },
+    handler: async (userId, args) => {
+      const batchId = String(args.batchId ?? "").trim();
+      const action = String(args.action ?? "");
+      if (!batchId) throw new Error("batchId is required.");
+      if (action === "pause") { await pauseBatch(userId, batchId); return { ok: true, action, batchId }; }
+      if (action === "resume") { await resumeBatch(userId, batchId); return { ok: true, action, batchId }; }
+      if (action === "cancel") { const skipped = await cancelBatch(userId, batchId); return { ok: true, action, batchId, skipped }; }
+      if (action === "retry") { const requeued = await retryBatchFailures(userId, batchId); return { ok: true, action, batchId, requeued }; }
+      throw new Error(`Unknown action: ${action}`);
     },
   },
 ];

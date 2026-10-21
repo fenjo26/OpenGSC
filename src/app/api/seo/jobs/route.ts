@@ -1,85 +1,18 @@
 import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { dbAny } from "@/lib/prisma";
-import { genByType } from "@/lib/seo/generate";
+import { failStaleSeoJobs } from "@/lib/jobs/lifecycle";
 import { resolveAiFallbacks } from "@/lib/mcp/shared";
-import { failStaleSeoJobs, touchSeoJob, withSeoJobHeartbeat } from "@/lib/jobs/lifecycle";
-import { saveJobToHistory } from "@/lib/seo/historyServer";
-import { pickLiveProvider } from "@/lib/seo/providerPing";
-import { resolveCaptureBodies } from "@/lib/providerLog/bodies";
-import { withCallContext } from "@/lib/providerLog/context";
+import { runJob, type SeoJobRow } from "@/lib/seo/jobRunner";
 
 // SeoJob model isn't in the committed generated client until `prisma generate` re-runs
 // on build; access it via a loose handle so types resolve everywhere.
 const jobs = () => dbAny.seoJob;
 
-// The SeoJob row as this route reads it: created through the loose dbAny handle, addressed by
-// id/type, and handed to saveJobToHistory (which takes exactly this shape).
-interface SeoJobRow {
-  id: string;
-  type: string;
-  keyword?: string;
-  createdAt?: Date | string;
-}
-
-// A job payload as it crosses the API: untyped JSON, keyed loosely; the one typed consumer
-// (genByType) casts it to the generator's own body type at the call below.
-type JobPayload = Record<string, unknown>;
-
-// Detached background run — not awaited by the request, so the result is persisted even
-// if the client navigates away or closes the tab. Keys live only in memory for the run.
-//
-// The promise is returned rather than swallowed so a test can await the detached work; the route
-// still discards it. Nothing else may await it, or the request would once again live as long as
-// the generation does, which is the whole point of detaching.
-export async function runJob(userId: string, job: SeoJobRow, payload: JobPayload): Promise<void> {
-  // Read here rather than in the request that started the job: the setting belongs to the job's
-  // owner, and this is the last moment there is an `await` to spend on it. A generation that runs
-  // for half an hour keeps the answer it started with — said out loud in the settings copy, so
-  // nobody is puzzled by bodies still arriving after they switched capture off.
-  const captureBodies = await resolveCaptureBodies(userId);
-  // Inside the detached function, not around the route: the request that started this job is
-  // answered and gone long before `genByType` calls a provider, so there is no request context
-  // left to inherit. The job knows its own owner and its own type, which is what the log needs.
-  return withCallContext({ userId, feature: String(job.type), captureBodies }, async () => {
-    try {
-      await touchSeoJob(job.id, { stage: "generating", progress: 5 });
-      // Phase-level progress for pipelines that report it (genOutline et al read this from the
-      // payload). Injected here rather than threaded through every signature: the function is
-      // process-local, never serialized, and MCP's start_generation_job injects the same hook.
-      payload.__onProgress = (progress: number, stage?: string) => {
-        void touchSeoJob(job.id, { progress, ...(stage ? { stage } : {}) }).catch(() => {});
-      };
-      const r = await withSeoJobHeartbeat(job.id, (async () => {
-        // Pre-flight ping: a dead pool fails here in seconds (or a configured fallback is
-        // promoted) instead of grinding the whole chain into the wall-clock cap 25 minutes later.
-        const picked = await pickLiveProvider(payload);
-        if (!picked.ok) {
-          return { ok: false as const, error: `provider_unreachable: ${picked.error} — the provider answered no pre-flight ping. Switch the model/provider for this task in SEO Tools → Settings.` };
-        }
-        // The payload is untyped JSON at the boundary; the generator's GenBody is not exported,
-        // so take its parameter type here rather than re-declaring the whole shape.
-        return genByType(String(job.type), payload as unknown as Parameters<typeof genByType>[1]);
-      })());
-      await jobs().update({
-        where: { id: job.id },
-        data: r.ok
-          ? { status: "completed", stage: "completed", progress: 100, heartbeatAt: new Date(), result: JSON.stringify(r.data) }
-          : { status: "error", stage: "error", heartbeatAt: new Date(), error: r.error },
-      });
-      // File the finished result into SeoHistory server-side: the record must exist even if
-      // no browser tab ever imports the job row (id = job id, so a later import converges).
-      if (r.ok) await saveJobToHistory(userId, job, r.data);
-    } catch (e) {
-      try {
-        await jobs().update({
-          where: { id: job.id },
-          data: { status: "error", stage: "error", heartbeatAt: new Date(), error: String((e as Error)?.message ?? e) },
-        });
-      } catch { /* row removed */ }
-    }
-  });
-}
+// Re-exported for the existing test import (schedulerCallContext.test.ts) — the
+// implementation moved to lib/seo/jobRunner.ts when the batch queue needed the
+// identical detached-run path.
+export { runJob };
 
 // POST /api/seo/jobs — start a background generation job. body: { type, keyword?, payload, meta? }
 export async function POST(req: Request) {

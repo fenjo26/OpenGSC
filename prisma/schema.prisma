@@ -92,6 +92,7 @@ model User {
   digestSettings   String? // JSON: { enabled, frequency: "daily"|"weekly", hourUtc, tag, days, ai, lastSentAt }
   syncSettings     String? // JSON: { enabled, hour, timeZone, lastRunAt } — automatic GSC sync, see src/lib/syncSchedule.ts
   auditQueueSettings String? // JSON: { concurrency, defaultIntervalDays, scheduleHourUtc, retryAttempts, retryDelayMin, paused } — audit queue + scheduler knobs, see src/lib/audit/queue.ts
+  genQueueSettings   String? // JSON: GenQueueSettings (src/lib/seo/genQueue/settings.ts) — generation batch queue + provider-call semaphore knobs
   uptimeSettings   String? // JSON: UptimeWorkspaceSettings (src/lib/uptime/types.ts)
   notifyChannels   String? // JSON: NotifyChannelsConfig (src/lib/notify/types.ts) — secrets inside, never sent to the browser unmasked
 
@@ -107,6 +108,7 @@ model User {
 
   // SEO Tools background generation jobs
   seoJobs             SeoJob[]
+  genBatches          SeoBatch[]
 
   // Content Operations is a publishing workflow layered on top of the existing
   // Demand / Outline / Text / Rewrite tools. Repository credentials stay server-only.
@@ -2734,4 +2736,71 @@ model BackupRun {
   error       String    @default("") // why a run failed, "" on success
 
   @@index([startedAt])
+}
+
+// ─── Generation batch queue ──────────────────────────────────────────────────
+// Mass page production: an agent (or the UI) creates a batch of thousands of
+// page orders in one call; the in-process scheduler drains them under the
+// workspace's concurrency setting, so the AI provider never sees a thousand
+// parallel jobs. The queue SPAWNS SeoJob rows — the whole existing pipeline
+// (pre-flight ping, fallbacks, judge, SeoHistory filing) runs unchanged — and
+// only orchestrates which item runs next.
+//
+// Item payloads store KNOBS ONLY (keyword, language, country, tone, word
+// count, policy name…). Provider keys are NEVER persisted here: the worker
+// resolves them from the owner's stored settings at run time, exactly like
+// the MCP path does (see src/lib/seo/jobPayload.ts), so a key rotated
+// mid-batch applies to items that have not run yet.
+model SeoBatch {
+  id              String    @id @default(cuid())
+  userId          String
+  name            String
+  pipeline        String    @default("outline_text") // "outline" | "outline_text" — "publish" is a planned phase, not a pipeline
+  status          String    @default("active") // "active" | "paused" | "done" | "cancelled"
+  statusReason    String    @default("") // why a batch paused itself ("auto_paused_errors" circuit breaker)
+  itemDefaults    String?   // JSON: shared knobs applied to every item unless it overrides them — knobs only, never credentials
+  clientBatchId   String?   @unique // idempotency for agent retries: a repeated create returns the existing batch instead of double-ordering
+  consecutiveErrors Int     @default(0) // circuit breaker: consecutive item errors, reset on any success
+  pauseAfterErrors   Int    @default(5) // 0 disables the breaker
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  finishedAt      DateTime?
+
+  user  User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items SeoBatchItem[]
+
+  @@index([userId, createdAt])
+}
+
+// One page order inside a batch. The outline and text of the same page are TWO
+// items chained by dependsOnItemId: the text item becomes eligible the moment
+// its outline completes, and is skipped if the outline exhausts its retries.
+// phase is a plain string so a future "publish" phase (→ the existing publish
+// queue) can be added without a migration.
+model SeoBatchItem {
+  id              String    @id @default(cuid())
+  batchId         String
+  userId          String
+  siteId          String? // optional site binding: the worker injects that site's context (writing preferences, positioning) into the job's instruction
+  phase           String    // "outline" | "text" — "publish" reserved for the future phase
+  keyword         String
+  payload         String?   // JSON: per-item knob overrides on top of the batch itemDefaults — knobs only, never provider keys
+  priority        Int       @default(0) // higher runs first; pump orders by priority desc, createdAt asc
+  status          String    @default("queued") // "queued" | "running" | "completed" | "error" | "skipped"
+  dependsOnItemId String?
+  jobId           String?   // the SeoJob that ran (completed outline/text items: also the SeoHistory id)
+  error           String?
+  attempt         Int       @default(1)
+  nextAttemptAt   DateTime?
+  heartbeatAt     DateTime?
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  batch SeoBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([batchId, status])
+  @@index([userId, status, nextAttemptAt])
+  @@index([dependsOnItemId])
 }

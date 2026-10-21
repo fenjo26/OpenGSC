@@ -85,5 +85,10 @@ export async function register() {
     // until the owner enables it, and one fire is one attempt, no back-fill.
     const { startBackupScheduler } = await import('@/lib/backup/scheduler');
     startBackupScheduler();
+    // Generation batch queue: drains page orders under the workspace's concurrency
+    // setting (SEO Tools → Batch), recovers items orphaned by restarts, and keeps the
+    // process-wide provider-call semaphore in sync with the operators' settings.
+    const { startGenQueueScheduler } = await import('@/lib/seo/genQueue/scheduler');
+    startGenQueueScheduler();
   }
 }

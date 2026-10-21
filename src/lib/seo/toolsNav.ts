@@ -9,7 +9,7 @@
 // cannot appear in one and not the other.
 
 import {
-  Boxes, Globe, FileText, LayoutTemplate, PenLine, RefreshCw, Fingerprint, Search, Bot,
+  Boxes, Globe, FileText, LayoutTemplate, PenLine, RefreshCw, Fingerprint, Search, Bot, Layers,
   Quote, Link2, ScrollText, History, Compass, Users, Workflow, Languages, CopyX, MapPin, type LucideIcon,
 } from "lucide-react";
 
@@ -38,6 +38,10 @@ export const SEO_TOOLS: SeoTool[] = [
   { href: "/seo-tools/landing",   key: "seoTabLanding",   desc: "seoTileLanding",   icon: LayoutTemplate, color: "#ff9f0a" },
   { href: "/seo-tools/text",      key: "seoTabText",      desc: "seoTileText",      icon: PenLine,       color: "#34c759" },
   { href: "/seo-tools/rewrite",   key: "seoTabRewrite",   desc: "seoTileRewrite",   icon: RefreshCw,     color: "#30d158" },
+  // Mass production: order thousands of pages in one call; the server queue
+  // drains them under the concurrency setting (pages in flight + the
+  // process-wide provider-request gate).
+  { href: "/seo-tools/batch",     key: "seoTabBatch",     desc: "seoTileBatch",     icon: Layers,        color: "#bf5af2" },
   // Quality passes on the finished text, in the order a text meets them: write it, humanize it,
   // then ask whether it is original (plagiarism) and whether its language versions are wired up
   // (hreflang). N6 owns this file's additions for both tools (CONTRACT.md §3) — plagiarism is

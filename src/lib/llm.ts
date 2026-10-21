@@ -223,9 +223,52 @@ function clampTemp(provider: string, t: number): number {
   return Math.max(0, Math.min(max, t));
 }
 
+// ── Per-key request semaphore ──────────────────────────────────────────────────
+// One generation job is NOT one provider request: the pipelines fan out (MAP
+// over competitors, fact batches, text chunks — runPool(…, 2) in generate.ts),
+// so N jobs in flight mean ~2N concurrent calls, and a UI job or an MCP job
+// bypasses any queue entirely. The only honest place to bound "how many
+// requests hit this key at once" is here, at the call itself — every path
+// (browser, MCP, batch queue) crosses it, whichever knob started the work.
+// Same convention as the per-key semaphore in lib/seo/metrics.ts.
+//
+// limit <= 0 disables the gate (zero-overhead path). Slots are held for the
+// ATTEMPT only, not the retry backoff — waiting for a provider's Retry-After
+// must not occupy a slot another call could use.
+let llmKeyConcurrency = 8;
+export function setLLMKeyConcurrency(n: number): void {
+  llmKeyConcurrency = Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+export function getLLMKeyConcurrency(): number { return llmKeyConcurrency; }
+
+const keySlots = new Map<string, { active: number; waiters: (() => void)[] }>();
+function keyOf(provider: string, apiKey: string): string { return `${provider}|${apiKey}`; }
+
+async function acquireKeySlot(key: string): Promise<void> {
+  if (llmKeyConcurrency <= 0) return;
+  let s = keySlots.get(key);
+  if (!s) { s = { active: 0, waiters: [] }; keySlots.set(key, s); }
+  if (s.active < llmKeyConcurrency) { s.active++; return; }
+  // The slot is transferred by releaseKeySlot WITHOUT an active-- / active++
+  // round trip: `active` counts held AND promised slots, so a fresh acquire
+  // that races the waiter's microtask still sees a full gate.
+  await new Promise<void>(resolve => s!.waiters.push(resolve));
+}
+
+function releaseKeySlot(key: string): void {
+  if (llmKeyConcurrency <= 0) return;
+  const s = keySlots.get(key);
+  if (!s) return;
+  const next = s.waiters.shift();
+  if (next) { next(); return; } // hand the slot over; active stays as-is
+  s.active = Math.max(0, s.active - 1);
+  if (s.active === 0) keySlots.delete(key);
+}
+
 // Public entry: retries transient failures (429 rate limits, 408/5xx, network drops, timeouts)
 // with exponential backoff + jitter. The multi-pass pipeline fires parallel calls, so hitting
 // a provider's TPM/RPM limit is routine — one 429 must not sink a whole generation job.
+
 //
 // `temperature` is optional and OMITTED from the request when undefined, which preserves the exact
 // wire format every existing caller relies on — important, this runs in production for live users.
@@ -270,7 +313,16 @@ export async function fetchLLMDetailed(
   for (let i = 0; i < Math.min(cap, delays.length); i++) {
     const wait = i === 0 ? 0 : Math.max(delays[i], askedWait ?? 0);
     if (wait) await new Promise(r => setTimeout(r, wait + Math.floor(Math.random() * 4_000)));
-    const r = await fetchLLMOnce(prompt, provider, apiKey, maxTokens, modelOverride, baseUrl, temperature, enableThinking, undefined, i + 1);
+    // The semaphore is held for the ATTEMPT only — never across the backoff
+    // waits above — so a Retry-After pause frees the slot for other callers.
+    const key = keyOf(provider, apiKey);
+    await acquireKeySlot(key);
+    let r: Awaited<ReturnType<typeof fetchLLMOnce>>;
+    try {
+      r = await fetchLLMOnce(prompt, provider, apiKey, maxTokens, modelOverride, baseUrl, temperature, enableThinking, undefined, i + 1);
+    } finally {
+      releaseKeySlot(key);
+    }
     if (r.text != null) return { text: r.text, finishReason: r.finishReason };
     lastError = r.errorDetail;
     askedWait = r.retryAfterMs;
