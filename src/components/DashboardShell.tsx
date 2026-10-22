@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import PasswordChangeGate from "@/components/PasswordChangeGate";
 import { useSession, signOut } from "next-auth/react";
 import { useState, useEffect, useRef, Suspense } from "react";
-import { LogOut, Sparkles, Globe, Newspaper, LayoutDashboard, TrendingUp, Anchor, BarChart2, Radar, Server, ClipboardCheck, Menu, Boxes, Waves, FileText, Inbox, ChevronDown, Link2, Send } from "lucide-react";
+import { LogOut, Sparkles, Globe, Newspaper, LayoutDashboard, TrendingUp, Anchor, BarChart2, Radar, Server, ClipboardCheck, Menu, Boxes, Waves, FileText, Inbox, ChevronDown, Link2, Send, Network, Recycle } from "lucide-react";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { useTheme } from "@/lib/ThemeContext";
 import { useLayout } from "@/lib/LayoutContext";
@@ -466,15 +466,18 @@ export interface NavItem {
   group?: NavGroupKey;
 }
 
-type NavGroupKey = "analytics" | "monitoring" | "recon" | "clients";
+type NavGroupKey = "analytics" | "monitoring" | "recon" | "network" | "clients";
 
 // 14 destinations stopped fitting one row even at 2000px. Grouped by what the page looks at:
 // analytics — this instance's own GSC data; monitoring — things that change over time and get
-// watched; recon — somebody else's sites and domains; clients — what goes out to customers.
+// watched; recon — somebody else's sites, looked at and nothing more; network — the link network
+// being built (drops bought, doorways served, links bought and published), in working order;
+// clients — what goes out to customers.
 const NAV_GROUPS: Record<NavGroupKey, { labelKey: string; icon: React.ReactNode }> = {
   analytics: { labelKey: "navGroupAnalytics", icon: <TrendingUp size={14} /> },
   monitoring: { labelKey: "navGroupMonitoring", icon: <Waves size={14} /> },
   recon: { labelKey: "navGroupRecon", icon: <Radar size={14} /> },
+  network: { labelKey: "navGroupNetwork", icon: <Network size={14} /> },
   clients: { labelKey: "navGroupClients", icon: <Inbox size={14} /> },
 };
 
@@ -520,23 +523,26 @@ function useNavItems(): NavItem[] {
     // reads data the instance already holds; those two buy data from outside it, which is the
     // line SEO Tools draws.
     { href: "/seo-tools", label: t("seoNavTitle"), key: "seo-tools", icon: <Sparkles size={14} /> },
-    { href: "/indexer", label: t("indexerNavTitle"), key: "indexer", icon: <Globe size={14} />, group: "monitoring" as const },
     // Sits next to the portfolio tools but points outward: everything above reads this instance's
     // own data, this one looks at somebody else's site.
     { href: "/crawler", label: t("crawlerNavTitle"), key: "crawler", icon: <Radar size={14} />, group: "recon" as const },
-    // Between the crawler and the digest for the same reason the crawler sits where it does:
-    // it looks outward at domains this instance does not own. Unlike the crawler it looks at
-    // ones nobody owns yet.
-    { href: "/drops", label: t("dropsNavTitle"), key: "drops", icon: <Boxes size={14} />, group: "recon" as const },
-    // Link purchases point outward too — money leaves for somebody else's placements — and the
-    // striking table's buy buttons lead here for the history. Always visible, like /serp-monitor:
+    // ─── network: the link network, in the order the work happens ───────────────────────
+    // Drops first: find and buy the domains the network is built from.
+    { href: "/drops", label: t("dropsNavTitle"), key: "drops", icon: <Boxes size={14} />, group: "network" as const },
+    // Restore a drop from Wayback and inject money-site links into its real content — the
+    // thing a bought drop becomes before it serves. Between buying (/drops) and serving (/indexer).
+    { href: "/pbn", label: t("pbnNavTitle"), key: "pbn", icon: <Recycle size={14} />, group: "network" as const },
+    // Then serve them: the doorways and the bot log.
+    { href: "/indexer", label: t("indexerNavTitle"), key: "indexer", icon: <Globe size={14} />, group: "network" as const },
+    // Bought links: money leaves for somebody else's placements, and the striking table's buy
+    // buttons lead here for the history. Always visible, like /serp-monitor:
     // the page explains what is missing instead of the feature looking absent.
-    { href: "/magiclinks", label: t("mlNavTitle"), key: "magiclinks", icon: <Link2 size={14} />, group: "recon" as const },
+    { href: "/magiclinks", label: t("mlNavTitle"), key: "magiclinks", icon: <Link2 size={14} />, group: "network" as const },
     // The other side of the same coin as /magiclinks: there you pay somebody else to place
     // posts, here you publish your own (WordPress now, satellite platforms later) and the
     // loop files the result as a donor link the same way. Always visible: the page explains
     // what is missing (a connection) instead of the feature looking absent.
-    { href: "/publishing", label: t("publishTitle"), key: "publishing", icon: <Send size={14} />, group: "recon" as const },
+    { href: "/publishing", label: t("publishTitle"), key: "publishing", icon: <Send size={14} />, group: "network" as const },
     // Visible always, unlike /aparser: the page itself explains what is missing (A-Parser
     // credentials) instead of the entry hiding and the feature looking absent.
     { href: "/serp-monitor", label: t("serpmonNavTitle"), key: "serpmon", icon: <Waves size={14} />, group: "monitoring" as const },
