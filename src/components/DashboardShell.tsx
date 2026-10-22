@@ -12,6 +12,7 @@ import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { aparserConfiguredLocally, isAparserConfigured, resetAparserConfiguredCache } from "@/lib/seo/aparserConfigured";
 import UpdateBanner from "@/components/UpdateBanner";
 import SchemaBanner from "@/components/SchemaBanner";
+import { SUPPORT_PARTNERS, USDT_ADDRESS } from "@/lib/partners";
 
 // ─── Popup menu helpers ───────────────────────────────────────────────────────
 function MenuItem({ icon, label, onClick }: { icon: string; label: string; onClick?: () => void }) {
@@ -64,106 +65,12 @@ function VersionInfo() {
 }
 
 // ─── Feedback / Help modal ────────────────────────────────────────────────────
-const USDT_ADDRESS = "TN7v2NArTXd5J2eMuGFpXmgzAFsoZpWcZu";
-
-// Partner wall in the "Support Developer" modal. To add a partner: drop the
-// logo into public/partners/ and add a `partners<Id>` description key to every
-// src/locales/*.json. tileBg must contrast with the logo fills: light-filled
-// logos (Pay2.House) need the dark tile, dark logos on white (Cloaking.House)
-// need "#ffffff" — otherwise they vanish on light theme / dark tile.
-const SUPPORT_PARTNERS = [
-  {
-    id: "Pay2house",
-    name: "Pay2.House",
-    href: "https://pay2.house/p/kc9oevv0?utm_source=opengsc",
-    logo: "/partners/pay2house-logo.svg",
-    tileBg: "#0b0e16",
-    imgStyle: { maxWidth: "78px", maxHeight: "18px" } as React.CSSProperties,
-  },
-  {
-    id: "Groupbuyseo",
-    name: "GroupBuySEO",
-    href: "https://my.groupbuyseo.org/register?affiliate_key=8ino4XJTwJ7EJooF67JUOt2tmbcFk1",
-    logo: "/partners/groupbuyseo-logo.svg",
-    tileBg: "#0b0e16",
-    imgStyle: { maxHeight: "30px" } as React.CSSProperties,
-  },
-  {
-    id: "Cloakinghouse",
-    name: "Cloaking.House",
-    href: "https://cloaking.house/?utm_source=opengsc",
-    logo: "/partners/cloakinghouse-logo.png",
-    tileBg: "#ffffff",
-    imgStyle: { maxHeight: "30px" } as React.CSSProperties,
-  },
-  {
-    id: "Helodata",
-    name: "Helodata",
-    href: "https://helodata.com?ref=ruslan1",
-    logo: "/partners/helodata-logo.png",
-    tileBg: "#ffffff",
-    imgStyle: { maxHeight: "32px" } as React.CSSProperties,
-  },
-  {
-    id: "Accsly",
-    name: "Accsly.io",
-    href: "https://accsly.io/?utm_source=opengsc&utm_medium=referral",
-    logo: "/partners/accsly-logo.svg",
-    tileBg: "#ffffff",
-    imgStyle: { maxHeight: "30px" } as React.CSSProperties,
-  },
-  {
-    id: "Orbitra",
-    name: "Orbitra.link",
-    href: "https://orbitra.link/?utm_source=opengsc",
-    logo: "/partners/orbitra-logo.svg",
-    tileBg: "#ffffff",
-    imgStyle: { maxHeight: "28px" } as React.CSSProperties,
-  },
-  {
-    id: "Novproxy",
-    name: "Novproxy",
-    href: "https://novproxy.com?kwd=tt-orb",
-    logo: "/partners/novproxy-logo.svg",
-    tileBg: "#ffffff",
-    imgStyle: { maxWidth: "84px", maxHeight: "18px" } as React.CSSProperties,
-  },
-  {
-    id: "Market369",
-    name: "369 Links Market",
-    href: "https://t.me/marketplace369_bot?start=ref_58bsvidx",
-    logo: "/partners/369market-logo.png",
-    tileBg: "#000000",
-    imgStyle: { maxHeight: "40px" } as React.CSSProperties,
-  },
-  {
-    id: "Fieldlink",
-    name: "FieldLink",
-    href: "https://seoboost-root.info/r/flt_oW6P5bnPM5JTkU44PxbVxFWBUF4e8MBRFDy0kG17t5Y",
-    logo: "/partners/fieldlink-logo.svg",
-    tileBg: "#07110c",
-    imgStyle: { maxHeight: "32px" } as React.CSSProperties,
-  },
-  {
-    id: "Tradeproxy",
-    name: "TradeProxy",
-    href: "https://tradeproxy.net/?utm_source=opengsc",
-    logo: "/partners/tradeproxy-logo.png",
-    tileBg: "#0b0e16",
-    imgStyle: { maxHeight: "30px" } as React.CSSProperties,
-  },
-  {
-    id: "Proxy1024",
-    name: "1024proxy",
-    href: "https://1024proxy.com/?kwd=channel-fj",
-    logo: "/partners/1024proxy-logo.svg",
-    tileBg: "#ffffff",
-    imgStyle: { maxWidth: "84px", maxHeight: "24px" } as React.CSSProperties,
-  },
-] as const;
+// The partner list and the donation address live in src/lib/partners.ts — the same
+// data drives the compact logo wall here and the full /partners page.
 
 function FeedbackModal({ mode, onClose }: { mode: "feedback" | "thanks"; onClose: () => void }) {
   const { t } = useLanguage();
+  const router = useRouter();
   const [text, setText] = useState("");
   const [sent, setSent] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -377,48 +284,52 @@ function FeedbackModal({ mode, onClose }: { mode: "feedback" | "thanks"; onClose
                 </div>
               </div>
 
-              {/* Partners */}
+              {/* Partners — compact logo wall. The list outgrew the modal at 11 partners,
+                  so descriptions and running promos live on /partners; this grid only
+                  keeps the partners one click away from the support view. */}
               <div style={{ marginTop: "20px" }}>
                 <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "8px" }}>
                   {t("partnersTitle")}
                 </div>
-                {SUPPORT_PARTNERS.map(p => (
-                  <a
-                    key={p.id}
-                    href={p.href}
-                    target="_blank"
-                    rel="noopener noreferrer sponsored"
-                    style={{
-                      display: "flex", alignItems: "center", gap: "12px",
-                      padding: "10px 12px", borderRadius: "10px",
-                      background: "rgba(255,255,255,0.04)",
-                      border: "1px solid var(--color-border)",
-                      textDecoration: "none", marginBottom: "8px",
-                      transition: "background 0.15s",
-                    }}
-                    onMouseOver={e => (e.currentTarget.style.background = "rgba(255,255,255,0.07)")}
-                    onMouseOut={e => (e.currentTarget.style.background = "rgba(255,255,255,0.04)")}
-                  >
-                    <span style={{
-                      width: "92px", height: "44px", borderRadius: "8px",
-                      background: p.tileBg,
-                      border: "1px solid var(--color-border)",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      flexShrink: 0,
-                    }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                  {SUPPORT_PARTNERS.map(p => (
+                    <a
+                      key={p.id}
+                      href={p.href}
+                      target="_blank"
+                      rel="noopener noreferrer sponsored"
+                      title={p.promo ? `${p.name} — ${t(p.promo)}` : p.name}
+                      style={{
+                        position: "relative",
+                        width: "92px", height: "44px", borderRadius: "8px",
+                        background: p.tileBg,
+                        border: "1px solid var(--color-border)",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        textDecoration: "none",
+                        transition: "border-color 0.15s",
+                      }}
+                      onMouseOver={e => (e.currentTarget.style.borderColor = "var(--color-accent-purple)")}
+                      onMouseOut={e => (e.currentTarget.style.borderColor = "var(--color-border)")}
+                    >
                       <img src={p.logo} alt={p.name} style={{ display: "block", ...p.imgStyle }} />
-                    </span>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: "12.5px", fontWeight: 600, color: "var(--color-text-primary)" }}>
-                        {p.name}
-                      </div>
-                      <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.45, marginTop: "2px" }}>
-                        {t(`partners${p.id}`)}
-                      </div>
-                    </div>
-                    <span style={{ marginLeft: "auto", fontSize: "12px", color: "var(--color-text-secondary)", flexShrink: 0 }}>↗</span>
-                  </a>
-                ))}
+                      {p.promo && (
+                        <span style={{
+                          position: "absolute", top: "-6px", right: "-6px",
+                          width: "16px", height: "16px", borderRadius: "50%",
+                          background: "#f59e0b", fontSize: "9px", lineHeight: "16px", textAlign: "center",
+                          boxShadow: "0 0 0 2px var(--color-card)",
+                        }}>🔥</span>
+                      )}
+                    </a>
+                  ))}
+                </div>
+                <button onClick={() => { onClose(); router.push("/partners"); }} style={{
+                  marginTop: "12px", width: "100%", padding: "9px",
+                  background: "rgba(139,92,246,0.12)",
+                  border: "1px solid rgba(139,92,246,0.3)",
+                  borderRadius: "8px", fontSize: "12.5px", fontWeight: 600,
+                  color: "var(--color-accent-purple)", cursor: "pointer",
+                }}>{t("partnersOpenPage")}</button>
               </div>
 
               <div style={{ height: "1px", background: "var(--color-border)", margin: "16px 0" }} />
