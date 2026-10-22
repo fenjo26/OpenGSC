@@ -3,6 +3,16 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
+## [1.12.0] — 2026-10-22
+
+### Added — PBN: restore a dropped domain from Wayback, place money-site links in its real content (`/pbn`)
+
+- **Prescan scores every snapshot honestly** — content weight, page count, a foreign brand in the title, parked/doorway verdicts — and recommends one; an empty Wayback history answers `no_snapshot`, never an invented pick. **Restore** fetches up to 100 pages plus assets to disk, unwraps the archive's own wrappers, strips trackers / foreign outbound links / `javascript:` URLs, and reports every page it could not fetch instead of hiding it.
+- **Campaigns are planned, not dumped.** Anchor type shares (exact / brand / URL / generic) and `rel` shares (dofollow / nofollow / ugc / sponsored) are distributed by largest remainder across the sites in scope; each link goes into a genuine content block found by its content (a paragraph with real text — table layouts included), and when a page has no block the injector says `needs_paragraph` and can ask the AI for a topical paragraph (paid, behind `confirm: true`) rather than dropping a bare link at the top of `<body>`. The anchor tag carries no marker, class or style.
+- **Files on disk stay pristine.** Links live in the database and are baked in at render time (preview and ZIP), so re-applying a campaign never duplicates links and changing an anchor or target never re-uploads the site. The noindex preview shows the rendered page with the injection applied.
+- **The ZIP export is gated on zero residual footprints** — site + robots + bot-shield files, exported only when no archive.org trace and no injector marker survives the cleaning; otherwise it refuses with the list of what it found.
+- Five MCP tools: `pbn_prescan` and `pbn_restore` (net), `pbn_campaign_apply` (paid, confirm-gated), `pbn_site` and `pbn_zip` (local). Page `/pbn` in the network nav group, between Drops and Indexer. Deploy needs `prisma db push` (new `PbnSite`/`PbnPage`/`PbnCampaign`/`PbnLink` tables).
+
 ## [1.11.0] — 2026-10-22
 
 ### Added — Dutch language and per-report languages for client reports (#36)
