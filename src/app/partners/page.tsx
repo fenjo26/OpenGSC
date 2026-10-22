@@ -1,23 +1,14 @@
 "use client";
 
-import { useState } from "react";
 import { Handshake } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
-import { SUPPORT_PARTNERS, USDT_ADDRESS } from "@/lib/partners";
+import { SUPPORT_PARTNERS } from "@/lib/partners";
 
 // /partners — the full partner wall. The "Support Developer" modal keeps only a compact
 // logo grid (the row list outgrew its 420px panel at 11 partners); this page carries the
-// descriptions, the running promo badges and the donation block.
+// descriptions and the running promo badges. Donation stays in the modal — its home.
 export default function PartnersPage() {
   const { t } = useLanguage();
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(USDT_ADDRESS).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  };
 
   return (
     <div className="main-content">
@@ -36,8 +27,9 @@ export default function PartnersPage() {
         </div>
       </div>
 
-      {/* Partner cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "14px" }}>
+      {/* Partner cards — min() inside minmax keeps the track from overflowing on
+          phones, where fixed 32px page padding leaves less than 320px of content. */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(320px, 100%), 1fr))", gap: "14px" }}>
         {SUPPORT_PARTNERS.map(p => (
           <a
             key={p.id}
@@ -86,59 +78,6 @@ export default function PartnersPage() {
             <span style={{ fontSize: "13px", color: "var(--color-text-secondary)", flexShrink: 0 }}>↗</span>
           </a>
         ))}
-      </div>
-
-      {/* Donation block — the same address and copy flow as the support modal */}
-      <div style={{
-        padding: "18px 20px", borderRadius: "12px",
-        background: "var(--color-card)",
-        border: "1px solid var(--color-border)",
-      }}>
-        <div style={{ fontSize: "15px", fontWeight: 700, color: "var(--color-text-primary)" }}>
-          {t("modalThanksTitle")}
-        </div>
-        <div style={{ fontSize: "12.5px", color: "var(--color-text-secondary)", lineHeight: 1.6, marginTop: "4px" }}>
-          {t("devStoryDetail")}
-        </div>
-        <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.06em", margin: "14px 0 8px" }}>
-          USDT · TRC-20 (Tron network)
-        </div>
-        <div style={{
-          display: "flex", alignItems: "center", gap: "8px",
-          padding: "11px 14px",
-          background: "rgba(255,255,255,0.04)",
-          border: "1px solid var(--color-border)",
-          borderRadius: "10px",
-        }}>
-          <span style={{ fontSize: "18px" }}>💚</span>
-          <code style={{
-            flex: 1, fontSize: "11.5px",
-            color: "var(--color-text-primary)",
-            fontFamily: "monospace", wordBreak: "break-all",
-            lineHeight: 1.4,
-          }}>
-            {USDT_ADDRESS}
-          </code>
-          <button
-            onClick={handleCopy}
-            style={{
-              flexShrink: 0,
-              padding: "5px 12px",
-              borderRadius: "6px",
-              background: copied ? "rgba(16,185,129,0.15)" : "rgba(255,255,255,0.07)",
-              border: `1px solid ${copied ? "rgba(16,185,129,0.4)" : "var(--color-border)"}`,
-              fontSize: "11px", fontWeight: 600,
-              color: copied ? "#10B981" : "var(--color-text-secondary)",
-              cursor: "pointer", transition: "all 0.2s",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {copied ? "✓ Copied" : "Copy"}
-          </button>
-        </div>
-        <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginTop: "6px" }}>
-          {t("usdtNote")}
-        </div>
       </div>
     </div>
   );

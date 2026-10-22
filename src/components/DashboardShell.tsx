@@ -104,6 +104,10 @@ function FeedbackModal({ mode, onClose }: { mode: "feedback" | "thanks"; onClose
         transform: "translate(-50%, -50%)",
         zIndex: 101,
         width: "420px", maxWidth: "calc(100vw - 32px)",
+        // The thanks mode (story + USDT + partner wall) is taller than short
+        // viewports — clamp the panel and let the body scroll under the header.
+        maxHeight: "calc(100vh - 48px)",
+        display: "flex", flexDirection: "column",
         background: "var(--color-card)",
         border: "1px solid var(--color-border)",
         borderRadius: "16px",
@@ -133,7 +137,7 @@ function FeedbackModal({ mode, onClose }: { mode: "feedback" | "thanks"; onClose
         </div>
 
         {/* Body */}
-        <div style={{ padding: "20px 24px 24px" }}>
+        <div style={{ padding: "20px 24px 24px", overflowY: "auto", minHeight: 0 }}>
 
           {/* ── FEEDBACK MODE ── */}
           {mode === "feedback" && (
