@@ -3,7 +3,7 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
-## [Unreleased]
+## [1.11.0] — 2026-10-22
 
 ### Added — Dutch language and per-report languages for client reports (#36)
 
@@ -38,6 +38,45 @@ All notable changes to OpenGSC. Dates are release dates; the version shown in
 
 - **Any page on the site matched the homepage.** URL matching accepted the stored URL being a substring of the requested one, and `https://host` is a substring of every URL on the host. The brief came back with the homepage's queries, cannibalization rivals and live content. Pages now match on the normalized path (host, query string, fragment, case and trailing slash ignored); a fragment such as `pricing` is a fallback used only when nothing matches exactly, and when it names several pages the tool lists them instead of guessing.
 - **Subdomain pages no longer fold into the main host's brief.** Matching ignored the host entirely, so on an sc-domain site `blog.example.com/pricing` and `example.com/pricing` answered as one page whenever the agent named a full URL. Hosts are now compared whenever both sides carry one (`www.` counts as the same); a bare path — the common `/pricing` argument — still matches any host, since it cannot discriminate.
+
+### Added — scheduled backups with encryption, SFTP upload and an honest restore (#32)
+
+- **Settings → Backups** (owner-only): scheduled database copies on a cron inside the app, optional gzip and AES encryption, optional SFTP upload. A run writes one `BackupRun` history row — a failed night leaves a record saying why, not silence.
+- **The upload is safe by construction.** Backup work runs in a worker thread (the main process never blocks on crypto), the file is encrypted before it leaves the box, upload is atomic (temp name + rename, no half file ever visible), and the SFTP host key is pinned on first setup: the "test connection" button fills the fingerprint, Save pins it, and the next connect to a different key refuses rather than continuing. Editing host/port clears the old pin so the new one can be captured honestly.
+- **Restore is verified, not assumed.** The restore path decrypts/decompresses into a fresh database, checks it opens and answers, and reports file sizes and checksums; a bad password or a truncated upload says so instead of replacing a working database with a broken one. Restore is explicit — backups never overwrite anything on their own.
+- Also fixed along the way: the production build was broken by the ssh2 addon being pulled into the browser bundle (the SFTP code now lives behind a worker boundary), and editing a backup target's host/port now clears the stale fingerprint field.
+
+### Fixed — annotation dates walked a day back on every save
+
+- A note saved as October 3 landed on October 2 in the timeline, drifting further with every edit: the editor day was anchored to local time and the storage day to UTC, so every save re-anchored one day backwards. Days are now UTC-anchored end to end, comparison windows are equal-length, and a save that fails is reported as failed instead of pretending it wrote.
+- The add-first-note onboarding overlay is gone — the empty state and the "+" button already said everything it did.
+
+### Changed — the dashboard compares complete periods and says what it hides
+
+- Period comparisons were neither equal nor honest: a "7-day vs previous 7-day" actually compared 8 days against a shifted 8, the two windows overlapped, and the KPI percentages divided one length by another (7 against 14). Windows are now equal, non-overlapping, and aligned; provisional (still-filling) days are excluded from both sides, with a line saying so.
+- The sync now also stores per-day query history (`QueryDaily`, last 28 days, paged, replaced on every sync), so per-query trend views read real days instead of one 90-day total dated on the sync day. Deploy needs `prisma db push`.
+
+### Added — an English user wiki, published from the repo
+
+- `docs/wiki/` holds the English user documentation, and a GitHub workflow publishes it to the repo's wiki — the workflow expects the wiki repo to exist (create one page by hand once, then it keeps itself in sync). The effort also fixed the README's wrong claims about Google login and a handful of stale paths. Install docs now warn that Google OAuth apps left in Testing mode lose their tokens after 7 days.
+
+### Added — magic links grow up: FieldLink homepage links, 369 referrals, donors to the indexer
+
+- **FieldLink sells homepage links too**, priced by the donor's traffic tier; both sellers now cover both products (posts / magic links and homepage links) from the same striking-distance card.
+- **369 referrals panel** — the earnings the stored 369 key accrues, shown where the balance lives. And 369's currency is honest now: its "tokens" are US dollars, so sums read `$15` instead of `15 cr.`
+- **Bought donor pages go straight to the indexer queue** — per order, all not-yet-indexed orders at once, or over MCP (`magiclinks_queue_donors`), so purchased placements don't wait for a manual pass to reach the doorway network.
+
+### Fixed — live GSC failures on the dashboard read as "no data" (#38)
+
+- When the live Search Console call failed (a swallowed 429, a quota cap), the widgets rendered empty numbers with no hint anything had failed — indistinguishable from a site with no traffic that day. Failures now surface with the reason; only real data renders as data.
+
+### Added — Batch Queue: thousands of pages in one order, drained by the server
+
+- **One request orders a whole content plan** (`/seo-tools/batch`, MCP `create_generation_batch`): every page runs the normal outline→text pipeline, but a durable server queue drains the orders under your **concurrency setting** (pages in flight, default 2) — the AI provider never sees a burst, whichever agent or browser started the work. Items survive restarts, each has a retry policy, and a **circuit breaker** pauses the batch after N consecutive errors (default 5) and alerts you, so a dead provider costs minutes, not hours of paid retries.
+- **A second, process-wide gate caps simultaneous LLM requests per key** — one page already fires ~2 parallel model calls internally (MAP over competitors, fact batches, text chunks), and UI/MCP jobs bypass the queue entirely, so the only honest place to bound the RPM your provider sees is the call itself. Both knobs are labelled for what they are (pages vs requests), and the gate applies to every path.
+- **Provider keys never sit in the queue.** Item payloads carry knobs only (language, country, tone, length, policy name); the worker resolves credentials from your stored settings at run time — through the same shared resolver the UI and MCP paths use — so a key rotated mid-batch applies to every item that hasn't run yet.
+- **Built for site networks.** An item can bind to a site and inherits that site's Project Memory (writing preferences, positioning) as its writing instruction; priority lets an urgent site jump the line; `clientBatchId` makes an agent's retry after a timeout return the existing order instead of double-paying. Exact duplicates (keyword + country + language) are dropped at order time, and keywords already present in History are flagged back to the caller.
+- Control everything from the page (pause / resume / cancel / retry-failed / delete, live counters, ETA, per-item list) or over MCP (`get_batch_status` — poll the batch, not individual jobs — and `batch_action`). The MCP tool refuses without `confirm: true` and returns a rough provider-call estimate with the order. Deploy needs `prisma db push` (new `SeoBatch`/`SeoBatchItem` tables + a `User.genQueueSettings` column).
 
 ## [1.10.0] — 2026-10-12
 
