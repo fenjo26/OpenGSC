@@ -109,6 +109,14 @@ const PARTNERS = [
     tileBg: "#ffffff",
     imgStyle: { maxWidth: "84px", maxHeight: "24px" } as CSSProperties,
   },
+  {
+    id: "Ipfoxy",
+    name: "IPFoxy",
+    href: "https://www.ipfoxy.com/?r=lk_OpenGSC",
+    logo: "/partners/ipfoxy-logo.png",
+    tileBg: "#ffffff",
+    imgStyle: { maxWidth: "84px", maxHeight: "22px" } as CSSProperties,
+  },
 ] as const satisfies readonly PartnerEntry[];
 
 export type PartnerId = (typeof PARTNERS)[number]["id"];
