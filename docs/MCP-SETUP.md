@@ -199,6 +199,7 @@ refuse to run without `confirm: true`, price stated up front.
 |---|---|
 | `get_site_health` | SSL / Safe Browsing / VirusTotal / Core Web Vitals snapshot |
 | `get_uptime` | Uptime status of every site, or one site's full summary (latency, incidents, uptime %) |
+| `get_server_logs` | Imported server access logs: verified search-engine and AI crawler activity, Googlebot per day, most crawled paths and errors |
 | `get_indexing_status` | Sitemap index-status counts + recent URL inspections (cached) |
 | `get_index_coverage` | Index coverage by day, not-indexed reasons, recent traffic losses and the Google URL Inspection quota state |
 | `get_site_audit` | Latest built-in-crawler audit: health score, issues, affected URLs |

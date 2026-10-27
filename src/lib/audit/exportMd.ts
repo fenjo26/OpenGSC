@@ -135,6 +135,7 @@ const FIXES: Record<string, string> = {
   title_too_long: "Trim to roughly 60 characters so it is not truncated in search results.",
   title_too_short: "Expand to roughly 50–60 characters: lead with the main keyword, then a USP, geo or commercial marker.",
   title_duplicate: "Two pages claim the same title; differentiate them or consolidate the pages.",
+  no_googlebot_visits: "Googlebot did not request this page once in the imported server log. Link it from pages Google already crawls (navigation, hubs, related links), list it in the sitemap, and check it is not buried too deep.",
   article_no_author: "Name the author on article pages — a visible byline linked to an author page, plus author in the Article schema. Editorial content without a named author reads as anonymous to quality raters and answer engines.",
   article_no_date: "Show when the article was published and last updated — visibly, and as datePublished/dateModified in the Article schema (or article:published_time).",
   trust_pages_missing: "Add the missing pages (About, Contact, Privacy, Terms) and link them site-wide, usually from the footer. They are the first thing a visitor, a payment provider or a quality rater checks.",

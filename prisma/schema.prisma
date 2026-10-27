@@ -238,6 +238,7 @@ model Site {
   backlinks             Backlink[]
   siteBacklinks         SiteBacklink[]
   siteAudits            SiteAudit[]
+  serverLogImports      ServerLogImport[]
   claritySnapshots      ClaritySnapshot[]
   trackedKeywords       TrackedKeyword[]
   trackedQuestions      TrackedQuestion[]
@@ -786,6 +787,26 @@ model SiteAudit {
   // The workspace-wide history (GET /api/audit without siteId) orders every audit of the
   // workspace by date — no siteId to anchor on, so the composite index above can't serve it.
   @@index([startedAt])
+}
+
+// One imported server access log (nginx/Apache): who crawled the site, verified by reverse DNS.
+// The aggregate only — raw lines, IPs of ordinary visitors and user agents are never stored.
+model ServerLogImport {
+  id         String    @id @default(cuid())
+  siteId     String
+  createdAt  DateTime  @default(now())
+  source     String    // uploaded file name, or the server path it was read from
+  lines      Int       @default(0)
+  parsed     Int       @default(0)
+  skipped    Int       @default(0)
+  periodFrom DateTime?
+  periodTo   DateTime?
+  googleHits Int       @default(0)
+  summary    String    // JSON: LogSummary (src/lib/logs/aggregate.ts)
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([siteId, createdAt])
 }
 
 model SiteAuditPage {

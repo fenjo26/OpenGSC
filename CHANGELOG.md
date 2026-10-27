@@ -5,6 +5,15 @@ All notable changes to OpenGSC. Dates are release dates; the version shown in
 
 ## [Unreleased]
 
+### Added — Server log analysis: who actually crawls the site
+
+- **Import an nginx/Apache access log** (combined, common or vhost_combined; plain or `.gz`) in the site's **Audit** tab. The browser sends it in 8 MB chunks — the request proxy buffers at most 10 MB per body — and the server streams it line by line, so a multi-gigabyte log never sits in memory. With `OPENGSC_LOG_DIRS` set, files can also be imported straight from an allow-listed directory on the server (realpath-checked; nothing outside it is readable).
+- **Crawlers are verified, not trusted.** Googlebot, Bingbot, YandexBot and Applebot claims are checked by reverse DNS plus forward confirmation, in parallel and bounded; fake crawlers are listed separately and dropped from every Googlebot figure, while IPs that could not be checked stay counted as unverified rather than disappearing. A probe against a known Googlebot address runs first: if the server's resolver does not work at all, nothing is called fake and the report says verification was unavailable.
+- **The summary**: bots by kind (search engines, AI crawlers — GPTBot, OAI-SearchBot, ChatGPT-User, ClaudeBot, Perplexity, CCBot, Bytespider, Amazonbot, Meta — SEO tools, other bots), Googlebot requests per day, its 2xx/3xx/4xx/5xx split, the most crawled paths and the errors it ran into. Only the aggregate is stored (`ServerLogImport`): no raw lines, no user agents, no visitor IPs.
+- **Audit join — `no_googlebot_visits`**: with a log that is at most 30 days old and covers at least 7 days, indexable pages Googlebot never requested are flagged (informative, not scored).
+- **MCP: `get_server_logs`** (local) — the same summary for an agent.
+- Deploy needs `prisma db push` (new `ServerLogImport` table).
+
 ### Added — Site Audit trust signals (the measurable part of E-E-A-T)
 
 - **`article_no_author`** / **`article_no_date`** — article pages (og:type `article`, or Article/BlogPosting/NewsArticle schema) with no named author (meta, schema, microdata, `rel=author`, a byline class) or no publication/update date (meta, schema, microdata, `<time datetime>`). Service pages and listings are not asked for a byline.

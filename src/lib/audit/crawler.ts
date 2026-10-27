@@ -20,6 +20,8 @@ import { isCwvPoor, pickPsiSample, resolvePsiApiKey, runPsiStage } from "@/lib/a
 import { withCallContext } from "@/lib/providerLog/context";
 import { sitemapCoverage } from "@/lib/audit/sitemapCheck";
 import { findTrustPages, missingTrustPages } from "@/lib/audit/eeat";
+import { latestUsableImport } from "@/lib/logs/importer";
+import { logPathKey } from "@/lib/logs/aggregate";
 import { contentShingles, descriptionKey, findNearDuplicates } from "@/lib/audit/duplicates";
 import { canonicalOverride, findGscOrphans, gscPageKey, latestInspections, GSC_INSPECTION_MAX_AGE_DAYS, type InspectionRow } from "@/lib/audit/gscJoin";
 import { hasNoindex, noindexEvidence, noindexNeutralSetting, noindexReasons, summarizeNoindex, type NoindexReason, type NoindexSignals } from "@/lib/audit/noindex";
@@ -489,6 +491,16 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
     const inspections = latestInspections(await loadInspectionRows(audit.siteId).catch(() => []));
     const sitemapInventory = await loadSitemapInventory(audit.siteId).catch(() => [] as string[]);
     const sitemapKeys = new Set(sitemapInventory.map(gscPageKey).filter(Boolean));
+    // Server log (lib/logs): the newest import that is recent and covers a week. A truncated path
+    // map cannot prove absence, so then the "never visited" check stays silent.
+    const serverLog = await latestUsableImport(audit.siteId).catch(() => null);
+    const googlebotPaths = serverLog && !serverLog.google.pathsTruncated
+      ? new Map(Object.entries(serverLog.google.paths).map(([path, hits]) => [logPathKey(path), hits]))
+      : null;
+    const googlebotVisitsOf = (url: string): number | undefined => {
+      if (!googlebotPaths) return undefined;
+      try { const u = new URL(url); return googlebotPaths.get(logPathKey(u.pathname + u.search)) ?? 0; } catch { return undefined; }
+    };
     const noindexSignalsOf = new Map<string, NoindexSignals>();
     const noindexReasonsOf = new Map<string, NoindexReason[]>();
     if (closedUrls.length) {
@@ -686,6 +698,7 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
         authorPresent: r.ex?.authorPresent,
         datePresent: r.ex?.datePresent,
         trustPagesMissing: isRoot ? trustMissing : undefined,
+        googlebotVisits: googlebotVisitsOf(url),
         metaDescription: r.ex?.metaDesc ?? "",
         robots,
         robotsConflict: robotsDirectivesConflict(robots),
@@ -738,6 +751,9 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
         brokenLinks: broken,
         internalRedirectLinks: redirectLinks.slice(0, 5),
       });
+      if (issues.includes("no_googlebot_visits") && serverLog) {
+        evidence.no_googlebot_visits = `no Googlebot request in the server log ${serverLog.from?.slice(0, 10)} – ${serverLog.to?.slice(0, 10)} (${serverLog.days} d)`;
+      }
       // The noindex verdict's reasons ("homepage · listed in the sitemap · 340 impressions…").
       const closedSignals = noindexSignalsOf.get(url);
       if (issues.includes("noindex_suspicious") && closedSignals) {
@@ -924,6 +940,8 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
           duplicates: duplicates.clusters,
           // Trust pages found (eeat.ts) — URL per kind, null when none was seen.
           trust: trustPages,
+          // The server log the "never visited by Googlebot" check used (lib/logs); absent without one.
+          ...(serverLog ? { serverLog: { from: serverLog.from, to: serverLog.to, days: serverLog.days, googleHits: serverLog.google.hits, pathsTruncated: serverLog.google.pathsTruncated } } : {}),
           // How much of the sitemap this audit judged (sitemapCheck.ts); absent without an inventory.
           ...(sitemapSummary ? { sitemap: sitemapSummary } : {}),
           // GSC pages the crawl never reached (gscJoin.ts). Written only when GSC has page data,

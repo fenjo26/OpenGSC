@@ -98,6 +98,11 @@ export interface AuditPageFacts {
   datePresent?: boolean;
   /** Root only: trust pages (about/contact/privacy/terms) the crawl found no URL for. */
   trustPagesMissing?: string[];
+  /**
+   * Googlebot requests for this page in the latest usable server log (lib/logs): recent, at least
+   * a week long, path map complete. undefined = no such log, and that is silence.
+   */
+  googlebotVisits?: number;
 }
 
 export interface AuditRuleDefinition {
@@ -161,6 +166,9 @@ export const AUDIT_RULES: readonly AuditRuleDefinition[] = [
   // to be out of the index and stay silent.
   { id: "gsc_not_indexed", severity: "warning", category: "crawlability", titleKey: "auditIssueGscNotIndexed", scope: "page", affectsScore: false, evaluate: facts => html(facts) && facts.httpStatus === 200 && !hasNoindex(facts.robots) && !facts.canonicalMismatch && facts.gscInspection?.indexed === false },
   { id: "gsc_canonical_other", severity: "warning", category: "metadata", titleKey: "auditIssueGscCanonicalOther", scope: "page", affectsScore: false, evaluate: facts => html(facts) && facts.httpStatus === 200 && !hasNoindex(facts.robots) && !!facts.gscCanonicalOther },
+  // Server log: an indexable page Google's crawler never requested in a week or more of logs.
+  // A fact about the log, but whether that matters depends on the page — so it informs.
+  { id: "no_googlebot_visits", severity: "info", category: "crawlability", titleKey: "auditIssueNoGooglebotVisits", scope: "page", affectsScore: false, evaluate: facts => html(facts) && facts.httpStatus === 200 && !hasNoindex(facts.robots) && !facts.canonicalMismatch && facts.googlebotVisits === 0 },
   { id: "robots_conflict", severity: "warning", category: "crawlability", titleKey: "auditIssueRobotsConflict", scope: "page", evaluate: facts => html(facts) && facts.robotsConflict },
   { id: "canonical_missing", severity: "warning", category: "metadata", titleKey: "auditIssueCanonicalMissing", scope: "page", indexableOnly: true, affectsScore: false, evaluate: facts => html(facts) && !facts.canonical },
   { id: "canonical_invalid", severity: "warning", category: "metadata", titleKey: "auditIssueCanonicalInvalid", scope: "page", indexableOnly: true, evaluate: facts => html(facts) && facts.canonicalInvalid },
