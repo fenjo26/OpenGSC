@@ -5,6 +5,12 @@ All notable changes to OpenGSC. Dates are release dates; the version shown in
 
 ## [Unreleased]
 
+### Added — Site Audit trust signals (the measurable part of E-E-A-T)
+
+- **`article_no_author`** / **`article_no_date`** — article pages (og:type `article`, or Article/BlogPosting/NewsArticle schema) with no named author (meta, schema, microdata, `rel=author`, a byline class) or no publication/update date (meta, schema, microdata, `<time datetime>`). Service pages and listings are not asked for a byline.
+- **`trust_pages_missing`** — the site links to no About, Contact, Privacy or Terms page, recognised by URL in the app's eight languages plus Greek (both the Greek alphabet and transliterated slugs). Every crawled page and every internal link target counts, so a footer link is enough even if the crawl limit stopped before fetching it.
+- All three are informational and never move the health score. The summary records which trust page was found where.
+
 ### Added — Site Audit checks the sitemap's own entries
 
 - **`sitemap_redirect`**, **`sitemap_error`**, **`sitemap_non_canonical`** — a URL listed in the site's sitemap that answers 3xx, answers 4xx/5xx (or nothing), or names another page as its canonical. A sitemap should list only final, live, self-canonical pages; these are facts about the owner's own list, so they score as warnings. A listed page with noindex was already the noindex triage's `sitemap` reason.

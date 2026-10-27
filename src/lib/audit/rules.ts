@@ -92,6 +92,12 @@ export interface AuditPageFacts {
   nearDuplicate?: { with: string; similarity: number; others: number } | null;
   /** Listed in the site's synced sitemap inventory; undefined when there is no inventory. */
   inSitemap?: boolean;
+  /** Trust signals (eeat.ts). Article pages only are asked for a byline and a date. */
+  articleLike?: boolean;
+  authorPresent?: boolean;
+  datePresent?: boolean;
+  /** Root only: trust pages (about/contact/privacy/terms) the crawl found no URL for. */
+  trustPagesMissing?: string[];
 }
 
 export interface AuditRuleDefinition {
@@ -172,6 +178,10 @@ export const AUDIT_RULES: readonly AuditRuleDefinition[] = [
   { id: "js_rendered", severity: "info", category: "rendering", titleKey: "auditIssueJsRendered", scope: "page", indexableOnly: true, evaluate: facts => html(facts) && facts.jsRendered },
   { id: "viewport_missing", severity: "warning", category: "rendering", titleKey: "auditIssueViewportMissing", scope: "page", indexableOnly: true, evaluate: facts => html(facts) && !facts.viewportPresent },
   { id: "lang_missing", severity: "info", category: "content", titleKey: "auditIssueLangMissing", scope: "page", indexableOnly: true, evaluate: facts => html(facts) && !facts.htmlLang },
+  // Trust signals (eeat.ts) — what quality raters and answer engines look for; they inform only.
+  { id: "article_no_author", severity: "info", category: "content", titleKey: "auditIssueArticleNoAuthor", scope: "page", indexableOnly: true, affectsScore: false, evaluate: facts => html(facts) && facts.articleLike === true && facts.authorPresent === false },
+  { id: "article_no_date", severity: "info", category: "content", titleKey: "auditIssueArticleNoDate", scope: "page", indexableOnly: true, affectsScore: false, evaluate: facts => html(facts) && facts.articleLike === true && facts.datePresent === false },
+  { id: "trust_pages_missing", severity: "info", category: "content", titleKey: "auditIssueTrustPagesMissing", scope: "site", affectsScore: false, evaluate: facts => html(facts) && facts.isRoot && (facts.trustPagesMissing?.length ?? 0) > 0 },
   { id: "jsonld_invalid", severity: "warning", category: "metadata", titleKey: "auditIssueJsonLdInvalid", scope: "page", indexableOnly: true, evaluate: facts => html(facts) && facts.jsonLdInvalid > 0 },
   { id: "organization_schema_incomplete", severity: "info", category: "metadata", titleKey: "auditIssueOrganizationSchemaIncomplete", scope: "site", indexableOnly: true, evaluate: facts => html(facts) && facts.isRoot && facts.organizationSchemaIncomplete },
   { id: "open_graph_incomplete", severity: "info", category: "metadata", titleKey: "auditIssueOpenGraphIncomplete", scope: "page", indexableOnly: true, evaluate: facts => html(facts) && facts.openGraphMissing > 0 },

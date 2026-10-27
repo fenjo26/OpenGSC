@@ -19,6 +19,7 @@ import { normalizeAuditUrl, pickMainQuery } from "@/lib/audit/queryAlign";
 import { isCwvPoor, pickPsiSample, resolvePsiApiKey, runPsiStage } from "@/lib/audit/psi";
 import { withCallContext } from "@/lib/providerLog/context";
 import { sitemapCoverage } from "@/lib/audit/sitemapCheck";
+import { findTrustPages, missingTrustPages } from "@/lib/audit/eeat";
 import { contentShingles, descriptionKey, findNearDuplicates } from "@/lib/audit/duplicates";
 import { canonicalOverride, findGscOrphans, gscPageKey, latestInspections, GSC_INSPECTION_MAX_AGE_DAYS, type InspectionRow } from "@/lib/audit/gscJoin";
 import { hasNoindex, noindexEvidence, noindexNeutralSetting, noindexReasons, summarizeNoindex, type NoindexReason, type NoindexSignals } from "@/lib/audit/noindex";
@@ -531,6 +532,9 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
       const d = descriptionKey(r?.ex?.metaDesc ?? "");
       if (d) descriptionCount.set(d, (descriptionCount.get(d) ?? 0) + 1);
     }
+    // Trust pages, over every URL the crawl saw (crawled or merely linked internally).
+    const trustPages = findTrustPages([...results.keys(), ...[...results.values()].flatMap(r => r.internalTargets ?? [])]);
+    const trustMissing = missingTrustPages(trustPages);
     const duplicates = findNearDuplicates([...uniqueExpected].map(url => ({ url, shingles: results.get(url)?.shingles ?? new Uint32Array() })));
     for (const r of results.values()) delete r.shingles; // the arrays served their one purpose
     const inboundLinks = new Map<string, number>();
@@ -678,6 +682,10 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
         nearDuplicate: duplicates.byUrl.get(url) ?? null,
         // Unknown (not false) without an inventory: no sitemap is not "missing from the sitemap".
         inSitemap: sitemapKeys.size ? sitemapKeys.has(gscPageKey(url)) : undefined,
+        articleLike: r.ex?.articleLike,
+        authorPresent: r.ex?.authorPresent,
+        datePresent: r.ex?.datePresent,
+        trustPagesMissing: isRoot ? trustMissing : undefined,
         metaDescription: r.ex?.metaDesc ?? "",
         robots,
         robotsConflict: robotsDirectivesConflict(robots),
@@ -914,6 +922,8 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
           // Near-duplicate content groups (duplicates.ts) — the per-page findings say "similar to
           // X", this says how the site clusters.
           duplicates: duplicates.clusters,
+          // Trust pages found (eeat.ts) — URL per kind, null when none was seen.
+          trust: trustPages,
           // How much of the sitemap this audit judged (sitemapCheck.ts); absent without an inventory.
           ...(sitemapSummary ? { sitemap: sitemapSummary } : {}),
           // GSC pages the crawl never reached (gscJoin.ts). Written only when GSC has page data,
@@ -1010,6 +1020,9 @@ function buildEvidence(
       ? `Google chose ${facts.gscCanonicalOther}${facts.canonical ? ` (declared: ${facts.canonical})` : " (no canonical declared)"}${facts.gscInspection ? ` · inspected ${facts.gscInspection.checkedOn}` : ""}`
       : "",
     description_duplicate: facts.metaDescription.slice(0, 90),
+    trust_pages_missing: `no ${(facts.trustPagesMissing ?? []).join(", ")} page found`,
+    article_no_author: "article page with no author (meta, schema, rel=author or byline)",
+    article_no_date: "article page with no published or updated date",
     sitemap_redirect: ctx.redirectTo ? `listed in the sitemap, redirects -> ${ctx.redirectTo}` : "listed in the sitemap, redirects",
     sitemap_error: `listed in the sitemap, ${facts.httpStatus ? `HTTP ${facts.httpStatus}` : "no response"}`,
     sitemap_non_canonical: `listed in the sitemap, canonical -> ${facts.canonical ?? "?"}`,

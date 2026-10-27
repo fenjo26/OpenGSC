@@ -1,5 +1,6 @@
 import { parseHreflangHead, type HreflangEntry } from "./hreflang";
 import { headWindow } from "./headWindow";
+import { articleSignals } from "./eeat";
 
 const strip = (value: string) => value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 const decode = (value: string) => value
@@ -74,6 +75,10 @@ export interface AuditHtmlSignals {
   twitterCardIncomplete: boolean;
   twitterCardMissing: string[];
   mixedContentUrls: string[];
+  /** og:type article or Article-family schema — the pages a byline and a date are expected on (eeat.ts). */
+  articleLike: boolean;
+  authorPresent: boolean;
+  datePresent: boolean;
 }
 
 export function extractAuditHtml(html: string): AuditHtmlSignals {
@@ -163,7 +168,17 @@ export function extractAuditHtml(html: string): AuditHtmlSignals {
     if (/^http:\/\//i.test(resource)) mixedContentUrls.add(resource);
   }
 
+  const firstMeta = (...keys: string[]) => keys.map(key => metaValues(head, key).find(v => v.trim()) ?? "").find(Boolean) ?? "";
+  const article = articleSignals({
+    html,
+    ogType: firstMeta("og:type"),
+    jsonLdNodes: nodes,
+    metaAuthor: firstMeta("author", "article:author"),
+    publishedMeta: firstMeta("article:published_time", "article:modified_time", "og:updated_time", "date", "dc.date", "dcterms.created"),
+  });
+
   return {
+    ...article,
     title, metaDesc, robots, canonical, h1Count, h1Text, hrefs, imagesNoAlt, imagesNoDimensions, wordCount,
     spaMarker, hasLargeScript, viewportPresent, viewportResponsive, viewportContent, htmlLang, hreflang: parseHreflangHead(html),
     jsonLdCount, jsonLdInvalid,
