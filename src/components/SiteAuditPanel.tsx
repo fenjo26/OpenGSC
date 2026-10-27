@@ -14,6 +14,7 @@ import { AUDIT_RULES } from "@/lib/audit/rules";
 import type { NoindexReason, NoindexSummary } from "@/lib/audit/noindex";
 import type { GscOrphanSummary } from "@/lib/audit/gscJoin";
 import type { DuplicateResult } from "@/lib/audit/duplicates";
+import type { SitemapCoverage } from "@/lib/audit/sitemapCheck";
 
 const ISSUE_LABEL_KEYS = Object.fromEntries(AUDIT_RULES.map(rule => [rule.id, rule.titleKey]));
 const SEVERE = new Set(AUDIT_RULES.filter(rule => rule.severity === "critical").map(rule => rule.id));
@@ -307,6 +308,7 @@ interface AuditSummaryView {
   noindex?: NoindexSummary;
   gscOrphans?: GscOrphanSummary;
   duplicates?: DuplicateResult["clusters"];
+  sitemap?: SitemapCoverage;
 }
 
 /** A verification finding carried over from the baseline run. */
@@ -887,6 +889,15 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
           {/* Noindex triage — above the speed sample: a closed homepage outranks any metric */}
           {summary.noindex && <NoindexCard data={summary.noindex} t={t as (k: string) => string} onShow={filterIssue} />}
           {summary.gscOrphans && <GscOrphansCard data={summary.gscOrphans} t={t as (k: string) => string} />}
+          {/* Sitemap coverage — one line: how much of the sitemap the sitemap_* chips actually judged */}
+          {summary.sitemap && summary.sitemap.listed > 0 && (
+            <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
+              {summary.sitemap.notChecked
+                ? t("auditSitemapCoverage").replace("{n}", String(summary.sitemap.listed)).replace("{c}", String(summary.sitemap.checked)).replace("{m}", String(summary.sitemap.notChecked))
+                : t("auditSitemapAll").replace("{n}", String(summary.sitemap.listed))}
+              {summary.sitemap.notChecked > 0 && !summary.sitemap.seeded && <> {t("auditSitemapHint")}</>}
+            </div>
+          )}
           {summary.duplicates && <DuplicatesCard data={summary.duplicates} t={t as (k: string) => string} onShow={filterIssue} />}
 
           {/* PageSpeed sample — above the issue list: it explains the site's speed, not one page */}

@@ -90,6 +90,8 @@ export interface AuditPageFacts {
    */
   descriptionDuplicate?: boolean;
   nearDuplicate?: { with: string; similarity: number; others: number } | null;
+  /** Listed in the site's synced sitemap inventory; undefined when there is no inventory. */
+  inSitemap?: boolean;
 }
 
 export interface AuditRuleDefinition {
@@ -160,6 +162,11 @@ export const AUDIT_RULES: readonly AuditRuleDefinition[] = [
   { id: "thin_content", severity: "warning", category: "content", titleKey: "auditIssueThinContent", scope: "page", indexableOnly: true, evaluate: facts => visibleHtml(facts) && facts.wordCount < 150 },
   { id: "images_no_alt", severity: "warning", category: "content", titleKey: "auditIssueImagesNoAlt", scope: "page", indexableOnly: true, evaluate: facts => html(facts) && facts.imagesNoAlt > 0 },
   { id: "broken_links", severity: "critical", category: "links", titleKey: "auditIssueBrokenLinks", scope: "page", evaluate: facts => html(facts) && facts.brokenLinkCount > 0 },
+  // The sitemap lists pages to crawl and index (sitemapCheck.ts): each entry should be a final,
+  // live, self-canonical URL. Facts about the site's own list, so they score.
+  { id: "sitemap_redirect", severity: "warning", category: "crawlability", titleKey: "auditIssueSitemapRedirect", scope: "page", evaluate: facts => facts.inSitemap === true && facts.httpStatus >= 300 && facts.httpStatus < 400 },
+  { id: "sitemap_error", severity: "warning", category: "crawlability", titleKey: "auditIssueSitemapError", scope: "page", evaluate: facts => facts.inSitemap === true && (facts.httpStatus >= 400 || facts.httpStatus === 0) },
+  { id: "sitemap_non_canonical", severity: "warning", category: "crawlability", titleKey: "auditIssueSitemapNonCanonical", scope: "page", evaluate: facts => html(facts) && facts.inSitemap === true && facts.httpStatus === 200 && facts.canonicalMismatch },
   { id: "orphan_sitemap_page", severity: "warning", category: "links", titleKey: "auditIssueOrphanSitemapPage", scope: "site", indexableOnly: true, affectsScore: false, evaluate: facts => html(facts) && facts.sitemapSeeded && facts.internalInboundLinks === 0 },
   { id: "slow_response", severity: "warning", category: "performance", titleKey: "auditIssueSlowResponse", scope: "page", evaluate: facts => facts.loadMs > 3000 },
   { id: "js_rendered", severity: "info", category: "rendering", titleKey: "auditIssueJsRendered", scope: "page", indexableOnly: true, evaluate: facts => html(facts) && facts.jsRendered },

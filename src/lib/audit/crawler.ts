@@ -18,6 +18,7 @@ import { checkHreflangSite, mergeHreflangEntries, normalizeHreflangUrl, parseHre
 import { normalizeAuditUrl, pickMainQuery } from "@/lib/audit/queryAlign";
 import { isCwvPoor, pickPsiSample, resolvePsiApiKey, runPsiStage } from "@/lib/audit/psi";
 import { withCallContext } from "@/lib/providerLog/context";
+import { sitemapCoverage } from "@/lib/audit/sitemapCheck";
 import { contentShingles, descriptionKey, findNearDuplicates } from "@/lib/audit/duplicates";
 import { canonicalOverride, findGscOrphans, gscPageKey, latestInspections, GSC_INSPECTION_MAX_AGE_DAYS, type InspectionRow } from "@/lib/audit/gscJoin";
 import { hasNoindex, noindexEvidence, noindexNeutralSetting, noindexReasons, summarizeNoindex, type NoindexReason, type NoindexSignals } from "@/lib/audit/noindex";
@@ -269,8 +270,6 @@ type AuditPageRow = {
 
 /** What the noindex triage needs from outside the crawl — see noindex.ts for how it is judged. */
 interface NoindexContext {
-  /** normalizeAuditUrl keys of the site's active sitemap inventory. */
-  sitemap: Set<string>;
   /** The previous completed audit: its date and the URLs it saw as indexable HTML. */
   previous: { date: string; indexable: Set<string> } | null;
 }
@@ -318,28 +317,30 @@ async function loadInspectionRows(siteId: string): Promise<InspectionRow[]> {
 }
 
 /**
- * Three local reads, made only when the crawl found at least one closed page. Each one fails on
- * its own: a site without a sitemap inventory, GSC data or audit history simply has fewer
- * reasons to judge by — a missing source never makes a page suspicious.
+ * The site's own sitemap as the instance last synced it (active and pending-missing entries).
+ * Shared by the noindex triage (a listed page is meant to be indexed) and the sitemap checks.
+ * An empty inventory — no sitemap, or never synced — keeps every sitemap rule silent.
+ */
+async function loadSitemapInventory(siteId: string): Promise<string[]> {
+  const rows = await prisma.sitemapUrl.findMany({
+    where: { siteId, inventoryStatus: { not: "missing" } },
+    select: { url: true },
+    take: 50_000,
+  });
+  return rows.map(row => row.url);
+}
+
+/**
+ * The previous completed audit, read only when the crawl found at least one closed page. A site
+ * without audit history simply has one reason fewer to judge by — a missing source never makes a
+ * page suspicious.
  */
 async function loadNoindexContext(siteId: string, auditId: string, startedAt: Date): Promise<NoindexContext> {
-  const [sitemapRows, previousAudit] = await Promise.all([
-    prisma.sitemapUrl.findMany({
-      where: { siteId, inventoryStatus: { not: "missing" } },
-      select: { url: true },
-      take: 50_000,
-    }).catch(() => [] as { url: string }[]),
-    prisma.siteAudit.findFirst({
-      where: { siteId, status: "completed", id: { not: auditId }, startedAt: { lt: startedAt } },
-      orderBy: { startedAt: "desc" },
-      select: { id: true, startedAt: true },
-    }).catch(() => null),
-  ]);
-  const sitemap = new Set<string>();
-  for (const row of sitemapRows) {
-    const key = normalizeAuditUrl(row.url);
-    if (key) sitemap.add(key);
-  }
+  const previousAudit = await prisma.siteAudit.findFirst({
+    where: { siteId, status: "completed", id: { not: auditId }, startedAt: { lt: startedAt } },
+    orderBy: { startedAt: "desc" },
+    select: { id: true, startedAt: true },
+  }).catch(() => null);
   let previous: NoindexContext["previous"] = null;
   if (previousAudit) {
     const pages = await prisma.siteAuditPage.findMany({
@@ -351,7 +352,7 @@ async function loadNoindexContext(siteId: string, auditId: string, startedAt: Da
       indexable: new Set(pages.map(page => normalizeAuditUrl(page.url)).filter(Boolean)),
     };
   }
-  return { sitemap, previous };
+  return { previous };
 }
 
 export async function runAudit(auditId: string, opts?: AuditOptions): Promise<void> {
@@ -485,17 +486,19 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
       gscByKey.set(key, prev ? { impressions: prev.impressions + totals.impressions, clicks: prev.clicks + totals.clicks } : { ...totals });
     }
     const inspections = latestInspections(await loadInspectionRows(audit.siteId).catch(() => []));
+    const sitemapInventory = await loadSitemapInventory(audit.siteId).catch(() => [] as string[]);
+    const sitemapKeys = new Set(sitemapInventory.map(gscPageKey).filter(Boolean));
     const noindexSignalsOf = new Map<string, NoindexSignals>();
     const noindexReasonsOf = new Map<string, NoindexReason[]>();
     if (closedUrls.length) {
       const ctx = await loadNoindexContext(audit.siteId, auditId, audit.startedAt)
-        .catch((): NoindexContext => ({ sitemap: new Set(), previous: null }));
+        .catch((): NoindexContext => ({ previous: null }));
       for (const url of closedUrls) {
         const key = normalizeAuditUrl(url);
         const traffic = gscByKey.get(gscPageKey(url));
         const signals: NoindexSignals = {
           isRoot: results.get(url)?.depth === 0,
-          inSitemap: ctx.sitemap.has(key),
+          inSitemap: sitemapKeys.has(gscPageKey(url)),
           gscImpressions: traffic?.impressions ?? 0,
           gscClicks: traffic?.clicks ?? 0,
           wasIndexableOn: ctx.previous?.indexable.has(key) ? ctx.previous.date : null,
@@ -673,6 +676,8 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
         titleDuplicate: !!r.ex?.title && uniqueExpected.has(url) && (titleCount.get(r.ex.title.toLowerCase().trim()) ?? 0) > 1,
         descriptionDuplicate: uniqueExpected.has(url) && (descriptionCount.get(descriptionKey(r.ex?.metaDesc ?? "")) ?? 0) > 1,
         nearDuplicate: duplicates.byUrl.get(url) ?? null,
+        // Unknown (not false) without an inventory: no sitemap is not "missing from the sitemap".
+        inSitemap: sitemapKeys.size ? sitemapKeys.has(gscPageKey(url)) : undefined,
         metaDescription: r.ex?.metaDesc ?? "",
         robots,
         robotsConflict: robotsDirectivesConflict(robots),
@@ -830,6 +835,9 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
       rows.map(row => ({ ...row, intentionalNoindex: intentionalNoindex.has(row.url) })),
       noindexNeutral ? { ignoreRuleIds: new Set(["noindex_suspicious"]) } : {},
     );
+    const sitemapSummary = sitemapKeys.size
+      ? sitemapCoverage(sitemapInventory, results.keys(), root.href, { seeded: !!opts?.seedFromSitemap, partial: crawled >= maxPages })
+      : null;
     const gscOrphans = findGscOrphans(gscTotals, results.keys(), root.href, {
       partial: crawled >= maxPages,
       // What the crawl was told to skip, and non-page assets, are not orphans.
@@ -906,6 +914,8 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
           // Near-duplicate content groups (duplicates.ts) — the per-page findings say "similar to
           // X", this says how the site clusters.
           duplicates: duplicates.clusters,
+          // How much of the sitemap this audit judged (sitemapCheck.ts); absent without an inventory.
+          ...(sitemapSummary ? { sitemap: sitemapSummary } : {}),
           // GSC pages the crawl never reached (gscJoin.ts). Written only when GSC has page data,
           // so "no orphans" is distinguishable from "nothing to compare against".
           ...(gscTotals.size ? { gscOrphans } : {}),
@@ -1000,6 +1010,9 @@ function buildEvidence(
       ? `Google chose ${facts.gscCanonicalOther}${facts.canonical ? ` (declared: ${facts.canonical})` : " (no canonical declared)"}${facts.gscInspection ? ` · inspected ${facts.gscInspection.checkedOn}` : ""}`
       : "",
     description_duplicate: facts.metaDescription.slice(0, 90),
+    sitemap_redirect: ctx.redirectTo ? `listed in the sitemap, redirects -> ${ctx.redirectTo}` : "listed in the sitemap, redirects",
+    sitemap_error: `listed in the sitemap, ${facts.httpStatus ? `HTTP ${facts.httpStatus}` : "no response"}`,
+    sitemap_non_canonical: `listed in the sitemap, canonical -> ${facts.canonical ?? "?"}`,
     content_near_duplicate: facts.nearDuplicate
       ? `${Math.round(facts.nearDuplicate.similarity * 100)}% similar to ${facts.nearDuplicate.with}${facts.nearDuplicate.others > 1 ? ` (+${facts.nearDuplicate.others - 1} more in the group)` : ""}`
       : "",

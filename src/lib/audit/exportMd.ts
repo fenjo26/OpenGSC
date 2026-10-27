@@ -135,6 +135,9 @@ const FIXES: Record<string, string> = {
   title_too_long: "Trim to roughly 60 characters so it is not truncated in search results.",
   title_too_short: "Expand to roughly 50–60 characters: lead with the main keyword, then a USP, geo or commercial marker.",
   title_duplicate: "Two pages claim the same title; differentiate them or consolidate the pages.",
+  sitemap_redirect: "The sitemap lists a URL that redirects. List the final URL instead — sitemaps should contain only pages that answer 200.",
+  sitemap_error: "The sitemap lists a URL that answers an error. Remove it from the sitemap, or fix the page if it should exist.",
+  sitemap_non_canonical: "The sitemap lists a URL whose canonical points to another page. List the canonical URL instead, or fix the canonical if this page is the main one.",
   description_duplicate: "Several pages share this meta description; write one per page that states what that page specifically offers.",
   content_near_duplicate: "The main content is nearly the same as another page's (see the evidence). Merge the pages and 301 the weaker one, point its canonical at the stronger one, or rewrite it so it answers a different query — a template with only the city name swapped counts as a duplicate.",
   description_missing: "Add a meta description; without one Google writes its own from the page.",
@@ -223,6 +226,13 @@ export function buildAuditMarkdown(
   if (dups?.count) {
     out.push(`- ${dups.pages} page(s) form ${dups.count} group(s) of near-duplicate content:`);
     for (const c of (dups.sample ?? []).slice(0, 5)) out.push(`  - ${c.size} pages, ≥ ${Math.round(c.minSimilarity * 100)}% similar: ${c.urls.map(shortUrl).join(", ")}${c.size > c.urls.length ? " …" : ""}`);
+  }
+  // Sitemap coverage (sitemapCheck.ts) — how much of the sitemap the sitemap_* findings judged.
+  const sm = meta.summary?.sitemap as { listed?: number; checked?: number; notChecked?: number; seeded?: boolean } | undefined;
+  if (sm?.listed) {
+    out.push(sm.notChecked
+      ? `- Sitemap: ${sm.listed} URL(s), ${sm.checked} checked by this crawl, ${sm.notChecked} not reached${sm.seeded ? "" : " — run the audit from the sitemap to check them all"}`
+      : `- Sitemap: all ${sm.listed} URL(s) checked by this crawl`);
   }
   // GSC orphans (gscJoin.ts): not crawled rows, so no issue table can carry them — listed here.
   const orphans = meta.summary?.gscOrphans as { count?: number; partial?: boolean; sample?: { url: string; impressions: number; clicks: number }[] } | undefined;

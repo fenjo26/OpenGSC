@@ -5,6 +5,11 @@ All notable changes to OpenGSC. Dates are release dates; the version shown in
 
 ## [Unreleased]
 
+### Added — Site Audit checks the sitemap's own entries
+
+- **`sitemap_redirect`**, **`sitemap_error`**, **`sitemap_non_canonical`** — a URL listed in the site's sitemap that answers 3xx, answers 4xx/5xx (or nothing), or names another page as its canonical. A sitemap should list only final, live, self-canonical pages; these are facts about the owner's own list, so they score as warnings. A listed page with noindex was already the noindex triage's `sitemap` reason.
+- **Sitemap coverage line** on the Audit tab and in the Markdown export: how many listed URLs this crawl actually checked, and — when the crawl was not seeded from the sitemap — a pointer to run it from there to check them all. Membership comes from the sitemap inventory the instance already syncs; no sitemap is fetched by the audit, and without an inventory every sitemap rule stays silent.
+
 ### Added — Site Audit finds duplicate descriptions and near-duplicate content
 
 - **`content_near_duplicate`** — pages whose main content (`<main>`, else `<article>`, else the body without header, nav, footer, aside and forms) is ≥ 80 % similar to another page, measured on 3-word shingles after removing text present on ≥ 80 % of pages (site chrome). Tuned for the case that matters most: a route or city page generated from a template with only the place name swapped (≈ 86 % similar) is caught; two different texts on the same topic are not. MinHash + LSH keeps a 5,000-page crawl to seconds, and every reported pair is confirmed on the exact shingle sets. Informative (`affectsScore: false`) — similarity is a measured threshold, not a fact. Evidence names the most similar page; a card on the Audit tab shows the groups.
