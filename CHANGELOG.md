@@ -3,7 +3,7 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
-## [Unreleased]
+## [1.13.0] — 2026-10-27
 
 ### Added — Server log analysis: who actually crawls the site
 
@@ -1209,7 +1209,7 @@ It was DataForSEO-only. It now routes through the same `keywordSource` layer, an
 folded into the `DemandSearch` cache key as a prefix (`ahrefs:seed|…`), reusing the namespace
 pattern `aeo/mentions` already established with `llm:` — no schema migration needed.
 
-## [Unreleased]
+## [1.13.0] — 2026-10-27
 
 ### Added
 
