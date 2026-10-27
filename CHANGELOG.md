@@ -5,6 +5,13 @@ All notable changes to OpenGSC. Dates are release dates; the version shown in
 
 ## [Unreleased]
 
+### Added — Site Audit checks the crawl against Search Console
+
+- **`gsc_not_indexed`** — an indexable page (200, no noindex, self-canonical) that the latest stored URL Inspection reports as out of Google's index, with the coverage state and inspection date as evidence.
+- **`gsc_canonical_other`** — Google selected a different canonical than the page declares (or than the page itself when it declares none).
+- **GSC orphans** — pages earning ≥ 20 impressions over 28 days that the crawl never reached: same host only, ignored paths and non-page assets skipped, http/https/www/fragment variants folded into one page, and a "crawl hit its page limit" caveat when it applies. Shown as a card on the Audit tab and listed in the Markdown export header.
+- Everything is read from data the instance already stores (`DailyMetric` page rows, `PageInspection`, the sitemap inventory's `google*` columns) — an audit spends **no URL Inspection quota**. Inspections older than 60 days are ignored. Both page rules are informative (`affectsScore: false`): Google's data can be weeks old, so it points, it does not grade. The noindex triage now matches GSC traffic across http/https and www too.
+
 ### Changed — Site Audit tells a deliberate noindex from a forgotten one
 
 - **Noindex no longer sinks the health score.** Until now every noindex page was a critical finding scored 0, so a correctly configured site with closed cart, login, thank-you or tag pages looked broken, and the one noindex that mattered drowned among them. A closed page is now judged by facts the instance already holds: it is **suspicious** (`noindex_suspicious`, critical) when it is the homepage, is listed in the site's sitemap, earns impressions in Search Console (≥ 20 over 28 days), or was indexable in the previous completed audit. Every other closed page is **intentional** (`noindex`, now informational): listed, never scored, and no longer checked for title/description/H1/thin content — nor counted in title duplicates. Status, redirect, broken-link, security and hreflang checks still run on it.

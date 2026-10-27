@@ -18,6 +18,7 @@ import { checkHreflangSite, mergeHreflangEntries, normalizeHreflangUrl, parseHre
 import { normalizeAuditUrl, pickMainQuery } from "@/lib/audit/queryAlign";
 import { isCwvPoor, pickPsiSample, resolvePsiApiKey, runPsiStage } from "@/lib/audit/psi";
 import { withCallContext } from "@/lib/providerLog/context";
+import { canonicalOverride, findGscOrphans, gscPageKey, latestInspections, GSC_INSPECTION_MAX_AGE_DAYS, type InspectionRow } from "@/lib/audit/gscJoin";
 import { hasNoindex, noindexEvidence, noindexNeutralSetting, noindexReasons, summarizeNoindex, type NoindexReason, type NoindexSignals } from "@/lib/audit/noindex";
 import { resolveCaptureBodies } from "@/lib/providerLog/bodies";
 
@@ -263,10 +264,50 @@ type AuditPageRow = {
 interface NoindexContext {
   /** normalizeAuditUrl keys of the site's active sitemap inventory. */
   sitemap: Set<string>;
-  /** normalizeAuditUrl key → web-search impressions/clicks over 28 days. */
-  gsc: Map<string, { impressions: number; clicks: number }>;
   /** The previous completed audit: its date and the URLs it saw as indexable HTML. */
   previous: { date: string; indexable: Set<string> } | null;
+}
+
+type GscTotals = { impressions: number; clicks: number };
+
+/**
+ * Web-search impressions/clicks per page over 28 days, keyed by the URL exactly as GSC reports it.
+ * Page-level rows are the (url, query='') ones; page/query rows would undercount through
+ * anonymised queries. Shared by the noindex triage and the orphan check — one grouped query.
+ */
+async function loadGscPageTotals(siteId: string): Promise<Map<string, GscTotals>> {
+  const rows = await prisma.dailyMetric.groupBy({
+    by: ["url"],
+    where: { siteId, date: { gte: new Date(Date.now() - 28 * 86_400_000) }, searchType: "web", query: "", url: { not: "" } },
+    _sum: { impressions: true, clicks: true },
+  });
+  return new Map(rows.map(row => [String(row.url), {
+    impressions: Number(row._sum?.impressions ?? 0),
+    clicks: Number(row._sum?.clicks ?? 0),
+  }]));
+}
+
+/**
+ * URL Inspection results the instance already holds — the Indexing tab's PageInspection and the
+ * sitemap inventory's google* columns (the only store with Google's chosen canonical). Read, never
+ * fetched: an audit spends no inspection quota.
+ */
+async function loadInspectionRows(siteId: string): Promise<InspectionRow[]> {
+  const since = new Date(Date.now() - GSC_INSPECTION_MAX_AGE_DAYS * 86_400_000);
+  const [pages, sitemap] = await Promise.all([
+    prisma.pageInspection.findMany({
+      where: { siteId, lastInspect: { gte: since } },
+      select: { url: true, status: true, lastInspect: true },
+    }).catch(() => [] as { url: string; status: string; lastInspect: Date }[]),
+    prisma.sitemapUrl.findMany({
+      where: { siteId, googleChecked: { gte: since } },
+      select: { url: true, googleStatus: true, googleChecked: true, googleCanonical: true },
+    }).catch(() => [] as { url: string; googleStatus: string | null; googleChecked: Date | null; googleCanonical: string | null }[]),
+  ]);
+  return [
+    ...pages.map(row => ({ url: row.url, status: row.status, checkedAt: row.lastInspect })),
+    ...sitemap.map(row => ({ url: row.url, status: row.googleStatus, checkedAt: row.googleChecked, googleCanonical: row.googleCanonical })),
+  ];
 }
 
 /**
@@ -275,19 +316,12 @@ interface NoindexContext {
  * reasons to judge by — a missing source never makes a page suspicious.
  */
 async function loadNoindexContext(siteId: string, auditId: string, startedAt: Date): Promise<NoindexContext> {
-  const [sitemapRows, gscRows, previousAudit] = await Promise.all([
+  const [sitemapRows, previousAudit] = await Promise.all([
     prisma.sitemapUrl.findMany({
       where: { siteId, inventoryStatus: { not: "missing" } },
       select: { url: true },
       take: 50_000,
     }).catch(() => [] as { url: string }[]),
-    // Page-level rows are the (url, query='') ones; page/query rows would undercount through
-    // anonymised queries. Web search only — the other types are synced as date rollups.
-    prisma.dailyMetric.groupBy({
-      by: ["url"],
-      where: { siteId, date: { gte: new Date(Date.now() - 28 * 86_400_000) }, searchType: "web", query: "", url: { not: "" } },
-      _sum: { impressions: true, clicks: true },
-    }).catch(() => [] as { url: string; _sum: { impressions: number | null; clicks: number | null } }[]),
     prisma.siteAudit.findFirst({
       where: { siteId, status: "completed", id: { not: auditId }, startedAt: { lt: startedAt } },
       orderBy: { startedAt: "desc" },
@@ -298,16 +332,6 @@ async function loadNoindexContext(siteId: string, auditId: string, startedAt: Da
   for (const row of sitemapRows) {
     const key = normalizeAuditUrl(row.url);
     if (key) sitemap.add(key);
-  }
-  const gsc = new Map<string, { impressions: number; clicks: number }>();
-  for (const row of gscRows) {
-    const key = normalizeAuditUrl(String(row.url));
-    if (!key) continue;
-    const prev = gsc.get(key) ?? { impressions: 0, clicks: 0 };
-    gsc.set(key, {
-      impressions: prev.impressions + Number(row._sum?.impressions ?? 0),
-      clicks: prev.clicks + Number(row._sum?.clicks ?? 0),
-    });
   }
   let previous: NoindexContext["previous"] = null;
   if (previousAudit) {
@@ -320,7 +344,7 @@ async function loadNoindexContext(siteId: string, auditId: string, startedAt: Da
       indexable: new Set(pages.map(page => normalizeAuditUrl(page.url)).filter(Boolean)),
     };
   }
-  return { sitemap, gsc, previous };
+  return { sitemap, previous };
 }
 
 export async function runAudit(auditId: string, opts?: AuditOptions): Promise<void> {
@@ -442,14 +466,25 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
       .filter(([url, r]) => !!r.ex && r.httpStatus === 200 && hasNoindex(robotsOf.get(url) ?? ""))
       .map(([url]) => url);
     const closedSet = new Set(closedUrls);
+    // Search Console's side of the picture (gscJoin.ts): page totals for the noindex triage and
+    // the orphan check, inspections for the two Google-verdict rules. All local reads.
+    const gscTotals = await loadGscPageTotals(audit.siteId).catch(() => new Map<string, GscTotals>());
+    const gscByKey = new Map<string, GscTotals>();
+    for (const [url, totals] of gscTotals) {
+      const key = gscPageKey(url);
+      if (!key) continue;
+      const prev = gscByKey.get(key);
+      gscByKey.set(key, prev ? { impressions: prev.impressions + totals.impressions, clicks: prev.clicks + totals.clicks } : { ...totals });
+    }
+    const inspections = latestInspections(await loadInspectionRows(audit.siteId).catch(() => []));
     const noindexSignalsOf = new Map<string, NoindexSignals>();
     const noindexReasonsOf = new Map<string, NoindexReason[]>();
     if (closedUrls.length) {
       const ctx = await loadNoindexContext(audit.siteId, auditId, audit.startedAt)
-        .catch((): NoindexContext => ({ sitemap: new Set(), gsc: new Map(), previous: null }));
+        .catch((): NoindexContext => ({ sitemap: new Set(), previous: null }));
       for (const url of closedUrls) {
         const key = normalizeAuditUrl(url);
-        const traffic = ctx.gsc.get(key);
+        const traffic = gscByKey.get(gscPageKey(url));
         const signals: NoindexSignals = {
           isRoot: results.get(url)?.depth === 0,
           inSitemap: ctx.sitemap.has(key),
@@ -599,6 +634,7 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
       const isRoot = r.depth === 0;
       const hreflangPage = hreflangFindings.get(url);
       const mainQuery = mainQueryByNorm.get(normalizeAuditUrl(url)) ?? null;
+      const inspection = inspections.get(gscPageKey(url)) ?? null;
       // pickMainQuery applies the ≥ 20 impressions floor — the threshold lives in one place.
       const mainQueryMeetsFloor = mainQuery ? pickMainQuery([mainQuery]) : null;
       const facts: AuditPageFacts = {
@@ -647,6 +683,8 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
         internalInboundLinks: inboundLinks.get(url) ?? 0,
         noindexIntentional: intentionalNoindex.has(url),
         noindexReasons: noindexReasonsOf.get(url) ?? [],
+        gscInspection: inspection ? { indexed: inspection.indexed, status: inspection.status, checkedOn: inspection.checkedOn } : null,
+        gscCanonicalOther: canonicalOverride(url, canonicalAbs.get(url) ?? null, inspection),
       };
       const issues = evaluateAuditPageRules(facts);
       for (const code of issues) bump(code);
@@ -766,6 +804,11 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
       rows.map(row => ({ ...row, intentionalNoindex: intentionalNoindex.has(row.url) })),
       noindexNeutral ? { ignoreRuleIds: new Set(["noindex_suspicious"]) } : {},
     );
+    const gscOrphans = findGscOrphans(gscTotals, results.keys(), root.href, {
+      partial: crawled >= maxPages,
+      // What the crawl was told to skip, and non-page assets, are not orphans.
+      skip: href => isIgnored(href) || !normalizeUrl(href, root),
+    });
     const noindexSummary = summarizeNoindex([...results].map(([url, r]) => ({
       url,
       hasHtml: !!r.ex,
@@ -834,6 +877,9 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
           // Noindex triage — always written, so "no closed pages" is distinguishable from an audit
           // that predates the triage (no key; the UI renders nothing for those).
           noindex: noindexSummary,
+          // GSC pages the crawl never reached (gscJoin.ts). Written only when GSC has page data,
+          // so "no orphans" is distinguishable from "nothing to compare against".
+          ...(gscTotals.size ? { gscOrphans } : {}),
           // Site-wide (not per-page), so it lives in the summary rather than as a row issue. Old
           // audits predating this field simply have no key, and the UI renders nothing for them.
           ...(aiCrawlability ? { aiCrawlability } : {}),
@@ -920,6 +966,10 @@ function buildEvidence(
     html_too_large: `${((facts.htmlBytes ?? 0) / (1024 * 1024)).toFixed(1)} MB HTML`,
     // "query \u001F impressions" — the UI interpolates the localized auditEvidenceQuery template,
     // the Markdown export renders its own English line.
+    gsc_not_indexed: facts.gscInspection ? `${facts.gscInspection.status} · inspected ${facts.gscInspection.checkedOn}` : "",
+    gsc_canonical_other: facts.gscCanonicalOther
+      ? `Google chose ${facts.gscCanonicalOther}${facts.canonical ? ` (declared: ${facts.canonical})` : " (no canonical declared)"}${facts.gscInspection ? ` · inspected ${facts.gscInspection.checkedOn}` : ""}`
+      : "",
     title_query_mismatch: facts.mainQuery ? `${facts.mainQuery.query}\u001F${facts.mainQuery.impressions}` : "",
   };
   const out: Record<string, string> = {};

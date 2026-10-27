@@ -77,6 +77,13 @@ export interface AuditPageFacts {
    */
   noindexIntentional?: boolean;
   noindexReasons?: string[];
+  /**
+   * Search Console's verdict on this URL (gscJoin.ts): the freshest stored URL Inspection, at most
+   * GSC_INSPECTION_MAX_AGE_DAYS old. null/undefined = never inspected, and that is silence.
+   */
+  gscInspection?: { indexed: boolean | null; status: string; checkedOn: string } | null;
+  /** Google's selected canonical when it differs from the declared one (or from the page itself). */
+  gscCanonicalOther?: string | null;
 }
 
 export interface AuditRuleDefinition {
@@ -131,6 +138,12 @@ export const AUDIT_RULES: readonly AuditRuleDefinition[] = [
   // in the previous audit) is the critical finding. Exactly one of the two fires per closed page.
   { id: "noindex", severity: "info", category: "crawlability", titleKey: "auditIssueNoindex", scope: "page", affectsScore: false, evaluate: facts => html(facts) && hasNoindex(facts.robots) && !(facts.noindexReasons?.length) },
   { id: "noindex_suspicious", severity: "critical", category: "crawlability", titleKey: "auditIssueNoindexSuspicious", scope: "page", evaluate: facts => html(facts) && hasNoindex(facts.robots) && (facts.noindexReasons?.length ?? 0) > 0 },
+  // Google's verdict on the page vs what the crawl sees (gscJoin.ts). Facts from Search Console,
+  // but possibly weeks old, so they inform and never move the score; evidence carries the date.
+  // Pages that ask not to be indexed — noindex, or a canonical pointing elsewhere — are expected
+  // to be out of the index and stay silent.
+  { id: "gsc_not_indexed", severity: "warning", category: "crawlability", titleKey: "auditIssueGscNotIndexed", scope: "page", affectsScore: false, evaluate: facts => html(facts) && facts.httpStatus === 200 && !hasNoindex(facts.robots) && !facts.canonicalMismatch && facts.gscInspection?.indexed === false },
+  { id: "gsc_canonical_other", severity: "warning", category: "metadata", titleKey: "auditIssueGscCanonicalOther", scope: "page", affectsScore: false, evaluate: facts => html(facts) && facts.httpStatus === 200 && !hasNoindex(facts.robots) && !!facts.gscCanonicalOther },
   { id: "robots_conflict", severity: "warning", category: "crawlability", titleKey: "auditIssueRobotsConflict", scope: "page", evaluate: facts => html(facts) && facts.robotsConflict },
   { id: "canonical_missing", severity: "warning", category: "metadata", titleKey: "auditIssueCanonicalMissing", scope: "page", indexableOnly: true, affectsScore: false, evaluate: facts => html(facts) && !facts.canonical },
   { id: "canonical_invalid", severity: "warning", category: "metadata", titleKey: "auditIssueCanonicalInvalid", scope: "page", indexableOnly: true, evaluate: facts => html(facts) && facts.canonicalInvalid },

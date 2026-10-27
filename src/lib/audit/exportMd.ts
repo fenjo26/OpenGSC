@@ -140,6 +140,8 @@ const FIXES: Record<string, string> = {
   h1_missing: "Add a single H1 stating what the page is about.",
   h1_multiple: "Keep one H1 and demote the rest to H2.",
   noindex: "Closed from indexing and nothing on the site says it should be open — usually deliberate (cart, login, tag archives). Remove the directive only if this page should rank.",
+  gsc_not_indexed: "Google's latest URL Inspection says this indexable page is not in the index (status and date in the evidence). Check the page is worth indexing — unique, linked internally, in the sitemap — then request indexing in Search Console. A stale \"Excluded by noindex\" or \"Page with redirect\" only needs a re-inspection.",
+  gsc_canonical_other: "Google picked a different URL as the canonical than this page declares. Either the pages are duplicates (consolidate them, or make them clearly different), or signals disagree — align the canonical tag, internal links, sitemap entries and redirects on one URL.",
   noindex_suspicious: "The page carries noindex although the site itself says it should be found (homepage, listed in the sitemap, earning GSC impressions, or indexable in the previous audit — see the evidence). Remove noindex from the meta robots tag or X-Robots-Tag header; if the page is meant to stay closed, drop it from the sitemap instead.",
   robots_conflict: "The robots directives contradict each other (e.g. index and noindex); keep one.",
   canonical_missing: "Add a self-referencing canonical link.",
@@ -212,6 +214,12 @@ export function buildAuditMarkdown(
     if (noindex.suspicious) out.push(`- Noindex on ${noindex.suspicious} page(s) the site says should be open — see \`noindex_suspicious\``);
     if (noindex.intentional) out.push(`- ${noindex.intentional} page(s) closed on purpose — listed under \`noindex\`, not checked for content, not in the health score`);
     if (noindex.neutral) out.push("- Noindex does not affect the health score for this site (site setting)");
+  }
+  // GSC orphans (gscJoin.ts): not crawled rows, so no issue table can carry them — listed here.
+  const orphans = meta.summary?.gscOrphans as { count?: number; partial?: boolean; sample?: { url: string; impressions: number; clicks: number }[] } | undefined;
+  if (orphans?.count) {
+    out.push(`- ${orphans.count} page(s) earn GSC impressions but the crawl never reached them${orphans.partial ? " (the crawl hit its page limit, so some may lie beyond it)" : ""}:`);
+    for (const o of (orphans.sample ?? []).slice(0, 10)) out.push(`  - ${shortUrl(o.url)} — ${o.impressions} impressions, ${o.clicks} clicks / 28 d`);
   }
   out.push("");
 

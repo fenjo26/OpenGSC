@@ -12,6 +12,7 @@ import { buildAuditMarkdown } from "@/lib/audit/exportMd";
 import { downloadFile } from "@/lib/seo/exportFormats";
 import { AUDIT_RULES } from "@/lib/audit/rules";
 import type { NoindexReason, NoindexSummary } from "@/lib/audit/noindex";
+import type { GscOrphanSummary } from "@/lib/audit/gscJoin";
 
 const ISSUE_LABEL_KEYS = Object.fromEntries(AUDIT_RULES.map(rule => [rule.id, rule.titleKey]));
 const SEVERE = new Set(AUDIT_RULES.filter(rule => rule.severity === "critical").map(rule => rule.id));
@@ -203,6 +204,42 @@ function NoindexCard({ data, t, onShow }: { data: NoindexSummary; t: (k: string)
   );
 }
 
+// ─── GSC orphans card ─────────────────────────────────────────────────────────
+// Pages Search Console reports impressions for that the crawl never reached (lib/audit/gscJoin.ts).
+// They are not crawled rows, so they cannot be issue chips; this card is their only place.
+
+const GSC_ORPHAN_CARD_ROWS = 10;
+
+function GscOrphansCard({ data, t }: { data: GscOrphanSummary; t: (k: string) => string }) {
+  if (!data.count) return null;
+  const rows = data.sample.slice(0, GSC_ORPHAN_CARD_ROWS);
+  return (
+    <div className="panel" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+      <div>
+        <div style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)" }}>{t("auditGscOrphansTitle").replace("{n}", String(data.count))}</div>
+        <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginTop: "2px", lineHeight: 1.5 }}>{t("auditGscOrphansSub")}</div>
+        {data.partial && <div style={{ fontSize: "11px", color: "#ff9f0a", marginTop: "4px" }}>{t("auditGscOrphansPartial")}</div>}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+        {rows.map(row => (
+          <div key={row.url} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", fontSize: "12px", minWidth: 0 }}>
+            <a href={row.url} target="_blank" rel="noreferrer"
+              style={{ color: "var(--color-accent-blue)", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+              {row.url.replace(/^https?:\/\/[^/]+/, "") || "/"}
+            </a>
+            <span style={{ flex: "0 0 auto", fontSize: "11px", color: "var(--color-text-tertiary)", whiteSpace: "nowrap" }}>
+              {t("auditGscOrphansStats").replace("{n}", String(row.impressions)).replace("{c}", String(row.clicks))}
+            </span>
+          </div>
+        ))}
+        {data.count > rows.length && (
+          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>{t("auditGscOrphansMore").replace("{n}", String(data.count - rows.length))}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── API response shapes this panel reads ─────────────────────────────────────
 
 /** A row of the audit history list (GET /api/audit). */
@@ -225,6 +262,7 @@ interface AuditSummaryView {
   aiCrawlability?: AiCrawlSummary;
   psi?: PsiSummaryData;
   noindex?: NoindexSummary;
+  gscOrphans?: GscOrphanSummary;
 }
 
 /** A verification finding carried over from the baseline run. */
@@ -804,6 +842,7 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
 
           {/* Noindex triage — above the speed sample: a closed homepage outranks any metric */}
           {summary.noindex && <NoindexCard data={summary.noindex} t={t as (k: string) => string} onShow={filterIssue} />}
+          {summary.gscOrphans && <GscOrphansCard data={summary.gscOrphans} t={t as (k: string) => string} />}
 
           {/* PageSpeed sample — above the issue list: it explains the site's speed, not one page */}
           {summary.psi && <PsiCard data={summary.psi} t={t as (k: string) => string} />}
