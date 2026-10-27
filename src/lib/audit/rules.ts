@@ -1,5 +1,6 @@
 import { META_LIMITS } from "@/lib/seo/metaLimits";
 import { pageMatchesQuery } from "./queryAlign";
+import { hasNoindex } from "./noindex";
 
 export type AuditRuleSeverity = "critical" | "warning" | "info";
 export type AuditRuleCategory = "crawlability" | "metadata" | "content" | "links" | "performance" | "rendering" | "security";
@@ -66,6 +67,16 @@ export interface AuditPageFacts {
   missingSecurityHeaders: number;
   sitemapSeeded: boolean;
   internalInboundLinks: number;
+  /**
+   * Noindex triage (noindex.ts). Only the full crawler can judge intent — it knows the sitemap,
+   * GSC and the previous audit — so both stay unset in the single-page scanner, and unset keeps
+   * the plain `noindex` finding with every other rule evaluated as before.
+   *
+   * noindexIntentional: the page is closed and nothing says it should be open, so the
+   * `indexableOnly` rules skip it. noindexReasons: why a closed page looks like a mistake.
+   */
+  noindexIntentional?: boolean;
+  noindexReasons?: string[];
 }
 
 export interface AuditRuleDefinition {
@@ -76,6 +87,13 @@ export interface AuditRuleDefinition {
   scope: "page" | "site";
   /** False for useful-but-not-universal checks that should not change the established health score. */
   affectsScore?: boolean;
+  /**
+   * Content and metadata quality checks that only make sense for a page meant to be found. A page
+   * closed on purpose (noindexIntentional) is still crawled and its links followed, but a short
+   * title or a missing H1 on a login page is not a finding. Status, redirect, link, security and
+   * hreflang checks never carry this flag: they matter whatever the page's indexing state.
+   */
+  indexableOnly?: boolean;
   evaluate: (facts: AuditPageFacts) => boolean;
 }
 
@@ -99,32 +117,36 @@ export const AUDIT_RULES: readonly AuditRuleDefinition[] = [
   { id: "redirect", severity: "warning", category: "crawlability", titleKey: "auditIssueRedirect", scope: "page", evaluate: facts => facts.httpStatus >= 300 && facts.httpStatus < 400 },
   { id: "redirect_chain", severity: "warning", category: "crawlability", titleKey: "auditIssueRedirectChain", scope: "page", evaluate: facts => facts.redirectHops > 1 && !facts.redirectLoop },
   { id: "redirect_loop", severity: "critical", category: "crawlability", titleKey: "auditIssueRedirectLoop", scope: "page", evaluate: facts => facts.redirectLoop },
-  { id: "title_missing", severity: "warning", category: "metadata", titleKey: "auditIssueTitleMissing", scope: "page", evaluate: facts => html(facts) && !facts.title },
-  { id: "title_too_long", severity: "warning", category: "metadata", titleKey: "auditIssueTitleTooLong", scope: "page", evaluate: facts => html(facts) && facts.title.length > META_LIMITS.title.auditMax },
-  { id: "title_too_short", severity: "warning", category: "metadata", titleKey: "auditIssueTitleTooShort", scope: "page", evaluate: facts => html(facts) && facts.title.length > 0 && facts.title.length < META_LIMITS.title.auditMin },
-  { id: "title_duplicate", severity: "warning", category: "metadata", titleKey: "auditIssueTitleDuplicate", scope: "site", evaluate: facts => html(facts) && facts.titleDuplicate },
-  { id: "description_missing", severity: "warning", category: "metadata", titleKey: "auditIssueDescriptionMissing", scope: "page", evaluate: facts => html(facts) && !facts.metaDescription },
-  { id: "description_too_long", severity: "warning", category: "metadata", titleKey: "auditIssueDescriptionTooLong", scope: "page", evaluate: facts => html(facts) && facts.metaDescription.length > META_LIMITS.description.auditMax },
-  { id: "description_too_short", severity: "warning", category: "metadata", titleKey: "auditIssueDescriptionTooShort", scope: "page", evaluate: facts => html(facts) && facts.metaDescription.length > 0 && facts.metaDescription.length < META_LIMITS.description.auditMin },
-  { id: "h1_missing", severity: "warning", category: "content", titleKey: "auditIssueH1Missing", scope: "page", evaluate: facts => visibleHtml(facts) && facts.h1Count === 0 },
-  { id: "h1_multiple", severity: "warning", category: "content", titleKey: "auditIssueH1Multiple", scope: "page", evaluate: facts => visibleHtml(facts) && facts.h1Count > 1 },
-  { id: "noindex", severity: "critical", category: "crawlability", titleKey: "auditIssueNoindex", scope: "page", evaluate: facts => html(facts) && /(^|[\s,;:])noindex(?=$|[\s,;])/i.test(facts.robots) },
+  { id: "title_missing", severity: "warning", category: "metadata", titleKey: "auditIssueTitleMissing", scope: "page", indexableOnly: true, evaluate: facts => html(facts) && !facts.title },
+  { id: "title_too_long", severity: "warning", category: "metadata", titleKey: "auditIssueTitleTooLong", scope: "page", indexableOnly: true, evaluate: facts => html(facts) && facts.title.length > META_LIMITS.title.auditMax },
+  { id: "title_too_short", severity: "warning", category: "metadata", titleKey: "auditIssueTitleTooShort", scope: "page", indexableOnly: true, evaluate: facts => html(facts) && facts.title.length > 0 && facts.title.length < META_LIMITS.title.auditMin },
+  { id: "title_duplicate", severity: "warning", category: "metadata", titleKey: "auditIssueTitleDuplicate", scope: "site", indexableOnly: true, evaluate: facts => html(facts) && facts.titleDuplicate },
+  { id: "description_missing", severity: "warning", category: "metadata", titleKey: "auditIssueDescriptionMissing", scope: "page", indexableOnly: true, evaluate: facts => html(facts) && !facts.metaDescription },
+  { id: "description_too_long", severity: "warning", category: "metadata", titleKey: "auditIssueDescriptionTooLong", scope: "page", indexableOnly: true, evaluate: facts => html(facts) && facts.metaDescription.length > META_LIMITS.description.auditMax },
+  { id: "description_too_short", severity: "warning", category: "metadata", titleKey: "auditIssueDescriptionTooShort", scope: "page", indexableOnly: true, evaluate: facts => html(facts) && facts.metaDescription.length > 0 && facts.metaDescription.length < META_LIMITS.description.auditMin },
+  { id: "h1_missing", severity: "warning", category: "content", titleKey: "auditIssueH1Missing", scope: "page", indexableOnly: true, evaluate: facts => visibleHtml(facts) && facts.h1Count === 0 },
+  { id: "h1_multiple", severity: "warning", category: "content", titleKey: "auditIssueH1Multiple", scope: "page", indexableOnly: true, evaluate: facts => visibleHtml(facts) && facts.h1Count > 1 },
+  // Noindex triage (noindex.ts): a page closed on purpose is listed for the record and costs
+  // nothing; one the site itself says should be open (homepage, sitemap, GSC traffic, indexable
+  // in the previous audit) is the critical finding. Exactly one of the two fires per closed page.
+  { id: "noindex", severity: "info", category: "crawlability", titleKey: "auditIssueNoindex", scope: "page", affectsScore: false, evaluate: facts => html(facts) && hasNoindex(facts.robots) && !(facts.noindexReasons?.length) },
+  { id: "noindex_suspicious", severity: "critical", category: "crawlability", titleKey: "auditIssueNoindexSuspicious", scope: "page", evaluate: facts => html(facts) && hasNoindex(facts.robots) && (facts.noindexReasons?.length ?? 0) > 0 },
   { id: "robots_conflict", severity: "warning", category: "crawlability", titleKey: "auditIssueRobotsConflict", scope: "page", evaluate: facts => html(facts) && facts.robotsConflict },
-  { id: "canonical_missing", severity: "warning", category: "metadata", titleKey: "auditIssueCanonicalMissing", scope: "page", affectsScore: false, evaluate: facts => html(facts) && !facts.canonical },
-  { id: "canonical_invalid", severity: "warning", category: "metadata", titleKey: "auditIssueCanonicalInvalid", scope: "page", evaluate: facts => html(facts) && facts.canonicalInvalid },
-  { id: "canonical_mismatch", severity: "warning", category: "metadata", titleKey: "auditIssueCanonicalMismatch", scope: "page", evaluate: facts => html(facts) && facts.canonicalMismatch },
-  { id: "thin_content", severity: "warning", category: "content", titleKey: "auditIssueThinContent", scope: "page", evaluate: facts => visibleHtml(facts) && facts.wordCount < 150 },
-  { id: "images_no_alt", severity: "warning", category: "content", titleKey: "auditIssueImagesNoAlt", scope: "page", evaluate: facts => html(facts) && facts.imagesNoAlt > 0 },
+  { id: "canonical_missing", severity: "warning", category: "metadata", titleKey: "auditIssueCanonicalMissing", scope: "page", indexableOnly: true, affectsScore: false, evaluate: facts => html(facts) && !facts.canonical },
+  { id: "canonical_invalid", severity: "warning", category: "metadata", titleKey: "auditIssueCanonicalInvalid", scope: "page", indexableOnly: true, evaluate: facts => html(facts) && facts.canonicalInvalid },
+  { id: "canonical_mismatch", severity: "warning", category: "metadata", titleKey: "auditIssueCanonicalMismatch", scope: "page", indexableOnly: true, evaluate: facts => html(facts) && facts.canonicalMismatch },
+  { id: "thin_content", severity: "warning", category: "content", titleKey: "auditIssueThinContent", scope: "page", indexableOnly: true, evaluate: facts => visibleHtml(facts) && facts.wordCount < 150 },
+  { id: "images_no_alt", severity: "warning", category: "content", titleKey: "auditIssueImagesNoAlt", scope: "page", indexableOnly: true, evaluate: facts => html(facts) && facts.imagesNoAlt > 0 },
   { id: "broken_links", severity: "critical", category: "links", titleKey: "auditIssueBrokenLinks", scope: "page", evaluate: facts => html(facts) && facts.brokenLinkCount > 0 },
-  { id: "orphan_sitemap_page", severity: "warning", category: "links", titleKey: "auditIssueOrphanSitemapPage", scope: "site", affectsScore: false, evaluate: facts => html(facts) && facts.sitemapSeeded && facts.internalInboundLinks === 0 },
+  { id: "orphan_sitemap_page", severity: "warning", category: "links", titleKey: "auditIssueOrphanSitemapPage", scope: "site", indexableOnly: true, affectsScore: false, evaluate: facts => html(facts) && facts.sitemapSeeded && facts.internalInboundLinks === 0 },
   { id: "slow_response", severity: "warning", category: "performance", titleKey: "auditIssueSlowResponse", scope: "page", evaluate: facts => facts.loadMs > 3000 },
-  { id: "js_rendered", severity: "info", category: "rendering", titleKey: "auditIssueJsRendered", scope: "page", evaluate: facts => html(facts) && facts.jsRendered },
-  { id: "viewport_missing", severity: "warning", category: "rendering", titleKey: "auditIssueViewportMissing", scope: "page", evaluate: facts => html(facts) && !facts.viewportPresent },
-  { id: "lang_missing", severity: "info", category: "content", titleKey: "auditIssueLangMissing", scope: "page", evaluate: facts => html(facts) && !facts.htmlLang },
-  { id: "jsonld_invalid", severity: "warning", category: "metadata", titleKey: "auditIssueJsonLdInvalid", scope: "page", evaluate: facts => html(facts) && facts.jsonLdInvalid > 0 },
-  { id: "organization_schema_incomplete", severity: "info", category: "metadata", titleKey: "auditIssueOrganizationSchemaIncomplete", scope: "site", evaluate: facts => html(facts) && facts.isRoot && facts.organizationSchemaIncomplete },
-  { id: "open_graph_incomplete", severity: "info", category: "metadata", titleKey: "auditIssueOpenGraphIncomplete", scope: "page", evaluate: facts => html(facts) && facts.openGraphMissing > 0 },
-  { id: "twitter_card_incomplete", severity: "info", category: "metadata", titleKey: "auditIssueTwitterCardIncomplete", scope: "page", evaluate: facts => html(facts) && facts.twitterCardIncomplete },
+  { id: "js_rendered", severity: "info", category: "rendering", titleKey: "auditIssueJsRendered", scope: "page", indexableOnly: true, evaluate: facts => html(facts) && facts.jsRendered },
+  { id: "viewport_missing", severity: "warning", category: "rendering", titleKey: "auditIssueViewportMissing", scope: "page", indexableOnly: true, evaluate: facts => html(facts) && !facts.viewportPresent },
+  { id: "lang_missing", severity: "info", category: "content", titleKey: "auditIssueLangMissing", scope: "page", indexableOnly: true, evaluate: facts => html(facts) && !facts.htmlLang },
+  { id: "jsonld_invalid", severity: "warning", category: "metadata", titleKey: "auditIssueJsonLdInvalid", scope: "page", indexableOnly: true, evaluate: facts => html(facts) && facts.jsonLdInvalid > 0 },
+  { id: "organization_schema_incomplete", severity: "info", category: "metadata", titleKey: "auditIssueOrganizationSchemaIncomplete", scope: "site", indexableOnly: true, evaluate: facts => html(facts) && facts.isRoot && facts.organizationSchemaIncomplete },
+  { id: "open_graph_incomplete", severity: "info", category: "metadata", titleKey: "auditIssueOpenGraphIncomplete", scope: "page", indexableOnly: true, evaluate: facts => html(facts) && facts.openGraphMissing > 0 },
+  { id: "twitter_card_incomplete", severity: "info", category: "metadata", titleKey: "auditIssueTwitterCardIncomplete", scope: "page", indexableOnly: true, evaluate: facts => html(facts) && facts.twitterCardIncomplete },
   { id: "mixed_content", severity: "warning", category: "security", titleKey: "auditIssueMixedContent", scope: "page", evaluate: facts => html(facts) && facts.isHttps && facts.mixedContentCount > 0 },
   { id: "security_headers_missing", severity: "warning", category: "security", titleKey: "auditIssueSecurityHeadersMissing", scope: "site", affectsScore: false, evaluate: facts => html(facts) && facts.isRoot && facts.missingSecurityHeaders > 0 },
   // ─── hreflang (wave-oct T5): set validity, reciprocity, target health ─────────────
@@ -133,20 +155,20 @@ export const AUDIT_RULES: readonly AuditRuleDefinition[] = [
   // are unknown, and unknown never fires.
   { id: "hreflang_invalid", severity: "warning", category: "metadata", titleKey: "auditIssueHreflangInvalid", scope: "page", evaluate: facts => (facts.hreflangInvalid?.length ?? 0) > 0 },
   { id: "hreflang_no_return", severity: "warning", category: "metadata", titleKey: "auditIssueHreflangNoReturn", scope: "site", evaluate: facts => (facts.hreflangNoReturn?.length ?? 0) > 0 },
-  { id: "hreflang_self_missing", severity: "info", category: "metadata", titleKey: "auditIssueHreflangSelfMissing", scope: "page", affectsScore: false, evaluate: facts => facts.hreflangSelfMissing === true },
+  { id: "hreflang_self_missing", severity: "info", category: "metadata", titleKey: "auditIssueHreflangSelfMissing", scope: "page", indexableOnly: true, affectsScore: false, evaluate: facts => facts.hreflangSelfMissing === true },
   { id: "hreflang_target_bad", severity: "warning", category: "metadata", titleKey: "auditIssueHreflangTargetBad", scope: "page", evaluate: facts => (facts.hreflangTargetBad?.length ?? 0) > 0 },
-  { id: "hreflang_x_default_missing", severity: "info", category: "metadata", titleKey: "auditIssueHreflangXDefaultMissing", scope: "site", affectsScore: false, evaluate: facts => facts.hreflangXDefaultMissing === true },
+  { id: "hreflang_x_default_missing", severity: "info", category: "metadata", titleKey: "auditIssueHreflangXDefaultMissing", scope: "site", indexableOnly: true, affectsScore: false, evaluate: facts => facts.hreflangXDefaultMissing === true },
   // Only the primary subtag is compared (fr vs fr-CA is fine; fr vs en is the real mistake).
-  { id: "lang_hreflang_mismatch", severity: "info", category: "content", titleKey: "auditIssueLangHreflangMismatch", scope: "page", affectsScore: false, evaluate: facts => !!facts.langHreflangMismatch },
+  { id: "lang_hreflang_mismatch", severity: "info", category: "content", titleKey: "auditIssueLangHreflangMismatch", scope: "page", indexableOnly: true, affectsScore: false, evaluate: facts => !!facts.langHreflangMismatch },
   // ─── rendering & performance heuristics (T5) ─────────────────────────────────────
-  { id: "viewport_not_responsive", severity: "warning", category: "rendering", titleKey: "auditIssueViewportNotResponsive", scope: "page", evaluate: facts => html(facts) && facts.viewportPresent && facts.viewportResponsive === false },
-  { id: "images_no_dimensions", severity: "info", category: "performance", titleKey: "auditIssueImagesNoDimensions", scope: "page", affectsScore: false, evaluate: facts => html(facts) && (facts.imagesNoDimensions ?? 0) > 0 },
+  { id: "viewport_not_responsive", severity: "warning", category: "rendering", titleKey: "auditIssueViewportNotResponsive", scope: "page", indexableOnly: true, evaluate: facts => html(facts) && facts.viewportPresent && facts.viewportResponsive === false },
+  { id: "images_no_dimensions", severity: "info", category: "performance", titleKey: "auditIssueImagesNoDimensions", scope: "page", indexableOnly: true, affectsScore: false, evaluate: facts => html(facts) && (facts.imagesNoDimensions ?? 0) > 0 },
   { id: "internal_redirect_links", severity: "warning", category: "links", titleKey: "auditIssueInternalRedirectLinks", scope: "page", evaluate: facts => html(facts) && (facts.internalRedirectLinks?.length ?? 0) > 0 },
-  { id: "html_too_large", severity: "info", category: "performance", titleKey: "auditIssueHtmlTooLarge", scope: "page", affectsScore: false, evaluate: facts => (facts.htmlBytes ?? 0) > 2 * 1024 * 1024 },
+  { id: "html_too_large", severity: "info", category: "performance", titleKey: "auditIssueHtmlTooLarge", scope: "page", indexableOnly: true, affectsScore: false, evaluate: facts => (facts.htmlBytes ?? 0) > 2 * 1024 * 1024 },
   // ─── query alignment & Core Web Vitals (T5) — hints, never score-changing ────────
   // Heuristics on top of real data: they point somewhere, they do not lower the health score.
-  { id: "title_query_mismatch", severity: "info", category: "content", titleKey: "auditIssueTitleQueryMismatch", scope: "page", affectsScore: false, evaluate: facts => html(facts) && facts.mainQuery != null && !pageMatchesQuery(facts.title, facts.h1Text ?? "", facts.mainQuery.query) },
-  { id: "cwv_poor", severity: "warning", category: "performance", titleKey: "auditIssueCwvPoor", scope: "page", affectsScore: false, evaluate: facts => !!facts.cwvPoor },
+  { id: "title_query_mismatch", severity: "info", category: "content", titleKey: "auditIssueTitleQueryMismatch", scope: "page", indexableOnly: true, affectsScore: false, evaluate: facts => html(facts) && facts.mainQuery != null && !pageMatchesQuery(facts.title, facts.h1Text ?? "", facts.mainQuery.query) },
+  { id: "cwv_poor", severity: "warning", category: "performance", titleKey: "auditIssueCwvPoor", scope: "page", indexableOnly: true, affectsScore: false, evaluate: facts => !!facts.cwvPoor },
 ] as const;
 
 export const AUDIT_RULE_IDS = AUDIT_RULES.map(rule => rule.id);
@@ -155,5 +177,7 @@ export const AUDIT_ACTIONABLE_RULE_IDS = new Set(AUDIT_RULES.filter(rule => rule
 export const AUDIT_SCORING_RULE_IDS = new Set(AUDIT_RULES.filter(rule => rule.severity !== "info" && rule.affectsScore !== false).map(rule => rule.id));
 
 export function evaluateAuditPageRules(facts: AuditPageFacts): string[] {
-  return AUDIT_RULES.filter(rule => rule.evaluate(facts)).map(rule => rule.id);
+  return AUDIT_RULES
+    .filter(rule => !(facts.noindexIntentional && rule.indexableOnly) && rule.evaluate(facts))
+    .map(rule => rule.id);
 }

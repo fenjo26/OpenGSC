@@ -8,6 +8,8 @@
 //   traffic_drop  — a site's clicks over the last 7 days fell X%+ vs the previous 7 days
 //   ssl_expiry    — a site's SSL certificate expires within N days (from Site Health data)
 //   audit_score   — a completed site audit came back with health score below N
+//   audit_noindex — the latest audit found the homepage / most of the site / previously indexable
+//                   pages closed with noindex (rides on the audit toggle; see lib/audit/noindex.ts)
 //   lost_link     — referring domains above a DR threshold disappeared from the stored profile
 //   backlink_loss — link losses ran far above this site's own baseline (no fixed threshold)
 //   favorite_link — a link marked favourite was lost, downgraded to nofollow or re-targeted
@@ -23,6 +25,7 @@ import { rawQuery } from "@/lib/db/raw";
 import { resolveCaptureBodies } from '@/lib/providerLog/bodies';
 import { withCallContext } from "@/lib/providerLog/context";
 import { sweepProviderLog } from "@/lib/providerLog/retention";
+import { noindexAlertWorthy, type NoindexSummary } from "@/lib/audit/noindex";
 
 const TICK_MS = 60 * 60 * 1000; // hourly
 
@@ -279,6 +282,20 @@ async function checkUser(userId: string, s: AlertSettings): Promise<Pending[]> {
             title: L.auditTitle(String(siteName.get(site.id))),
             message: L.auditMsg(String(siteName.get(site.id)), Number(sum.healthScore), Number(sum.pagesWithIssues), Number(sum.pages)),
             dedupeKey: `audit_score:${audit.id}`,
+          });
+        }
+        // Noindex is an event, not a score: a homepage that closed or pages that were open last
+        // run. Independent of minScore — a closed homepage on an otherwise clean site scores fine.
+        const noindex = sum?.noindex as NoindexSummary | undefined;
+        if (noindexAlertWorthy(noindex)) {
+          const flipped = (noindex!.sample ?? []).filter(page => page.reasons.includes("was_indexable"));
+          const kind = noindex!.homepage ? "homepage" : noindex!.sitewide ? "sitewide" : "pages";
+          const paths = flipped.slice(0, 3).map(page => page.url.replace(/^https?:\/\/[^/]+/, "") || "/");
+          out.push({
+            type: "audit_noindex", siteId: site.id,
+            title: L.noindexTitle(String(siteName.get(site.id))),
+            message: L.noindexMsg(String(siteName.get(site.id)), kind, flipped.length, paths.join(", ") + (flipped.length > 3 ? " …" : "")),
+            dedupeKey: `audit_noindex:${audit.id}`,
           });
         }
       } catch { /* malformed summary */ }

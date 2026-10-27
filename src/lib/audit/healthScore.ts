@@ -16,6 +16,10 @@ import { AUDIT_RULE_BY_ID, AUDIT_SCORING_RULE_IDS } from "./rules";
  * A single-hop redirect to the same site is not a page — it is how the site reaches one — so it
  * leaves the average entirely. Chains, loops and redirects off the site still count.
  *
+ * A page closed from indexing on purpose (noindex.ts) leaves the average too, unless it carries a
+ * scored finding of its own (a 404, broken links): the owner hid it, so its perfect or imperfect
+ * content says nothing about the site. Rows without the flag — every stored audit — are unaffected.
+ *
  * Invariant (tested): for the same rows, v2 ≥ v1. Recomputing old audits therefore never pushes
  * one below an alert threshold it was above, and the alert's per-audit dedupe stays quiet.
  */
@@ -28,6 +32,17 @@ export interface HealthScoreRow {
   httpStatus: number;
   redirectTo?: string | null;
   issues: string[];
+  /** Closed with noindex and nothing says it should be open — see noindex.ts. */
+  intentionalNoindex?: boolean;
+}
+
+export interface HealthScoreOptions {
+  /**
+   * Rule ids that cost nothing on this run even though the registry scores them — the site-level
+   * "noindex never lowers the score" switch passes noindex_suspicious here. The findings stay in
+   * the report; only the number ignores them.
+   */
+  ignoreRuleIds?: ReadonlySet<string>;
 }
 
 export interface HealthScoreResult {
@@ -40,10 +55,14 @@ export interface HealthScoreResult {
   /** Plain internal redirects left out of the average. */
   redirectsExcluded: number;
   pagesWithScoredIssues: number;
+  /** Intentionally closed pages without a scored finding, left out of the average. */
+  noindexExcluded: number;
 }
 
-export function pageHealthScore(issues: readonly string[]): number {
-  const scored = new Set(issues.filter(id => AUDIT_SCORING_RULE_IDS.has(id)));
+const isScored = (id: string, ignore?: ReadonlySet<string>) => AUDIT_SCORING_RULE_IDS.has(id) && !ignore?.has(id);
+
+export function pageHealthScore(issues: readonly string[], ignore?: ReadonlySet<string>): number {
+  const scored = new Set(issues.filter(id => isScored(id, ignore)));
   let warnings = 0;
   for (const id of scored) {
     if (AUDIT_RULE_BY_ID.get(id)?.severity === "critical") return 0;
@@ -72,15 +91,19 @@ export function isPlainInternalRedirect(row: HealthScoreRow): boolean {
   }
 }
 
-export function computeHealthScore(rows: readonly HealthScoreRow[]): HealthScoreResult {
-  const pagesWithScoredIssues = rows.filter(row => row.issues.some(id => AUDIT_SCORING_RULE_IDS.has(id))).length;
+export function computeHealthScore(rows: readonly HealthScoreRow[], opts: HealthScoreOptions = {}): HealthScoreResult {
+  const ignore = opts.ignoreRuleIds;
+  const hasScored = (row: HealthScoreRow) => row.issues.some(id => isScored(id, ignore));
+  const pagesWithScoredIssues = rows.filter(hasScored).length;
   const healthScoreV1 = rows.length ? Math.round(100 * (1 - pagesWithScoredIssues / rows.length)) : 0;
-  const scoredRows = rows.filter(row => !isPlainInternalRedirect(row));
-  const redirectsExcluded = rows.length - scoredRows.length;
+  const withoutRedirects = rows.filter(row => !isPlainInternalRedirect(row));
+  const redirectsExcluded = rows.length - withoutRedirects.length;
+  const scoredRows = withoutRedirects.filter(row => !(row.intentionalNoindex && !hasScored(row)));
+  const noindexExcluded = withoutRedirects.length - scoredRows.length;
   let healthScore: number;
   if (!rows.length) healthScore = 0; // nothing crawled — same as v1
-  else if (!scoredRows.length) healthScore = 100; // only clean internal redirects: nothing wrong was seen
-  else healthScore = Math.round(scoredRows.reduce((sum, row) => sum + pageHealthScore(row.issues), 0) / scoredRows.length);
+  else if (!scoredRows.length) healthScore = 100; // only clean internal redirects or pages closed on purpose: nothing wrong was seen
+  else healthScore = Math.round(scoredRows.reduce((sum, row) => sum + pageHealthScore(row.issues, ignore), 0) / scoredRows.length);
   return {
     healthScore,
     healthScoreV1,
@@ -88,5 +111,6 @@ export function computeHealthScore(rows: readonly HealthScoreRow[]): HealthScore
     scoredPages: scoredRows.length,
     redirectsExcluded,
     pagesWithScoredIssues,
+    noindexExcluded,
   };
 }

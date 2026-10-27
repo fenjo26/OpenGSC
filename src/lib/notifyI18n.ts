@@ -21,6 +21,9 @@ type Tpl = {
   sslMsg: (site: string, days: number) => string;
   auditTitle: (site: string) => string;
   auditMsg: (site: string, score: number, bad: number, total: number) => string;
+  // Noindex triage (lib/audit/noindex.ts): kind says what closed; pages = "/a, /b" for kind "pages".
+  noindexTitle: (site: string) => string;
+  noindexMsg: (site: string, kind: "homepage" | "sitewide" | "pages", count: number, pages: string) => string;
   lostLinkTitle: (site: string) => string;
   lostLinkMsg: (site: string, count: number, domains: string, minDr: number) => string;
   // digest
@@ -172,6 +175,8 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     lostLinkMsg: (site, count, domains, minDr) => `*${site}* — ${count} referring domain(s) with DR ≥ ${minDr} disappeared: ${domains}.`,
     auditTitle: site => `🩺 Low audit score: ${site}`,
     auditMsg: (site, score, bad, total) => `*${site}* — site audit health score is ${score}/100 (${bad}/${total} pages with issues). Check the Audit tab.`,
+    noindexTitle: site => `🚫 Noindex on ${site}`,
+    noindexMsg: (site, kind, count, pages) => `*${site}* — ${kind === "homepage" ? `the homepage is closed from indexing (noindex) — search engines will drop it` : kind === "sitewide" ? `almost every page is closed from indexing (noindex)` : `noindex appeared on ${count} page(s) that were indexable before: ${pages}`}. Check the Audit tab.`,
     digestTitleAll: "📊 OpenGSC digest — all sites",
     digestTitleTag: tag => `📊 OpenGSC digest — tag "${tag}"`,
     digestWindow: (days, date) => `_Last ${days} days vs previous ${days} days · ${date}_`,
@@ -288,6 +293,8 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     lostLinkMsg: (site, count, domains, minDr) => `*${site}* — пропало ссылающихся доменов с DR ≥ ${minDr}: ${count} (${domains}).`,
     auditTitle: site => `🩺 Низкий балл аудита: ${site}`,
     auditMsg: (site, score, bad, total) => `*${site}* — health score аудита ${score}/100 (${bad}/${total} страниц с проблемами). Загляните во вкладку Аудит.`,
+    noindexTitle: site => `🚫 Noindex на ${site}`,
+    noindexMsg: (site, kind, count, pages) => `*${site}* — ${kind === "homepage" ? `главная закрыта от индексации (noindex) — поисковики её выкинут` : kind === "sitewide" ? `почти все страницы закрыты от индексации (noindex)` : `noindex появился на страницах, которые раньше индексировались (${count}): ${pages}`}. Загляните во вкладку Аудит.`,
     digestTitleAll: "📊 Дайджест OpenGSC — все сайты",
     digestTitleTag: tag => `📊 Дайджест OpenGSC — тег «${tag}»`,
     digestWindow: (days, date) => `_Последние ${days} дн. vs предыдущие ${days} дн. · ${date}_`,
@@ -404,6 +411,8 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     lostLinkMsg: (site, count, domains, minDr) => `*${site}* — зникло доменів з DR ≥ ${minDr}: ${count} (${domains}).`,
     auditTitle: site => `🩺 Низький бал аудиту: ${site}`,
     auditMsg: (site, score, bad, total) => `*${site}* — health score аудиту ${score}/100 (${bad}/${total} сторінок із проблемами). Перегляньте вкладку Аудит.`,
+    noindexTitle: site => `🚫 Noindex на ${site}`,
+    noindexMsg: (site, kind, count, pages) => `*${site}* — ${kind === "homepage" ? `головну закрито від індексації (noindex) — пошукові системи її викинуть` : kind === "sitewide" ? `майже всі сторінки закрито від індексації (noindex)` : `noindex з'явився на сторінках, які раніше індексувалися (${count}): ${pages}`}. Перегляньте вкладку Аудит.`,
     digestTitleAll: "📊 Дайджест OpenGSC — всі сайти",
     digestTitleTag: tag => `📊 Дайджест OpenGSC — тег «${tag}»`,
     digestWindow: (days, date) => `_Останні ${days} дн. vs попередні ${days} дн. · ${date}_`,
@@ -520,6 +529,8 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     lostLinkMsg: (site, count, domains, minDr) => `*${site}* — ${count} domaine(s) référent(s) avec DR ≥ ${minDr} ont disparu : ${domains}.`,
     auditTitle: site => `🩺 Score d'audit bas : ${site}`,
     auditMsg: (site, score, bad, total) => `*${site}* — le score de santé de l'audit est de ${score}/100 (${bad}/${total} pages avec des problèmes). Voir l'onglet Audit.`,
+    noindexTitle: site => `🚫 Noindex sur ${site}`,
+    noindexMsg: (site, kind, count, pages) => `*${site}* — ${kind === "homepage" ? `la page d'accueil est fermée à l'indexation (noindex) — les moteurs vont la retirer` : kind === "sitewide" ? `presque toutes les pages sont fermées à l'indexation (noindex)` : `noindex est apparu sur ${count} page(s) auparavant indexable(s) : ${pages}`}. Voir l'onglet Audit.`,
     digestTitleAll: "📊 Résumé OpenGSC — tous les sites",
     digestTitleTag: tag => `📊 Résumé OpenGSC — étiquette « ${tag} »`,
     digestWindow: (days, date) => `_Les ${days} derniers jours vs les ${days} jours précédents · ${date}_`,
@@ -636,6 +647,8 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     lostLinkMsg: (site, count, domains, minDr) => `*${site}* — ${count} dominio(s) referente(s) con DR ≥ ${minDr} desaparecieron: ${domains}.`,
     auditTitle: site => `🩺 Puntaje de auditoría bajo: ${site}`,
     auditMsg: (site, score, bad, total) => `*${site}* — el puntaje de salud de la auditoría es ${score}/100 (${bad}/${total} páginas con problemas). Revisa la pestaña Auditoría.`,
+    noindexTitle: site => `🚫 Noindex en ${site}`,
+    noindexMsg: (site, kind, count, pages) => `*${site}* — ${kind === "homepage" ? `la página de inicio está cerrada a la indexación (noindex) — los buscadores la eliminarán` : kind === "sitewide" ? `casi todas las páginas están cerradas a la indexación (noindex)` : `noindex apareció en ${count} página(s) que antes eran indexables: ${pages}`}. Revisa la pestaña Auditoría.`,
     digestTitleAll: "📊 Resumen de OpenGSC — todos los sitios",
     digestTitleTag: tag => `📊 Resumen de OpenGSC — etiqueta «${tag}»`,
     digestWindow: (days, date) => `_Últimos ${days} días vs ${days} días anteriores · ${date}_`,
@@ -752,6 +765,8 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     lostLinkMsg: (site, count, domains, minDr) => `*${site}* — ${count} verweisende Domain(s) mit DR ≥ ${minDr} sind verschwunden: ${domains}.`,
     auditTitle: site => `🩺 Niedrige Audit-Punktzahl: ${site}`,
     auditMsg: (site, score, bad, total) => `*${site}* — der Health-Score des Audits liegt bei ${score}/100 (${bad}/${total} Seiten mit Problemen). Siehe den Audit-Tab.`,
+    noindexTitle: site => `🚫 Noindex auf ${site}`,
+    noindexMsg: (site, kind, count, pages) => `*${site}* — ${kind === "homepage" ? `die Startseite ist für die Indexierung gesperrt (noindex) — Suchmaschinen werden sie entfernen` : kind === "sitewide" ? `fast alle Seiten sind für die Indexierung gesperrt (noindex)` : `noindex ist auf ${count} zuvor indexierbaren Seite(n) aufgetaucht: ${pages}`}. Siehe den Audit-Tab.`,
     digestTitleAll: "📊 OpenGSC-Übersicht — alle Websites",
     digestTitleTag: tag => `📊 OpenGSC-Übersicht — Tag „${tag}"`,
     digestWindow: (days, date) => `_Letzte ${days} Tage vs. vorherige ${days} Tage · ${date}_`,
@@ -868,6 +883,8 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     lostLinkMsg: (site, count, domains, minDr) => `*${site}* — 消失了 ${count} 个 DR ≥ ${minDr} 的引荐域名：${domains}。`,
     auditTitle: site => `🩺 审计分数偏低：${site}`,
     auditMsg: (site, score, bad, total) => `*${site}* — 站点审计健康分为 ${score}/100（${bad}/${total} 个页面存在问题）。请查看「审计」标签页。`,
+    noindexTitle: site => `🚫 ${site} 出现 noindex`,
+    noindexMsg: (site, kind, count, pages) => `*${site}* — ${kind === "homepage" ? `首页已禁止索引（noindex），搜索引擎会将其移除` : kind === "sitewide" ? `几乎所有页面都已禁止索引（noindex）` : `${count} 个之前可索引的页面出现了 noindex：${pages}`}。请查看「审计」标签页。`,
     digestTitleAll: "📊 OpenGSC 摘要 —— 全部站点",
     digestTitleTag: tag => `📊 OpenGSC 摘要 —— 标签「${tag}」`,
     digestWindow: (days, date) => `_最近 ${days} 天 vs 前 ${days} 天 · ${date}_`,
@@ -984,6 +1001,8 @@ export const NOTIFY_L: Record<NotifyLang, Tpl> = {
     lostLinkMsg: (site, count, domains, minDr) => `*${site}* — ${count} verwijzend domein(en) met DR ≥ ${minDr} verdwenen: ${domains}.`,
     auditTitle: site => `🩺 Lage auditscore: ${site}`,
     auditMsg: (site, score, bad, total) => `*${site}* — de gezondheidsscore van de site-audit is ${score}/100 (${bad}/${total} pagina's met problemen). Bekijk het tabblad Audit.`,
+    noindexTitle: site => `🚫 Noindex op ${site}`,
+    noindexMsg: (site, kind, count, pages) => `*${site}* — ${kind === "homepage" ? `de homepage is afgesloten voor indexering (noindex) — zoekmachines zullen hem verwijderen` : kind === "sitewide" ? `bijna alle pagina's zijn afgesloten voor indexering (noindex)` : `noindex verscheen op ${count} pagina('s) die eerder indexeerbaar waren: ${pages}`}. Bekijk het tabblad Audit.`,
     digestTitleAll: "📊 OpenGSC-samenvatting — alle websites",
     digestTitleTag: tag => `📊 OpenGSC-samenvatting — tag "${tag}"`,
     digestWindow: (days, date) => `_Laatste ${days} dagen vs voorgaande ${days} dagen · ${date}_`,

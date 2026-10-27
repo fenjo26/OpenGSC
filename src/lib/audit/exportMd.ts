@@ -102,6 +102,7 @@ function detailFor(code: string, p: AuditPage): string {
     case "h1_missing": return "0 H1";
     case "h1_multiple": return `${p.h1Count ?? 0} H1`;
     case "noindex": return "noindex";
+    case "noindex_suspicious": return "noindex";
     case "canonical_mismatch": return `canonical → ${p.canonical || "?"}`;
     case "thin_content": return `${p.wordCount ?? 0} words`;
     case "images_no_alt": return `${p.imagesNoAlt ?? 0} images`;
@@ -138,7 +139,8 @@ const FIXES: Record<string, string> = {
   description_too_short: "Expand to roughly 150–160 characters: state the page's benefit, add geo or commercial markers, and end with a call to action.",
   h1_missing: "Add a single H1 stating what the page is about.",
   h1_multiple: "Keep one H1 and demote the rest to H2.",
-  noindex: "If this page should rank, remove the noindex directive from the meta robots tag or X-Robots-Tag header.",
+  noindex: "Closed from indexing and nothing on the site says it should be open — usually deliberate (cart, login, tag archives). Remove the directive only if this page should rank.",
+  noindex_suspicious: "The page carries noindex although the site itself says it should be found (homepage, listed in the sitemap, earning GSC impressions, or indexable in the previous audit — see the evidence). Remove noindex from the meta robots tag or X-Robots-Tag header; if the page is meant to stay closed, drop it from the sitemap instead.",
   robots_conflict: "The robots directives contradict each other (e.g. index and noindex); keep one.",
   canonical_missing: "Add a self-referencing canonical link.",
   canonical_invalid: "The canonical URL is malformed or relative; use an absolute, resolvable URL.",
@@ -201,6 +203,16 @@ export function buildAuditMarkdown(
     : `- Crawled: ${meta.pagesCrawled ?? pages.length} pages (the whole site as far as the crawler could reach it)`);
   if (meta.finishedAt) out.push(`- Finished: ${new Date(meta.finishedAt).toISOString().replace("T", " ").slice(0, 16)}`);
   if (meta.summary?.healthScore != null) out.push(`- Health score: ${meta.summary.healthScore}/100`);
+  // Noindex triage (noindex.ts) — in the header block, because "the homepage is closed" changes how
+  // every other line of the report should be read. English like the rest of the developer output.
+  const noindex = meta.summary?.noindex as { pages?: number; suspicious?: number; intentional?: number; homepage?: boolean; sitewide?: boolean; htmlPages?: number; neutral?: boolean } | undefined;
+  if (noindex?.pages) {
+    if (noindex.homepage) out.push("- **Noindex: the homepage is closed from indexing** — search engines will drop it");
+    else if (noindex.sitewide) out.push(`- **Noindex: ${noindex.pages} of ${noindex.htmlPages} pages are closed from indexing** — check the template or the CMS setting`);
+    if (noindex.suspicious) out.push(`- Noindex on ${noindex.suspicious} page(s) the site says should be open — see \`noindex_suspicious\``);
+    if (noindex.intentional) out.push(`- ${noindex.intentional} page(s) closed on purpose — listed under \`noindex\`, not checked for content, not in the health score`);
+    if (noindex.neutral) out.push("- Noindex does not affect the health score for this site (site setting)");
+  }
   out.push("");
 
   // AI Crawlability — site-wide section, emitted before the page-level issues so a reader skimming

@@ -620,7 +620,7 @@ export const DATA_TOOLS: McpTool[] = [
       type: "object",
       properties: {
         site: { type: "string", description: "Optional: restrict to one site (domain or id)" },
-        type: { type: "string", description: "Optional: rank_drop | traffic_drop | ssl_expiry | audit_score" },
+        type: { type: "string", description: "Optional: rank_drop | traffic_drop | ssl_expiry | audit_score | audit_noindex" },
         days: { type: "number", description: "Lookback window in days (default 30, max 365)" },
         limit: { type: "number", description: "Max alerts (default 50, max 200)" },
       },

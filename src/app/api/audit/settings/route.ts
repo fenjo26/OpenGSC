@@ -10,6 +10,9 @@ import { validateCron } from "@/lib/cron";
 //                 retryAttempts, retryDelayMin } }
 //      { siteId, site: { mode: "inherit" | "custom" | "off" | "cron", intervalDays?, cron? } }
 //        — per-site scheduling override for one site. Both shapes can ride in one request.
+//      { siteId, noindexNeutral: boolean }
+//        — per-site switch: noindex findings stay in the report but never lower the health
+//          score (lib/audit/noindex.ts). Sent without `site` it changes nothing else.
 //
 // Cron expressions (5 fields, UTC) are validated here and on the client; the scheduler
 // additionally treats an invalid stored expression as absent rather than guessing.
@@ -45,6 +48,20 @@ export async function POST(req: Request) {
       const saved = await getAuditQueueSettings(userId);
       await pruneAuditHistory(userId, saved.historyKeep).catch(() => {});
     }
+  }
+
+  // A lone noindex switch must not fall into the schedule branch below: with no `site` block it
+  // would read as mode "inherit" and silently reset the site's schedule.
+  if (b.siteId && !b.site && typeof b.noindexNeutral === "boolean") {
+    const siteId = String(b.siteId);
+    const site = await prisma.site.findFirst({ where: { id: siteId, userId }, select: { id: true, auditSettings: true } });
+    if (!site) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    let existing: Record<string, unknown> = {};
+    try { existing = site.auditSettings ? JSON.parse(site.auditSettings) : {}; } catch { /* nothing to preserve */ }
+    const next: Record<string, unknown> = { ...existing, noindexNeutral: b.noindexNeutral };
+    if (!b.noindexNeutral) delete next.noindexNeutral;
+    await prisma.site.update({ where: { id: siteId }, data: { auditSettings: JSON.stringify(next) } });
+    return NextResponse.json({ queue: await getAuditQueueSettings(userId), noindexNeutral: b.noindexNeutral });
   }
 
   if (b.siteId) {

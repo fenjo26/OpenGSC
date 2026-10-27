@@ -3,6 +3,16 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
+## [Unreleased]
+
+### Changed — Site Audit tells a deliberate noindex from a forgotten one
+
+- **Noindex no longer sinks the health score.** Until now every noindex page was a critical finding scored 0, so a correctly configured site with closed cart, login, thank-you or tag pages looked broken, and the one noindex that mattered drowned among them. A closed page is now judged by facts the instance already holds: it is **suspicious** (`noindex_suspicious`, critical) when it is the homepage, is listed in the site's sitemap, earns impressions in Search Console (≥ 20 over 28 days), or was indexable in the previous completed audit. Every other closed page is **intentional** (`noindex`, now informational): listed, never scored, and no longer checked for title/description/H1/thin content — nor counted in title duplicates. Status, redirect, broken-link, security and hreflang checks still run on it.
+- **A noindex card on the Audit tab** — red when the homepage or nearly the whole site (≥ 80 % of HTML pages) is closed, a list of suspicious pages with the reason for each, and one grey line for the pages closed on purpose. The Markdown export carries the same verdict in its header.
+- **"Don't lower the health score for noindex pages"** — a per-site checkbox under the crawl options, stored in the site's audit settings so scheduled and bulk audits honour it too. Findings stay in the report; none of them costs points and no noindex alert is sent.
+- **New alert `audit_noindex`** (on with the audit alert): fires once per audit when the homepage is closed, nearly the whole site is, or pages that were indexable in the previous audit got noindex. A page merely sitting in the sitemap with noindex shows in the tab every run but is not pushed to Telegram every week.
+- `robots: none` is now recognised as noindex. The summary records `noindexExcluded` next to `redirectsExcluded`. Stored audits are not rescored; the first audit after the update will usually score higher on sites with many closed pages. No schema change.
+
 ## [1.12.0] — 2026-10-22
 
 ### Added — PBN: restore a dropped domain from Wayback, place money-site links in its real content (`/pbn`)

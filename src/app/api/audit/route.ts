@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { recoverStaleAudits } from "@/lib/audit/crawler";
 import { kickAuditQueue } from "@/lib/audit/queue";
 import { toAuditHistoryRow } from "@/lib/audit/historyRows";
+import { noindexNeutralSetting } from "@/lib/audit/noindex";
 
 // Site Audit — built-in crawler, no external APIs.
 // POST /api/audit { siteId, maxPages? }  → queue an audit (the pump starts it as soon as
@@ -135,6 +136,8 @@ export async function GET(req: Request) {
     },
   });
   return NextResponse.json({
+    // The site's noindex switch, so the Audit tab can show its checkbox in the right state.
+    noindexNeutral: noindexNeutralSetting(site.auditSettings),
     audits: audits.map(a => ({
       ...a,
       summary: a.summary ? JSON.parse(a.summary) : null,
