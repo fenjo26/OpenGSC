@@ -84,6 +84,12 @@ export interface AuditPageFacts {
   gscInspection?: { indexed: boolean | null; status: string; checkedOn: string } | null;
   /** Google's selected canonical when it differs from the declared one (or from the page itself). */
   gscCanonicalOther?: string | null;
+  /**
+   * Duplicates among pages expected to be unique (duplicates.ts): 200 HTML, not closed on purpose,
+   * not canonicalised elsewhere. Unset in the single-page scanner, which has nothing to compare.
+   */
+  descriptionDuplicate?: boolean;
+  nearDuplicate?: { with: string; similarity: number; others: number } | null;
 }
 
 export interface AuditRuleDefinition {
@@ -128,6 +134,9 @@ export const AUDIT_RULES: readonly AuditRuleDefinition[] = [
   { id: "title_too_long", severity: "warning", category: "metadata", titleKey: "auditIssueTitleTooLong", scope: "page", indexableOnly: true, evaluate: facts => html(facts) && facts.title.length > META_LIMITS.title.auditMax },
   { id: "title_too_short", severity: "warning", category: "metadata", titleKey: "auditIssueTitleTooShort", scope: "page", indexableOnly: true, evaluate: facts => html(facts) && facts.title.length > 0 && facts.title.length < META_LIMITS.title.auditMin },
   { id: "title_duplicate", severity: "warning", category: "metadata", titleKey: "auditIssueTitleDuplicate", scope: "site", indexableOnly: true, evaluate: facts => html(facts) && facts.titleDuplicate },
+  { id: "description_duplicate", severity: "warning", category: "metadata", titleKey: "auditIssueDescriptionDuplicate", scope: "site", indexableOnly: true, evaluate: facts => html(facts) && facts.descriptionDuplicate === true },
+  // Similarity is a measured threshold, not a verifiable fact, so it informs without scoring.
+  { id: "content_near_duplicate", severity: "warning", category: "content", titleKey: "auditIssueContentNearDuplicate", scope: "site", indexableOnly: true, affectsScore: false, evaluate: facts => html(facts) && !!facts.nearDuplicate },
   { id: "description_missing", severity: "warning", category: "metadata", titleKey: "auditIssueDescriptionMissing", scope: "page", indexableOnly: true, evaluate: facts => html(facts) && !facts.metaDescription },
   { id: "description_too_long", severity: "warning", category: "metadata", titleKey: "auditIssueDescriptionTooLong", scope: "page", indexableOnly: true, evaluate: facts => html(facts) && facts.metaDescription.length > META_LIMITS.description.auditMax },
   { id: "description_too_short", severity: "warning", category: "metadata", titleKey: "auditIssueDescriptionTooShort", scope: "page", indexableOnly: true, evaluate: facts => html(facts) && facts.metaDescription.length > 0 && facts.metaDescription.length < META_LIMITS.description.auditMin },

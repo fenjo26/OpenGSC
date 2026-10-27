@@ -13,6 +13,7 @@ import { downloadFile } from "@/lib/seo/exportFormats";
 import { AUDIT_RULES } from "@/lib/audit/rules";
 import type { NoindexReason, NoindexSummary } from "@/lib/audit/noindex";
 import type { GscOrphanSummary } from "@/lib/audit/gscJoin";
+import type { DuplicateResult } from "@/lib/audit/duplicates";
 
 const ISSUE_LABEL_KEYS = Object.fromEntries(AUDIT_RULES.map(rule => [rule.id, rule.titleKey]));
 const SEVERE = new Set(AUDIT_RULES.filter(rule => rule.severity === "critical").map(rule => rule.id));
@@ -240,6 +241,48 @@ function GscOrphansCard({ data, t }: { data: GscOrphanSummary; t: (k: string) =>
   );
 }
 
+// ─── Near-duplicate groups card ───────────────────────────────────────────────
+// The per-page chip says "similar to X"; this card shows how the site clusters — a template with
+// the city name swapped shows up here as one big group (lib/audit/duplicates.ts).
+
+function DuplicatesCard({ data, t, onShow }: { data: DuplicateResult["clusters"]; t: (k: string) => string; onShow: (code: string) => void }) {
+  if (!data.count) return null;
+  return (
+    <div className="panel" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "10px", flexWrap: "wrap" }}>
+        <div>
+          <div style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)" }}>
+            {t("auditDupTitle").replace("{p}", String(data.pages)).replace("{n}", String(data.count))}
+          </div>
+          <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginTop: "2px", lineHeight: 1.5 }}>{t("auditDupSub")}</div>
+        </div>
+        <button onClick={() => onShow("content_near_duplicate")}
+          style={{ padding: "4px 10px", borderRadius: "7px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-secondary)", fontSize: "11px", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+          {t("auditNoindexShow")}
+        </button>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+        {data.sample.slice(0, 5).map(cluster => (
+          <div key={cluster.urls[0]} style={{ fontSize: "12px", minWidth: 0 }}>
+            <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)" }}>
+              {t("auditDupRow").replace("{n}", String(cluster.size)).replace("{s}", String(Math.round(cluster.minSimilarity * 100)))}
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 10px", marginTop: "2px" }}>
+              {cluster.urls.map(url => (
+                <a key={url} href={url} target="_blank" rel="noreferrer"
+                  style={{ color: "var(--color-accent-blue)", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>
+                  {url.replace(/^https?:\/\/[^/]+/, "") || "/"}
+                </a>
+              ))}
+              {cluster.size > cluster.urls.length && <span style={{ color: "var(--color-text-tertiary)" }}>…</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── API response shapes this panel reads ─────────────────────────────────────
 
 /** A row of the audit history list (GET /api/audit). */
@@ -263,6 +306,7 @@ interface AuditSummaryView {
   psi?: PsiSummaryData;
   noindex?: NoindexSummary;
   gscOrphans?: GscOrphanSummary;
+  duplicates?: DuplicateResult["clusters"];
 }
 
 /** A verification finding carried over from the baseline run. */
@@ -843,6 +887,7 @@ export default function SiteAuditPanel({ siteDbId }: { siteDbId: string }) {
           {/* Noindex triage — above the speed sample: a closed homepage outranks any metric */}
           {summary.noindex && <NoindexCard data={summary.noindex} t={t as (k: string) => string} onShow={filterIssue} />}
           {summary.gscOrphans && <GscOrphansCard data={summary.gscOrphans} t={t as (k: string) => string} />}
+          {summary.duplicates && <DuplicatesCard data={summary.duplicates} t={t as (k: string) => string} onShow={filterIssue} />}
 
           {/* PageSpeed sample — above the issue list: it explains the site's speed, not one page */}
           {summary.psi && <PsiCard data={summary.psi} t={t as (k: string) => string} />}

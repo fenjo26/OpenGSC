@@ -18,6 +18,7 @@ import { checkHreflangSite, mergeHreflangEntries, normalizeHreflangUrl, parseHre
 import { normalizeAuditUrl, pickMainQuery } from "@/lib/audit/queryAlign";
 import { isCwvPoor, pickPsiSample, resolvePsiApiKey, runPsiStage } from "@/lib/audit/psi";
 import { withCallContext } from "@/lib/providerLog/context";
+import { contentShingles, descriptionKey, findNearDuplicates } from "@/lib/audit/duplicates";
 import { canonicalOverride, findGscOrphans, gscPageKey, latestInspections, GSC_INSPECTION_MAX_AGE_DAYS, type InspectionRow } from "@/lib/audit/gscJoin";
 import { hasNoindex, noindexEvidence, noindexNeutralSetting, noindexReasons, summarizeNoindex, type NoindexReason, type NoindexSignals } from "@/lib/audit/noindex";
 import { resolveCaptureBodies } from "@/lib/providerLog/bodies";
@@ -235,7 +236,13 @@ async function loadSitemapHreflangs(root: URL): Promise<Map<string, HreflangEntr
 }
 
 /** What fetchPage produces plus the crawl bookkeeping attached in the BFS loop. */
-type CrawledPage = PageResult & { depth: number; ex?: AuditHtmlSignals; internalTargets?: string[] };
+type CrawledPage = PageResult & {
+  depth: number;
+  ex?: AuditHtmlSignals;
+  internalTargets?: string[];
+  /** Hashed main-content shingles for the near-duplicate pass (duplicates.ts); freed after it. */
+  shingles?: Uint32Array;
+};
 
 /** One SiteAuditPage row as held in memory — arrays stay arrays until the storage boundary. */
 type AuditPageRow = {
@@ -415,6 +422,7 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
         if (page.html) {
           const ex = extractAuditHtml(page.html);
           entry.ex = ex;
+          if (page.httpStatus === 200) entry.shingles = contentShingles(page.html);
           entry.internalTargets = [];
           for (const href of ex.hrefs) {
             const u = normalizeUrl(href, new URL(item.url));
@@ -500,12 +508,28 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
     // their business. In the neutral case the suspicious finding still fires — it is just free.
     const intentionalNoindex = new Set(closedUrls.filter(url => noindexNeutral || !(noindexReasonsOf.get(url)?.length)));
 
+    // Pages expected to be unique: 200 HTML, not closed on purpose, and not canonicalised to
+    // another URL — a page naming another canonical has declared itself a duplicate already
+    // (pagination, sort/filter variants), so pairing it is noise. Title, description and content
+    // duplicates are all counted over this set only.
+    const canonicalElsewhere = (url: string, r: CrawledPage) => {
+      if (!r.ex?.canonical) return false;
+      try { return gscPageKey(new URL(r.ex.canonical, url).href) !== gscPageKey(url); } catch { return false; }
+    };
+    const uniqueExpected = new Set([...results]
+      .filter(([url, r]) => !!r.ex && r.httpStatus === 200 && !intentionalNoindex.has(url) && !canonicalElsewhere(url, r))
+      .map(([url]) => url));
     const titleCount = new Map<string, number>();
-    for (const [url, r] of results) {
-      if (intentionalNoindex.has(url)) continue;
-      const t = r.ex?.title?.toLowerCase().trim();
+    const descriptionCount = new Map<string, number>();
+    for (const url of uniqueExpected) {
+      const r = results.get(url);
+      const t = r?.ex?.title?.toLowerCase().trim();
       if (t) titleCount.set(t, (titleCount.get(t) ?? 0) + 1);
+      const d = descriptionKey(r?.ex?.metaDesc ?? "");
+      if (d) descriptionCount.set(d, (descriptionCount.get(d) ?? 0) + 1);
     }
+    const duplicates = findNearDuplicates([...uniqueExpected].map(url => ({ url, shingles: results.get(url)?.shingles ?? new Uint32Array() })));
+    for (const r of results.values()) delete r.shingles; // the arrays served their one purpose
     const inboundLinks = new Map<string, number>();
     for (const [source, result] of results) {
       for (const target of new Set(result.internalTargets ?? [])) {
@@ -646,7 +670,9 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
         redirectHops: redirect.hops,
         redirectLoop: redirect.loop,
         title: r.ex?.title ?? "",
-        titleDuplicate: !!r.ex?.title && !intentionalNoindex.has(url) && (titleCount.get(r.ex.title.toLowerCase().trim()) ?? 0) > 1,
+        titleDuplicate: !!r.ex?.title && uniqueExpected.has(url) && (titleCount.get(r.ex.title.toLowerCase().trim()) ?? 0) > 1,
+        descriptionDuplicate: uniqueExpected.has(url) && (descriptionCount.get(descriptionKey(r.ex?.metaDesc ?? "")) ?? 0) > 1,
+        nearDuplicate: duplicates.byUrl.get(url) ?? null,
         metaDescription: r.ex?.metaDesc ?? "",
         robots,
         robotsConflict: robotsDirectivesConflict(robots),
@@ -877,6 +903,9 @@ export async function runAudit(auditId: string, opts?: AuditOptions): Promise<vo
           // Noindex triage — always written, so "no closed pages" is distinguishable from an audit
           // that predates the triage (no key; the UI renders nothing for those).
           noindex: noindexSummary,
+          // Near-duplicate content groups (duplicates.ts) — the per-page findings say "similar to
+          // X", this says how the site clusters.
+          duplicates: duplicates.clusters,
           // GSC pages the crawl never reached (gscJoin.ts). Written only when GSC has page data,
           // so "no orphans" is distinguishable from "nothing to compare against".
           ...(gscTotals.size ? { gscOrphans } : {}),
@@ -969,6 +998,10 @@ function buildEvidence(
     gsc_not_indexed: facts.gscInspection ? `${facts.gscInspection.status} · inspected ${facts.gscInspection.checkedOn}` : "",
     gsc_canonical_other: facts.gscCanonicalOther
       ? `Google chose ${facts.gscCanonicalOther}${facts.canonical ? ` (declared: ${facts.canonical})` : " (no canonical declared)"}${facts.gscInspection ? ` · inspected ${facts.gscInspection.checkedOn}` : ""}`
+      : "",
+    description_duplicate: facts.metaDescription.slice(0, 90),
+    content_near_duplicate: facts.nearDuplicate
+      ? `${Math.round(facts.nearDuplicate.similarity * 100)}% similar to ${facts.nearDuplicate.with}${facts.nearDuplicate.others > 1 ? ` (+${facts.nearDuplicate.others - 1} more in the group)` : ""}`
       : "",
     title_query_mismatch: facts.mainQuery ? `${facts.mainQuery.query}\u001F${facts.mainQuery.impressions}` : "",
   };

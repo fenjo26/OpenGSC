@@ -5,6 +5,12 @@ All notable changes to OpenGSC. Dates are release dates; the version shown in
 
 ## [Unreleased]
 
+### Added — Site Audit finds duplicate descriptions and near-duplicate content
+
+- **`content_near_duplicate`** — pages whose main content (`<main>`, else `<article>`, else the body without header, nav, footer, aside and forms) is ≥ 80 % similar to another page, measured on 3-word shingles after removing text present on ≥ 80 % of pages (site chrome). Tuned for the case that matters most: a route or city page generated from a template with only the place name swapped (≈ 86 % similar) is caught; two different texts on the same topic are not. MinHash + LSH keeps a 5,000-page crawl to seconds, and every reported pair is confirmed on the exact shingle sets. Informative (`affectsScore: false`) — similarity is a measured threshold, not a fact. Evidence names the most similar page; a card on the Audit tab shows the groups.
+- **`description_duplicate`** — two or more pages with the same meta description (scored, like `title_duplicate`).
+- **Duplicates are counted only among pages that should be unique**: 200 HTML, not closed on purpose, and not canonicalised to another URL. This also applies to `title_duplicate` now — pagination and sort/filter variants that point their canonical elsewhere no longer pair up as duplicate titles.
+
 ### Added — Site Audit checks the crawl against Search Console
 
 - **`gsc_not_indexed`** — an indexable page (200, no noindex, self-canonical) that the latest stored URL Inspection reports as out of Google's index, with the coverage state and inspection date as evidence.

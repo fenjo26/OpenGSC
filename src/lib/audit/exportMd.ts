@@ -97,6 +97,7 @@ function detailFor(code: string, p: AuditPage): string {
     case "title_too_short": return `${(p.title || "").length} chars`;
     case "title_duplicate": return p.title || "";
     case "description_missing": return "no description";
+    case "description_duplicate": return p.metaDescription || "";
     case "description_too_long": return `${(p.metaDescription || "").length} chars`;
     case "description_too_short": return `${(p.metaDescription || "").length} chars`;
     case "h1_missing": return "0 H1";
@@ -134,6 +135,8 @@ const FIXES: Record<string, string> = {
   title_too_long: "Trim to roughly 60 characters so it is not truncated in search results.",
   title_too_short: "Expand to roughly 50–60 characters: lead with the main keyword, then a USP, geo or commercial marker.",
   title_duplicate: "Two pages claim the same title; differentiate them or consolidate the pages.",
+  description_duplicate: "Several pages share this meta description; write one per page that states what that page specifically offers.",
+  content_near_duplicate: "The main content is nearly the same as another page's (see the evidence). Merge the pages and 301 the weaker one, point its canonical at the stronger one, or rewrite it so it answers a different query — a template with only the city name swapped counts as a duplicate.",
   description_missing: "Add a meta description; without one Google writes its own from the page.",
   description_too_long: "Trim to roughly 155 characters.",
   description_too_short: "Expand to roughly 150–160 characters: state the page's benefit, add geo or commercial markers, and end with a call to action.",
@@ -214,6 +217,12 @@ export function buildAuditMarkdown(
     if (noindex.suspicious) out.push(`- Noindex on ${noindex.suspicious} page(s) the site says should be open — see \`noindex_suspicious\``);
     if (noindex.intentional) out.push(`- ${noindex.intentional} page(s) closed on purpose — listed under \`noindex\`, not checked for content, not in the health score`);
     if (noindex.neutral) out.push("- Noindex does not affect the health score for this site (site setting)");
+  }
+  // Near-duplicate groups (duplicates.ts) — the per-page tables show pairs; this shows the clusters.
+  const dups = meta.summary?.duplicates as { count?: number; pages?: number; sample?: { size: number; minSimilarity: number; urls: string[] }[] } | undefined;
+  if (dups?.count) {
+    out.push(`- ${dups.pages} page(s) form ${dups.count} group(s) of near-duplicate content:`);
+    for (const c of (dups.sample ?? []).slice(0, 5)) out.push(`  - ${c.size} pages, ≥ ${Math.round(c.minSimilarity * 100)}% similar: ${c.urls.map(shortUrl).join(", ")}${c.size > c.urls.length ? " …" : ""}`);
   }
   // GSC orphans (gscJoin.ts): not crawled rows, so no issue table can carry them — listed here.
   const orphans = meta.summary?.gscOrphans as { count?: number; partial?: boolean; sample?: { url: string; impressions: number; clicks: number }[] } | undefined;
