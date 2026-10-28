@@ -1017,6 +1017,53 @@ than this paragraph can. Everything else in the list reads data this instance al
   dark themes follow the same tokens as the rest of the app.
 - `npm run check` also verifies release metadata and seven-locale key parity.
 
+### Added
+
+**Properties removed from Search Console now leave the dashboard**
+
+Delete a property in Search Console and it used to stay on the dashboard forever. Replacing
+nine banned domains left nine dead cards sitting among the live ones, dragging the portfolio
+totals down and showing a flat line nobody could act on.
+
+The cause was that site discovery only ever inserted. `GET /api/gsc/sites` upserted everything
+Google returned and did nothing at all about rows Google had stopped returning, and there was no
+way to remove a site by hand either — no endpoint, no button. Once a row was in the `Site` table
+it was there for good.
+
+Sites Google no longer lists are now moved to an **Archive** group, collapsed at the bottom of
+the dashboard. Archiving is soft on purpose: everything already collected for that domain —
+metrics, audits, tracked keywords, backlinks, Clarity snapshots — stays in the database and stays
+queryable, which matters when the domain was replaced rather than abandoned and you still want to
+compare the new one against it. Each row has **Restore**, and **Delete** for permanent removal
+once the history is genuinely not needed. New `Site.archivedAt` — **run `npx prisma db push`
+after updating**.
+
+Reconciliation runs in two places, so it does not depend on anyone opening a browser: in the
+dashboard's own site fetch, and in `runGscSync()`, which means a scheduled sync on a headless
+instance keeps the list honest by itself. It works in both directions — a property that comes
+back (re-verified, or the same domain added again) leaves the archive on the next pass.
+
+It will not archive on a partial read. Every linked account has to have answered without error
+and the list has to be non-empty, and in `runGscSync()` a failed `sites.list` disqualifies that
+user entirely rather than just the one account. The alternative is a dashboard that empties
+itself because a token expired overnight, which looks exactly like losing your data.
+
+### Changed
+
+**Archived sites are excluded from the background schedulers**
+
+A dead domain was still being checked on schedule. The rank scheduler spent paid SERP calls on
+it, the AEO scheduler spent AI calls, Clarity collection logged a daily failure against a project
+receiving no traffic, and the alert scheduler fired a traffic-drop alert on every run — because
+traffic going to zero is precisely what a removed property does.
+
+All four now skip archived sites, as does the per-site metric work in `/api/gsc/portfolio`, which
+returns a zeroed payload for them instead of running two queries and a sparkline calculation that
+can only ever draw a flat line. Archived rows are still sent to the client, because that is what
+the Archive group lists.
+
+`runGscSync()` itself never touched them — it walks Google's list, and they are not on it.
+
 ## [1.3.0] — 2026-08-09
 
 ### Fixed
@@ -1208,55 +1255,6 @@ so a cheap volume refresh cannot bury a KD that cost ten times as much.
 It was DataForSEO-only. It now routes through the same `keywordSource` layer, and the provider is
 folded into the `DemandSearch` cache key as a prefix (`ahrefs:seed|…`), reusing the namespace
 pattern `aeo/mentions` already established with `llm:` — no schema migration needed.
-
-## [1.13.0] — 2026-10-27
-
-### Added
-
-**Properties removed from Search Console now leave the dashboard**
-
-Delete a property in Search Console and it used to stay on the dashboard forever. Replacing
-nine banned domains left nine dead cards sitting among the live ones, dragging the portfolio
-totals down and showing a flat line nobody could act on.
-
-The cause was that site discovery only ever inserted. `GET /api/gsc/sites` upserted everything
-Google returned and did nothing at all about rows Google had stopped returning, and there was no
-way to remove a site by hand either — no endpoint, no button. Once a row was in the `Site` table
-it was there for good.
-
-Sites Google no longer lists are now moved to an **Archive** group, collapsed at the bottom of
-the dashboard. Archiving is soft on purpose: everything already collected for that domain —
-metrics, audits, tracked keywords, backlinks, Clarity snapshots — stays in the database and stays
-queryable, which matters when the domain was replaced rather than abandoned and you still want to
-compare the new one against it. Each row has **Restore**, and **Delete** for permanent removal
-once the history is genuinely not needed. New `Site.archivedAt` — **run `npx prisma db push`
-after updating**.
-
-Reconciliation runs in two places, so it does not depend on anyone opening a browser: in the
-dashboard's own site fetch, and in `runGscSync()`, which means a scheduled sync on a headless
-instance keeps the list honest by itself. It works in both directions — a property that comes
-back (re-verified, or the same domain added again) leaves the archive on the next pass.
-
-It will not archive on a partial read. Every linked account has to have answered without error
-and the list has to be non-empty, and in `runGscSync()` a failed `sites.list` disqualifies that
-user entirely rather than just the one account. The alternative is a dashboard that empties
-itself because a token expired overnight, which looks exactly like losing your data.
-
-### Changed
-
-**Archived sites are excluded from the background schedulers**
-
-A dead domain was still being checked on schedule. The rank scheduler spent paid SERP calls on
-it, the AEO scheduler spent AI calls, Clarity collection logged a daily failure against a project
-receiving no traffic, and the alert scheduler fired a traffic-drop alert on every run — because
-traffic going to zero is precisely what a removed property does.
-
-All four now skip archived sites, as does the per-site metric work in `/api/gsc/portfolio`, which
-returns a zeroed payload for them instead of running two queries and a sparkline calculation that
-can only ever draw a flat line. Archived rows are still sent to the client, because that is what
-the Archive group lists.
-
-`runGscSync()` itself never touched them — it walks Google's list, and they are not on it.
 
 ## [1.2.2] — 2026-08-05
 
