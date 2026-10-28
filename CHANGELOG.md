@@ -3,6 +3,15 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
+## [1.13.1] — 2026-10-28
+
+### Security — Next.js 16.3.8 → 16.4.3
+
+- **Two critical unauthenticated RCEs fixed.** Next.js 16.4.1 is the October out-of-band security release closing GHSA-vcvr-r3jv-pc5j (RCE in the `next/og` ImageResponse chain) and the sharp/librsvg dependency chain (CVE-2026-96889, GHSA-wq5f-xc86-pv6w); every version in 16.0.0–16.4.0 was affected. `sharp` was already pinned at the patched 0.35.5, so only the framework needed the bump — 16.4.3 is the latest patch on top. `eslint-config-next` follows in lockstep.
+- **`npm audit` does not report these advisories**, so the bump is explicit in `package.json` rather than waiting for a dependency scan to flag it.
+- No app changes were needed for the 16.4 line (the app already uses the `proxy` convention and does not use `next/image` or `revalidateTag`), and the full check suite passes unchanged.
+- **No database changes** — update is `update.sh` as usual, without `prisma db push`. While you are on the server: this release is a good moment for the OS-level round too — NGINX (October batch, CVSS 9.2), Node.js 22.23.4 / 24.22.1 (Brotli RCE) and a kernel reboot.
+
 ## [1.13.0] — 2026-10-27
 
 ### Added — Server log analysis: who actually crawls the site
