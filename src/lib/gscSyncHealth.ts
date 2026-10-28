@@ -339,12 +339,16 @@ export function formatSyncFailureAlert(
 ): string {
   const copy = ALERT[lang] ?? ALERT.en;
   const kind = input.kind;
+  // Chinese labels use a full-width colon, the same mark as 「站点：」. A half-width
+  // colon after 原因/建议 was the odd one out in the Telegram text.
+  const label = (name: string, value: string) =>
+    lang === "zh" ? `${name}：${value}` : `${name}: ${value}`;
   return [
     copy.failTitle(input.consecutive),
     "",
     siteLine(copy, input.sites, lang),
-    `${copy.reasonLabel}: ${copy.reason[kind]}`,
-    `${copy.actionLabel}: ${copy.action[kind]}`,
+    label(copy.reasonLabel, copy.reason[kind]),
+    label(copy.actionLabel, copy.action[kind]),
   ].join("\n");
 }
 

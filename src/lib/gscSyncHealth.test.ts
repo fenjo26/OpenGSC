@@ -110,6 +110,11 @@ test("the failure alert names the site, the cause, and the reauth step, in Chine
   assert.match(zh, /example\.com/);
   assert.match(zh, /授权已失效/);
   assert.match(zh, /重新授权/);
+  assert.match(zh, /站点：/);
+  assert.match(zh, /原因：/);
+  assert.match(zh, /建议：/);
+  assert.doesNotMatch(zh, /原因:/);
+  assert.doesNotMatch(zh, /建议:/);
   assert.doesNotMatch(zh, /at\s+\//);
 
   const en = formatSyncFailureAlert("en", { sites: [], kind: "reauth", consecutive: 2 });
