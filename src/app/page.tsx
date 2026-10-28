@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { signIn } from "next-auth/react";
 import {
   Search, EyeOff, Star, ExternalLink,
   ArrowUpDown, SlidersHorizontal, 
@@ -17,6 +18,7 @@ import { usePrivacy } from "@/lib/PrivacyContext";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { useHealthStatus } from "@/components/SiteHealthPanel";
 import { loadSyncedAt, rememberSyncedAt, fetchSyncState, watchSync, type SyncState } from "@/lib/syncedAt";
+import { formatLastSuccessStamp, lastSuccessState } from "@/lib/gscSyncHealth";
 import { marketFor } from "@/lib/seo/market";
 import { usePersistedState, isGscPeriod, isIsoDate, isSearchType } from "@/lib/usePersistedState";
 import { getAhrefsDrKey } from "@/lib/seo/keys";
@@ -793,23 +795,29 @@ function PortfolioPageContent() {
   // tab that started it.
   const settleSync = (s: SyncState) => {
     refetchPortfolio();
-    if (s.needsReauth) {
+    // Any account error, any site error, and a revoked token stay on screen. The old
+    // path treated "some sites synced" and "completed with errors" as success, then
+    // cleared the warning after half a minute — which is how a dead refresh token
+    // looked like a finished sync.
+    const authDead = s.needsReauth || s.failureKind === "reauth";
+    const failed = authDead || s.accountErrors > 0 || s.siteErrors > 0;
+    if (authDead) {
       setSyncStatus("reauth");
       setSyncWarning("reauth");
-      setTimeout(() => setSyncStatus("idle"), 30_000);
-    } else if (s.accountErrors > 0 && s.sitesSynced === 0) {
-      setSyncStatus("error");
-      setSyncWarning("error");
-      setTimeout(() => setSyncStatus("idle"), 30_000);
-    } else {
-      // The server's completion time, not this tab's clock — the tab only hears about it on the
-      // next poll, up to fifteen seconds later.
-      const at = s.completedAt ?? new Date();
-      setSyncedAt(at);
-      rememberSyncedAt(at);
-      setSyncStatus("done");
-      setTimeout(() => setSyncStatus("idle"), 5_000);
+      return;
     }
+    if (failed) {
+      setSyncStatus("error");
+      setSyncWarning(s.failureKind === "quota" ? "quota" : s.failureKind === "network" ? "network" : "error");
+      return;
+    }
+    // The server's completion time, not this tab's clock — the tab only hears about it on the
+    // next poll, up to fifteen seconds later.
+    const at = s.completedAt ?? s.lastSuccessAt ?? new Date();
+    setSyncedAt(at);
+    rememberSyncedAt(at);
+    setSyncStatus("done");
+    setTimeout(() => setSyncStatus("idle"), 5_000);
   };
 
   const stopWatch = useRef<(() => void) | null>(null);
@@ -839,10 +847,17 @@ function PortfolioPageContent() {
   useEffect(() => {
     let cancelled = false;
     fetchSyncState().then(s => {
-      if (cancelled || !s?.syncing) return;
-      setSyncStatus("syncing");
-      stopWatch.current?.();
-      stopWatch.current = watchSync(settleSync, () => setSyncStatus("idle"));
+      if (cancelled || !s) return;
+      if (s.syncing) {
+        setSyncStatus("syncing");
+        stopWatch.current?.();
+        stopWatch.current = watchSync(settleSync, () => setSyncStatus("idle"));
+        return;
+      }
+      // A failure stored from the last run (including one that happened before this
+      // process restarted) is shown immediately. Waiting for the next click is how
+      // four days of invalid_grant went unnoticed.
+      if (s.needsReauth || s.accountErrors > 0 || s.siteErrors > 0) settleSync(s);
     });
     return () => { cancelled = true; };
     // settleSync closes over setState functions and refetchPortfolio, all of which are recreated
@@ -1745,6 +1760,34 @@ function PortfolioPageContent() {
           </div>
         </div>
 
+        {/* Last successful GSC sync — not the newest DailyMetric date. GSC data lags 2–3 days,
+            so a metric date would go yellow every morning on a healthy site. */}
+        {engine === "google" && (() => {
+          const state = lastSuccessState(site.lastGscSyncAt);
+          const warn = state !== "fresh";
+          const label = state === "never"
+            ? t("dashLastSuccessNever")
+            : t("dashLastSuccessAt").replace("{time}", formatLastSuccessStamp(new Date(site.lastGscSyncAt)));
+          return (
+            <div
+              title={t("dashLastSuccessHint")}
+              style={{
+                alignSelf: "flex-start",
+                fontSize: "10px",
+                fontWeight: 700,
+                lineHeight: 1.3,
+                padding: "2px 6px",
+                borderRadius: "4px",
+                background: warn ? "rgba(245,158,11,0.16)" : "rgba(255,255,255,0.04)",
+                color: warn ? "#F59E0B" : "var(--color-text-secondary)",
+                border: warn ? "1px solid rgba(245,158,11,0.45)" : "1px solid transparent",
+              }}
+            >
+              {label}
+            </div>
+          );
+        })()}
+
         {/* Chart */}
         <MultiMetricChart data={site.data} activeMetrics={activeMetrics} prevTrend={prevTrend && comparison !== "disabled"} candles={chartTypePref === "candle"} />
 
@@ -2072,20 +2115,37 @@ function PortfolioPageContent() {
 
       {/* ── Sync warning banner ── */}
       {syncWarning && (
-        <div style={{ margin: "8px 0 0", padding: "10px 16px", borderRadius: "10px", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", display: "flex", alignItems: "center", gap: "10px" }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+        <div style={{
+          margin: "8px 0 0", padding: "10px 16px", borderRadius: "10px",
+          background: syncWarning === "reauth" ? "rgba(239,68,68,0.08)" : "rgba(245,158,11,0.10)",
+          border: `1px solid ${syncWarning === "reauth" ? "rgba(239,68,68,0.25)" : "rgba(245,158,11,0.40)"}`,
+          display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap",
+        }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={syncWarning === "reauth" ? "#EF4444" : "#D97706"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
             <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
           </svg>
-          <div style={{ flex: 1 }}>
+          <div style={{ flex: "1 1 220px", display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
             {syncWarning === "reauth" ? (
               <>
-                <span style={{ fontSize: "13px", fontWeight: 600, color: "#EF4444" }}>{t("dashSyncFailedReauth")}</span>
-                <span style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginLeft: "6px" }}>
-                  {t("dashGoToSettings1")} <a href="/settings" style={{ color: "#3B82F6", textDecoration: "underline" }}>{t("navSettings")}</a> {t("dashGoToSettings2")}
-                </span>
+                <span style={{ fontSize: "13px", fontWeight: 700, color: "#EF4444" }}>{t("dashSyncAuthExpired")}</span>
+                <button
+                  type="button"
+                  onClick={() => signIn("google", { callbackUrl: "/" })}
+                  style={{
+                    padding: "6px 12px", borderRadius: "8px", border: "1px solid #EF4444",
+                    background: "#EF4444", color: "#fff", fontSize: "12px", fontWeight: 700,
+                    cursor: "pointer", whiteSpace: "nowrap",
+                  }}
+                >
+                  {t("dashSyncReauth")}
+                </button>
               </>
             ) : (
-              <span style={{ fontSize: "13px", fontWeight: 600, color: "#EF4444" }}>{t("dashSyncErrorsLog")}</span>
+              <span style={{ fontSize: "13px", fontWeight: 700, color: "#B45309" }}>
+                {syncWarning === "quota" ? t("dashSyncFailedQuota")
+                  : syncWarning === "network" ? t("dashSyncFailedNetwork")
+                  : t("dashSyncFailedGeneric")}
+              </span>
             )}
           </div>
           <button onClick={() => setSyncWarning(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", padding: "2px" }}>

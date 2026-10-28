@@ -197,6 +197,11 @@ model Site {
   // Null until the first sync that writes query history. See src/lib/gsc/queryHistoryPlan.ts.
   queryHistoryFrom DateTime?
 
+  // When this property's GSC sync last succeeded. Updated only after the web rollup
+  // call returns — never from the newest DailyMetric date. Search Console data lags
+  // 2–3 days, so a metric date would paint every healthy site yellow each morning.
+  lastGscSyncAt    DateTime?
+
   // Dashboard decluttering, as workspace properties rather than browser state. A hidden site
   // drops out of the site-wide opportunity reports (striking distance, cannibalization, decay)
   // the same way an archived one does — hiding is how you shelve a property you no longer work

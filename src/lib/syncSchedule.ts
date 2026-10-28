@@ -10,6 +10,22 @@
 // moment nobody is looking at it.
 
 import { rawQuery, rawExec } from "@/lib/db/raw";
+import type { SyncFailureKind, SyncHealthState } from "@/lib/gscSyncHealth";
+
+export type { SyncFailureKind, SyncHealthState };
+
+/**
+ * The last run the dashboard should describe. Written on every finished sync, success
+ * or not. `failureKind` is null when the run had nothing to warn about.
+ */
+export type SyncOutcome = {
+  at: string;
+  sitesSynced: number;
+  accountErrors: number;
+  siteErrors: number;
+  needsReauth: boolean;
+  failureKind: SyncFailureKind | null;
+};
 
 export type SyncSchedule = {
   enabled: boolean;
@@ -29,6 +45,16 @@ export type SyncSchedule = {
    * from this morning. Two screens disagreeing about the same event.
    */
   lastCompletedAt?: string | null;
+  /**
+   * What the last finished sync actually did. Survives a restart, unlike the in-memory
+   * `lastSyncResult`, so a revoked token is still on screen the next morning.
+   */
+  lastOutcome?: SyncOutcome | null;
+  /**
+   * Consecutive scheduled-sync failures. Manual syncs do not touch it. `alerted` is set
+   * only after Telegram accepted the one message for this streak.
+   */
+  syncHealth?: SyncHealthState | null;
 };
 
 export const DEFAULT_SYNC_SCHEDULE: SyncSchedule = {
@@ -37,6 +63,8 @@ export const DEFAULT_SYNC_SCHEDULE: SyncSchedule = {
   timeZone: "UTC",
   lastRunAt: null,
   lastCompletedAt: null,
+  lastOutcome: null,
+  syncHealth: null,
 };
 
 export async function getSyncSchedule(userId: string): Promise<SyncSchedule> {
@@ -65,22 +93,52 @@ export function normalise(input: Partial<SyncSchedule>, current: SyncSchedule): 
     // `current`, so that saving the form cannot erase them by omission.
     lastRunAt: current.lastRunAt,
     lastCompletedAt: current.lastCompletedAt ?? null,
+    lastOutcome: current.lastOutcome ?? null,
+    syncHealth: current.syncHealth ?? null,
   };
 }
 
 /**
- * Remember that a sync finished, for every user whose account it covered.
+ * Remember how a sync ended, for every user whose account it covered.
  *
  * A run is instance-wide, so there is no single owner to attribute it to; writing it to each
- * synced user's row keeps the answer available to whoever asks. Failures are ignored on purpose:
- * a timestamp that did not save is not a reason to treat a completed sync as failed.
+ * synced user's row keeps the answer available to whoever asks. A timestamp that did not save
+ * is not a reason to treat the run as failed — the catch below ignores that.
+ *
+ * `lastCompletedAt` moves only when the run had no account or site errors. A revoked
+ * token used to stamp "completed just now", and the button then showed that time as if
+ * the data were fresh. The outcome itself is always stored, so the warning survives
+ * the process restart that wipes the in-memory result.
  */
-export async function recordSyncCompleted(userIds: string[], when: Date): Promise<void> {
-  const stamp = when.toISOString();
+export async function recordSyncFinished(
+  userIds: string[],
+  outcome: {
+    when: Date;
+    sitesSynced: number;
+    accountErrors: number;
+    siteErrors: number;
+    needsReauth: boolean;
+    failureKind: SyncFailureKind | null;
+  },
+): Promise<void> {
+  const failed = outcome.accountErrors > 0 || outcome.siteErrors > 0 || outcome.needsReauth;
+  const stamp = outcome.when.toISOString();
+  const lastOutcome: SyncOutcome = {
+    at: stamp,
+    sitesSynced: outcome.sitesSynced,
+    accountErrors: outcome.accountErrors,
+    siteErrors: outcome.siteErrors,
+    needsReauth: outcome.needsReauth || outcome.failureKind === "reauth",
+    failureKind: failed ? (outcome.failureKind ?? "other") : null,
+  };
   for (const userId of new Set(userIds)) {
     try {
       const current = await getSyncSchedule(userId);
-      await saveSyncSchedule(userId, { ...current, lastCompletedAt: stamp });
+      await saveSyncSchedule(userId, {
+        ...current,
+        lastCompletedAt: failed ? (current.lastCompletedAt ?? null) : stamp,
+        lastOutcome,
+      });
     } catch { /* column missing, or the row went away mid-run */ }
   }
 }

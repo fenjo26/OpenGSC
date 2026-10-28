@@ -12,6 +12,7 @@
 // what OpenGSC is — that distinction never comes up.
 
 import { runGscSync, isSyncInProgress } from "@/lib/gscSync";
+import { noteScheduledSyncResult } from "@/lib/gscSyncAlerts";
 import { getSyncSchedule, saveSyncSchedule, isDue } from "@/lib/syncSchedule";
 import { rawQuery } from "@/lib/db/raw";
 import { resolveCaptureBodies } from '@/lib/providerLog/bodies';
@@ -52,7 +53,15 @@ async function tick() {
   // instance-wide `OPENGSC_LOG_BODIES` override turns capture on here. Reading the first due
   // user's setting would store everybody's payloads on one person's say-so.
   const captureBodies = await resolveCaptureBodies(null);
-  await withCallContext({ userId: null, feature: "sync-cron", captureBodies }, () => runGscSync());
+  const result = await withCallContext({ userId: null, feature: "sync-cron", captureBodies }, () => runGscSync());
+
+  // Manual syncs do not come through here, so a dashboard click cannot reset the streak
+  // or send this alert. Two consecutive scheduled failures produce one Telegram message.
+  if (result) {
+    await noteScheduledSyncResult(due, result).catch(err => {
+      console.warn("[sync-cron] could not record the failure streak:", err);
+    });
+  }
 
   // Written after the run, not before: a run that crashed halfway should be retried on the next
   // tick rather than counted as this day's sync.

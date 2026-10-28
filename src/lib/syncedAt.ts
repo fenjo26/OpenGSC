@@ -17,13 +17,19 @@
 
 const KEY = "gsc_synced_at";
 
+export type SyncFailureKind = "reauth" | "quota" | "network" | "other";
+
 export type SyncState = {
   syncing: boolean;
   startedAt: Date | null;
   completedAt: Date | null;
+  /** Last run that had no account or site errors. Not the time a failed run finished. */
+  lastSuccessAt: Date | null;
   needsReauth: boolean;
   accountErrors: number;
+  siteErrors: number;
   sitesSynced: number;
+  failureKind: SyncFailureKind | null;
 };
 
 /**
@@ -43,13 +49,19 @@ export async function fetchSyncState(): Promise<SyncState | null> {
       const d = new Date(v);
       return isNaN(d.getTime()) ? null : d;
     };
+    const kind = s?.lastResult?.failureKind;
+    const failureKind: SyncFailureKind | null =
+      kind === "reauth" || kind === "quota" || kind === "network" || kind === "other" ? kind : null;
     return {
       syncing: !!s?.syncing,
       startedAt: date(s?.startedAt),
       completedAt: date(s?.lastResult?.completedAt),
-      needsReauth: !!s?.lastResult?.needsReauth,
+      lastSuccessAt: date(s?.lastSuccessAt),
+      needsReauth: !!s?.lastResult?.needsReauth || failureKind === "reauth",
       accountErrors: Number(s?.lastResult?.accountErrors ?? 0),
+      siteErrors: Number(s?.lastResult?.siteErrors ?? 0),
       sitesSynced: Number(s?.lastResult?.sitesSynced ?? 0),
+      failureKind,
     };
   } catch {
     return null;
@@ -104,7 +116,11 @@ export function watchSync(
  */
 export async function loadSyncedAt(): Promise<Date | null> {
   const state = await fetchSyncState();
-  if (state?.completedAt) return state.completedAt;
+  // A failed run still has a completedAt (when it gave up). That must not become the
+  // label under the button — lastSuccessAt only moves when the run actually worked.
+  if (state?.lastSuccessAt) return state.lastSuccessAt;
+  const failed = !!state && (state.needsReauth || state.accountErrors > 0 || state.siteErrors > 0);
+  if (state?.completedAt && !failed) return state.completedAt;
 
   try {
     const cached = localStorage.getItem(KEY);
