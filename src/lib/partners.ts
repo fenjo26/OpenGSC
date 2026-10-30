@@ -117,6 +117,22 @@ const PARTNERS = [
     tileBg: "#ffffff",
     imgStyle: { maxWidth: "84px", maxHeight: "22px" } as CSSProperties,
   },
+  {
+    id: "9http",
+    name: "9HTTP",
+    href: "https://www.9http.com?ref=opengsc",
+    logo: "/partners/9http-logo.png",
+    tileBg: "#ffffff",
+    imgStyle: { maxWidth: "84px", maxHeight: "30px" } as CSSProperties,
+  },
+  {
+    id: "Sk5data",
+    name: "sk5data",
+    href: "https://www.sk5data.com?ref=opengsc",
+    logo: "/partners/sk5data-logo.png",
+    tileBg: "#ffffff",
+    imgStyle: { maxWidth: "84px", maxHeight: "30px" } as CSSProperties,
+  },
 ] as const satisfies readonly PartnerEntry[];
 
 export type PartnerId = (typeof PARTNERS)[number]["id"];
