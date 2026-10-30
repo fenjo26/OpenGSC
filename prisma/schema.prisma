@@ -706,7 +706,7 @@ model QueryDaily {
 }
 
 // ─── Rank Tracker (SERP position monitoring) ─────────────────────────────────
-// Tracked keywords are checked daily by the in-app scheduler (rankScheduler) via the
+// Tracked keywords are checked by the in-app scheduler (rankScheduler) via the
 // user's configured SERP provider (Serper.dev / DataForSEO — same keys as SEO Tools).
 model TrackedKeyword {
   id            String    @id @default(cuid())
@@ -717,6 +717,10 @@ model TrackedKeyword {
   lang          String    @default("en")      // hl code
   createdAt     DateTime  @default(now())
   lastCheckedAt DateTime?
+  // When a check with no error last wrote the position below. Not lastCheckedAt:
+  // ops scripts set that into the future (2099-01-01) to throttle the scheduler.
+  // The Positions badge reads this column. Null = no successful check yet.
+  lastSuccessfulCheckAt DateTime?
 
   // Denormalized latest state for cheap list rendering
   lastPosition  Int?      // null = not found in scanned depth

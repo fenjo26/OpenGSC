@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkWithFallback, isTransientRankError, type RankAttempt } from "./rankFallback";
+import { checkWithFallback, isTransientRankError, serpMissIsTrusted, untrustedRankMiss, HEALTHY_SERP_RESULTS, type RankAttempt } from "./rankFallback";
 
 const ok = (provider: string, position: number | null = 5): RankAttempt => ({ position, url: position ? "https://a.gr/" : null, depth: 100, provider });
 const err = (provider: string, error: string): RankAttempt => ({ position: null, url: null, depth: 100, provider, error });
@@ -77,4 +77,18 @@ test("no fallback configured: the primary error is stored as is", async () => {
   const r = await checkWithFallback(s.run, "aparser", null, noSleep);
   assert.equal(r.error, "aparser_blocked_or_empty");
   assert.equal(r.attempts, 2);
+});
+
+test("a miss is trusted only at full depth with a healthy result count", () => {
+  assert.equal(HEALTHY_SERP_RESULTS, 5);
+  assert.equal(serpMissIsTrusted({ depth: 50, maxDepth: 50, resultCount: 50, complete: true }), true);
+  assert.equal(serpMissIsTrusted({ depth: 50, maxDepth: 50, resultCount: 5, complete: true }), true);
+  assert.equal(serpMissIsTrusted({ depth: 50, maxDepth: 50, resultCount: 4, complete: true }), false);
+  assert.equal(serpMissIsTrusted({ depth: 30, maxDepth: 50, resultCount: 30, complete: true }), false);
+  assert.equal(serpMissIsTrusted({ depth: 50, maxDepth: 50, resultCount: 20, complete: false }), false);
+  assert.equal(untrustedRankMiss({ position: null, previousPosition: 4, missTrusted: false }), true);
+  assert.equal(untrustedRankMiss({ position: null, previousPosition: 4, missTrusted: true }), false);
+  assert.equal(untrustedRankMiss({ position: null, previousPosition: null, missTrusted: false }), false);
+  assert.equal(untrustedRankMiss({ position: 3, previousPosition: 4, missTrusted: false }), false);
+  assert.equal(untrustedRankMiss({ position: null, previousPosition: 4, missTrusted: false, error: "serper: empty_serp" }), false);
 });

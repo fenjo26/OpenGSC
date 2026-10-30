@@ -73,6 +73,10 @@ export interface ReportTpl {
   improved: string;
   declined: string;
   notCheckedYet: string;
+  /** "Last found: {t}" badge under a rank row — the timestamp of the last successful check. */
+  rankFoundAt: (t: string) => string;
+  /** The same badge when the keyword has never had a successful check. */
+  rankNeverFound: string;
   // local
   location: string;
   organic: string;
@@ -171,6 +175,8 @@ export const REPORT_L: Record<ReportLang, ReportTpl> = {
     query: "Query", page: "Page", change: "Change",
     top3: "Top 3", top10: "Top 10", keyword: "Keyword", positionCol: "Position", improved: "Improved", declined: "Declined",
     notCheckedYet: "Rank tracker has not checked these keywords yet.",
+    rankFoundAt: t => `Last found: ${t}`,
+    rankNeverFound: "Not found yet",
     location: "Location", organic: "Organic", mapPack: "Map pack",
     inPack: n => `#${n} in pack`,
     inPackSummary: n => `${n} keyword(s) inside the map pack (places 1–3).`,
@@ -236,6 +242,8 @@ export const REPORT_L: Record<ReportLang, ReportTpl> = {
     query: "Запрос", page: "Страница", change: "Изменение",
     top3: "Топ-3", top10: "Топ-10", keyword: "Ключевое слово", positionCol: "Позиция", improved: "Выросли", declined: "Упали",
     notCheckedYet: "Трекер позиций ещё не проверял эти ключевые слова.",
+    rankFoundAt: t => `Последнее найденное: ${t}`,
+    rankNeverFound: "Ещё не найдено",
     location: "Локация", organic: "Органика", mapPack: "Map pack",
     inPack: n => `#${n} в pack`,
     inPackSummary: n => `${n} ключевых слов в map pack (места 1–3).`,
@@ -301,6 +309,8 @@ export const REPORT_L: Record<ReportLang, ReportTpl> = {
     query: "Запит", page: "Сторінка", change: "Зміна",
     top3: "Топ-3", top10: "Топ-10", keyword: "Ключове слово", positionCol: "Позиція", improved: "Виросли", declined: "Упали",
     notCheckedYet: "Трекер позицій ще не перевіряв ці ключові слова.",
+    rankFoundAt: t => `Останнє знайдене: ${t}`,
+    rankNeverFound: "Ще не знайдено",
     location: "Локація", organic: "Органіка", mapPack: "Map pack",
     inPack: n => `#${n} у pack`,
     inPackSummary: n => `${n} ключових слів у map pack (місця 1–3).`,
@@ -366,6 +376,8 @@ export const REPORT_L: Record<ReportLang, ReportTpl> = {
     query: "Requête", page: "Page", change: "Évolution",
     top3: "Top 3", top10: "Top 10", keyword: "Mot-clé", positionCol: "Position", improved: "En progression", declined: "En baisse",
     notCheckedYet: "Le suivi de positions n'a pas encore vérifié ces mots-clés.",
+    rankFoundAt: t => `Dernière position vue : ${t}`,
+    rankNeverFound: "Pas encore trouvée",
     location: "Localisation", organic: "Organique", mapPack: "Map pack",
     inPack: n => `#${n} dans le pack`,
     inPackSummary: n => `${n} mot(s)-clé(s) dans le map pack (places 1–3).`,
@@ -431,6 +443,8 @@ export const REPORT_L: Record<ReportLang, ReportTpl> = {
     query: "Consulta", page: "Página", change: "Cambio",
     top3: "Top 3", top10: "Top 10", keyword: "Palabra clave", positionCol: "Posición", improved: "Mejoradas", declined: "En caída",
     notCheckedYet: "El rastreador de posiciones aún no ha comprobado estas palabras clave.",
+    rankFoundAt: t => `Última vez vista: ${t}`,
+    rankNeverFound: "Aún no encontrada",
     location: "Ubicación", organic: "Orgánico", mapPack: "Map pack",
     inPack: n => `#${n} en el pack`,
     inPackSummary: n => `${n} palabra(s) clave dentro del map pack (puestos 1–3).`,
@@ -496,6 +510,8 @@ export const REPORT_L: Record<ReportLang, ReportTpl> = {
     query: "Suchanfrage", page: "Seite", change: "Veränderung",
     top3: "Top 3", top10: "Top 10", keyword: "Keyword", positionCol: "Position", improved: "Gestiegen", declined: "Gefallen",
     notCheckedYet: "Der Rank-Tracker hat diese Keywords noch nicht geprüft.",
+    rankFoundAt: t => `Zuletzt gefunden: ${t}`,
+    rankNeverFound: "Noch nicht gefunden",
     location: "Standort", organic: "Organisch", mapPack: "Map Pack",
     inPack: n => `#${n} im Pack`,
     inPackSummary: n => `${n} Keyword(s) im Map Pack (Plätze 1–3).`,
@@ -561,6 +577,8 @@ export const REPORT_L: Record<ReportLang, ReportTpl> = {
     query: "查询", page: "页面", change: "变化",
     top3: "前 3", top10: "前 10", keyword: "关键词", positionCol: "排名", improved: "上升", declined: "下降",
     notCheckedYet: "排名追踪尚未检查这些关键词。",
+    rankFoundAt: t => `最后查到：${t}`,
+    rankNeverFound: "尚未查到",
     location: "位置", organic: "自然结果", mapPack: "地图包",
     inPack: n => `地图包第 ${n} 位`,
     inPackSummary: n => `${n} 个关键词进入地图包（第 1–3 位）。`,
@@ -626,6 +644,8 @@ export const REPORT_L: Record<ReportLang, ReportTpl> = {
     query: "Zoekwoord", page: "Pagina", change: "Verandering",
     top3: "Top 3", top10: "Top 10", keyword: "Zoekwoord", positionCol: "Positie", improved: "Gestegen", declined: "Gedaald",
     notCheckedYet: "De ranktracker heeft deze zoekwoorden nog niet gecontroleerd.",
+    rankFoundAt: t => `Laatst gevonden: ${t}`,
+    rankNeverFound: "Nog niet gevonden",
     location: "Locatie", organic: "Organisch", mapPack: "Map pack",
     inPack: n => `#${n} in pack`,
     inPackSummary: n => `${n} zoekwoord(en) in de map pack (plaatsen 1–3).`,

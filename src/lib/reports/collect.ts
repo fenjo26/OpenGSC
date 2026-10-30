@@ -186,7 +186,15 @@ export async function collectPages(userId: string, siteId: string, w: ReportWind
 
 // ─── positions (Rank Tracker) ─────────────────────────────────────────────────
 
-export interface KeywordMove { keyword: string; location: string; position: number | null; prevPosition: number | null; change: number | null }
+export interface KeywordMove {
+  keyword: string;
+  location: string;
+  position: number | null;
+  prevPosition: number | null;
+  change: number | null;
+  /** ISO time of the last successful check. Null = never. Omitted on reports built before the column existed. */
+  foundAt?: string | null;
+}
 
 export interface PositionsData {
   checked: number | null; // keywords with at least one check; null = tracker never ran
@@ -199,9 +207,10 @@ export interface PositionsData {
 export async function collectPositions(siteId: string, limit = 8): Promise<PositionsData | undefined> {
   const rows: {
     keyword: string; location: string; lastPosition: number | null; prevPosition: number | null; lastCheckedAt: Date | null;
+    lastSuccessfulCheckAt: Date | null;
   }[] = await db.trackedKeyword.findMany({
     where: { siteId },
-    select: { keyword: true, location: true, lastPosition: true, prevPosition: true, lastCheckedAt: true },
+    select: { keyword: true, location: true, lastPosition: true, prevPosition: true, lastCheckedAt: true, lastSuccessfulCheckAt: true },
   });
   if (!rows.length) return undefined;
   const moves: KeywordMove[] = rows.map(r => ({
@@ -210,6 +219,7 @@ export async function collectPositions(siteId: string, limit = 8): Promise<Posit
     position: r.lastPosition ?? null,
     prevPosition: r.prevPosition ?? null,
     change: r.lastPosition != null && r.prevPosition != null ? r.prevPosition - r.lastPosition : null,
+    foundAt: r.lastSuccessfulCheckAt ? r.lastSuccessfulCheckAt.toISOString() : null,
   }));
   const checked = rows.filter(r => r.lastCheckedAt).length;
   // null = not found in depth; only ranked keywords count towards top-N.
@@ -233,7 +243,13 @@ export async function collectPositions(siteId: string, limit = 8): Promise<Posit
 
 // ─── local visibility (N3/N4 data) ────────────────────────────────────────────
 
-export interface LocalKeywordRow { keyword: string; location: string; position: number | null; localPack: number | null }
+export interface LocalKeywordRow {
+  keyword: string;
+  location: string;
+  position: number | null;
+  localPack: number | null;
+  foundAt?: string | null;
+}
 export interface LocalData {
   keywords: LocalKeywordRow[];
   inPack: number;
@@ -241,10 +257,10 @@ export interface LocalData {
 }
 
 export async function collectLocal(siteId: string): Promise<LocalData | undefined> {
-  const rows: { keyword: string; location: string; lastPosition: number | null; lastLocalPack: number | null }[] =
+  const rows: { keyword: string; location: string; lastPosition: number | null; lastLocalPack: number | null; lastSuccessfulCheckAt: Date | null }[] =
     await db.trackedKeyword.findMany({
       where: { siteId, location: { not: "" } },
-      select: { keyword: true, location: true, lastPosition: true, lastLocalPack: true },
+      select: { keyword: true, location: true, lastPosition: true, lastLocalPack: true, lastSuccessfulCheckAt: true },
     });
   const citations: { status: string }[] = await db.localCitation.findMany({
     where: { siteId },
@@ -256,6 +272,7 @@ export async function collectLocal(siteId: string): Promise<LocalData | undefine
     location: r.location ?? "",
     position: r.lastPosition ?? null,
     localPack: r.lastLocalPack != null ? r.lastLocalPack : null,
+    foundAt: r.lastSuccessfulCheckAt ? r.lastSuccessfulCheckAt.toISOString() : null,
   }));
   const nap = citations.length
     ? Object.entries(citations.reduce<Record<string, number>>((acc, c) => {

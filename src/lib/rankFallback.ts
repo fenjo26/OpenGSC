@@ -16,6 +16,15 @@ export interface RankAttempt {
   depth: number;
   error?: string;
   provider: string;
+  /** Organic rows the scan actually held. Used to tell a real miss from an empty SERP. */
+  resultCount?: number;
+  /** False when pagination stopped on a failure or an empty tail page. */
+  complete?: boolean;
+  /**
+   * True only when a null position is a full-depth miss with a healthy result count.
+   * Absent or false must not overwrite a known rank.
+   */
+  missTrusted?: boolean;
   /**
    * wave-nov N3: the SERP's map pack, when the check was geolocated and the provider reported
    * one. Carried through `checkWithFallback` untouched (the spreads below keep unknown fields),
@@ -65,6 +74,41 @@ export function isTransientRankError(error: string | undefined | null): boolean 
 }
 
 export const RANK_RETRY_DELAY_MS = 10_000;
+
+/**
+ * A SERP with fewer organic rows than this is not proof the domain is absent.
+ * Captcha and consent pages parse to 0–2 links; a real Google page is a handful
+ * or more. The HTML fallback in `serp.ts` rejects anything under this, and the
+ * rank writer will not clear a known position on a thinner scan.
+ */
+export const HEALTHY_SERP_RESULTS = 5;
+
+/** A null position is a real miss only after a finished scan at full depth with a healthy page of results. */
+export function serpMissIsTrusted(o: {
+  depth: number;
+  maxDepth: number;
+  resultCount: number;
+  complete: boolean;
+}): boolean {
+  return o.complete && o.depth >= o.maxDepth && o.resultCount >= HEALTHY_SERP_RESULTS;
+}
+
+/**
+ * Would storing this null position wipe a rank we already had, without a scan we trust?
+ * Callers turn that into an error RankCheck and leave `lastPosition` alone.
+ * An existing error is already on that path. A keyword that never ranked has nothing to protect.
+ */
+export function untrustedRankMiss(o: {
+  position: number | null;
+  previousPosition: number | null;
+  missTrusted?: boolean;
+  error?: string | null;
+}): boolean {
+  if (o.error) return false;
+  if (o.position !== null) return false;
+  if (o.previousPosition == null) return false;
+  return o.missTrusted !== true;
+}
 
 export async function checkWithFallback(
   run: (provider: string) => Promise<RankAttempt>,

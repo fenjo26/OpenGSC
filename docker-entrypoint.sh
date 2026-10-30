@@ -10,5 +10,10 @@ set -e
 echo "[opengsc] applying database schema to $DATABASE_URL ..."
 npx prisma db push
 
+# db push creates the column but skips the migration's historical UPDATE.
+# Fail startup if the rank timestamps cannot be restored after a schema change.
+echo "[opengsc] backfilling successful rank check times..."
+node scripts/backfill-last-successful-check.mjs
+
 echo "[opengsc] starting Next.js ..."
 exec npm start

@@ -198,6 +198,11 @@ APP_STOPPED=1
 rm -rf .next.prev
 if [ -d .next ]; then mv .next .next.prev; fi
 
+# db push does not execute migration SQL. Stop if the historical rank timestamps
+# cannot be restored; starting the UI would show old keywords as never checked.
+echo "[update] backfilling successful rank check times..."
+node scripts/backfill-last-successful-check.mjs || { echo "[update] rank timestamp backfill FAILED"; echo "___OPENGSC_UPDATE_FAIL___"; exit 1; }
+
 echo "[update] npm run build..."
 npm run build || fail_and_rollback "build"
 

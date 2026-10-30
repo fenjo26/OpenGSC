@@ -22,6 +22,23 @@ import type { ReportSectionId } from "./sections";
 import { REPORT_FMT_INT, REPORT_HTML_LANG, REPORT_L, type ReportLang, type ReportTpl } from "./i18n";
 import { providerLabel } from "@/lib/seo/backlinkProvider";
 import type { ReportData } from "./collect";
+import { rankSuccessState, rankSuccessStamp } from "@/lib/rankFreshness";
+
+/**
+ * "Last found" badge under a rank row — present only when the row carries `foundAt`
+ * (older report snapshots predate the key and omit it silently). Same fresh/stale clock
+ * as the Positions UI (72h); the copy comes from the report's own locale, not a hardcoded one.
+ */
+function rankFoundHtml(foundAt: string | null | undefined, L: ReportTpl): string {
+  if (foundAt === undefined) return "";
+  const state = rankSuccessState(foundAt);
+  const text = state === "never" ? L.rankNeverFound : L.rankFoundAt(rankSuccessStamp(foundAt));
+  const warn = state !== "fresh";
+  const style = warn
+    ? "color:#B45309;background:rgba(245,158,11,0.16);border:1px solid rgba(245,158,11,0.45);"
+    : "color:#64748b;border:1px solid transparent;";
+  return `<div style="${style}display:inline-block;margin-top:4px;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:700;line-height:1.35;white-space:normal;">${escapeHtml(text)}</div>`;
+}
 
 // ─── small pure helpers ───────────────────────────────────────────────────────
 
@@ -330,9 +347,9 @@ function renderPositions(data: ReportData, ctx: Ctx): string {
     kpi(L.top3, fi(p.top3)),
     kpi(L.top10, fi(p.top10)),
   ].join("");
-  const moveTable = (title: string, moves: { keyword: string; location: string; position: number | null; change: number | null }[]) => {
+  const moveTable = (title: string, moves: { keyword: string; location: string; position: number | null; change: number | null; foundAt?: string | null }[]) => {
     if (!moves.length) return "";
-    const rows = moves.map(m => `<tr><td>${escapeHtml(m.keyword)}${m.location ? ` <span class="meta">· ${escapeHtml(m.location)}</span>` : ""}</td><td class="num">${m.position == null ? "—" : `#${m.position}`}</td><td class="num">${deltaSpan(m.change, fi)}</td></tr>`).join("");
+    const rows = moves.map(m => `<tr><td>${escapeHtml(m.keyword)}${m.location ? ` <span class="meta">· ${escapeHtml(m.location)}</span>` : ""}${rankFoundHtml(m.foundAt, L)}</td><td class="num">${m.position == null ? "—" : `#${m.position}`}</td><td class="num">${deltaSpan(m.change, fi)}</td></tr>`).join("");
     return `<h4>${escapeHtml(title)}</h4><table><thead><tr><th>${escapeHtml(L.keyword)}</th><th class="num">${escapeHtml(L.positionCol)}</th><th class="num">${escapeHtml(L.change)}</th></tr></thead><tbody>${rows}</tbody></table>`;
   };
   return `${checkedLine}<div class="kpis">${kpis}</div>${moveTable(L.improved, p.improved)}${moveTable(L.declined, p.declined)}`;
@@ -340,7 +357,7 @@ function renderPositions(data: ReportData, ctx: Ctx): string {
 
 function renderLocal(data: ReportData, { L, fi }: Ctx): string {
   const l = data.local!;
-  const rows = l.keywords.map(k => `<tr><td>${escapeHtml(k.keyword)}</td><td>${escapeHtml(k.location)}</td><td class="num">${k.position == null ? "—" : `#${k.position}`}</td><td class="num">${k.localPack == null ? "—" : escapeHtml(L.inPack(k.localPack))}</td></tr>`).join("");
+  const rows = l.keywords.map(k => `<tr><td>${escapeHtml(k.keyword)}${rankFoundHtml(m.foundAt, L)}</td><td>${escapeHtml(k.location)}</td><td class="num">${k.position == null ? "—" : `#${k.position}`}</td><td class="num">${k.localPack == null ? "—" : escapeHtml(L.inPack(k.localPack))}</td></tr>`).join("");
   const table = rows
     ? `<table><thead><tr><th>${escapeHtml(L.keyword)}</th><th>${escapeHtml(L.location)}</th><th class="num">${escapeHtml(L.organic)}</th><th class="num">${escapeHtml(L.mapPack)}</th></tr></thead><tbody>${rows}</tbody></table>`
     : noData(L, L.noLocalKw);

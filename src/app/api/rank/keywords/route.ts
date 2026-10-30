@@ -91,6 +91,8 @@ export async function GET(req: Request) {
       location: k.location,
       createdAt: k.createdAt,
       lastCheckedAt: k.lastCheckedAt,
+      // The badge. Not lastCheckedAt — that field is what the scheduler throttles with.
+      lastSuccessfulCheckAt: k.lastSuccessfulCheckAt,
       position: k.lastPosition,
       prevPosition: k.prevPosition,
       bestPosition: k.bestPosition,

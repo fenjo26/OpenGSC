@@ -137,15 +137,22 @@ export function nextSyncHealth(prev: SyncHealthState, failed: boolean): {
 
 export type LastSuccessState = "never" | "stale" | "fresh";
 
-/** `now` is epoch ms. Null, blank, and unparseable timestamps are "never", not a dash. */
+/**
+ * `now` is epoch ms. Null, blank, and unparseable timestamps are "never", not a dash.
+ *
+ * `staleAfterMs` defaults to the 48h site-card window (`GSC_SYNC_STALE_MS`). Rank checks
+ * pass their own constant — keywords run every other day, so their badge goes yellow at
+ * 72h. Omitting the argument leaves the site card exactly as it is.
+ */
 export function lastSuccessState(
   at: Date | string | null | undefined,
   now = Date.now(),
+  staleAfterMs = GSC_SYNC_STALE_MS,
 ): LastSuccessState {
   if (at == null || at === "") return "never";
   const t = at instanceof Date ? at.getTime() : new Date(at).getTime();
   if (!Number.isFinite(t)) return "never";
-  return now - t > GSC_SYNC_STALE_MS ? "stale" : "fresh";
+  return now - t > staleAfterMs ? "stale" : "fresh";
 }
 
 /** `MM-DD HH:mm` in Asia/Shanghai. Hour "24" from some ICU builds is midnight. */

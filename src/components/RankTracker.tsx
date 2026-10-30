@@ -17,11 +17,15 @@ import { usePrivacy } from "@/lib/PrivacyContext";
 import { COUNTRIES, LANGUAGES, defaultLanguageFor } from "@/lib/seo/regions";
 import { RANK_PROVIDER_LIST, rankProviderName } from "@/lib/seo/rankProviders";
 import KeywordWeightsBar from "@/components/KeywordWeightsBar";
+import RankFoundAt from "@/components/RankFoundAt";
+import { rankErrorKey } from "@/lib/rankError";
 import { useKeywordWeights } from "@/lib/seo/useKeywordWeights";
 
 type KwRow = {
   id: string; keyword: string; country: string; lang: string; device: string;
   createdAt: string; lastCheckedAt: string | null;
+  /** Latest RankCheck with no error. Not lastCheckedAt. */
+  lastSuccessfulCheckAt?: string | null;
   position: number | null; prevPosition: number | null; bestPosition: number | null;
   url: string | null; lastError: string | null; lastProvider?: string | null;
   // wave-nov N3: "" = country-level keyword (as before) | city name | "lat,lng"
@@ -138,11 +142,28 @@ function HistoryChart({ keywordId }: { keywordId: string }) {
   })), [data]);
   const hasPackData = series.some((s: { packChart?: number | null }) => s.packChart != null);
 
+  const foundRow = (
+    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px" }}>
+      <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--color-text-primary)" }}>
+        {data?.position == null ? t("rankNotFound") : `#${data.position}`}
+      </span>
+      <RankFoundAt at={data?.lastSuccessfulCheckAt ?? null} notFound={data?.position == null} />
+    </div>
+  );
+
   if (loading) return <div style={{ padding: "24px", fontSize: "13px", color: "var(--color-text-secondary)" }}>Loading…</div>;
-  if (!series.length) return <div style={{ padding: "24px", fontSize: "13px", color: "var(--color-text-secondary)" }}>{t("wlNoData")}</div>;
+  if (!series.length) {
+    return (
+      <div style={{ padding: "16px 12px" }}>
+        {foundRow}
+        <div style={{ marginTop: "8px", fontSize: "13px", color: "var(--color-text-secondary)" }}>{t("wlNoData")}</div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ padding: "16px 12px 8px" }}>
+      <div style={{ marginBottom: "8px" }}>{foundRow}</div>
       <ResponsiveContainer width="100%" height={200}>
         <ComposedChart data={series} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" />
@@ -380,8 +401,8 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
         }
         case "checked":
           return cmpNullable(
-            a.lastCheckedAt ? new Date(a.lastCheckedAt).getTime() : null,
-            b.lastCheckedAt ? new Date(b.lastCheckedAt).getTime() : null,
+            a.lastSuccessfulCheckAt ? new Date(a.lastSuccessfulCheckAt).getTime() : null,
+            b.lastSuccessfulCheckAt ? new Date(b.lastSuccessfulCheckAt).getTime() : null,
             dir,
           );
         case "volume":
@@ -435,6 +456,15 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
 
   return (
     <div style={{ padding: "28px 32px", display: "flex", flexDirection: "column", gap: "24px", width: "100%", boxSizing: "border-box" }}>
+      <style>{`
+        .rank-found-at { white-space: normal; overflow: visible; text-overflow: clip; max-width: 100%; }
+        .rank-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        .rank-found-under-kw { display: none; }
+        @media (max-width: 800px) {
+          .rank-found-under-kw { display: block; flex: 1 0 100%; width: max-content; max-width: 100%; }
+          .rank-found-col { display: none; }
+        }
+      `}</style>
 
       {/* ── Header: title + actions ── */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "16px", flexWrap: "wrap" }}>
@@ -615,6 +645,7 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
         </div>
       ) : (
         <div style={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: "12px", overflow: "hidden" }}>
+          <div className="rank-table-scroll">
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
             <thead>
               <tr style={{ borderBottom: "1px solid var(--color-border)", background: "var(--color-bg)" }}>
@@ -638,7 +669,7 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
                     onClick={() => setExpanded(e => e === r.id ? null : r.id)}
                     style={{ borderBottom: "1px solid var(--color-border)", background: expanded === r.id ? "rgba(59,130,246,0.04)" : i % 2 === 1 ? "rgba(128,128,128,0.03)" : "transparent", cursor: "pointer" }}>
                     <td style={{ padding: "10px 12px", maxWidth: "280px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
                         <span style={{ color: "var(--color-text-secondary)", display: "flex", flexShrink: 0 }}>
                           {expanded === r.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                         </span>
@@ -655,11 +686,19 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
                             <MapPin size={9} style={{ flexShrink: 0 }} /> {r.location}
                           </span>
                         )}
+                        <span className="rank-found-under-kw">
+                          <RankFoundAt at={r.lastSuccessfulCheckAt} notFound={r.position === null && r.lastSuccessfulCheckAt != null} />
+                        </span>
                       </div>
                     </td>
                     <td style={{ padding: "10px 12px", whiteSpace: "nowrap", textAlign: "center" }}>
-                      {r.lastError ? (
-                        <span title={r.lastError.startsWith("location_") ? t(`lrErr_${r.lastError}` as never) : r.lastError} style={{ color: "#EF4444", fontSize: "12px" }}>error</span>
+                      {r.lastError && r.position !== null ? (
+                        <div title={t(rankErrorKey(r.lastError))}>
+                          <span style={{ fontWeight: 700, fontSize: "15px", color: r.position <= 3 ? "#10B981" : r.position <= 10 ? "#3B82F6" : "var(--color-text-primary)" }}>#{r.position}</span>
+                          <div style={{ color: "var(--color-text-secondary)", fontSize: "11px", fontWeight: 400, whiteSpace: "normal", maxWidth: "7rem", margin: "0 auto", lineHeight: 1.3 }}>{t("rankCheckFailedRetained")}</div>
+                        </div>
+                      ) : r.lastError ? (
+                        <span title={t(rankErrorKey(r.lastError))} style={{ color: "#EF4444", fontSize: "12px" }}>{t("rankCheckFailed")}</span>
                       ) : r.lastCheckedAt === null ? (
                         <span style={{ color: "var(--color-text-secondary)" }}>…</span>
                       ) : r.position === null ? (
@@ -683,7 +722,7 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
                       ) : r.lastError ? (
                         // Some other failure: the pack is simply unknown this check — an em
                         // dash with the cause, never "not in pack" (that would be an answer).
-                        <span title={r.lastError} style={{ color: "var(--color-text-secondary)" }}>—</span>
+                        <span title={t(rankErrorKey(r.lastError))} style={{ color: "var(--color-text-secondary)" }}>—</span>
                       ) : r.lastCheckedAt === null ? (
                         <span style={{ color: "var(--color-text-secondary)" }}>…</span>
                       ) : r.localPack != null ? (
@@ -719,8 +758,8 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
                       ) : <span style={{ color: "var(--color-text-secondary)" }}>—</span>}
                     </td>
                     <td style={{ padding: "10px 12px" }}><PosSparkline history={r.history} /></td>
-                    <td style={{ padding: "10px 12px", color: "var(--color-text-secondary)", fontSize: "11px", whiteSpace: "nowrap" }}>
-                      {r.lastCheckedAt ? new Date(r.lastCheckedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}
+                    <td className="rank-found-col" style={{ padding: "10px 12px", minWidth: "11.5rem", verticalAlign: "middle" }}>
+                      <RankFoundAt at={r.lastSuccessfulCheckAt} notFound={r.position === null && r.lastSuccessfulCheckAt != null} />
                     </td>
                     <td style={{ padding: "10px 12px", whiteSpace: "nowrap", textAlign: "right" }} onClick={e => e.stopPropagation()}>
                       {!guest && <><button onClick={() => checkOne(r.id)} disabled={!!busy} title={t("rankCheckAll")}
@@ -744,6 +783,7 @@ export default function RankTracker({ siteDbId }: { siteDbId: string; domain?: s
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>

@@ -81,6 +81,7 @@ export async function GET(req: Request) {
     location: kw.location,
     position: kw.lastPosition,
     bestPosition: kw.bestPosition,
+    lastSuccessfulCheckAt: kw.lastSuccessfulCheckAt,
     url: kw.lastUrl,
     localPack: kw.lastLocalPack,
     series,

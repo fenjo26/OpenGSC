@@ -38,7 +38,14 @@ export interface DigestSiteRow { id: string; name: string; cur: number; prev: nu
 export interface DigestQueryRow { q: string; cur: number; prev: number; d: number }
 export interface DigestStriking { query: string; site: string; pos: number; impr: number }
 export interface DigestAttention { name: string; pct: number }
-export interface DigestRankMove { keyword: string; from: number; to: number; d: number }
+export interface DigestRankMove {
+  keyword: string;
+  from: number;
+  to: number;
+  d: number;
+  /** When this rank was last found. Null = never. Omitted on digests stored before the field existed. */
+  foundAt?: string | null;
+}
 /** Trend radar (N5): one hottest query of the portfolio's window. */
 export interface DigestTrend {
   query: string;
@@ -281,7 +288,13 @@ export async function buildDigestData(
     where: { siteId: { in: siteIds }, lastPosition: { not: null }, prevPosition: { not: null } },
   });
   base.rankMoves = kws
-    .map(k => ({ keyword: k.keyword, from: k.prevPosition ?? 0, to: k.lastPosition ?? 0, d: (k.prevPosition ?? 0) - (k.lastPosition ?? 0) }))
+    .map(k => ({
+      keyword: k.keyword,
+      from: k.prevPosition ?? 0,
+      to: k.lastPosition ?? 0,
+      d: (k.prevPosition ?? 0) - (k.lastPosition ?? 0),
+      foundAt: k.lastSuccessfulCheckAt ? k.lastSuccessfulCheckAt.toISOString() : null,
+    }))
     .filter(x => x.d !== 0)
     .sort((a, b) => Math.abs(b.d) - Math.abs(a.d))
     .slice(0, FULL.rankMoves);

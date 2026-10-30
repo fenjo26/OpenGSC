@@ -9,6 +9,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronUp, Download, Loader2 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import RankFoundAt from "@/components/RankFoundAt";
 import type { DigestData } from "@/lib/digest";
 
 // The engine tab now reuses the full engine portfolio (per-site summary with period-over-period
@@ -220,8 +221,15 @@ export default function DigestView({ data, engines, fetchEngine }: {
             csv={() => downloadCsv("digest-rank-moves.csv", [t("digestColKeyword"), "from", "to"], data.rankMoves.map(m => [m.keyword, m.from, m.to]))}>
             {limit => data.rankMoves.slice(0, limit).map((m, i) => (
               <tr key={i} style={{ borderTop: "1px solid var(--color-border)" }}>
-                <td style={{ padding: "6px 14px", color: "var(--color-text-primary)", maxWidth: "340px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.d > 0 ? "▲" : "▼"} {m.keyword}</td>
-                <td style={{ ...td, color: m.d > 0 ? "#10B981" : "#EF4444", fontWeight: 600 }}>{m.from} → {m.to}</td>
+                <td style={{ padding: "6px 14px", color: "var(--color-text-primary)", maxWidth: "340px" }}>
+                  <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.d > 0 ? "▲" : "▼"} {m.keyword}</div>
+                  {"foundAt" in m && (
+                    <div style={{ marginTop: 4, whiteSpace: "normal", overflow: "visible" }}>
+                      <RankFoundAt at={m.foundAt} />
+                    </div>
+                  )}
+                </td>
+                <td style={{ ...td, color: m.d > 0 ? "#10B981" : "#EF4444", fontWeight: 600, whiteSpace: "nowrap" }}>{m.from} → {m.to}</td>
               </tr>
             ))}
           </Section>

@@ -20,7 +20,7 @@ import { Prisma } from "@/generated/prisma";
 import { runSerp } from "@/lib/seo/serp";
 import { resolveBaseUrl, setAparserConcurrency } from "@/lib/seo/aparser";
 import { aparserRankPosition } from "@/lib/seo/aparserPositionRun";
-import { checkWithFallback, fallbackForLocation, type RankAttempt } from "@/lib/rankFallback";
+import { checkWithFallback, fallbackForLocation, serpMissIsTrusted, untrustedRankMiss, type RankAttempt } from "@/lib/rankFallback";
 import { resolveAparserPassword } from "@/lib/seo/aparserServerCreds";
 import { brandNamesFromHost, matchLocalPack, type LocalPackEntry } from "@/lib/seo/localPack";
 import { rawQuery } from "@/lib/db/raw";
@@ -175,6 +175,12 @@ export interface CheckResult {
   localPack?: LocalPackEntry[];
   /** true/false = provider said pack/no pack; null = it does not say. Local checks only. */
   hasLocalPack?: boolean | null;
+  /** Organic rows the scan returned. A thin count is not a trusted miss. */
+  resultCount?: number;
+  /** False when a later page failed or the SERP stopped without saying it had ended. */
+  complete?: boolean;
+  /** True when a null position survived a full-depth scan with a healthy result count. */
+  missTrusted?: boolean;
   /**
    * Our place in the pack after matching (domain, then name): 1..3 + the title Google showed.
    * null = we are not in the pack; undefined = not computed (country keyword or failed check).
@@ -190,12 +196,16 @@ async function scan(
     gl, hl, num: depth, baseUrl: creds.baseUrl, ...(creds.configPreset ? { configPreset: creds.configPreset } : {}),
     ...(location ? { location } : {}),
   });
-  if (serp.error) return { position: null, url: null, depth, error: serp.error };
+  if (serp.error) {
+    return { position: null, url: null, depth, error: serp.error, resultCount: serp.results.length, complete: false };
+  }
   const found = serp.results.find((r) => matchesSite(r.domain, siteHost)) ?? null;
   return {
     position: found?.position ?? null,
     url: found?.url ?? null,
     depth,
+    resultCount: serp.results.length,
+    complete: serp.incomplete !== true,
     ...(location ? { hasLocalPack: serp.hasLocalPack ?? null } : {}),
     ...(location && serp.localPack?.length ? { localPack: serp.localPack } : {}),
   };
@@ -228,7 +238,8 @@ async function providerScan(
       const why = r.detail ?? r.problem;
       return { position: null, url: null, depth: r.depth, error: /^aparser\b/i.test(why) ? why : `aparser: ${why}` };
     }
-    return { position: r.position, url: r.url, depth: r.depth };
+    // Position already refuses a short parse (`aparser_partial_serp`). A null here went the full depth.
+    return { position: r.position, url: r.url, depth: r.depth, missTrusted: r.position === null };
   }
 
   // Smart strategy: known position → scan a window around it; unknown → full depth.
@@ -239,6 +250,17 @@ async function providerScan(
   // Not found in the smart window → escalate once to max depth.
   if (!res.error && res.position === null && depth < max) {
     res = await scan(creds, kw.keyword, kw.country, kw.lang, max, siteHost, location);
+  }
+  if (!res.error && res.position === null) {
+    res = {
+      ...res,
+      missTrusted: serpMissIsTrusted({
+        depth: res.depth,
+        maxDepth: max,
+        resultCount: res.resultCount ?? 0,
+        complete: res.complete !== false,
+      }),
+    };
   }
   return res;
 }
@@ -284,7 +306,18 @@ export async function checkTrackedKeyword(
   const res: CheckResult = {
     position: outcome.position, url: outcome.url, depth: outcome.depth,
     ...(outcome.error ? { error: outcome.error } : {}), provider: outcome.provider,
+    resultCount: outcome.resultCount, complete: outcome.complete, missTrusted: outcome.missTrusted,
   };
+  // Last line: an empty or cut-short scan must not turn a known rank into "not found".
+  // A genuine full-depth miss (healthy result count, domain absent) still stores null.
+  if (untrustedRankMiss({
+    position: res.position,
+    previousPosition: kw.lastPosition,
+    missTrusted: res.missTrusted,
+    error: res.error,
+  })) {
+    res.error = "untrusted_not_found";
+  }
 
   // ── wave-nov N3: the pack is matched and stored SEPARATELY from the organic position ──
   const pack = res.error || !location
@@ -302,45 +335,58 @@ export async function checkTrackedKeyword(
   }
 
   const now = new Date();
-  await prisma.rankCheck.create({
-    data: {
-      keywordId: kw.id,
-      checkedAt: now,
-      position: res.error ? null : res.position, // organic only — never a pack place
-      url: res.url,
-      depth: res.depth,
-      error: res.error ? res.error.slice(0, 1000) : null,
-      provider: res.provider ?? null,
-      localPack: pack ? (pack.match?.position ?? null) : null,
-      localPackTitle: pack ? (pack.match?.title ?? null) : null,
-      hasLocalPack: pack ? (pack.hasLocalPack ?? null) : null,
-    },
+  await rankWriter.createCheck({
+    keywordId: kw.id,
+    checkedAt: now,
+    position: res.error ? null : res.position, // organic only — never a pack place
+    url: res.url,
+    depth: res.depth,
+    error: res.error ? res.error.slice(0, 1000) : null,
+    provider: res.provider ?? null,
+    localPack: pack ? (pack.match?.position ?? null) : null,
+    localPackTitle: pack ? (pack.match?.title ?? null) : null,
+    hasLocalPack: pack ? (pack.hasLocalPack ?? null) : null,
   });
 
   if (res.error) {
     // Keep last known state; bump lastCheckedAt so the scheduler doesn't hot-loop.
-    await prisma.trackedKeyword.update({
-      where: { id: kw.id },
-      data: { lastCheckedAt: now },
-    });
+    // lastSuccessfulCheckAt stays: a failure is not when we last saw this rank.
+    await rankWriter.updateKeyword(kw.id, { lastCheckedAt: now });
   } else {
     const best =
       res.position !== null && (kw.bestPosition === null || res.position < kw.bestPosition)
         ? res.position
         : kw.bestPosition;
-    await prisma.trackedKeyword.update({
-      where: { id: kw.id },
-      data: {
-        lastCheckedAt: now,
-        prevPosition: kw.lastPosition,
-        lastPosition: res.position,
-        lastUrl: res.url,
-        bestPosition: best,
-        lastLocalPack: pack ? (pack.match?.position ?? null) : null,
-      },
+    await rankWriter.updateKeyword(kw.id, {
+      lastCheckedAt: now,
+      prevPosition: kw.lastPosition,
+      lastPosition: res.position,
+      lastUrl: res.url,
+      bestPosition: best,
+      lastLocalPack: pack ? (pack.match?.position ?? null) : null,
+      // Only a check with no error moves this. lastCheckedAt is not a substitute —
+      // ops scripts set that to 2099-01-01 to throttle the scheduler.
+      lastSuccessfulCheckAt: now,
     });
   }
   return res;
+}
+
+type RankWrite = {
+  createCheck: (data: Record<string, unknown>) => Promise<unknown>;
+  updateKeyword: (id: string, data: Record<string, unknown>) => Promise<unknown>;
+};
+
+const defaultRankWriter: RankWrite = {
+  createCheck: (data) => prisma.rankCheck.create({ data: data as never }),
+  updateKeyword: (id, data) => prisma.trackedKeyword.update({ where: { id }, data: data as never }),
+};
+
+let rankWriter: RankWrite = defaultRankWriter;
+
+/** Tests swap the two writes. Production never calls this. */
+export function __setRankWriterForTests(writer?: RankWrite) {
+  rankWriter = writer ?? defaultRankWriter;
 }
 
 /** wave-nov N3: a place in a site's pack that changed between two checks (for the daily digest). */

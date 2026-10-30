@@ -4,6 +4,7 @@
 // SearXNG: that provider is keyless and addressed by the server-side SEARXNG_BASE_URL.
 
 import { loggedFetch, type CallHandle } from "@/lib/providerLog/log";
+import { HEALTHY_SERP_RESULTS } from "@/lib/rankFallback";
 import { goanySerp } from "./goanyapi";
 import { defaultLanguageFor } from "./regions";
 import { searxngSearch } from "./searxng";
@@ -150,6 +151,12 @@ export interface SerpResponse {
    * what its own log said. `error` stays a bare code because callers compare it verbatim.
    */
   errorDetail?: string;
+  /**
+   * A later page failed, or came back empty without the provider saying the SERP had ended.
+   * Absent when the query was filled or a page came back short of 10. Rank checks will not
+   * treat an incomplete miss as "not found".
+   */
+  incomplete?: boolean;
 }
 
 function domainOf(url: string): string {
@@ -175,6 +182,36 @@ type SerperPageResult =
   | { ok: true; data: SerperPageData }
   | { ok: false; error: string };
 
+/** Credit and auth failures Serper reports as these statuses, or as a message on any status. */
+const SERPER_QUOTA_HTTP = new Set([400, 401, 402, 403, 429]);
+const SERPER_CREDIT_RE =
+  /not enough credits|insufficient credits|out of credits|no credits|credit limit|credits? exhausted|quota exceeded|payment required|exceeded your (?:quota|credits)/i;
+
+function serperErrorText(status: number, raw: string): string {
+  const compact = raw.replace(/\s+/g, " ").trim().slice(0, 180);
+  // 400/401/402/403/429 are quota, auth, or payment — never an empty SERP to store as "not found".
+  if (SERPER_CREDIT_RE.test(compact) || SERPER_QUOTA_HTTP.has(status)) {
+    return `serper: ${compact || `quota_exhausted (${status})`}`;
+  }
+  return `serper ${status}: ${compact}`;
+}
+
+/** A 200 body that is really "out of credits" must not be read as zero organic results. */
+function serperBodyError(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const o = data as Record<string, unknown>;
+  const msg = [o.message, o.error, o.statusMessage]
+    .filter((x): x is string => typeof x === "string")
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const code = Number(o.statusCode);
+  if (SERPER_CREDIT_RE.test(msg) || (SERPER_QUOTA_HTTP.has(code) && msg)) {
+    return `serper: ${msg.slice(0, 180)}`;
+  }
+  return null;
+}
+
 async function serperFetchPage(
   endpoint: string, apiKey: string, keyword: string,
   gl: string, hl: string, location: string | undefined, page: number,
@@ -189,11 +226,16 @@ async function serperFetchPage(
       signal: AbortSignal.timeout(20000),
     }, { provider: "serper" });
     if (!res.ok) {
-      const error = `serper ${res.status}: ${(await res.text()).slice(0, 200)}`;
+      const error = serperErrorText(res.status, await res.text());
       call.finish({ error });
       return { ok: false, error };
     }
     const data = await res.json();
+    const bodyError = serperBodyError(data);
+    if (bodyError) {
+      call.finish({ error: bodyError, responseBody: data });
+      return { ok: false, error: bodyError };
+    }
     call.finish({ responseBody: data });
     return { ok: true, data };
   } catch (e) {
@@ -228,13 +270,23 @@ async function serperSearch(
   const page1 = settled[0];
   if (!page1.ok) return { engine, provider: "serper", keyword, results: [], error: page1.error };
 
+  // Zero organics on page 1 is a failed lookup (blocked, empty, or a credit body we did not
+  // recognise), not "the domain ranks nowhere". Callers compare `error` and keep the old rank.
+  const page1Organic: any[] = Array.isArray(page1.data?.organic) ? page1.data.organic : [];
+  if (page1Organic.length === 0) {
+    return { engine, provider: "serper", keyword, results: [], error: "serper: empty_serp" };
+  }
+
   const seen = new Set<string>();
   const results: SerpResultItem[] = [];
   const paa: string[] = ((page1.data.peopleAlsoAsk ?? []).map((p) => p.question).filter(Boolean)) as string[];
   const related: string[] = ((page1.data.relatedSearches ?? []).map((p) => p.query).filter(Boolean)) as string[];
 
+  // A failed later page used to `break` and return the prefix as a finished SERP. A rank check
+  // then treated "not in these ten" as "not in the top 50". `incomplete` keeps that from sticking.
+  let incomplete = false;
   for (const s of settled) {
-    if (!s.ok) break; // a failed page (rare) — trust only the contiguous run before it
+    if (!s.ok) { incomplete = true; break; }
     const organic = s.data.organic ?? [];
     for (const r of organic) {
       if (!r.link || seen.has(r.link)) continue;
@@ -256,7 +308,12 @@ async function serperSearch(
       }
     : {};
 
-  return { engine, provider: "serper", keyword, results: results.slice(0, want), peopleAlsoAsk: paa, relatedSearches: related, ...local };
+  return {
+    engine, provider: "serper", keyword, results: results.slice(0, want),
+    peopleAlsoAsk: paa, relatedSearches: related,
+    ...(incomplete ? { incomplete: true } : {}),
+    ...local,
+  };
 }
 
 // ─── DataForSEO ──────────────────────────────────────────────────────────────
@@ -398,9 +455,13 @@ async function dataForSeoSearch(
   return { engine, provider: "dataforseo", keyword, results, peopleAlsoAsk: paa, relatedSearches: related, ...local };
 }
 
-// ─── ScrapingRobot ───────────────────────────────────────────────────────────
-// Free tier: 5000 scrapes/month (the same provider SerpBear uses for its free mode).
-// Returns raw Google SERP HTML — we extract organic results with tolerant regexes.
+// ─── ScrapingRobot (a Rayobyte product) ──────────────────────────────────────
+// Metered per successful request — about $0.0009, see SERP_QUERY_COST_USD. There is
+// no standing free allowance of 5000 scrapes/month; that figure is old SerpBear
+// marketing and is not what this integration receives. A zero-credit, blocked, or
+// captcha answer is an error (`scrapingrobot: empty_serp`), never an empty success.
+// Primary path: structured GoogleScraper. The HTML regex fallback is accepted only
+// when it parses at least HEALTHY_SERP_RESULTS organic results.
 
 function decodeEntities(s: string): string {
   return s
@@ -562,13 +623,20 @@ async function scrapingRobotSearch(
 
   // ── Try the structured GoogleScraper module first ─────────────────────────────
   let moduleWorks = true;
+  let incomplete = false;
   for (let page = 1; page <= pages; page++) {
     const r = await scrapingRobotModulePage(apiKey, keyword, gl, hl, page);
     if (!r.ok) {
       if (page === 1) { moduleWorks = false; break; } // fall back to HTML mode below
+      incomplete = true;
       break;
     }
     const organic = r.results?.organicResults ?? [];
+    // Page 1 with nothing organic is a blocked or empty answer, not a miss. Do not fall
+    // through to the HTML parser: a SUCCESS envelope with zero rows is the same lie.
+    if (page === 1 && organic.length === 0) {
+      return { engine, provider: "scrapingrobot", keyword, results: [], error: "scrapingrobot: empty_serp" };
+    }
     for (const o of organic) push(o.url ?? "", o.title ?? "", o.description ?? "");
     if (page === 1) {
       paa = ((r.results?.peopleAlsoAsk ?? []).map((p) => p.question).filter(Boolean)) as string[];
@@ -576,24 +644,44 @@ async function scrapingRobotSearch(
     }
     if (results.length >= want) break;
     if (r.results?.hasNextPage === false) break;
-    if (organic.length === 0) break;
+    if (organic.length === 0) { incomplete = true; break; }
+    if (organic.length < 10) break;
   }
   if (moduleWorks) {
-    return { engine, provider: "scrapingrobot", keyword, results: results.slice(0, want), peopleAlsoAsk: paa, relatedSearches: related };
+    return {
+      engine, provider: "scrapingrobot", keyword, results: results.slice(0, want),
+      peopleAlsoAsk: paa, relatedSearches: related,
+      ...(incomplete ? { incomplete: true } : {}),
+    };
   }
 
   // ── Fallback: HTML scrape + regex parsing ─────────────────────────────────────
+  // Only when GoogleScraper itself failed (503 and the like). A captcha or consent page
+  // parses to a handful of links and used to return ok:true, results:[]. Accept the page
+  // only when the parse looks like a real SERP.
   for (let page = 0; page < pages; page++) {
     const r = await scrapingRobotHtmlPage(apiKey, keyword, gl, hl, page * 10);
     if (!r.ok) {
       if (page === 0) return { engine, provider: "scrapingrobot", keyword, results: [], error: r.error };
+      incomplete = true;
       break;
     }
-    for (const it of r.items ?? []) push(it.url, it.title);
-    if ((r.items ?? []).length === 0) break;
+    const items = r.items ?? [];
+    if (page === 0 && items.length < HEALTHY_SERP_RESULTS) {
+      return { engine, provider: "scrapingrobot", keyword, results: [], error: "scrapingrobot: empty_serp" };
+    }
+    if (items.length === 0) { incomplete = true; break; }
+    for (const it of items) push(it.url, it.title);
+    if (items.length < 10) break;
     if (results.length >= want) break;
   }
-  return { engine, provider: "scrapingrobot", keyword, results: results.slice(0, want) };
+  if (results.length === 0) {
+    return { engine, provider: "scrapingrobot", keyword, results: [], error: "scrapingrobot: empty_serp" };
+  }
+  return {
+    engine, provider: "scrapingrobot", keyword, results: results.slice(0, want),
+    ...(incomplete ? { incomplete: true } : {}),
+  };
 }
 
 // ─── GoAnyAPI ─────────────────────────────────────────────────────────────────
