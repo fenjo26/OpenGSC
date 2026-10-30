@@ -331,10 +331,10 @@ export function MagicLinksCard() {
             <RefreshCw size={12} style={{ animation: busy ? "spin 1s linear infinite" : undefined }} /> {busy ? t("aparserChecking") : t("aparserTest")}
           </button>
           <a href="/magiclinks" style={{ padding: "8px 14px", borderRadius: "8px", border: "1px solid var(--color-border)", color: "var(--color-text-secondary)", fontSize: "12px", fontWeight: 600, textDecoration: "none", display: "flex", alignItems: "center" }}>{t("mlOpenOrders")}</a>
-          <a href={MAGIC369_BOT_URL} target="_blank" rel="noopener noreferrer sponsored" style={{ padding: "8px 14px", borderRadius: "8px", border: "1px solid var(--color-border)", color: "var(--color-text-secondary)", fontSize: "12px", fontWeight: 600, textDecoration: "none", display: "flex", alignItems: "center", gap: "6px" }}>
+          <a href={MAGIC369_BOT_URL} target="_blank" rel="noopener noreferrer" style={{ padding: "8px 14px", borderRadius: "8px", border: "1px solid var(--color-border)", color: "var(--color-text-secondary)", fontSize: "12px", fontWeight: 600, textDecoration: "none", display: "flex", alignItems: "center", gap: "6px" }}>
             <img src="/partners/369market-logo.png" alt="" style={{ width: "16px", height: "16px", borderRadius: "4px", objectFit: "cover" }} />{t("ml369Bot")}
           </a>
-          <a href={FIELDLINK_CABINET_URL} target="_blank" rel="noopener noreferrer sponsored" style={{ padding: "8px 14px", borderRadius: "8px", border: "1px solid var(--color-border)", color: "var(--color-text-secondary)", fontSize: "12px", fontWeight: 600, textDecoration: "none", display: "flex", alignItems: "center", gap: "6px" }}>
+          <a href={FIELDLINK_CABINET_URL} target="_blank" rel="noopener noreferrer" style={{ padding: "8px 14px", borderRadius: "8px", border: "1px solid var(--color-border)", color: "var(--color-text-secondary)", fontSize: "12px", fontWeight: 600, textDecoration: "none", display: "flex", alignItems: "center", gap: "6px" }}>
             <img src="/partners/fieldlink-logo.svg" alt="" style={{ width: "16px", height: "16px", borderRadius: "4px" }} />{t("mlFlCabinet")}
           </a>
         </div>

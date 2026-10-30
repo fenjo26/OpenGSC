@@ -35,7 +35,7 @@ export default function PartnersPage() {
             key={p.id}
             href={p.href}
             target="_blank"
-            rel="noopener noreferrer sponsored"
+            rel="noopener noreferrer"
             style={{
               display: "flex", alignItems: "center", gap: "14px",
               padding: "14px", borderRadius: "12px",
