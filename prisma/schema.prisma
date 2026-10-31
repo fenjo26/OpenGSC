@@ -140,6 +140,11 @@ model Membership {
   role    String  @default("viewer") // viewer | editor | admin
   status  String  @default("active") // active | invited | suspended
 
+  // JSON: CapabilityDelta { add: [], remove: [] } — the owner's per-member deviation from the role
+  // matrix (issue #39). Null = pure role. Sanitized against the role on every read, so a role
+  // change that leaves a stale delta behind degrades to a no-op instead of widening access.
+  capabilities String?
+
   // Only the SHA-256 of an invite token is stored: a leaked database must not hand out logins.
   inviteHash      String?   @unique
   inviteExpiresAt DateTime?

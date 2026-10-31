@@ -1,20 +1,31 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { signOut } from "next-auth/react";
 import {
-  AlertTriangle, Check, Copy, Crown, KeyRound, Loader2, Plus, RefreshCw, Shield, Trash2, UserX,
+  AlertTriangle, ArrowLeftRight, Check, Copy, Crown, KeyRound, Loader2, Lock, Plus,
+  RefreshCw, Shield, SlidersHorizontal, Trash2, UserX,
 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import {
+  deltaFor, effectiveCapabilities, toggleableFor, TUNABLE_CAPABILITIES, type Capability,
+} from "@/lib/team/roles";
 
 type Role = "viewer" | "editor" | "admin";
 /** Dictionary key accepted by the t() from useLanguage (computed at compile time, erased at runtime). */
 type TKey = Parameters<ReturnType<typeof useLanguage>["t"]>[0];
 type Member = {
   id: string; email: string; name: string | null; role: Role; status: string;
+  capabilities: { add: string[]; remove: string[] };
   invitePending: boolean; inviteExpiresAt: string | null; acceptedAt: string | null;
   lastSeenAt: string | null; canSignIn: boolean;
 };
+
+/** Display order: what a member sees first is what the owner tunes most often. */
+const CAPABILITY_ORDER: readonly Capability[] = [
+  "read", ...TUNABLE_CAPABILITIES, "manageAdmins", "manageSecrets", "manageInstance",
+];
+const OWNER_ONLY: readonly Capability[] = ["manageAdmins", "manageSecrets", "manageInstance"];
 type Me = { id: string; email: string; role: Role | "owner"; capabilities: string[]; mustChangePassword: boolean; hasPassword?: boolean };
 type Data = {
   notMigrated?: boolean;
@@ -39,6 +50,9 @@ export default function TeamMembersPanel() {
   const [error, setError] = useState("");
   const [form, setForm] = useState({ email: "", name: "", role: "viewer" as Role, mode: "password" as "password" | "invite" });
   const [secret, setSecret] = useState<{ email: string; password?: string | null; inviteToken?: string | null } | null>(null);
+  const [tuning, setTuning] = useState<string | null>(null);
+  const [transfer, setTransfer] = useState<Member | null>(null);
+  const [transferInput, setTransferInput] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -83,6 +97,27 @@ export default function TeamMembersPanel() {
     if (await call(`/api/team/members/${encodeURIComponent(id)}`, { method: "DELETE" }, `remove-${id}`)) void load();
   }
 
+  /**
+   * One switch = one PATCH with the whole recomputed delta. The same pure functions the server
+   * uses decide what the new state means, so a switch can never even display a combination the
+   * fences would reject — the server re-sanitizes anyway, as every server must.
+   */
+  async function toggleCapability(member: Member, capability: Capability, next: boolean) {
+    const current = effectiveCapabilities(member.role, member.capabilities);
+    const desired = next ? [...current, capability] : current.filter(cap => cap !== capability);
+    await patchMember(member.id, { capabilities: deltaFor(member.role, desired) }, `cap-${member.id}`);
+  }
+
+  async function transferTo(member: Member) {
+    const body = await call("/api/team/transfer", {
+      method: "POST",
+      body: JSON.stringify({ membershipId: member.id, confirm: true }),
+    }, "transfer");
+    if (!body) return;
+    setTransfer(null); setTransferInput("");
+    void load();
+  }
+
   if (loading && !data) return <div style={card}><Loader2 className="spin" size={20} /></div>;
   if (data?.notMigrated) return <div style={card}><AlertTriangle size={18} color="var(--color-accent-orange)" /> {t("teamNotMigrated")}</div>;
   if (!data) return <div style={card}>{error || t("teamLoadFailed")}</div>;
@@ -101,9 +136,33 @@ export default function TeamMembersPanel() {
         <RoleLine icon={<Check size={13} color="#34c759" />} name={t("teamRoleEditor")} text={t("teamRoleEditorText")} />
         <RoleLine icon={<Check size={13} color="#8e8e93" />} name={t("teamRoleViewer")} text={t("teamRoleViewerText")} />
       </div>
+      <p style={{ ...hint, marginTop: 10 }}>{t("teamRolesTuneNote")}</p>
     </div>
 
     {error && <div style={{ ...card, borderColor: "rgba(255,69,58,.35)", color: "#ff6b62" }}>{t(`teamError_${error}` as TKey) !== `teamError_${error}` ? t(`teamError_${error}` as TKey) : error}</div>}
+
+    {transfer && <div style={{ ...card, borderColor: "rgba(255,159,10,.45)" }}>
+      <h2 style={h2}>{t("teamTransferTitle")}</h2>
+      <p style={{ ...hint, color: "var(--color-accent-orange)" }}>{t("teamTransferIntro").replace("{email}", transfer.email)}</p>
+      <label style={{ ...label, marginTop: 12 }}>{t("teamTransferType")}
+        <input
+          className="tool-input" value={transferInput} autoFocus
+          onChange={e => setTransferInput(e.target.value)}
+          placeholder={transfer.email}
+          onKeyDown={e => { if (e.key === "Enter" && transferInput.trim().toLowerCase() === transfer.email && !busy) void transferTo(transfer); }}
+        />
+      </label>
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <button
+          style={{ ...primary, marginTop: 0, background: "#ff6b62" }}
+          disabled={!!busy || transferInput.trim().toLowerCase() !== transfer.email}
+          onClick={() => void transferTo(transfer)}
+        >
+          {busy === "transfer" ? <Loader2 className="spin" size={14} /> : <ArrowLeftRight size={14} />} {t("teamTransferGo")}
+        </button>
+        <button style={ghost} onClick={() => { setTransfer(null); setTransferInput(""); }}>{t("teamTransferCancel")}</button>
+      </div>
+    </div>}
 
     {secret && <div style={{ ...card, borderColor: "rgba(52,199,89,.35)" }}>
       <h2 style={h2}>{secret.password ? t("teamPasswordReady") : t("teamInviteReady")}</h2>
@@ -157,36 +216,57 @@ export default function TeamMembersPanel() {
         note={t("teamOwnerNote")}
       />
 
-      {data.members.map(member => <Row
-        key={member.id}
-        title={member.name || member.email}
-        subtitle={member.email}
-        badge={<span style={badge(member.role === "admin" ? "#bf5af2" : member.role === "editor" ? "#34c759" : "#8e8e93")}>
-          {t(`teamRole${member.role[0].toUpperCase()}${member.role.slice(1)}` as TKey)}
-        </span>}
-        note={member.invitePending ? t("teamInvitePending") : member.status === "suspended" ? t("teamSuspended")
-          : member.lastSeenAt ? `${t("teamLastSeen")}: ${new Date(member.lastSeenAt).toLocaleString()}` : t("teamNeverSignedIn")}
-        actions={canManage && (member.role !== "admin" || isOwner) ? <>
-          <select
-            className="tool-input" style={{ width: "auto" }} value={member.role} disabled={!!busy}
-            onChange={e => patchMember(member.id, { role: e.target.value }, `role-${member.id}`)}
-          >
-            {assignable.map(role => <option key={role} value={role}>{t(`teamRole${role[0].toUpperCase()}${role.slice(1)}` as TKey)}</option>)}
-          </select>
-          <button style={ghost} disabled={!!busy} title={t("teamResetPassword")}
-            onClick={() => patchMember(member.id, { action: "reset_password" }, `pw-${member.id}`)}>
-            <KeyRound size={13} />
-          </button>
-          <button style={ghost} disabled={!!busy} title={t(member.status === "suspended" ? "teamReactivate" : "teamSuspend")}
-            onClick={() => patchMember(member.id, { status: member.status === "suspended" ? "active" : "suspended" }, `st-${member.id}`)}>
-            <UserX size={13} />
-          </button>
-          <button style={{ ...ghost, color: "#ff6b62" }} disabled={!!busy} title={t("teamRemove")}
-            onClick={() => removeMember(member.id, member.email)}>
-            <Trash2 size={13} />
-          </button>
-        </> : null}
-      />)}
+      {data.members.map(member => <Fragment key={member.id}>
+        <Row
+          title={member.name || member.email}
+          subtitle={member.email}
+          badge={<span style={badge(member.role === "admin" ? "#bf5af2" : member.role === "editor" ? "#34c759" : "#8e8e93")}>
+            {t(`teamRole${member.role[0].toUpperCase()}${member.role.slice(1)}` as TKey)}
+          </span>}
+          note={member.invitePending ? t("teamInvitePending") : member.status === "suspended" ? t("teamSuspended")
+            : member.lastSeenAt ? `${t("teamLastSeen")}: ${new Date(member.lastSeenAt).toLocaleString()}` : t("teamNeverSignedIn")}
+          actions={canManage && (member.role !== "admin" || isOwner) ? <>
+            <select
+              className="tool-input" style={{ width: "auto" }} value={member.role} disabled={!!busy}
+              onChange={e => patchMember(member.id, { role: e.target.value }, `role-${member.id}`)}
+            >
+              {assignable.map(role => <option key={role} value={role}>{t(`teamRole${role[0].toUpperCase()}${role.slice(1)}` as TKey)}</option>)}
+            </select>
+            <button style={ghost} disabled={!!busy} title={t("teamResetPassword")}
+              onClick={() => patchMember(member.id, { action: "reset_password" }, `pw-${member.id}`)}>
+              <KeyRound size={13} />
+            </button>
+            <button style={ghost} disabled={!!busy} title={t(member.status === "suspended" ? "teamReactivate" : "teamSuspend")}
+              onClick={() => patchMember(member.id, { status: member.status === "suspended" ? "active" : "suspended" }, `st-${member.id}`)}>
+              <UserX size={13} />
+            </button>
+            <button style={{ ...ghost, color: "#ff6b62" }} disabled={!!busy} title={t("teamRemove")}
+              onClick={() => removeMember(member.id, member.email)}>
+              <Trash2 size={13} />
+            </button>
+          </> : null}
+          ownerActions={isOwner ? <>
+            <button
+              style={tuning === member.id ? { ...ghost, borderColor: "var(--color-accent-blue)", color: "var(--color-accent-blue)" } : ghost}
+              disabled={!!busy} title={t("teamTune")}
+              onClick={() => setTuning(tuning === member.id ? null : member.id)}
+            >
+              <SlidersHorizontal size={13} />
+            </button>
+            {member.role === "admin" && member.status === "active" && !member.invitePending &&
+              <button style={{ ...ghost, color: "#F59E0B" }} disabled={!!busy} title={t("teamTransfer")}
+                onClick={() => { setTransfer(member); setTransferInput(""); }}>
+                <ArrowLeftRight size={13} />
+              </button>}
+          </> : null}
+        />
+        {tuning === member.id && <CapabilityEditor
+          member={member} busy={!!busy}
+          onToggle={(capability, next) => void toggleCapability(member, capability, next)}
+          onReset={() => void patchMember(member.id, { capabilities: null }, `cap-${member.id}`)}
+          t={t as (k: string) => string}
+        />}
+      </Fragment>)}
     </div>
   </div>;
 }
@@ -247,8 +327,9 @@ function MyPassword({ me, t }: { me: Me; t: (k: string) => string }) {
   </div>;
 }
 
-function Row({ title, subtitle, badge, note, actions }: {
+function Row({ title, subtitle, badge, note, actions, ownerActions }: {
   title: string; subtitle: string; badge: React.ReactNode; note?: string; actions?: React.ReactNode;
+  ownerActions?: React.ReactNode;
 }) {
   return <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 20px", borderBottom: "1px solid var(--color-border)", flexWrap: "wrap" }}>
     <div style={{ flex: 1, minWidth: 180 }}>
@@ -258,6 +339,55 @@ function Row({ title, subtitle, badge, note, actions }: {
     </div>
     {badge}
     {actions && <div style={{ display: "flex", gap: 6, alignItems: "center" }}>{actions}</div>}
+    {ownerActions && <div style={{ display: "flex", gap: 6, alignItems: "center" }}>{ownerActions}</div>}
+  </div>;
+}
+
+/**
+ * The per-member permission editor (issue #39): one row per capability, a switch where the fences
+ * allow a change, a lock and a reason where they do not. The state shown is the same effective
+ * capabilities the server enforces, computed by the same pure functions — there is no second
+ * permission list here to drift out of sync.
+ */
+function CapabilityEditor({ member, busy, onToggle, onReset, t }: {
+  member: Member; busy: boolean;
+  onToggle: (capability: Capability, next: boolean) => void;
+  onReset: () => void;
+  t: (k: string) => string;
+}) {
+  const effective = effectiveCapabilities(member.role, member.capabilities);
+  const hasOverride = member.capabilities.add.length > 0 || member.capabilities.remove.length > 0;
+  return <div style={{ padding: "12px 20px 16px", borderBottom: "1px solid var(--color-border)", background: "var(--color-bg)" }}>
+    <div style={{ ...hint, marginBottom: 8 }}>
+      <b style={{ color: "var(--color-text-primary)" }}>{t("teamTuneTitle")} — {member.email}</b>
+      <br />
+      {t("teamTuneIntro")}
+    </div>
+    <div style={{ display: "grid", gap: 4 }}>
+      {CAPABILITY_ORDER.map(capability => {
+        const has = effective.includes(capability);
+        const canToggle = toggleableFor(member.role, capability, has);
+        const lockedReason = capability === "read" ? t("teamCapAlways")
+          : OWNER_ONLY.includes(capability) ? t("teamCapOwnerOnly")
+          : t("teamCapFixed");
+        return <div key={capability} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12, padding: "3px 0" }}>
+          <input
+            type="checkbox" checked={has} disabled={busy || !canToggle}
+            onChange={e => onToggle(capability, e.target.checked)}
+            style={{ width: 15, height: 15, accentColor: "var(--color-accent-blue)", cursor: canToggle ? "pointer" : "not-allowed", flexShrink: 0 }}
+          />
+          <span style={{ minWidth: 150, fontWeight: 600, color: "var(--color-text-primary)" }}>{t(`teamCap_${capability}`)}</span>
+          <span style={{ flex: 1, color: "var(--color-text-secondary)" }}>{t(`teamCapDesc_${capability}`)}</span>
+          {!canToggle && <span title={lockedReason} style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "var(--color-text-tertiary)", fontSize: 11 }}>
+            <Lock size={11} /> {lockedReason}
+          </span>}
+        </div>;
+      })}
+    </div>
+    <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center" }}>
+      <button style={ghost} disabled={busy || !hasOverride} onClick={onReset}>{t("teamTuneReset")}</button>
+      {hasOverride && <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>{t("teamTuneCustomized")}</span>}
+    </div>
   </div>;
 }
 

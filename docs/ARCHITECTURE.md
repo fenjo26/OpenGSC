@@ -24,12 +24,24 @@ multiple Google identities, not a multi-customer SaaS.
 
 **Workspace and roles.** Every table is scoped by `userId`, and that still means the owner. Team
 members do not own rows: `getWorkspace()` in `src/lib/team/workspace.ts` resolves a request to
-`{ ownerId, actorId, role }`, and route handlers call `workspaceUserId(capability)` instead of
-reading the session, so the hundreds of existing queries are unchanged while gaining an access
-rule. The permission table lives in `src/lib/team/roles.ts` — pure, unit-tested, and importable by
+`{ ownerId, actorId, role, capabilities }`, and route handlers call `workspaceUserId(capability)`
+instead of reading the session, so the hundreds of existing queries are unchanged while gaining an
+access rule. The permission table lives in `src/lib/team/roles.ts` — pure, unit-tested, and importable by
 client components to hide controls, though the server checks it again because a hidden button is
 not a permission system. Two boundaries carry the design: spending the owner's API credits requires
 `admin`, and anything that can lock the owner out or expose credentials is owner-only.
+
+On top of the fixed table sits a per-member override layer (issue #39): the owner may add or remove
+individual capabilities on a `Membership` row (`capabilities` column, a sanitized
+`{ add, remove }` JSON delta) within hard fences — `read` can never be revoked, the owner-only
+capabilities can never be granted, and `manageMembers` is not grantable below admin because member
+hierarchy is role-based, not capability-based. The delta is re-sanitized against the current role on
+every read (`effectiveCapabilities`), so a role change that leaves a stale override behind degrades
+to a no-op; the editor actually resets the column on a role change. MCP tokens and the browser
+extension resolve through the same effective capabilities, so an agent and a signed-in member can
+never disagree about what is allowed. Ownership transfer is a distinct owner-only action
+(`POST /api/team/transfer`, `transferOwnership` in `src/lib/team/service.ts`) that swaps
+`User.isOwner`, re-points every membership row, and demotes the previous owner to an admin.
 
 **Identity is not Google.** Accounts authenticate through the Credentials provider; the owner is
 created from the console (`scripts/create-owner.mjs`) and recovered the same way

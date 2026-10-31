@@ -86,7 +86,9 @@ from the server.
 **Support contract:** OpenGSC is a single-workspace application. One owner connects the Google
 accounts and pays for every API key; team members are invited into that workspace with a role
 (viewer, editor or admin) and sign in with an email and a password rather than Google, so nobody's
-personal Search Console properties are pulled in. There is no multi-tenancy: one instance serves one
+personal Search Console properties are pulled in. The owner can also fine-tune any member beyond
+their role — paid calls, publishing, member management — and hand the workspace to an admin
+(Settings → Team). There is no multi-tenancy: one instance serves one
 workspace. SQLite is the only fully supported production database; the MySQL/MariaDB notes are an
 experimental porting guide with no promise of feature parity — see [`docs/TESTING-MYSQL.md`](docs/TESTING-MYSQL.md).
 

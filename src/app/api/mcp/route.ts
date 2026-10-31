@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { MCP_TOOLS, findTool, type McpTool } from "@/lib/mcp/tools";
-import { can, statusGrantsAccess, type WorkspaceRole } from "@/lib/team/roles";
+import { can, effectiveCapabilities, statusGrantsAccess, type Capability, type WorkspaceRole } from "@/lib/team/roles";
 import { workspaceOwner } from "@/lib/team/workspace";
 import { rawQuery } from "@/lib/db/raw";
 import pkg from "../../../../package.json";
@@ -69,22 +69,43 @@ async function authUserId(req: Request): Promise<string | null> {
 /**
  * An MCP token belongs to a person, and that person has a role. A member's agent therefore reads
  * the owner's data — there is no other data on the instance — but inherits the same ceiling as the
- * member: a viewer's agent cannot start a paid job just because it was handed a token.
+ * member: a viewer's agent cannot start a paid job just because it was handed a token. The ceiling
+ * is the member's *effective* capabilities — role matrix plus the owner's per-member overrides —
+ * so an agent and a signed-in member can never disagree about what is allowed.
  */
-async function tokenWorkspace(actorId: string): Promise<{ ownerId: string; role: WorkspaceRole } | null> {
+async function tokenWorkspace(actorId: string): Promise<{ ownerId: string; role: WorkspaceRole; capabilities: readonly Capability[] } | null> {
   const owner = await workspaceOwner();
   if (!owner) return null;
-  if (owner.id === actorId) return { ownerId: owner.id, role: "owner" };
+  if (owner.id === actorId) return { ownerId: owner.id, role: "owner", capabilities: effectiveCapabilities("owner", null) };
+  const resolve = (row: { role: string }) => {
+    const role = String(row.role) as WorkspaceRole;
+    return {
+      ownerId: owner.id,
+      role,
+      capabilities: effectiveCapabilities(role, (row as { capabilities?: string | null }).capabilities ?? null),
+    };
+  };
   try {
-    const rows = await rawQuery<{ role: string; status: string }[]>(
-      `SELECT role, status FROM "Membership" WHERE ownerId = ? AND userId = ? LIMIT 1`,
+    const rows = await rawQuery<{ role: string; status: string; capabilities?: string | null }[]>(
+      `SELECT role, status, capabilities FROM "Membership" WHERE ownerId = ? AND userId = ? LIMIT 1`,
       owner.id, actorId,
     );
     const row = rows?.[0];
     if (!row || !statusGrantsAccess(String(row.status))) return null;
-    return { ownerId: owner.id, role: (String(row.role) as WorkspaceRole) };
+    return resolve(row);
   } catch {
-    return null; // no Membership table yet: only the owner can hold a working token
+    // The capabilities column may lag a `db push` — re-read without it; overrides read as absent.
+    try {
+      const rows = await rawQuery<{ role: string; status: string }[]>(
+        `SELECT role, status FROM "Membership" WHERE ownerId = ? AND userId = ? LIMIT 1`,
+        owner.id, actorId,
+      );
+      const row = rows?.[0];
+      if (!row || !statusGrantsAccess(String(row.status))) return null;
+      return resolve(row);
+    } catch {
+      return null; // no Membership table yet: only the owner can hold a working token
+    }
   }
 }
 
@@ -115,7 +136,7 @@ type RpcMsg = { jsonrpc?: string; id?: number | string | null; method?: string; 
 const rpcResult = (id: RpcMsg["id"], result: unknown) => ({ jsonrpc: "2.0", id: id ?? null, result });
 const rpcError = (id: RpcMsg["id"], code: number, message: string) => ({ jsonrpc: "2.0", id: id ?? null, error: { code, message } });
 
-async function handleMessage(msg: RpcMsg, userId: string, role: WorkspaceRole): Promise<object | null> {
+async function handleMessage(msg: RpcMsg, userId: string, ws: { role: WorkspaceRole; capabilities: readonly Capability[] }): Promise<object | null> {
   const { id, method, params } = msg;
 
   // Notifications (no id) get no response body.
@@ -143,9 +164,9 @@ async function handleMessage(msg: RpcMsg, userId: string, role: WorkspaceRole): 
       // The registry already declares what a call costs, so the permission follows from the tool
       // rather than from a second list that can drift out of sync with it.
       const needed = tool.cost === "paid" ? "spend" : tool.readOnly === false ? "write" : "read";
-      if (!can({ role }, needed)) {
+      if (!can(ws, needed)) {
         return rpcResult(id, {
-          content: [{ type: "text", text: `This workspace role (${role}) may not call ${name}. Required: ${needed}.` }],
+          content: [{ type: "text", text: `This workspace role (${ws.role}) may not call ${name}. Required: ${needed}.` }],
           isError: true,
         });
       }
@@ -183,12 +204,12 @@ export async function POST(req: Request) {
   }
 
   if (Array.isArray(body)) {
-    const responses = (await Promise.all(body.map(m => handleMessage(m, userId, workspace.role)))).filter(Boolean);
+    const responses = (await Promise.all(body.map(m => handleMessage(m, userId, workspace)))).filter(Boolean);
     if (!responses.length) return new Response(null, { status: 202 });
     return NextResponse.json(responses);
   }
 
-  const response = await handleMessage(body, userId, workspace.role);
+  const response = await handleMessage(body, userId, workspace);
   if (!response) return new Response(null, { status: 202 }); // notification
   return NextResponse.json(response);
 }

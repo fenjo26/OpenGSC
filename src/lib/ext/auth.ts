@@ -18,7 +18,7 @@ import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { rawQuery } from "@/lib/db/raw";
 import { workspaceOwner } from "@/lib/team/owner";
-import { can, statusGrantsAccess, type Capability, type WorkspaceRole } from "@/lib/team/roles";
+import { can, effectiveCapabilities, statusGrantsAccess, type Capability, type WorkspaceRole } from "@/lib/team/roles";
 import { checkExtToken, EXT_TOKEN_PREFIX, isExtTokenFormat, tokenKey } from "./token";
 import { corsDecision, corsHeaders } from "./origin";
 import { EXT_RATE_LIMIT_PER_MIN, SlidingWindowRateLimiter } from "./rateLimit";
@@ -59,21 +59,41 @@ async function userByToken(token: string): Promise<ExtUserRow | null | "not_migr
   }
 }
 
-/** The same resolution /api/mcp performs for mcpToken: token → person → owner + role. */
-async function tokenWorkspace(actorId: string): Promise<{ ownerId: string; role: WorkspaceRole } | null> {
+/** The same resolution /api/mcp performs for mcpToken: token → person → owner + role + effective
+ *  capabilities (role matrix plus the owner's per-member overrides). */
+async function tokenWorkspace(actorId: string): Promise<{ ownerId: string; role: WorkspaceRole; capabilities: readonly Capability[] } | null> {
   const owner = await workspaceOwner();
   if (!owner) return null;
-  if (owner.id === actorId) return { ownerId: owner.id, role: "owner" };
+  if (owner.id === actorId) return { ownerId: owner.id, role: "owner", capabilities: effectiveCapabilities("owner", null) };
+  const resolve = (row: { role?: unknown }) => {
+    const role = String(row.role) as WorkspaceRole;
+    return {
+      ownerId: owner.id,
+      role,
+      capabilities: effectiveCapabilities(role, (row as { capabilities?: string | null }).capabilities ?? null),
+    };
+  };
   try {
-    const rows: { role?: unknown; status?: unknown }[] = await rawQuery(
-      `SELECT role, status FROM "Membership" WHERE ownerId = ? AND userId = ? LIMIT 1`,
+    const rows: { role?: unknown; status?: unknown; capabilities?: string | null }[] = await rawQuery(
+      `SELECT role, status, capabilities FROM "Membership" WHERE ownerId = ? AND userId = ? LIMIT 1`,
       owner.id, actorId,
     );
     const row = rows?.[0];
     if (!row || !statusGrantsAccess(String(row.status))) return null;
-    return { ownerId: owner.id, role: String(row.role) as WorkspaceRole };
+    return resolve(row);
   } catch {
-    return null; // no Membership table yet: only the owner can hold a working token
+    // The capabilities column may lag a `db push` — re-read without it; overrides read as absent.
+    try {
+      const rows: { role?: unknown; status?: unknown }[] = await rawQuery(
+        `SELECT role, status FROM "Membership" WHERE ownerId = ? AND userId = ? LIMIT 1`,
+        owner.id, actorId,
+      );
+      const row = rows?.[0];
+      if (!row || !statusGrantsAccess(String(row.status))) return null;
+      return resolve(row);
+    } catch {
+      return null; // no Membership table yet: only the owner can hold a working token
+    }
   }
 }
 
@@ -141,7 +161,7 @@ export async function extAuth(req: Request, capability: Capability): Promise<Ext
   }
 
   const workspace = await tokenWorkspace(row.id);
-  if (!workspace || !can({ role: workspace.role }, capability)) {
+  if (!workspace || !can(workspace, capability)) {
     return { ok: false, response: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
   }
 

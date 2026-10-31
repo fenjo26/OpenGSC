@@ -13,6 +13,11 @@
  *      someone else's credit card.
  *   2. Anything that can lock the owner out or expose credentials is owner-only: API keys, Google
  *      connections, MCP tokens, the instance update button and destructive deletes.
+ *
+ * On top of the fixed table sits a per-member override layer (issue #39): the owner may add or
+ * remove individual capabilities on a member row within the fences below. The fences are what keep
+ * the two boundaries non-negotiable — no override ever grants an owner-only capability or takes
+ * away `read`, and everything outside them is the owner's call.
  */
 
 export const TEAM_ROLES = ["viewer", "editor", "admin"] as const;
@@ -44,25 +49,128 @@ const MATRIX: Record<WorkspaceRole, readonly Capability[]> = {
   ],
 };
 
+/**
+ * What one member row may add to or subtract from its role. The fences are the two boundaries from
+ * the header, kept hard on purpose:
+ *
+ *   - `read` cannot be revoked — a membership that cannot see the workspace is not a membership;
+ *     suspend the person instead.
+ *   - the owner-only capabilities cannot be granted at all, so no combination of overrides ever
+ *     hands out credentials, the update button or the right to promote admins.
+ *   - `manageMembers` cannot be granted below admin, because `canManageMember` is role-hierarchy,
+ *     not capability, and a granted-but-dead switch is a lie told in a settings screen.
+ */
+/** Every capability a switch could exist for — the UI iterates this to render one row per item. */
+export const TUNABLE_CAPABILITIES: readonly Capability[] = [
+  "act", "write", "spend", "publish", "manageMembers",
+];
+
+const GRANTABLE: Record<TeamRole, readonly Capability[]> = {
+  viewer: ["act", "write", "spend", "publish"],
+  editor: ["spend", "publish"],
+  admin: [],
+};
+// Taking back is uniform across roles: anything inside the tunable set — granted by an override or
+// carried by the role itself — can be removed. The fence is the set, not per-role revoke lists.
+const REVOKABLE: Record<TeamRole, readonly Capability[]> = {
+  viewer: TUNABLE_CAPABILITIES,
+  editor: TUNABLE_CAPABILITIES,
+  admin: TUNABLE_CAPABILITIES,
+};
+
+/** Per-member deviation from the role matrix, as stored on the Membership row (JSON). */
+export interface CapabilityDelta {
+  add: Capability[];
+  remove: Capability[];
+}
+
 export interface Workspace {
   /** The user id that owns every row — what `userId` has always meant in this codebase. */
   ownerId: string;
   /** Who is actually making the request. Equal to ownerId when the owner is signed in. */
   actorId: string;
   role: WorkspaceRole;
+  /**
+   * The capabilities this actor actually has, matrix plus overrides. Absent on contexts built from
+   * a role alone (older callers, tests) — then `can()` falls back to the pure matrix.
+   */
+  capabilities?: readonly Capability[];
 }
 
 export function isTeamRole(value: unknown): value is TeamRole {
   return TEAM_ROLES.includes(String(value) as TeamRole);
 }
 
-export function can(workspace: Pick<Workspace, "role"> | null | undefined, capability: Capability): boolean {
+export function can(workspace: Pick<Workspace, "role" | "capabilities"> | null | undefined, capability: Capability): boolean {
   if (!workspace) return false;
-  return (MATRIX[workspace.role] ?? []).includes(capability);
+  return (workspace.capabilities ?? MATRIX[workspace.role] ?? []).includes(capability);
 }
 
 export function capabilitiesOf(role: WorkspaceRole): readonly Capability[] {
   return MATRIX[role] ?? [];
+}
+
+/**
+ * Read a stored delta without trusting it. Anything that is not a `{add, remove}` shape of known
+ * capabilities is dropped field by field rather than rejected, because this also runs on rows a
+ * rolling update wrote before the fences existed — a stale override must degrade to a no-op, not
+ * lock a member out of their session.
+ */
+export function sanitizeDelta(role: TeamRole, delta: { add?: unknown; remove?: unknown } | null | undefined): CapabilityDelta {
+  const keep = (list: unknown, allowed: readonly Capability[]) =>
+    Array.isArray(list)
+      ? [...new Set(list.map(String).filter((cap): cap is Capability => allowed.includes(cap as Capability)))]
+      : [];
+  return {
+    add: keep(delta?.add, GRANTABLE[role] ?? []),
+    remove: keep(delta?.remove, REVOKABLE[role] ?? []),
+  };
+}
+
+/** A raw column value (JSON string, object, junk) into a delta, or null when there is nothing. */
+export function parseCapabilityDelta(raw: unknown): { add?: unknown; remove?: unknown } | null {
+  if (raw == null) return null;
+  if (typeof raw === "string") {
+    if (!raw.trim()) return null;
+    try { raw = JSON.parse(raw); } catch { return null; }
+  }
+  if (typeof raw !== "object" || Array.isArray(raw)) return null;
+  const obj = raw as { add?: unknown; remove?: unknown };
+  return { add: obj.add, remove: obj.remove };
+}
+
+/**
+ * What a member may actually do: their role's matrix, plus what the owner added, minus what the
+ * owner removed. The delta is re-sanitized against the current role on every read, so a role
+ * change that left a stale override behind can never widen or corrupt the result.
+ */
+export function effectiveCapabilities(role: WorkspaceRole, rawDelta: unknown): readonly Capability[] {
+  if (role === "owner") return MATRIX.owner;
+  const base = new Set(MATRIX[role] ?? []);
+  const delta = sanitizeDelta(role, parseCapabilityDelta(rawDelta));
+  for (const cap of delta.add) base.add(cap);
+  for (const cap of delta.remove) base.delete(cap);
+  return [...base];
+}
+
+/**
+ * The delta that turns a role's defaults into `desired`. Returns null when they already match, so
+ * "no customization" stays the absence of a row rather than a stored `{add:[],remove:[]}`.
+ */
+export function deltaFor(role: TeamRole, desired: readonly Capability[]): CapabilityDelta | null {
+  const base = MATRIX[role] ?? [];
+  const add = GRANTABLE[role].filter(cap => !base.includes(cap) && desired.includes(cap));
+  const remove = REVOKABLE[role].filter(cap => base.includes(cap) && !desired.includes(cap));
+  return add.length || remove.length ? { add, remove } : null;
+}
+
+/**
+ * Whether a switch exists for this capability on this member right now. The owner-only three and
+ * `read` never have one; the rest depends on the fences and on which side of its default the
+ * capability currently sits (a granted switch must stay flippable in both directions).
+ */
+export function toggleableFor(role: TeamRole, capability: Capability, has: boolean): boolean {
+  return has ? REVOKABLE[role].includes(capability) : GRANTABLE[role].includes(capability);
 }
 
 /**

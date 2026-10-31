@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  assignableRoles, can, canManageMember, capabilitiesOf, isTeamRole,
-  normalizeEmail, passwordProblem, statusGrantsAccess, TEAM_ROLES,
+  assignableRoles, can, canManageMember, capabilitiesOf, deltaFor,
+  effectiveCapabilities, isTeamRole, normalizeEmail, passwordProblem,
+  sanitizeDelta, statusGrantsAccess, TEAM_ROLES, toggleableFor, TUNABLE_CAPABILITIES,
 } from "./roles";
 
 test("a viewer can read and nothing else", () => {
@@ -65,6 +66,92 @@ test("only an active membership grants access", () => {
   assert.equal(statusGrantsAccess("active"), true);
   assert.equal(statusGrantsAccess("invited"), false);
   assert.equal(statusGrantsAccess("suspended"), false);
+});
+
+test("overrides can widen or narrow a member inside the fences", () => {
+  // An editor trusted with paid research, an admin barred from spending: both are the owner's call.
+  assert.deepEqual([...effectiveCapabilities("editor", { add: ["spend"] })], ["read", "act", "write", "spend"]);
+  assert.deepEqual(
+    [...effectiveCapabilities("admin", { remove: ["spend", "manageMembers"] })],
+    ["read", "act", "write", "publish"],
+  );
+  // A viewer upgraded to writer without becoming an editor in name.
+  assert.deepEqual([...effectiveCapabilities("viewer", { add: ["write"] })], ["read", "write"]);
+});
+
+test("no override ever grants an owner-only capability or takes away read", () => {
+  for (const raw of [
+    { add: ["manageSecrets", "manageAdmins", "manageInstance", "read"] },
+    { add: ["manageSecrets"], remove: ["read"] },
+    "not json at all",
+    { add: "spend" },          // wrong shape: not an array
+    { add: ["spend"], remove: ["nonsense", "spend"] },
+    null, undefined, 42,
+  ]) {
+    for (const role of TEAM_ROLES) {
+      const caps = effectiveCapabilities(role, raw);
+      assert.equal(caps.includes("read"), true, `${role} keeps read`);
+      assert.equal(caps.includes("manageSecrets"), false, `${role} cannot gain secrets`);
+      assert.equal(caps.includes("manageAdmins"), false, `${role} cannot gain admins`);
+      assert.equal(caps.includes("manageInstance"), false, `${role} cannot gain the instance`);
+    }
+  }
+  // The owner role ignores deltas entirely — ownership is not a membership row.
+  assert.deepEqual([...effectiveCapabilities("owner", { remove: ["read"] })], [...capabilitiesOf("owner")]);
+});
+
+test("sanitize drops what the fences do not allow for that role", () => {
+  // Granting manageMembers below admin is dead on arrival — canManageMember is hierarchy, not caps.
+  assert.deepEqual(sanitizeDelta("viewer", { add: ["write", "manageMembers", "spend"] }), { add: ["write", "spend"], remove: [] });
+  assert.deepEqual(sanitizeDelta("editor", { add: ["spend", "act"], remove: ["read"] }), { add: ["spend"], remove: [] });
+  assert.deepEqual(sanitizeDelta("admin", { add: ["spend"], remove: ["publish", "manageMembers"] }), { add: [], remove: ["publish", "manageMembers"] });
+  assert.deepEqual(sanitizeDelta("admin", null), { add: [], remove: [] });
+});
+
+test("a granted switch stays flippable in both directions", () => {
+  // Defaults: admin has spend, viewer does not.
+  assert.equal(toggleableFor("admin", "spend", true), true);
+  assert.equal(toggleableFor("viewer", "spend", false), true);
+  // Owner-only and read never get a switch, and manageMembers is not grantable below admin.
+  assert.equal(toggleableFor("admin", "manageSecrets", false), false);
+  assert.equal(toggleableFor("viewer", "read", true), false);
+  assert.equal(toggleableFor("editor", "manageMembers", false), false);
+  // The moment spend is granted to a viewer, taking it back must be possible too.
+  assert.equal(toggleableFor("viewer", "spend", true), true);
+});
+
+test("deltaFor stores nothing when the answer equals the role defaults", () => {
+  assert.equal(deltaFor("admin", [...capabilitiesOf("admin")]), null);
+  assert.deepEqual(deltaFor("editor", ["read", "act", "write", "spend"]), { add: ["spend"], remove: [] });
+  assert.deepEqual(deltaFor("admin", ["read", "write", "spend", "publish", "manageMembers"]), { add: [], remove: ["act"] });
+  // Round trip: apply the computed delta, get the desired list back.
+  const desired: readonly import("./roles").Capability[] = ["read", "act", "write", "spend"];
+  const delta = deltaFor("viewer", desired);
+  assert.deepEqual(
+    [...effectiveCapabilities("viewer", delta)],
+    desired,
+  );
+});
+
+test("can() honors effective capabilities when they are present", () => {
+  const adminNoSpend = { role: "admin" as const, capabilities: effectiveCapabilities("admin", { remove: ["spend"] }) };
+  assert.equal(can(adminNoSpend, "spend"), false);
+  assert.equal(can(adminNoSpend, "publish"), true);
+  assert.equal(can(adminNoSpend, "manageMembers"), true);
+  // Without the field the pure matrix decides — old callers and tests keep their meaning.
+  assert.equal(can({ role: "admin" }, "spend"), true);
+  const editorWithSpend = { role: "editor" as const, capabilities: effectiveCapabilities("editor", { add: ["spend"] }) };
+  assert.equal(can(editorWithSpend, "spend"), true);
+  assert.equal(can(editorWithSpend, "publish"), false);
+});
+
+test("the tunable list never mentions an owner-only capability or read", () => {
+  for (const cap of TUNABLE_CAPABILITIES) {
+    assert.notEqual(cap, "read");
+    assert.notEqual(cap, "manageAdmins");
+    assert.notEqual(cap, "manageSecrets");
+    assert.notEqual(cap, "manageInstance");
+  }
 });
 
 test("password rules reject the failures that actually happen", () => {

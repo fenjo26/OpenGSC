@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { capabilitiesOf } from "@/lib/team/roles";
 import { listWorkspace } from "@/lib/team/service";
 import { prisma } from "@/lib/prisma";
 import { getWorkspace, unauthorized } from "@/lib/team/workspace";
@@ -18,7 +17,10 @@ export async function GET() {
       id: ws.actorId,
       email: ws.actorEmail,
       role: ws.role,
-      capabilities: capabilitiesOf(ws.role),
+      // Effective capabilities: the role's matrix plus this member's overrides, which is what
+      // every server route already checks against. The UI that hides controls from this list can
+      // never show a button the server would refuse.
+      capabilities: ws.capabilities ?? [],
       mustChangePassword: ws.mustChangePassword,
       // Drives the "set a password" prompt: an owner still signing in with Google has none yet, and
       // Google remains a valid login only until they do.

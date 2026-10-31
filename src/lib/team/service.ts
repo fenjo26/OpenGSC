@@ -3,8 +3,8 @@ import { createHash, randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { prisma, dbAny } from "@/lib/prisma";
 import {
-  assignableRoles, canManageMember, isTeamRole, normalizeEmail, passwordProblem,
-  type TeamRole, type WorkspaceRole,
+  assignableRoles, canManageMember, isTeamRole, normalizeEmail, parseCapabilityDelta,
+  passwordProblem, sanitizeDelta, type TeamRole, type WorkspaceRole,
 } from "./roles";
 import { workspaceOwner, type WorkspaceContext } from "./workspace";
 
@@ -18,6 +18,7 @@ interface MembershipRow {
   email: string;
   role: string;
   status: string;
+  capabilities?: string | null;
   invitedAt: Date | null;
   acceptedAt: Date | null;
   inviteExpiresAt: Date | null;
@@ -51,12 +52,16 @@ function hashInviteToken(token: string): string {
 }
 
 export function memberDto(row: MembershipRow, ownerId: string) {
+  const role = row.role as TeamRole;
   return {
     id: row.id,
     email: row.email,
     name: row.member?.name ?? null,
-    role: row.role as TeamRole,
+    role,
     status: row.status,
+    // The sanitized delta, not the raw column: the UI renders switches from what the fences
+    // actually allow for this role, never from whatever a stale row happens to contain.
+    capabilities: sanitizeDelta(role, parseCapabilityDelta(row.capabilities)),
     isOwner: false,
     invitePending: row.status === "invited",
     inviteExpiresAt: row.inviteExpiresAt,
@@ -172,7 +177,11 @@ export async function createMember(ws: WorkspaceContext, input: CreateMemberInpu
   return { member: memberDto(membership, ws.ownerId), password, inviteToken };
 }
 
-export async function updateMember(ws: WorkspaceContext, membershipId: string, patch: { role?: unknown; status?: unknown }) {
+export async function updateMember(
+  ws: WorkspaceContext,
+  membershipId: string,
+  patch: { role?: unknown; status?: unknown; capabilities?: unknown },
+) {
   const nextRole = patch.role === undefined ? undefined : (isTeamRole(patch.role) ? patch.role : null);
   if (nextRole === null) throw new TeamError("invalid_role");
   const row = await assertManageable(ws, membershipId, nextRole ?? undefined);
@@ -185,6 +194,19 @@ export async function updateMember(ws: WorkspaceContext, membershipId: string, p
     // Reactivating someone who never accepted an invite would grant access to an account that does
     // not exist yet, so the invited state is preserved instead.
     data.status = status === "active" && !row.userId ? "invited" : status;
+  }
+  const roleChanges = !!nextRole && nextRole !== row.role;
+  if (roleChanges) {
+    // A role change starts from the new role's defaults: an override tuned for admin (say, spending
+    // revoked) silently reshaped under editor is exactly the surprise nobody wants to debug.
+    data.capabilities = null;
+  } else if (patch.capabilities !== undefined) {
+    // Tuning a member's capabilities is a privilege decision, so it stays with the owner even where
+    // manageMembers reaches: an admin may run the team, but not reshape what its members may do.
+    if (ws.role !== "owner") throw new TeamError("forbidden", 403);
+    if (patch.capabilities !== null && typeof patch.capabilities !== "object") throw new TeamError("invalid_capabilities");
+    const delta = sanitizeDelta(row.role as TeamRole, patch.capabilities as Record<string, unknown> | null);
+    data.capabilities = delta.add.length || delta.remove.length ? JSON.stringify(delta) : null;
   }
   if (!Object.keys(data).length) throw new TeamError("nothing_to_update");
 

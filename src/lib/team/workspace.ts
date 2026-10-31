@@ -8,7 +8,7 @@ import { resolveCaptureBodies } from "@/lib/providerLog/bodies";
 import { workspaceOwner } from "./owner";
 import { enterCallContext, type CallContext } from "@/lib/providerLog/context";
 import {
-  can, normalizeEmail, statusGrantsAccess, type Capability, type TeamRole, type Workspace,
+  can, effectiveCapabilities, normalizeEmail, statusGrantsAccess, type Capability, type TeamRole, type Workspace,
 } from "./roles";
 
 /**
@@ -134,21 +134,33 @@ async function resolveWorkspace(): Promise<WorkspaceContext | null> {
   if (actor.id === owner.id) {
     return {
       ownerId: owner.id, actorId: actor.id, role: "owner",
+      capabilities: effectiveCapabilities("owner", null),
       actorEmail: actor.email ?? "", actorName: actor.name ?? null,
       mustChangePassword: false, membershipId: null,
     };
   }
 
   // A Membership row as the lookup selects it (the table is reached through dbAny).
-  let membership: { id: string; role: string; status: string; userId: string | null } | null = null;
+  let membership: { id: string; role: string; status: string; userId: string | null; capabilities?: string | null } | null = null;
+  const where = { ownerId: owner.id, OR: [{ userId: actor.id }, { email: normalizeEmail(actor.email) }] };
   try {
     membership = await memberships().findFirst({
-      where: { ownerId: owner.id, OR: [{ userId: actor.id }, { email: normalizeEmail(actor.email) }] },
-      select: { id: true, role: true, status: true, userId: true },
+      where,
+      select: { id: true, role: true, status: true, userId: true, capabilities: true },
     });
   } catch {
-    // No Membership table yet — an un-migrated instance has no members by definition.
-    return null;
+    // The capabilities column may not exist yet — code ships before `db push` finishes. The member
+    // must not pay for the gap with their session, so the row is re-read without it and the
+    // overrides simply read as absent.
+    try {
+      membership = await memberships().findFirst({
+        where,
+        select: { id: true, role: true, status: true, userId: true },
+      });
+    } catch {
+      // No Membership table yet — an un-migrated instance has no members by definition.
+      return null;
+    }
   }
   if (!membership || !statusGrantsAccess(membership.status)) return null;
 
@@ -158,10 +170,12 @@ async function resolveWorkspace(): Promise<WorkspaceContext | null> {
   }
   memberships().update({ where: { id: membership.id }, data: { lastSeenAt: new Date() } }).catch(() => {});
 
+  const role = (membership.role as TeamRole) ?? "viewer";
   return {
     ownerId: owner.id,
     actorId: actor.id,
-    role: (membership.role as TeamRole) ?? "viewer",
+    role,
+    capabilities: effectiveCapabilities(role, membership.capabilities),
     actorEmail: actor.email ?? "",
     actorName: actor.name ?? null,
     mustChangePassword: !!actor.mustChangePassword,
