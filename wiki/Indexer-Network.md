@@ -15,7 +15,7 @@ Verified crawlers get generated pages that link to your target URLs. Humans and 
 | Section | What it does |
 |---|---|
 | **Domains** | Add a doorway domain, pick a content template (E-commerce / Directory / Blog / Portfolio), set the redirect target, choose allowed bots (Google / Bing / Yandex). Each domain gets its own API key, plus a DR / referring-domains chip |
-| **Queue** | Paste money-site URLs to be woven as links into the next generated pages |
+| **Queue** | Paste money-site URLs to be woven as links into the next generated pages; per-doorway chips show where the queue piles up, with a redistribute action |
 | **Dictionary** | Keyword pools that flavour generated content, manual or AI-generated per niche |
 | **Links** | Cross-linking planner across your domains: ring / mesh / pyramid, SVG graph, HTML snippet export |
 | **Settings** | Deployment hub: generates code for a dynamic PHP doorway, a static PHP wrapper, Astro SSR middleware, or an Nginx config that routes bots to `index.php` and serves humans static files |
@@ -49,6 +49,19 @@ A spoofed User-Agent can't fake a PTR record inside Google's or Yandex's IP rang
 
 - The **304** columns show how often Google and Yandex re-checked pages without re-downloading them, a sign that bots actively monitor the domain.
 - Domains that are **never crawled** are worth replacing. The MCP tool `get_indexer_stats` lists them.
+
+## Redistribution
+
+Each queue row lives on exactly one doorway, and the webhook serves only the rows of the domain a bot actually hits. When a doorway stops being crawled (dropped from the index, script broken, domain expired), its rows hang pending forever.
+
+**Indexer → Queue** fixes this two ways:
+
+- The per-doorway chips (`domain · count`) show the pile-up; the shuffle button on a chip empties **that** doorway onto the other active ones.
+- The **Redistribute** button reshuffles the whole queue across the active doorways.
+
+Moved rows are re-created as fresh `PENDING` (rotation starts over, `crawled` state is reset). The spread is even and never onto a domain the URL already sits on; a URL that already exists on the target keeps that row (`merged`), extra copies across doorways are collapsed (`deduped`). The MCP mirror is `indexer_redistribute_queue`.
+
+> The drops → Activation trail (`DropDonorPlacement`) records which doorway a donor page was queued on at activation time — it is a historical log, not a join key, and may go stale after a redistribution.
 
 ## Housekeeping
 

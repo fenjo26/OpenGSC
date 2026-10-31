@@ -943,6 +943,8 @@
   "indexerQueueEnterUrl": "Введите хотя бы один URL или ссылку на sitemap.",
   "indexerQueuePageJump": "Перейти к странице",
   "indexerQueuePerPage": "На странице",
+  "indexerQueueRedistribute": "Перераспределить",
+  "indexerQueueRedistributeDomain": "Перенести URL этого дора на другие активные доры",
   "indexerHelpTitle": "Инструкция: Развертывание ботофермы и бесконечная индексация",
   "indexerHelpIntro": "Следуйте этой пошаговой инструкции, чтобы запустить сеть бесконечных поддоменов-догвеев, направляющих живой трафик на ваши проекты и собирающих поисковых роботов.",
   "indexerStep1Title": "1. Настройка Wildcard DNS (А-запись)",

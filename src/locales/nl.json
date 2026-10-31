@@ -943,6 +943,8 @@
   "indexerQueueEnterUrl": "Voer minstens één URL of sitemaplink in.",
   "indexerQueuePageJump": "Naar pagina",
   "indexerQueuePerPage": "Per pagina",
+  "indexerQueueRedistribute": "Herverdelen",
+  "indexerQueueRedistributeDomain": "Verplaats de URL's van deze doorway naar de andere actieve doorways",
   "indexerHelpTitle": "Installatiehandleiding: doorway-farms deployen & oneindig crawlen",
   "indexerHelpIntro": "Volg deze structurele configuratiehandleiding om eindeloze subdomein-doorways op te zetten die echte bezoekers doorsturen en zoekmachine-crawls terug naar OpenGSC loggen.",
   "indexerStep1Title": "1. Wildcard-DNS-mapping (A-record)",

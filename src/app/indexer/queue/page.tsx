@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, ListChecks, Trash2, Globe, AlertCircle, RefreshCw, Search, CheckCheck } from "lucide-react";
+import { Plus, ListChecks, Trash2, Globe, AlertCircle, RefreshCw, Search, CheckCheck, Shuffle } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { usePersistedState } from "@/lib/usePersistedState";
 
@@ -18,6 +18,14 @@ interface QueueItem {
 interface DomainOpt {
   id: string;
   domain: string;
+}
+
+// Per-doorway row counts from GET /api/indexer/queue — the chips that show where the queue
+// is piling up and carry the per-doorway redistribute action.
+interface ByDomainRow {
+  domainId: string;
+  domain: string;
+  count: number;
 }
 
 // The API clamps pageSize to 5..100, so 100 is the ceiling here.
@@ -38,6 +46,9 @@ export default function IndexerQueuePage() {
   const [domains, setDomains] = useState<DomainOpt[]>([]);
   const [domainId, setDomainId] = useState("all");
   const [urlsInput, setUrlsInput] = useState("");
+  const [byDomain, setByDomain] = useState<ByDomainRow[]>([]);
+  // Which redistribute action is in flight: a domainId, "all", or null.
+  const [redistributing, setRedistributing] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [statusMsg, setStatusMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -67,6 +78,7 @@ export default function IndexerQueuePage() {
         setQueue(items);
         setTotal(Array.isArray(d) ? items.length : (d.total ?? 0));
         setCrawledCount(Array.isArray(d) ? 0 : (d.crawled ?? 0));
+        setByDomain(Array.isArray(d) ? [] : (d.byDomain ?? []));
       }
     } catch (e) {
       console.error(e);
@@ -170,6 +182,40 @@ export default function IndexerQueuePage() {
       }
     } catch (e) {
       setStatusMsg({ type: "error", text: (e as Error).message });
+    }
+  };
+
+  // Re-spread stuck rows across the active doorways. A doorway that stopped being crawled
+  // never drains its rows — the webhook serves only the domain a bot actually hits — so this
+  // moves them to the others as fresh PENDING rows (rotation starts over).
+  const handleRedistribute = async (scopeDomainId?: string) => {
+    const chip = scopeDomainId ? byDomain.find(d => d.domainId === scopeDomainId) : null;
+    const n = chip ? chip.count : total;
+    const what = chip ? `все ${n} URL с ${chip.domain} на другие активные доры` : `все ${n} URL заново по активным дорам`;
+    if (!confirm(`Перераспределить ${what}? Статус сбросится в PENDING — страницы снова пойдут ботам с нуля.`)) return;
+    setRedistributing(scopeDomainId ?? "all");
+    setStatusMsg(null);
+    try {
+      const res = await fetch("/api/indexer/queue/redistribute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(scopeDomainId ? { domainId: scopeDomainId } : {}),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && d.success) {
+        const extra = [
+          d.merged ? ` · ${d.merged} уже были на цели` : "",
+          d.deduped ? ` · ${d.deduped} дублей убрано` : "",
+        ].join("");
+        setStatusMsg({ type: "success", text: `Перераспределено ${d.moved} URL по ${d.domainsUsed} дор(ам)${extra}` });
+        setPage(1); fetchQueue(1);
+      } else {
+        setStatusMsg({ type: "error", text: d.error || "Не удалось перераспределить." });
+      }
+    } catch (e) {
+      setStatusMsg({ type: "error", text: (e as Error).message });
+    } finally {
+      setRedistributing(null);
     }
   };
 
@@ -386,6 +432,33 @@ export default function IndexerQueuePage() {
             )}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          {total > 0 && domains.length > 1 && (
+            <button
+              onClick={() => handleRedistribute()}
+              disabled={!!redistributing}
+              title="Перетасовать все строки по активным дорам заново (статус сбросится в PENDING)"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                padding: "6px 10px",
+                background: "transparent",
+                border: "1px solid rgba(41,151,255,0.3)",
+                borderRadius: "6px",
+                color: "var(--color-accent-blue)",
+                fontSize: "12px",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+                transition: "all 0.15s",
+                opacity: redistributing ? 0.6 : 1,
+              }}
+              onMouseOver={e => { if (!redistributing) e.currentTarget.style.background = "rgba(41,151,255,0.07)"; }}
+              onMouseOut={e => { e.currentTarget.style.background = "transparent"; }}
+            >
+              <Shuffle size={12} className={redistributing === "all" ? "spin" : undefined} />
+              {t("indexerQueueRedistribute")} ({total})
+            </button>
+          )}
           {crawledCount > 0 && (
             <button
               onClick={handleClearCrawled}
@@ -436,6 +509,53 @@ export default function IndexerQueuePage() {
           )}
           </div>
         </div>
+
+        {/* Per-doorway load: makes the pile-up visible at a glance, and the shuffle button on a
+            chip empties THAT doorway onto the others — the "everything stuck on one domain" fix. */}
+        {byDomain.length > 1 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center" }}>
+            {byDomain.map(d => (
+              <span
+                key={d.domainId}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  padding: "3px 4px 3px 9px",
+                  background: "var(--color-bg)",
+                  border: "1px solid var(--color-border)",
+                  borderRadius: "999px",
+                  fontSize: "11px",
+                  color: "var(--color-text-secondary)",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {d.domain} · <b style={{ color: "var(--color-text-primary)" }}>{d.count}</b>
+                <button
+                  onClick={() => handleRedistribute(d.domainId)}
+                  disabled={!!redistributing}
+                  title={t("indexerQueueRedistributeDomain")}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: "2px",
+                    background: "transparent",
+                    border: "none",
+                    borderRadius: "50%",
+                    color: "var(--color-text-tertiary)",
+                    cursor: "pointer",
+                    transition: "all 0.15s",
+                  }}
+                  onMouseOver={e => { if (!redistributing) { e.currentTarget.style.color = "var(--color-accent-blue)"; e.currentTarget.style.background = "rgba(41,151,255,0.1)"; } }}
+                  onMouseOut={e => { e.currentTarget.style.color = "var(--color-text-tertiary)"; e.currentTarget.style.background = "transparent"; }}
+                >
+                  <Shuffle size={11} className={redistributing === d.domainId ? "spin" : undefined} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
 
         {loading ? (
           <div style={{ flex: "1 1 auto", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "12px", padding: "40px 0", color: "var(--color-text-secondary)" }}>

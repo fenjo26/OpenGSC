@@ -14,7 +14,7 @@ export async function GET(req: Request) {
     const pageSize = Math.min(100, Math.max(5, parseInt(sp.get("pageSize") || "15", 10) || 15));
     const where = { domain: { userId } };
 
-    const [items, total, crawled] = await Promise.all([
+    const [items, total, crawled, byDomainRaw, domains] = await Promise.all([
       prisma.indexerQueue.findMany({
         where,
         orderBy: { createdAt: "desc" },
@@ -24,9 +24,18 @@ export async function GET(req: Request) {
       }),
       prisma.indexerQueue.count({ where }),
       prisma.indexerQueue.count({ where: { ...where, status: "crawled" } }),
+      // Per-doorway row counts — the queue page's redistribution chips show where the queue
+      // is piling up, biggest first.
+      prisma.indexerQueue.groupBy({ by: ["domainId"], where, _count: { _all: true } }),
+      prisma.indexerDomain.findMany({ where: { userId }, select: { id: true, domain: true } }),
     ]);
 
-    return NextResponse.json({ items, total, crawled, page, pageSize });
+    const nameOf = new Map(domains.map(d => [d.id, d.domain]));
+    const byDomain = byDomainRaw
+      .map(g => ({ domainId: g.domainId, domain: nameOf.get(g.domainId) ?? "?", count: g._count._all }))
+      .sort((a, b) => b.count - a.count);
+
+    return NextResponse.json({ items, total, crawled, byDomain, page, pageSize });
   } catch {
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
@@ -137,9 +146,10 @@ export async function POST(req: Request) {
     let targetDomains: { id: string }[];
 
     if (domainId === "all" || !domainId) {
-      // Auto-distribute: get ALL user's doorway domains
+      // Auto-distribute: ACTIVE doorway domains only, same rule as lib/indexer/enqueue —
+      // inactive doorways are never fed new rows.
       targetDomains = await prisma.indexerDomain.findMany({
-        where: { userId },
+        where: { userId, status: "active" },
         select: { id: true },
       });
       if (targetDomains.length === 0) {

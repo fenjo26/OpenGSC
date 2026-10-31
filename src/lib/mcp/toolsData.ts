@@ -24,6 +24,7 @@ import { rawQuery } from "@/lib/db/raw";
 import { findDecayingPages } from "@/lib/decay/query";
 import { DEFAULT_MIN_PREVIOUS } from "@/lib/decay/logic";
 import { queuePurchasedDonors } from "@/lib/magiclinks/toIndexer";
+import { redistributeQueue } from "@/lib/indexer/redistribute";
 
 // CTR by position, Backlinko 2023 — the same table the CTR Benchmark tab uses.
 const CTR_BENCHMARKS: Record<number, number> = {
@@ -571,6 +572,52 @@ export const DATA_TOOLS: McpTool[] = [
         doorwayDomains: r.domains,
         ...(r.capped ? { capped: true, cap: 200, note: "Cap reached — call again for the next batch." } : {}),
         skippedIndexed: r.skippedIndexed,
+      };
+    },
+  },
+
+  {
+    name: "indexer_redistribute_queue",
+    cost: "local",
+    description:
+      "Re-spread stuck indexer queue rows (/indexer/queue) across the ACTIVE doorway domains — mirrors the page's redistribute buttons. The webhook serves only the rows of the doorway a bot actually hits, so pages parked on a doorway that stopped being crawled hang pending forever; this moves them to the other doorways as fresh PENDING rows (rotation starts over, crawled state is reset). domain (id or exact domain name) empties that one doorway onto the others; omit it to reshuffle the whole queue. Returns moved / merged (URL already on the target) / kept (no alternative) / deduped (extra copies removed) / domainsUsed.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        domain: { type: "string", description: "Optional: one doorway (id or exact domain name) whose rows move to the others; default = whole queue" },
+      },
+    },
+    handler: async (userId, args) => {
+      let domainId: string | undefined;
+      const needle = String(args.domain ?? "").trim();
+      if (needle) {
+        // Write op: exact match only (id or domain), never a substring guess.
+        const d = await prisma.indexerDomain.findFirst({
+          where: { userId, OR: [{ id: needle }, { domain: normDomain(needle) }] },
+          select: { id: true, domain: true },
+        });
+        if (!d) return { error: "domain_not_found", hint: `No doorway domain matches "${needle}" in this workspace.` };
+        domainId = d.id;
+      }
+
+      const r = await redistributeQueue(userId, domainId ? { domainId } : {});
+      if (!r.ok) {
+        const hint = r.reason === "no_indexer_domains"
+          ? "No active doorway domains — add them in /indexer first."
+          : r.reason === "no_alternative_domains"
+            ? "No other ACTIVE doorway to move pages to — activate or add another domain."
+            : r.reason === "nothing_to_move"
+              ? "The queue has no rows in scope."
+              : "No such doorway domain for this workspace.";
+        return { error: r.reason, hint };
+      }
+      return {
+        moved: r.moved,
+        merged: r.merged,
+        kept: r.kept,
+        deduped: r.deduped,
+        domainsUsed: r.domainsUsed,
+        note: "Moved rows are fresh PENDING — crawlers get them again from the new doorways.",
       };
     },
   },
