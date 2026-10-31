@@ -5,6 +5,35 @@ import { ShieldAlert, CheckCircle, RefreshCw, Download } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer, Tooltip, XAxis } from "recharts";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 
+type DomSortCol = "domain" | "google" | "ai" | "totalBots" | "googleShare";
+
+// Sortable header, same pattern as the site page's DataTable: ↕ idle, ↓/↑ active, click toggles.
+const SortTh = ({
+  col, label, sortCol, sortDir, onSort, align = "right", color,
+}: {
+  col: DomSortCol; label: string; sortCol: DomSortCol; sortDir: "asc" | "desc";
+  onSort: (col: DomSortCol) => void; align?: "left" | "right"; color?: string;
+}) => {
+  const active = sortCol === col;
+  const arrow = active ? (sortDir === "desc" ? " ↓" : " ↑") : " ↕";
+  return (
+    <th
+      onClick={() => onSort(col)}
+      style={{
+        padding: "8px 12px 12px",
+        textAlign: align,
+        color: active ? (color ?? "var(--color-text-primary)") : (color ?? "var(--color-text-secondary)"),
+        fontWeight: active ? 700 : 500,
+        cursor: "pointer",
+        userSelect: "none",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {label}<span style={{ opacity: active ? 1 : 0.35, marginLeft: "2px" }}>{arrow}</span>
+    </th>
+  );
+};
+
 interface StatsData {
   summary: {
     google: number;
@@ -52,6 +81,29 @@ export default function IndexerStatsPage() {
   const [domainPage, setDomainPage] = useState(1);
   const [dailyPage, setDailyPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
+
+  // Domains table sorting — with more doorways than fit on one page, sorting brings the loud
+  // ones to the top instead of hunting through pagination. Default (totalBots desc) matches the
+  // order the API already returns.
+  const [domSortKey, setDomSortKey] = useState<DomSortCol>("totalBots");
+  const [domSortDir, setDomSortDir] = useState<"asc" | "desc">("desc");
+
+  const handleDomSort = (col: DomSortCol) => {
+    if (col === domSortKey) {
+      setDomSortDir(d => (d === "desc" ? "asc" : "desc"));
+    } else {
+      setDomSortKey(col);
+      // Text column starts ascending, numbers start descending — the way you'd read them first.
+      setDomSortDir(col === "domain" ? "asc" : "desc");
+    }
+    setDomainPage(1);
+  };
+
+  const sortedDomains = [...(data?.byDomain ?? [])].sort((a, b) => {
+    const v = domSortDir === "desc" ? -1 : 1;
+    if (domSortKey === "domain") return v * a.domain.localeCompare(b.domain);
+    return v * ((a[domSortKey] ?? 0) - (b[domSortKey] ?? 0));
+  });
 
   // Chart series toggle state
   const [visibleSeries, setVisibleSeries] = useState<Record<string, boolean>>({
@@ -468,15 +520,15 @@ export default function IndexerStatsPage() {
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
                     <thead>
                       <tr style={{ borderBottom: "1px solid var(--color-border)", color: "var(--color-text-secondary)", textAlign: "left" }}>
-                        <th style={{ padding: "8px 12px 12px" }}>Domain</th>
-                        <th style={{ padding: "8px 12px 12px", textAlign: "right" }}>Google</th>
-                        <th style={{ padding: "8px 12px 12px", textAlign: "right", color: "var(--color-accent-purple)" }}>AI</th>
-                        <th style={{ padding: "8px 12px 12px", textAlign: "right" }}>Total Bots</th>
-                        <th style={{ padding: "8px 12px 12px", textAlign: "right" }}>Google Share</th>
+                        <SortTh col="domain" label="Domain" sortCol={domSortKey} sortDir={domSortDir} onSort={handleDomSort} align="left" />
+                        <SortTh col="google" label="Google" sortCol={domSortKey} sortDir={domSortDir} onSort={handleDomSort} />
+                        <SortTh col="ai" label="AI" sortCol={domSortKey} sortDir={domSortDir} onSort={handleDomSort} color="var(--color-accent-purple)" />
+                        <SortTh col="totalBots" label="Total Bots" sortCol={domSortKey} sortDir={domSortDir} onSort={handleDomSort} />
+                        <SortTh col="googleShare" label="Google Share" sortCol={domSortKey} sortDir={domSortDir} onSort={handleDomSort} />
                       </tr>
                     </thead>
                     <tbody>
-                      {data?.byDomain.slice((domainPage - 1) * ITEMS_PER_PAGE, domainPage * ITEMS_PER_PAGE).map((row) => (
+                      {sortedDomains.slice((domainPage - 1) * ITEMS_PER_PAGE, domainPage * ITEMS_PER_PAGE).map((row) => (
                         <tr key={row.id} style={{ borderBottom: "1px solid var(--color-border-soft)", height: "40px" }}>
                           <td style={{ padding: "8px 12px", fontWeight: 600, color: "var(--color-text-primary)" }}>
                             {row.domain}
