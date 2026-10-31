@@ -378,23 +378,40 @@ export async function addPlacements(
   let added = 0;
   for (let i = 0; i < urls.length; i += CHUNK) {
     const part = urls.slice(i, i + CHUNK);
-    const res = (await db.dropDonorPlacement.createMany({
-      data: part.map(donorUrl => ({
-        assetId, doorway: doorwayDomain, donorUrl, placedAt: now, active: true,
-      })),
-      skipDuplicates: true,
-    })) as { count: number };
-    added += res.count;
+    // createMany({ skipDuplicates }) does not exist on SQLite (README §5): read the rows that
+    // already exist, insert only the fresh ones. The unique is (assetId, doorway, donorUrl).
+    const placed = await db.dropDonorPlacement.findMany({
+      where: { assetId, doorway: doorwayDomain, donorUrl: { in: part } },
+      select: { donorUrl: true },
+    });
+    const have = new Set(placed.map((p: { donorUrl: string }) => p.donorUrl));
+    const fresh = part.filter(u => !have.has(u));
+    if (fresh.length > 0) {
+      await db.dropDonorPlacement.createMany({
+        data: fresh.map(donorUrl => ({
+          assetId, doorway: doorwayDomain, donorUrl, placedAt: now, active: true,
+        })),
+      });
+    }
+    added += fresh.length;
     // Reactivate rows that already existed (a re-run must refresh placedAt, not skip it).
     await db.dropDonorPlacement.updateMany({
       where: { assetId, doorway: doorwayDomain, donorUrl: { in: part } },
       data: { active: true, placedAt: now },
     });
-    // Idempotent enqueue: existing queue rows keep their crawledAt rotation state.
-    await db.indexerQueue.createMany({
-      data: part.map(url => ({ domainId: doorway.id, url })),
-      skipDuplicates: true,
+    // Idempotent enqueue, same read-what-exists split — the queue's unique is (domainId, url),
+    // and existing rows must keep their crawledAt rotation state.
+    const queued = await db.indexerQueue.findMany({
+      where: { domainId: doorway.id, url: { in: part } },
+      select: { url: true },
     });
+    const queuedHave = new Set(queued.map((r: { url: string }) => r.url));
+    const toQueue = part.filter(u => !queuedHave.has(u));
+    if (toQueue.length > 0) {
+      await db.indexerQueue.createMany({
+        data: toQueue.map(url => ({ domainId: doorway.id, url })),
+      });
+    }
   }
   return { added };
 }
