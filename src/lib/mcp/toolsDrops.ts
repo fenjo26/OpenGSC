@@ -12,7 +12,7 @@ import {
   type Json, type McpTool, lim,
 } from "./shared";
 import { resolveAiCreds, assertConfirmed } from "./shared";
-import { createRun, listCandidates, stageCounts, pendingDnsCandidates, countPendingDns, recordDnsResults, pendingAvailabilityCandidates, countPendingAvailability, markUncheckableZones, recordAvailabilityResults, writeWaybackResults, writeMetricsUpdates, setHistoryVerdict, setWatchedByDomains, countWatched, storedWaybackTimestamps, parseCandidateFilter, listDropGroups, createDropGroup, renameDropGroup, deleteDropGroup, dropGroupExists, setCandidateGroup, type CandidateSortField } from "@/lib/drops/store";
+import { createRun, listCandidates, stageCounts, pendingDnsCandidates, countPendingDns, recordDnsResults, pendingAvailabilityCandidates, countPendingAvailability, markUncheckableZones, recordAvailabilityResults, writeWaybackResults, writeMetricsUpdates, setHistoryVerdict, setWatchedByDomains, countWatched, storedWaybackTimestamps, parseCandidateFilter, listDropGroups, createDropGroup, renameDropGroup, deleteDropGroup, dropGroupExists, setCandidateGroup, IDS_MAX, type CandidateSortField } from "@/lib/drops/store";
 import { checkDnsBatch } from "@/lib/drops/dns";
 import { checkAvailabilityBatch } from "@/lib/drops/availability";
 import { profileForDomain, registryAnswerable } from "@/lib/drops/registries";
@@ -55,8 +55,8 @@ function domainsArg(args: Json): string[] {
 /** The scope a bulk group action acts over: explicit row ids or a drops_list-shaped filter. */
 function bulkScope(args: Json): { ids?: string[]; filter?: ReturnType<typeof parseCandidateFilter> } {
   const ids = (Array.isArray(args.ids) ? args.ids : [])
-    .filter((v): v is string => typeof v === "string")
-    .slice(0, 500);
+    .filter((v): v is string => typeof v === "string");
+  if (ids.length > IDS_MAX) throw new Error(`too_many_ids: ${ids.length} > ${IDS_MAX}`);
   if (ids.length) return { ids };
   if (args.filter && typeof args.filter === "object") {
     return { filter: parseCandidateFilter(args.filter as Record<string, unknown>) };
@@ -244,7 +244,7 @@ export const DROPS_TOOLS: McpTool[] = [
       const batch = lim(args.batch, 40, 200);
       const pending = await pendingAvailabilityCandidates(userId, { runId, limit: batch });
       if (!pending.length) {
-        const remaining = await countPendingAvailability(userId, runId);
+        const remaining = await countPendingAvailability(userId, { runId });
         return { checked: 0, available: 0, taken: 0, deferred: 0, uncheckable: 0, remaining, done: remaining === 0 };
       }
       const answerable: string[] = [];
@@ -258,7 +258,7 @@ export const DROPS_TOOLS: McpTool[] = [
         markUncheckableZones(userId, uncheckable),
       ]);
       const written = await recordAvailabilityResults(userId, results);
-      const remaining = await countPendingAvailability(userId, runId);
+      const remaining = await countPendingAvailability(userId, { runId });
       return {
         checked: results.size,
         ...written,
@@ -445,22 +445,22 @@ export const DROPS_TOOLS: McpTool[] = [
     cost: "local",
     idempotent: false,
     description:
-      "Curated groups over the drops catalogue — name a batch of domains once ('buy in October', 'defer'), then work with it as a unit; the /drops table renders them as collapsible sections. Actions: list (default — groups with row counts), create {name}, rename {groupId, name}, delete {groupId} (rows stay in the catalogue, ungrouped), assign {groupId, ids | filter}, unassign {ids | filter}. ids are row ids from drops_list; filter is the same filter dict drops_list takes (stage, runId, tld, q, drMin/drMax/drNull, refMin/refMax, tfMin/tfMax, groupId, ungrouped, watched, starred) — so 'put everything with DR < 10 into a group' is one call.",
+      "Curated groups over the drops catalogue — name a batch of domains once ('buy in October', 'defer'), then work with it as a unit; the /drops table renders them as collapsible sections. Actions: list (default — groups with row counts, plus `ungrouped`: how many rows are in no group at all), create {name}, rename {groupId, name}, delete {groupId} (rows stay in the catalogue, ungrouped), assign {groupId, ids | filter}, unassign {ids | filter}. ids are row ids from drops_list; filter is the same filter dict drops_list takes (stage, runId, tld, q, drMin/drMax/drNull, refMin/refMax, tfMin/tfMax, groupId, ungrouped, watched, starred) — so 'put everything with DR < 10 into a group' is one call.",
     inputSchema: {
       type: "object",
       properties: {
         action: { type: "string", description: "list (default) | create | rename | delete | assign | unassign" },
         name: { type: "string", description: "group name (create/rename)" },
         groupId: { type: "string", description: "target group (rename/delete/assign)" },
-        ids: { type: "array", items: { type: "string" }, description: "row ids (assign/unassign), max 500" },
+        ids: { type: "array", items: { type: "string" }, description: "row ids (assign/unassign)" },
         filter: { type: "object", description: "drops_list-shaped filter (assign/unassign) — bulk over the whole filtered set" },
       },
     },
     handler: async (userId, args) => {
       const action = String(args.action ?? "list");
       if (action === "list" || action === "") {
-        const groups = await listDropGroups(userId);
-        return { groups, total: groups.reduce((a, g) => a + g.count, 0) };
+        const { groups, ungrouped } = await listDropGroups(userId);
+        return { groups, ungrouped, total: groups.reduce((a, g) => a + g.count, 0) };
       }
       if (action === "create") {
         const name = String(args.name ?? "");
@@ -472,14 +472,14 @@ export const DROPS_TOOLS: McpTool[] = [
         const name = String(args.name ?? "");
         if (!groupId || !name.trim()) throw new Error("groupId and name required");
         if (!(await renameDropGroup(userId, groupId, name))) throw new Error("group_not_found");
-        const groups = await listDropGroups(userId);
-        return { ok: true, groups };
+        const { groups, ungrouped } = await listDropGroups(userId);
+        return { ok: true, groups, ungrouped };
       }
       if (action === "delete") {
         const groupId = String(args.groupId ?? "");
         if (!groupId) throw new Error("groupId required");
         if (!(await deleteDropGroup(userId, groupId))) throw new Error("group_not_found");
-        return { ok: true, groups: await listDropGroups(userId) };
+        return { ok: true, ...(await listDropGroups(userId)) };
       }
       if (action === "assign" || action === "unassign") {
         const groupId = action === "assign" ? String(args.groupId ?? "") : null;
@@ -487,7 +487,7 @@ export const DROPS_TOOLS: McpTool[] = [
           if (!groupId || !(await dropGroupExists(userId, groupId))) throw new Error("group_not_found");
         }
         const updated = await setCandidateGroup(userId, bulkScope(args), groupId);
-        return { updated, groups: await listDropGroups(userId) };
+        return { updated, ...(await listDropGroups(userId)) };
       }
       throw new Error(`unknown action: ${action}`);
     },

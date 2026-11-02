@@ -359,6 +359,15 @@ export interface CandidateScope {
 export const EXCLUDE_MAX = 500;
 
 /**
+ * The ceiling on an explicit `ids` payload — a group checkbox selects a whole folder, any size,
+ * so the list it posts can be thousands long. The store slices every SQL `IN` under this
+ * ceiling's real guard (CHUNK below); the cap exists only to keep a runaway request body
+ * honest, and it refuses loudly rather than truncating: a bulk action that silently skipped
+ * half the checked rows is the exact trap EXCLUDE_MAX exists to prevent.
+ */
+export const IDS_MAX = 10_000;
+
+/**
  * `everything under the filter` narrowed by the holes the user punched in it. Exported for the
  * test that pins the cap and the no-op case — a silently truncated list would act on rows the
  * user had unchecked, which is the one outcome this whole mechanism exists to prevent.
@@ -450,7 +459,7 @@ export async function countPendingDns(userId: string, runId?: string): Promise<n
  */
 export async function pendingAvailabilityCandidates(
   userId: string,
-  opts: { runId?: string; limit?: number; domains?: string[]; filter?: CandidateFilter; exclude?: string[] } = {},
+  opts: { runId?: string; limit?: number; domains?: string[]; filter?: CandidateFilter; exclude?: string[]; ids?: string[] } = {},
 ): Promise<string[]> {
   const base = opts.filter
     ? applyExclusions(buildCandidateWhere(userId, opts.filter), opts.exclude)
@@ -458,19 +467,44 @@ export async function pendingAvailabilityCandidates(
   // Rows the registry refused earlier wait for their backoff to expire; without this a
   // throttled zone would be retried on every pass and never recover.
   const pending = { stage: { in: ["dns_checked", "checking"] as DropStage[] } };
+  const due = { OR: [{ nextCheckAt: null }, { nextCheckAt: { lte: new Date() } }] };
+  const take = Math.min(Math.max(opts.limit ?? 40, 1), 200);
+
+  // An explicit row selection ("проверить реестр" over checked rows, a group checkbox's whole
+  // folder) can name thousands of ids — more than one SQL `IN` may carry on SQLite — so the
+  // selection is walked in CHUNK-sized queries until the batch cap fills. Order is oldest-first
+  // within a chunk; across chunks the selection's own order wins, which for a hand-checked set
+  // is the order the user built it in.
+  if (!opts.filter && opts.ids?.length) {
+    const out: string[] = [];
+    for (let i = 0; i < opts.ids.length && out.length < take; i += CHUNK) {
+      const rows = (await db.dropCandidate.findMany({
+        where: {
+          userId, ...pending, id: { in: opts.ids.slice(i, i + CHUNK) },
+          ...(opts.runId ? { runId: opts.runId } : {}), ...due,
+        },
+        orderBy: { createdAt: "asc" },
+        take: take - out.length,
+        select: { domain: true },
+      })) as { domain: string }[];
+      out.push(...rows.map(r => r.domain));
+    }
+    return out;
+  }
+
   const where = opts.filter
-    ? { ...base, AND: [pending, { OR: [{ nextCheckAt: null }, { nextCheckAt: { lte: new Date() } }] }] }
+    ? { ...base, AND: [pending, due] }
     : {
         ...base,
         ...pending,
         ...(opts.runId ? { runId: opts.runId } : {}),
         ...(opts.domains?.length ? { domain: { in: opts.domains } } : {}),
-        OR: [{ nextCheckAt: null }, { nextCheckAt: { lte: new Date() } }],
+        ...due,
       };
   const rows = (await db.dropCandidate.findMany({
     where,
     orderBy: { createdAt: "asc" },
-    take: Math.min(Math.max(opts.limit ?? 40, 1), 200),
+    take,
     select: { domain: true },
   })) as { domain: string }[];
   return rows.map(r => r.domain);
@@ -478,21 +512,30 @@ export async function pendingAvailabilityCandidates(
 
 export async function countPendingAvailability(
   userId: string,
-  runId?: string,
-  filter?: CandidateFilter,
-  exclude?: string[],
+  opts: { runId?: string; filter?: CandidateFilter; exclude?: string[]; ids?: string[] } = {},
 ): Promise<number> {
-  const base = filter
-    ? applyExclusions(buildCandidateWhere(userId, filter), exclude)
-    : ({ userId, ...(runId ? { runId } : {}) } as Record<string, unknown>);
-  const where = filter
-    ? { ...base, AND: [{ stage: { in: ["dns_checked", "checking"] as DropStage[] } }, { OR: [{ nextCheckAt: null }, { nextCheckAt: { lte: new Date() } }] }] }
-    : {
-        ...base,
-        stage: { in: ["dns_checked", "checking"] as DropStage[] },
-        OR: [{ nextCheckAt: null }, { nextCheckAt: { lte: new Date() } }],
-      };
-  return db.dropCandidate.count({ where });
+  const pending = { stage: { in: ["dns_checked", "checking"] as DropStage[] } };
+  const due = { OR: [{ nextCheckAt: null }, { nextCheckAt: { lte: new Date() } }] };
+  // Same chunked walk as pendingAvailabilityCandidates: an explicit selection of any size must
+  // count whole, or "remaining" would lie the moment a folder grows past one SQL IN.
+  if (!opts.filter && opts.ids?.length) {
+    let total = 0;
+    for (let i = 0; i < opts.ids.length; i += CHUNK) {
+      total += await db.dropCandidate.count({
+        where: {
+          userId, ...pending, id: { in: opts.ids.slice(i, i + CHUNK) },
+          ...(opts.runId ? { runId: opts.runId } : {}), ...due,
+        },
+      });
+    }
+    return total;
+  }
+  const base = opts.filter
+    ? applyExclusions(buildCandidateWhere(userId, opts.filter), opts.exclude)
+    : ({ userId, ...(opts.runId ? { runId: opts.runId } : {}) } as Record<string, unknown>);
+  return db.dropCandidate.count({
+    where: opts.filter ? { ...base, AND: [pending, due] } : { ...base, ...pending, ...due },
+  });
 }
 
 /**
@@ -961,16 +1004,22 @@ export async function markAcquired(
   userId: string,
   scope: CandidateScope,
 ): Promise<{ id: string; domain: string }[]> {
-  const where = scope.ids?.length
-    ? { userId, id: { in: scope.ids } }
-    : scope.filter
-      ? applyExclusions(buildCandidateWhere(userId, scope.filter), scope.exclude)
-      : null;
-  if (!where) return [];
-
-  const rows = (await db.dropCandidate.findMany({
-    where, select: { id: true, domain: true },
-  })) as { id: string; domain: string }[];
+  // The id list rides in CHUNK-sized `IN`s, not one: a group checkbox can now hand this
+  // thousands of ids, and SQLite would refuse the single-query parameter count.
+  const rows: { id: string; domain: string }[] = [];
+  if (scope.ids?.length) {
+    for (let i = 0; i < scope.ids.length; i += CHUNK) {
+      rows.push(...(await db.dropCandidate.findMany({
+        where: { userId, id: { in: scope.ids.slice(i, i + CHUNK) } },
+        select: { id: true, domain: true },
+      })) as { id: string; domain: string }[]);
+    }
+  } else if (scope.filter) {
+    rows.push(...(await db.dropCandidate.findMany({
+      where: applyExclusions(buildCandidateWhere(userId, scope.filter), scope.exclude),
+      select: { id: true, domain: true },
+    })) as { id: string; domain: string }[]);
+  }
   if (!rows.length) return [];
 
   for (let i = 0; i < rows.length; i += CHUNK) {
@@ -1315,15 +1364,28 @@ export interface DropGroupRow {
   createdAt: string;
 }
 
-export async function listDropGroups(userId: string): Promise<DropGroupRow[]> {
-  const grouped = (await db.dropGroup.findMany({
-    where: { userId },
-    orderBy: { createdAt: "asc" },
-    include: { _count: { select: { candidates: true } } },
-  })) as { id: string; name: string; createdAt: Date; _count: { candidates: number } }[];
-  return grouped.map(g => ({
-    id: g.id, name: g.name, count: g._count.candidates, createdAt: g.createdAt.toISOString(),
-  }));
+/** What the group filter speaks: the folders plus the size of their complement. The catalogue
+ *  opens on "no folder" — the working pile — so that pile's count belongs next to the folders'. */
+export interface DropGroupsPayload {
+  groups: DropGroupRow[];
+  ungrouped: number;
+}
+
+export async function listDropGroups(userId: string): Promise<DropGroupsPayload> {
+  const [grouped, ungrouped] = await Promise.all([
+    db.dropGroup.findMany({
+      where: { userId },
+      orderBy: { createdAt: "asc" },
+      include: { _count: { select: { candidates: true } } },
+    }),
+    db.dropCandidate.count({ where: { userId, groupId: null } }),
+  ]);
+  return {
+    groups: (grouped as { id: string; name: string; createdAt: Date; _count: { candidates: number } }[]).map(g => ({
+      id: g.id, name: g.name, count: g._count.candidates, createdAt: g.createdAt.toISOString(),
+    })),
+    ungrouped,
+  };
 }
 
 export async function createDropGroup(userId: string, name: string): Promise<DropGroupRow> {
@@ -1333,7 +1395,7 @@ export async function createDropGroup(userId: string, name: string): Promise<Dro
   // ("в группу…", typo, retry) should not demand a delete first.
   const existing = (await db.dropGroup.findFirst({ where: { userId, name: clean } })) as { id: string; name: string; createdAt: Date } | null;
   if (existing) {
-    const groups = await listDropGroups(userId);
+    const { groups } = await listDropGroups(userId);
     return groups.find(g => g.id === existing.id) ?? { id: existing.id, name: existing.name, count: 0, createdAt: existing.createdAt.toISOString() };
   }
   const g = (await db.dropGroup.create({ data: { userId, name: clean } })) as { id: string; name: string; createdAt: Date };

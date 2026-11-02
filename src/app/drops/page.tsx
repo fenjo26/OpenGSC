@@ -157,12 +157,19 @@ const TOX_META: Record<string, { key: string; color: string }> = {
 };
 
 const isPageSize = (v: unknown): boolean => typeof v === "number" && PAGE_SIZES.includes(v);
+// "" = all, "none" = the working pile, anything else is a cuid naming one folder. A stored id
+// of a folder that has since been deleted is accepted here and snapped back to "none" once the
+// folder list loads — validating against the list itself would need the list before the read.
+const isGroupFilterValue = (v: unknown): v is string =>
+  v === "" || v === "none" || (typeof v === "string" && /^[a-z0-9]{20,32}$/.test(v));
 
 /** One rendered table fragment: either a group's header row or a candidate row. */
 type Segment = { kind: "group"; id: string; name: string; pageRows: number; pageSelected: number } | { kind: "row"; r: Candidate; stripe: number };
 
 /** Mirrors EXCLUDE_MAX in lib/drops/store: the server refuses a longer exclusion list. */
 const EXCLUDE_MAX = 500;
+/** Mirrors IDS_MAX in lib/drops/store: a bulk ids payload past this is refused with a sentence. */
+const IDS_MAX = 10_000;
 
 export default function DropsPage() {
   const { t } = useLanguage();
@@ -205,6 +212,9 @@ export default function DropsPage() {
 
   const [runs, setRuns] = useState<Run[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
+  /** The working pile — rows in no folder at all. The catalogue opens on it, so its size
+   *  belongs next to the folders' counts in the select, before anything is clicked. */
+  const [ungrouped, setUngrouped] = useState<number | null>(null);
   const [rows, setRows] = useState<Candidate[]>([]);
   const [total, setTotal] = useState(0);
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -228,15 +238,20 @@ export default function DropsPage() {
   const [tfMin, setTfMin] = useState("");
   const [noVetoOnly, setNoVetoOnly] = useState(false);
   const [tfMax, setTfMax] = useState("");
-  const [groupId, setGroupId] = useState("");
+  // The catalogue opens on "no folder" — the working pile. Foldered rows are triaged; leaving
+  // them in the default view buried the pile under big folders' pages and made the pagination
+  // a tour of what is already sorted. "All" (folders rendered as sections) is an explicit
+  // choice, remembered per browser like the page size.
+  const [groupId, setGroupId] = usePersistedState<string>("dropsGroupFilter", "none", isGroupFilterValue);
   const [orderBy, setOrderBy] = useState<SortField>("score");
   const [orderDir, setOrderDir] = useState<"asc" | "desc">("desc");
   const [pageSize, setPageSize] = usePersistedState<number>("dropsPageSize", 50, isPageSize);
   const [offset, setOffset] = useState(0);
 
   // Selection is ONE flat set of row ids, and every control adds to or removes from it:
-  // a row checkbox its own row, a group checkbox exactly its group's rows (fetched by id, so
-  // rows on other pages select too), the header tri-state the page and then the whole filter.
+  // a row checkbox its own row, a group checkbox exactly its group's rows (fetched by id, in
+  // slices, so rows on other pages — and folders of any size — select too), the header
+  // tri-state the page and then the whole filter.
   // No scope ever clears another — "check the group" must not uncheck anything else, which the
   // previous mutually-exclusive design did and the user rightly called a data trap.
   //
@@ -256,13 +271,24 @@ export default function DropsPage() {
    */
   const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set());
 
-  /** Every id of a group, from the server — a group checkbox owns the whole group, all pages. */
+  /** Every id of a group, from the server — a group checkbox owns the whole group, all pages,
+   *  at any size: the walk pages through the list in server-sized slices until `total` says the
+   *  folder is fully collected. A folder of 5 000 is 10 requests, not a refusal. */
   const fetchGroupIds = async (gid: string): Promise<string[]> => {
-    const res = await fetch(`/api/drops/candidates?groupId=${encodeURIComponent(gid)}&limit=500&orderBy=domain&order=asc`, { cache: "no-store" });
-    const body = await res.json();
-    if (!res.ok) throw new Error(body?.error || "group_failed");
-    if ((body.total ?? 0) > 500) throw new Error(tr("dropsGroupTooBig"));
-    return ((body.rows ?? []) as { id: string }[]).map(r => r.id);
+    const ids: string[] = [];
+    let offset = 0;
+    for (;;) {
+      const res = await fetch(`/api/drops/candidates?groupId=${encodeURIComponent(gid)}&limit=500&offset=${offset}&orderBy=domain&order=asc`, { cache: "no-store" });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error || "group_failed");
+      const page = ((body.rows ?? []) as { id: string }[]).map(r => r.id);
+      ids.push(...page);
+      // A shrinking folder (rows deleted mid-walk) ends on an empty page; a growing one ends at
+      // the total the server last reported — a row or two newer than that simply is not in this
+      // click, and the marker self-heals on the next.
+      if (!page.length || ids.length >= (body.total ?? 0)) return ids;
+      offset += page.length;
+    }
   };
 
   // Which row's donor profile is expanded under the table.
@@ -522,7 +548,8 @@ export default function DropsPage() {
     try {
       const res = await fetch("/api/drops/groups", { cache: "no-store" });
       const body = await res.json();
-      if (Array.isArray(body)) setGroups(body);
+      if (Array.isArray(body?.groups)) setGroups(body.groups);
+      if (typeof body?.ungrouped === "number") setUngrouped(body.ungrouped);
     } catch { /* the group filter is a convenience; its failure must not blank the table */ }
   }, []);
 
@@ -661,6 +688,19 @@ export default function DropsPage() {
       setExcludedIds(new Set());
       setFullGroups({});
     }
+  }
+
+  // The folder filter can be restored from storage with an id whose folder no longer exists
+  // (deleted in another tab, yesterday's session). A select whose value matches no option
+  // paints its first option while the filter still names the dead id — an empty table wearing
+  // "Без группы"'s face. Snap it back to the working pile the moment the folder list says so.
+  // Same render-time shape as the two keys above: an effect would commit one real request for
+  // a filter the select cannot even display.
+  const [lastGroupsKey, setLastGroupsKey] = useState("");
+  const groupsKey = groups.map(g => g.id).join("|");
+  if (groupsKey !== lastGroupsKey) {
+    setLastGroupsKey(groupsKey);
+    if (groupId !== "" && groupId !== "none" && !groups.some(g => g.id === groupId)) setGroupId("none");
   }
 
   const sortClick = (field: SortField) => {
@@ -908,7 +948,7 @@ export default function DropsPage() {
     if (res.ok) setToxArmed(armed);
   }
 
-  async function runRegistryCheck(domains?: string[], filter?: Record<string, string>, exclude?: string[]) {
+  async function runRegistryCheck(scope: { domains?: string[]; filter?: Record<string, string>; exclude?: string[]; ids?: string[] } = {}) {
     if (checkBusy) return;
     checkStop.current = false;
     setCheckBusy(true); setError(""); setNotice("");
@@ -919,12 +959,15 @@ export default function DropsPage() {
         const res = await fetch("/api/drops/check", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ runId: runId || undefined, domains, filter, exclude }),
+          body: JSON.stringify({ runId: runId || undefined, ...scope }),
         });
         const body = await res.json();
         if (!res.ok) {
           if (body?.error === "too_many_exclusions") {
             throw new Error(tr("dropsTooManyExclusions").replace("{n}", String(body?.max ?? EXCLUDE_MAX)));
+          }
+          if (body?.error === "too_many_ids") {
+            throw new Error(tr("dropsTooManyIds").replace("{n}", String(body?.max ?? IDS_MAX)));
           }
           throw new Error(body?.error || "check_failed");
         }
@@ -1209,6 +1252,9 @@ export default function DropsPage() {
         if (body?.error === "too_many_exclusions") {
           throw new Error(tr("dropsTooManyExclusions").replace("{n}", String(body?.max ?? EXCLUDE_MAX)));
         }
+        if (body?.error === "too_many_ids") {
+          throw new Error(tr("dropsTooManyIds").replace("{n}", String(body?.max ?? IDS_MAX)));
+        }
         throw new Error(body?.error || "bulk_failed");
       }
       const touched = action === "delete" ? (body.deleted ?? 0) : (body.updated ?? 0);
@@ -1222,7 +1268,10 @@ export default function DropsPage() {
               ? tr("dropsGroupUpdated").replace("{n}", String(touched))
               : tr("dropsStarred").replace("{n}", String(touched)));
       clearSelection();
-      if (action === "group" || action === "ungroup") await loadGroups();
+      // Grouping moves rows between the folders and the working pile; deleting shrinks the
+      // pile itself. Both must refresh the counts the select reads, or "Без группы (N)" goes
+      // stale until the next full load.
+      if (action === "group" || action === "ungroup" || action === "delete") await loadGroups();
       await Promise.all([loadRows(), loadRuns()]);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -1273,7 +1322,9 @@ export default function DropsPage() {
       const res = await fetch(`/api/drops/groups?id=${encodeURIComponent(id)}`, { method: "DELETE" });
       const body = await res.json();
       if (!res.ok) throw new Error(body?.error || "group_failed");
-      if (groupId === id) setGroupId("");
+      // The folder's rows fall back into the working pile (FK is SetNull) — pointing the filter
+      // there shows them where they actually are now, instead of the whole-catalogue view.
+      if (groupId === id) setGroupId("none");
       setFullGroups(prev => {
         if (!(id in prev)) return prev;
         const n = { ...prev };
@@ -1841,7 +1892,7 @@ export default function DropsPage() {
       </select>
       <select className="tool-input" style={{ width: 160 }} value={groupId} onChange={e => setGroupId(e.target.value)}>
         <option value="">{tr("dropsGroupAll")}</option>
-        <option value="none">{tr("dropsGroupNone")}</option>
+        <option value="none">{tr("dropsGroupNone")}{ungrouped != null ? ` (${ungrouped.toLocaleString()})` : ""}</option>
         {groups.map(g => <option key={g.id} value={g.id}>{g.name} ({g.count})</option>)}
       </select>
       <select className="tool-input" style={{ width: 170 }} value={watched}
@@ -1988,8 +2039,11 @@ export default function DropsPage() {
           </select>
           <button onClick={() => void bulk("ungroup")} style={pagerBtn(false)}>{tr("dropsUngroup")}</button>
           <button onClick={() => {
-            if (selectAllFilter) void runRegistryCheck(undefined, filterPayload(), excludedIds.size ? [...excludedIds] : undefined);
-            else void runRegistryCheck([...selectedIds]);
+            // The checked rows go as row ids, not domain names: a selection can span pages (a
+            // group checkbox pulled in a whole folder), and only the server can resolve every
+            // id. Names would also match rows the user cannot see — a silently wider set.
+            if (selectAllFilter) void runRegistryCheck({ filter: filterPayload(), exclude: excludedIds.size ? [...excludedIds] : undefined });
+            else void runRegistryCheck({ ids: [...selectedIds] });
           }} style={pagerBtn(false)}>{tr("dropsBulkCheck")}</button>
           <button onClick={clearSelection} style={pagerBtn(false)}>{tr("dropsClearSelection")}</button>
         </>}

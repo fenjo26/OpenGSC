@@ -5,7 +5,7 @@ import { profileForDomain, registryAnswerable } from "@/lib/drops/registries";
 import { easyGrCreds } from "@/lib/drops/easyGr";
 import { dynadotConfirmer, dynadotCreds } from "@/lib/drops/dynadot";
 import { getUserSettings } from "@/lib/mcp/shared";
-import { countPendingAvailability, EXCLUDE_MAX, loadProxyPool, markUncheckableZones, retireUncheckableRows, revivePendingZones, parseCandidateFilter, pendingAvailabilityCandidates, recordAvailabilityResults, schemaMissing } from "@/lib/drops/store";
+import { countPendingAvailability, EXCLUDE_MAX, IDS_MAX, loadProxyPool, markUncheckableZones, retireUncheckableRows, revivePendingZones, parseCandidateFilter, pendingAvailabilityCandidates, recordAvailabilityResults, schemaMissing } from "@/lib/drops/store";
 
 export const dynamic = "force-dynamic";
 
@@ -34,10 +34,20 @@ export async function POST(req: Request) {
     const domains = Array.isArray(body?.domains)
       ? body.domains.filter((d: unknown): d is string => typeof d === "string").slice(0, 200)
       : undefined;
+    // The checked rows, as row ids — a group checkbox hands the button a whole folder, so this
+    // list may be thousands long and is never truncated: the queue below walks it in slices
+    // across requests anyway. Row ids, not domain names: ids are what the UI selected, on every
+    // page, and a name that has since been deleted must not silently widen the set.
+    const ids = Array.isArray(body?.ids)
+      ? body.ids.filter((v: unknown): v is string => typeof v === "string")
+      : undefined;
+    if (ids && ids.length > IDS_MAX) {
+      return NextResponse.json({ error: "too_many_ids", max: IDS_MAX }, { status: 400 });
+    }
     // "Выбрать все по фильтру → проверить": the queue narrows to the same filter the table
     // reads with, so the promised selection is the checked set. Explicit ids take precedence —
-    // the two shapes never travel together.
-    const filter = !domains?.length && body?.filter && typeof body.filter === "object"
+    // the shapes never travel together.
+    const filter = !ids?.length && !domains?.length && body?.filter && typeof body.filter === "object"
       ? parseCandidateFilter(body.filter as Record<string, unknown>)
       : undefined;
     // The holes the user punched in "выделить всё" travel with the filter, or the queue would
@@ -58,9 +68,9 @@ export async function POST(req: Request) {
     // stages; retiring them here keeps the funnel counts honest without a migration.
     await retireUncheckableRows(userId);
 
-    const pending = await pendingAvailabilityCandidates(userId, { runId, limit: batch, domains, filter, exclude });
+    const pending = await pendingAvailabilityCandidates(userId, { runId, limit: batch, domains, filter, exclude, ids });
     if (!pending.length) {
-      const remaining = await countPendingAvailability(userId, runId, filter, exclude);
+      const remaining = await countPendingAvailability(userId, { runId, filter, exclude, ids });
       return NextResponse.json({ checked: 0, available: 0, taken: 0, deferred: 0, uncheckable: 0, remaining, done: true });
     }
 
@@ -91,7 +101,7 @@ export async function POST(req: Request) {
       markUncheckableZones(userId, uncheckable),
     ]);
     const written = await recordAvailabilityResults(userId, results);
-    const remaining = await countPendingAvailability(userId, runId, filter, exclude);
+    const remaining = await countPendingAvailability(userId, { runId, filter, exclude, ids });
 
     return NextResponse.json({
       checked: results.size,

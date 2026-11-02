@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import {
   deleteCandidates, listCandidates, setStarred, setWatched, stageCounts, schemaMissing,
-  setCandidateGroup, dropGroupExists, parseCandidateFilter, markAcquired, EXCLUDE_MAX, type CandidateSortField,
+  setCandidateGroup, dropGroupExists, parseCandidateFilter, markAcquired, EXCLUDE_MAX, IDS_MAX, type CandidateSortField,
 } from "@/lib/drops/store";
 import { ensureAsset } from "@/lib/drops/activationStore";
 
@@ -61,9 +61,15 @@ async function bulk(req: Request): Promise<NextResponse> {
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const body = await req.json().catch(() => ({} as Record<string, unknown>));
+    // No silent truncation: a group checkbox can legitimately post thousands of ids (a folder
+    // selected whole), and a bulk action that quietly skipped part of them is the one failure
+    // mode this route never allows. Past IDS_MAX the request is refused with the cap in hand.
     const ids = Array.isArray(body?.ids)
-      ? body.ids.filter((v: unknown): v is string => typeof v === "string").slice(0, 500)
+      ? body.ids.filter((v: unknown): v is string => typeof v === "string")
       : undefined;
+    if (ids && ids.length > IDS_MAX) {
+      return NextResponse.json({ error: "too_many_ids", max: IDS_MAX }, { status: 400 });
+    }
     const exclude = Array.isArray(body?.exclude)
       ? body.exclude.filter((v: unknown): v is string => typeof v === "string")
       : undefined;
