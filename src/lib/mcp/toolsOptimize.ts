@@ -30,6 +30,7 @@ import { scrapePage } from "@/lib/seo/scrape";
 import { maskAIPatterns, headingCounts } from "@/lib/seo/rewrite";
 import { runRewriteBatch, type RewriteBatchState } from "@/lib/seo/rewriteBatch";
 import { factDrift, driftSeverity } from "@/lib/seo/factDrift";
+import { originalityReport, originalityBrief } from "@/lib/seo/originality";
 import { uniquenessPct, wordCount } from "@/lib/seo/textMetrics";
 import { genByType } from "@/lib/seo/generate";
 import { failStaleSeoJobs, touchSeoJob, withSeoJobHeartbeat } from "@/lib/jobs/lifecycle";
@@ -318,6 +319,41 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
             : driftSeverity(drift) === "warn"
               ? "Some source values were dropped. Check whether they mattered."
               : "No numeric or identifier drift detected.",
+      };
+    },
+  },
+
+  {
+    name: "analyze_originality",
+    cost: "local",
+    description:
+      "FREE and deterministic — no model is called. Measures how ORIGINAL a page is against its template siblings (other cities, services or products built from the same template): the axis that decides whether near-duplicate pages get indexed at all, independent of whether the text reads as AI. Reports shingle gain (share of 3-word phrases no sibling has — catches copy-paste, inflated by paraphrase), substance gain (numbers, dates and identifiers no sibling has, per 1000 words — paraphrase cannot fake it), structure flags (data table, unique subheadings, unique anchors), the closest sibling's similarity, a 0–100 score and a band (template / borderline / original; ≥0.8 similarity to any sibling is always template). Get sibling texts with fetch_page_content first. Pass `facts` — what is actually known about this page — to also get a rewrite instruction that only allows those facts to be added. This is a proxy, not Google's internal originalContentScore.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        text: { type: "string", description: "The page text (Markdown keeps tables, headings and links measurable)" },
+        siblings: { type: "array", items: { type: "string" }, description: "Texts of sibling pages from the same template family, up to 50" },
+        facts: { type: "string", description: "Optional: verified page-specific facts (jobs, prices, dates, reviews). Returns a rewrite instruction built from them." },
+      },
+      required: ["text", "siblings"],
+    },
+    handler: async (_userId, args) => {
+      const text = String(args.text ?? "");
+      if (!text.trim()) throw new Error("Missing required argument: text");
+      const siblings = (Array.isArray(args.siblings) ? args.siblings : []).map(String).filter(s => s.trim()).slice(0, 50);
+      if (!siblings.length) throw new Error("Pass at least one sibling text — originality is measured against something.");
+      const r = originalityReport(text, siblings);
+      const facts = String(args.facts ?? "");
+      return {
+        ...r,
+        note: r.siblings === 0
+          ? "No sibling had enough text (≥30 words) to compare against — the score is not meaningful."
+          : r.short
+            ? "Short text: too little volume to prove uniqueness. Add a block with page-specific facts rather than rewording."
+            : undefined,
+        // Only when facts were supplied: without them the honest instruction is "restructure, do
+        // not invent", and an agent can write that itself.
+        rewriteInstruction: facts.trim() ? originalityBrief(r, facts) : undefined,
       };
     },
   },

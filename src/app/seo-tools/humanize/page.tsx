@@ -1,6 +1,10 @@
 "use client";
 
-// AI-Fingerprint Lab. Three tabs, one idea: measure before you change anything.
+// AI-Fingerprint Lab. Four tabs, one idea: measure before you change anything.
+//
+// The fourth tab (Originality, components/OriginalityLab.tsx) measures a different axis — what a
+// page says that its template siblings do not — because a text can read 0% machine and still be
+// a city-swapped twin that never gets indexed.
 //
 // The premise is that statistical detectors score bag-of-words distributions over ~300-word
 // windows, which makes them reproducible locally against your OWN corpus — competitors' pages as
@@ -11,7 +15,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Fingerprint, Loader2, AlertTriangle, Play, Database, FlaskConical,
-  Download, Trash2, Check, Plus, X, Info, Wand2, Copy,
+  Download, Trash2, Check, Plus, X, Info, Wand2, Copy, Sparkles,
 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { readUrlParam, writeUrlParam } from "@/lib/urlParam";
@@ -23,6 +27,7 @@ import { loadModels, upsertModel, removeModel, getActiveName, setActiveName, eff
 import { factDrift, driftSeverity, type FactDrift } from "@/lib/seo/factDrift";
 import { scanMarks, scrubMarks, type MarkScan } from "@/lib/seo/marksScrub";
 import FactDriftPanel from "@/components/FactDriftPanel";
+import OriginalityLab from "@/components/OriginalityLab";
 
 const ACCENT = "#ff6482";
 const card = "panel";
@@ -34,7 +39,7 @@ const label: React.CSSProperties = { fontSize: "12px", color: "var(--color-text-
 // Same bands the research used, so the verdict reads the way operators already expect.
 function scoreColor(s: number) { return s < 15 ? "#34c759" : s < 40 ? "#ff9f0a" : "#ff375f"; }
 
-type Tab = "analyze" | "corpus" | "bench";
+type Tab = "analyze" | "corpus" | "bench" | "originality";
 type BenchRow = { id: string; provider: string; model: string; temp: string };
 type BenchResult = BenchRow & { score?: number; words?: number; ms?: number; error?: string; tempIgnored?: boolean; text?: string };
 
@@ -46,7 +51,7 @@ export default function HumanizePage() {
   // union, so a stale param falls back to the default.
   useEffect(() => {
     const p = readUrlParam("tab");
-    if (p === "analyze" || p === "corpus" || p === "bench") setTab(p);
+    if (p === "analyze" || p === "corpus" || p === "bench" || p === "originality") setTab(p);
   }, []);
   useEffect(() => { writeUrlParam("tab", tab); }, [tab]);
   const [models, setModels] = useState<StoredModel[]>([]);
@@ -82,7 +87,7 @@ export default function HumanizePage() {
 
       {/* Sub-tabs */}
       <div style={{ display: "flex", gap: "2px", background: "rgba(255,255,255,0.06)", borderRadius: "8px", padding: "3px", width: "fit-content", flexWrap: "wrap" }}>
-        {([["analyze", t("hmTabAnalyze"), Fingerprint], ["corpus", t("hmTabCorpus"), Database], ["bench", t("hmTabBench"), FlaskConical]] as const).map(([k, lbl, Icon]) => (
+        {([["analyze", t("hmTabAnalyze"), Fingerprint], ["corpus", t("hmTabCorpus"), Database], ["bench", t("hmTabBench"), FlaskConical], ["originality", t("hmTabOriginality"), Sparkles]] as const).map(([k, lbl, Icon]) => (
           <button key={k} onClick={() => setTab(k as Tab)} style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "7px 14px", borderRadius: "6px", fontSize: "12px", fontWeight: 600, cursor: "pointer", border: "none", background: tab === k ? "var(--color-card)" : "transparent", color: tab === k ? "var(--color-text-primary)" : "var(--color-text-secondary)" }}>
             <Icon size={13} /> {lbl}
           </button>
@@ -92,6 +97,7 @@ export default function HumanizePage() {
       {mounted && tab === "analyze" && <AnalyzeTab active={active} />}
       {mounted && tab === "corpus" && <CorpusTab models={models} activeName={active?.name || ""} onChange={refresh} />}
       {mounted && tab === "bench" && <BenchTab active={active} />}
+      {mounted && tab === "originality" && <OriginalityLab active={active} />}
     </div>
   );
 }

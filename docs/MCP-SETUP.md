@@ -216,6 +216,7 @@ refuse to run without `confirm: true`, price stated up front.
 | `get_optimization_brief` | net | **Start here.** Everything known about one URL in one call: its queries, striking-distance keywords, CTR gaps, decay trend, cannibalization conflicts, audit issues and live content |
 | `fetch_page_content` | net | Any URL as clean article Markdown, boilerplate stripped |
 | `analyze_text` | local | Deterministic check of a draft: uniqueness, invented/dropped numbers and identifiers, heading-structure match, machine tells. No model called |
+| `analyze_originality` | local | Originality of a page against its template siblings: new 3-word phrasing, new facts per 1000 words, table / unique subheadings / unique anchors, closest-sibling similarity, 0–100 score and band. Optional `facts` → a rewrite instruction that may add only those. No model called |
 | `fit_meta` | local (**paid** with `allow_llm: true`, needs `confirm`) | Fits title/description into the audit band: deterministic trim/pick first, up to 2 AI repair calls only when asked for |
 | `get_generations` | local | The SEO Tools history — what has already been written, so you extend instead of duplicating |
 | `get_generation_job` | local | Poll a background generation job |

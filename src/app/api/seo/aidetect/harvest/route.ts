@@ -45,9 +45,15 @@ export async function POST(req: Request) {
     .filter(p => p.ok)
     .map(p => {
       const text = normalizeForCorpus(`${p.title} ${p.metaDescription} ${p.textSample}`);
-      return { url: p.url, title: p.title, via: p.via, words: tokenize(text).length, text };
+      // `raw` keeps the page's Markdown (tables, headings, links) for the Originality tab, which
+      // compares facts and structure — the corpus normaliser strips table rows, and a sibling's
+      // prices living in a table would otherwise read as absent and inflate the target's score.
+      const raw = b.raw ? (p.contentMarkdown || p.textSample) : undefined;
+      return { url: p.url, title: p.title, via: p.via, words: tokenize(text).length, text, raw };
     })
-    .filter(d => d.words >= 150);
+    // Sibling pages for the Originality tab are often short templates — those are exactly the
+    // ones to compare against, so the corpus floor does not apply to them.
+    .filter(d => d.words >= (b.raw ? 30 : 150));
 
   return NextResponse.json({
     docs,
