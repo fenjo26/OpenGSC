@@ -240,8 +240,8 @@ export interface CandidateFilter {
   orderBy?: CandidateSortField;
   orderDir?: "asc" | "desc";
   /**
-   * Keep each folder's rows contiguous across pages: order by folder first, then by the
-   * chosen field. Without it, "all folders" sorted by score interleaves every folder through
+   * Keep each group's rows contiguous across pages and put groups above the loose rows: order
+   * by group first (ungrouped last), then by the chosen field. Without it, "all folders" sorted by score interleaves every folder through
    * every page, and a folder whose rows all score low simply is not on page 1 — the table
    * renders its sections from the page, so the folder looked like it did not exist.
    */
@@ -404,9 +404,12 @@ export async function listCandidates(userId: string, f: CandidateFilter = {}) {
   const fieldOrder: Record<string, "asc" | "desc">[] = column === "score" && dir === "desc"
     ? [{ score: "desc" }, { createdAt: "desc" }]
     : [{ [column]: dir }];
-  // NULL sorts lowest on both engines, so `groupId asc` puts the ungrouped pile first, then
-  // the folders in creation order (cuids are time-ordered) — the same order the folder chips use.
-  const orderBy = f.groupFirst ? [{ groupId: "asc" as const }, ...fieldOrder] : fieldOrder;
+  // Groups on top, loose rows under them: `nulls: "last"` sends the ungrouped rows to the end
+  // on every engine (plain `asc` would put NULL first on both SQLite and MySQL). Groups follow
+  // creation order — cuids are time-ordered — the same order the group chips use.
+  const orderBy = f.groupFirst
+    ? [{ groupId: { sort: "asc" as const, nulls: "last" as const } }, ...fieldOrder]
+    : fieldOrder;
 
   const [rows, total] = await Promise.all([
     // The group name rides with the row so the table can render its sections without a

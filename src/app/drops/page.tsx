@@ -1924,7 +1924,7 @@ export default function DropsPage() {
 
       {/* Folders — always all of them, with their sizes, so none can hide behind pagination. */}
       <div style={filterRow}>
-        <span style={filterLabel}>{tr("dropsFilterFolder")}</span>
+        <span style={filterLabel} title={tr("dropsFilterFolderHint")}>{tr("dropsFilterFolder")}</span>
         {([
           { id: "", name: tr("dropsGroupAll"), count: folderTotal },
           { id: "none", name: tr("dropsGroupNone"), count: ungrouped },
@@ -1937,7 +1937,7 @@ export default function DropsPage() {
       {/* Stages. The counts are the whole catalogue's (they do not shrink with the filters) —
           they say where the list is; clicking one narrows the table to it. */}
       <div style={filterRow}>
-        <span style={filterLabel}>{tr("dropsFilterStage")}</span>
+        <span style={filterLabel} title={tr("dropsFilterStageHint")}>{tr("dropsFilterStage")}</span>
         <button onClick={() => setStage("")} style={chip(stage === "")}>
           {tr("dropsFilterStageAll")}
           {totalAll > 0 && <b style={{ fontWeight: 800, marginLeft: 6 }}>{totalAll.toLocaleString()}</b>}
@@ -2184,7 +2184,7 @@ export default function DropsPage() {
                     <button onClick={() => void renameGroup(seg.id, seg.name)} aria-label={tr("dropsGroupRename")} style={groupBtn}>
                       <Pencil size={12} />
                     </button>
-                    <button onClick={() => void deleteGroup(seg.id, seg.name)} aria-label={tr("dropsBulkDelete")} style={groupBtn}>
+                    <button onClick={() => void deleteGroup(seg.id, seg.name)} aria-label={tr("dropsGroupDeleteHint")} title={tr("dropsGroupDeleteHint")} style={{ ...groupBtn, marginLeft: 10 }}>
                       <X size={13} />
                     </button>
                   </span>
@@ -2462,7 +2462,7 @@ const pagerSelect: React.CSSProperties = {
 /** One row of the filter panel: a label column, then its controls. */
 const filterRow: React.CSSProperties = { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" };
 const filterLabel: React.CSSProperties = {
-  width: 70, flex: "none", fontSize: 12, fontWeight: 600, color: "var(--color-text-tertiary)",
+  width: 110, cursor: "help", flex: "none", fontSize: 12, fontWeight: 600, color: "var(--color-text-tertiary)",
 };
 
 /** A filter chip — folders and stages. Active means "this is narrowing the table right now". */
