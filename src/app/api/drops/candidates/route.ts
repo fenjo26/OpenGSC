@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import {
   deleteCandidates, listCandidates, setStarred, setWatched, stageCounts, schemaMissing,
-  setCandidateGroup, dropGroupExists, parseCandidateFilter, markAcquired, EXCLUDE_MAX, IDS_MAX, type CandidateSortField,
+  setCandidateGroup, dropGroupExists, zoneCounts, parseCandidateFilter, markAcquired, EXCLUDE_MAX, IDS_MAX, type CandidateSortField,
 } from "@/lib/drops/store";
 import { ensureAsset } from "@/lib/drops/activationStore";
 
@@ -30,16 +30,20 @@ export async function GET(req: Request) {
       offset: Number(p.get("offset")) || undefined,
       orderBy: SORT_FIELDS.includes(orderBy as CandidateSortField) ? (orderBy as CandidateSortField) : "score",
       orderDir: p.get("order") === "asc" ? "asc" : "desc",
+      groupFirst: p.get("groupFirst") === "1",
     });
 
     // Counts are for the funnel widget above the table and are not affected by the row filters —
     // they answer "where is the whole list", which is the question the filters exist to narrow.
-    const counts = await stageCounts(userId, p.get("runId") ?? undefined);
+    const [counts, zones] = await Promise.all([
+      stageCounts(userId, p.get("runId") ?? undefined),
+      zoneCounts(userId),
+    ]);
 
-    return NextResponse.json({ ...page, counts });
+    return NextResponse.json({ ...page, counts, zones });
   } catch (e) {
     if (schemaMissing(e)) {
-      return NextResponse.json({ rows: [], total: 0, limit: 0, offset: 0, counts: {}, notMigrated: true });
+      return NextResponse.json({ rows: [], total: 0, limit: 0, offset: 0, counts: {}, zones: {}, notMigrated: true });
     }
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }

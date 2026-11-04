@@ -239,6 +239,13 @@ export interface CandidateFilter {
   offset?: number;
   orderBy?: CandidateSortField;
   orderDir?: "asc" | "desc";
+  /**
+   * Keep each folder's rows contiguous across pages: order by folder first, then by the
+   * chosen field. Without it, "all folders" sorted by score interleaves every folder through
+   * every page, and a folder whose rows all score low simply is not on page 1 — the table
+   * renders its sections from the page, so the folder looked like it did not exist.
+   */
+  groupFirst?: boolean;
 }
 
 // `Number("  ")` is 0, so a whitespace-only field would become a real bound — trim strings
@@ -394,9 +401,12 @@ export async function listCandidates(userId: string, f: CandidateFilter = {}) {
   // Both SQLite and MySQL order NULL lowest, so asc puts unscored rows on top and desc sinks
   // them — consistent across engines without dialect-specific null clauses. Score-descending
   // (the default) additionally carries a stable second key so equal scores keep a fixed order.
-  const orderBy = column === "score" && dir === "desc"
-    ? [{ score: "desc" as const }, { createdAt: "desc" as const }]
-    : { [column]: dir };
+  const fieldOrder: Record<string, "asc" | "desc">[] = column === "score" && dir === "desc"
+    ? [{ score: "desc" }, { createdAt: "desc" }]
+    : [{ [column]: dir }];
+  // NULL sorts lowest on both engines, so `groupId asc` puts the ungrouped pile first, then
+  // the folders in creation order (cuids are time-ordered) — the same order the folder chips use.
+  const orderBy = f.groupFirst ? [{ groupId: "asc" as const }, ...fieldOrder] : fieldOrder;
 
   const [rows, total] = await Promise.all([
     // The group name rides with the row so the table can render its sections without a
@@ -406,6 +416,22 @@ export async function listCandidates(userId: string, f: CandidateFilter = {}) {
   ]);
 
   return { rows, total, limit: take, offset: skip };
+}
+
+/**
+ * Every zone in the user's catalogue with its row count — the zone filter's options. They used
+ * to be read off the rows on the current page, so a zone that happened to sit on page 2 could
+ * not be picked at all.
+ */
+export async function zoneCounts(userId: string): Promise<Record<string, number>> {
+  const grouped = (await db.dropCandidate.groupBy({
+    by: ["tld"],
+    where: { userId },
+    _count: { _all: true },
+  })) as { tld: string; _count: { _all: number } }[];
+  const out: Record<string, number> = {};
+  for (const g of grouped) if (g.tld) out[g.tld] = g._count._all;
+  return out;
 }
 
 /** Per-stage counts for the funnel widget. One grouped query, not one query per stage. */

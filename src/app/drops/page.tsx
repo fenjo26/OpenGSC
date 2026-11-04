@@ -218,6 +218,8 @@ export default function DropsPage() {
   const [rows, setRows] = useState<Candidate[]>([]);
   const [total, setTotal] = useState(0);
   const [counts, setCounts] = useState<Record<string, number>>({});
+  /** Every zone in the catalogue with its size — the zone filter's options, from the server. */
+  const [zoneList, setZoneList] = useState<Record<string, number>>({});
   const [notMigrated, setNotMigrated] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -238,11 +240,11 @@ export default function DropsPage() {
   const [tfMin, setTfMin] = useState("");
   const [noVetoOnly, setNoVetoOnly] = useState(false);
   const [tfMax, setTfMax] = useState("");
-  // The catalogue opens on "no folder" — the working pile. Foldered rows are triaged; leaving
-  // them in the default view buried the pile under big folders' pages and made the pagination
-  // a tour of what is already sorted. "All" (folders rendered as sections) is an explicit
-  // choice, remembered per browser like the page size.
-  const [groupId, setGroupId] = usePersistedState<string>("dropsGroupFilter", "none", isGroupFilterValue);
+  // The folder filter, remembered per browser. It opens on "all folders": a default that hid
+  // folders ("no folder", a9632dc) made whole folders vanish with nothing on screen saying why.
+  // The folder chips in the filter panel show every folder with its size, so the pile is one
+  // click away and whichever folder is picked is always visible.
+  const [groupId, setGroupId] = usePersistedState<string>("dropsGroupFilter", "", isGroupFilterValue);
   const [orderBy, setOrderBy] = useState<SortField>("score");
   const [orderDir, setOrderDir] = useState<"asc" | "desc">("desc");
   const [pageSize, setPageSize] = usePersistedState<number>("dropsPageSize", 50, isPageSize);
@@ -581,18 +583,22 @@ export default function DropsPage() {
       if (q.trim()) p.set("q", q.trim());
       if (watched) p.set("watched", watched);
       for (const [k, v] of Object.entries(numericFilterParams)) p.set(k, v);
+      // "All folders" keeps every folder's rows together across pages (see groupFirst in
+      // lib/drops/store) — otherwise a folder can sit entirely on a page nobody opened.
+      if (groupId === "") p.set("groupFirst", "1");
       const res = await fetch(`/api/drops/candidates?${p}`, { cache: "no-store" });
       const body = await res.json();
       if (body?.notMigrated) { setNotMigrated(true); setRows([]); setTotal(0); return; }
       setRows(Array.isArray(body.rows) ? body.rows : []);
       setTotal(body.total ?? 0);
       setCounts(body.counts ?? {});
+      if (body.zones && typeof body.zones === "object") setZoneList(body.zones);
     } catch {
       setRows([]);
     } finally {
       setLoading(false);
     }
-  }, [runId, stage, tld, q, watched, numericFilterParams, orderBy, orderDir, pageSize, offset]);
+  }, [runId, stage, tld, q, watched, numericFilterParams, groupId, orderBy, orderDir, pageSize, offset]);
 
   // The rule guards against a setState that cascades a second render before paint. This one
   // cannot: every state write inside `loadRuns` happens after an awaited fetch, several ticks
@@ -700,7 +706,7 @@ export default function DropsPage() {
   const groupsKey = groups.map(g => g.id).join("|");
   if (groupsKey !== lastGroupsKey) {
     setLastGroupsKey(groupsKey);
-    if (groupId !== "" && groupId !== "none" && !groups.some(g => g.id === groupId)) setGroupId("none");
+    if (groupId !== "" && groupId !== "none" && !groups.some(g => g.id === groupId)) setGroupId("");
   }
 
   const sortClick = (field: SortField) => {
@@ -997,7 +1003,10 @@ export default function DropsPage() {
     kind: "dr" | "wayback" | "refs" | "tf",
     targets: string[],
     sliceSize: number,
-    step: (slice: string[]) => Promise<number>,
+    // A step may hand part of its slice back (`requeued`) — the wayback route stops at its
+    // deadline rather than run into the proxy's timeout, and the leftovers go to the back of
+    // the queue instead of being counted as done.
+    step: (slice: string[], queue: string[]) => Promise<number | { updated: number; requeued: number }>,
   ) {
     enrichStop.current = false;
     setEnrichBusy(kind); setError(""); setNotice("");
@@ -1007,8 +1016,10 @@ export default function DropsPage() {
       for (let i = 0; i < targets.length; i += sliceSize) {
         if (enrichStop.current) break;
         const slice = targets.slice(i, i + sliceSize);
-        updated += await step(slice);
-        done += slice.length;
+        const out = await step(slice, targets);
+        const requeued = typeof out === "number" ? 0 : out.requeued;
+        updated += typeof out === "number" ? out : out.updated;
+        done += slice.length - requeued;
         setEnrichProgress({ done, total: targets.length, updated });
       }
       setNotice(enrichStop.current
@@ -1095,7 +1106,7 @@ export default function DropsPage() {
   }
 
   // Wayback is served by the app itself in bounded 12-domain slices (see the wayback route).
-  const enrichWayback = () => walkEnrichment("wayback", enrichTargets(), 12, async slice => {
+  const enrichWayback = () => walkEnrichment("wayback", enrichTargets(), 12, async (slice, queue) => {
     const res = await fetch("/api/drops/wayback", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ domains: slice }),
@@ -1104,10 +1115,12 @@ export default function DropsPage() {
     if (!res.ok) throw new Error(body?.error || "wayback_failed");
     // A slice where the archive refused every domain is an answer, not a zero: saying
     // "updated 12" hides it, and staying silent hides the throttle the user cannot otherwise see.
-    if (body.updated === 0 && Number(body.throttled ?? 0) >= slice.length) {
+    const skipped: string[] = Array.isArray(body.skipped) ? body.skipped.filter((d: unknown): d is string => typeof d === "string") : [];
+    if (body.updated === 0 && Number(body.throttled ?? 0) >= slice.length - skipped.length) {
       throw new Error(tr("dropsHistoryErrThrottled"));
     }
-    return body.updated ?? 0;
+    queue.push(...skipped);
+    return { updated: body.updated ?? 0, requeued: skipped.length };
   });
 
   // The AI history pass: the reference tool's "Пересчитать данные + AI". Runs on hand-picked
@@ -1390,7 +1403,28 @@ export default function DropsPage() {
   // from this server", which changes both the speed and the corroboration rate.
   const hasSocksProxy = proxies.some(p => p.enabled && p.kind === "socks5");
 
-  const zones = useMemo(() => [...new Set(rows.map(r => r.tld))].sort(), [rows]);
+  // From the server's zone counts, not from the rows on this page — a zone that only had rows
+  // on page 2 used to be missing from the list. The selected zone stays listed even at 0.
+  const zones = useMemo(
+    () => [...new Set([...Object.keys(zoneList), ...(tld.trim() ? [tld.trim()] : [])])].sort(),
+    [zoneList, tld],
+  );
+  const folderTotal = useMemo(
+    () => (ungrouped ?? 0) + groups.reduce((a, g) => a + (Number(g.count) || 0), 0),
+    [ungrouped, groups],
+  );
+
+  // How many filters are narrowing the table right now. "All folders" and "all stages" are the
+  // neutral positions; every other value counts, so the reset button says what it will undo.
+  const activeFilterCount = [
+    groupId !== "", stage !== "", q.trim() !== "", runId !== "", tld.trim() !== "", watched !== "",
+    drMin !== "" || drMax !== "" || drNullOnly, refMin !== "" || refMax !== "", tfMin !== "" || tfMax !== "", noVetoOnly,
+  ].filter(Boolean).length;
+  const resetAllFilters = () => {
+    setGroupId(""); setStage(""); setQ(""); setRunId(""); setTld(""); setWatchedFilter("");
+    setDrMin(""); setDrMax(""); setDrNullOnly(false); setRefMin(""); setRefMax("");
+    setTfMin(""); setTfMax(""); setNoVetoOnly(false);
+  };
   const totalAll = useMemo(() => Object.values(counts).reduce((a, b) => a + b, 0), [counts]);
   const pageFrom = total === 0 ? 0 : offset + 1;
   const pageTo = Math.min(offset + pageSize, total);
@@ -1499,20 +1533,31 @@ export default function DropsPage() {
     <div className="panel" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "stretch" }}>
         {([
-          { n: 1, name: tr("dropsStepImportName"), state: stepState.anything > 0 ? tr("dropsStepDone").replace("{n}", stepState.anything.toLocaleString()) : tr("dropsStepWaiting") },
-          { n: 2, name: tr("dropsStepProxyName"), state: proxies.filter(p => p.enabled).length > 0 ? tr("dropsStepProxyOn").replace("{n}", String(proxies.filter(p => p.enabled).length)) : tr("dropsStepProxyOff") },
-          { n: 3, name: tr("dropsStepDnsName"), state: stepState.ingested > 0 ? tr("dropsStepQueued").replace("{n}", stepState.ingested.toLocaleString()) : tr("dropsStepClear") },
-          { n: 4, name: tr("dropsStepRegistryName"), state: stepState.dnsChecked > 0 ? tr("dropsStepQueued").replace("{n}", stepState.dnsChecked.toLocaleString()) : tr("dropsStepClear") },
-          { n: 5, name: tr("dropsStepResultName"), state: tr("dropsStepFound").replace("{n}", stepState.decided.toLocaleString()) },
+          { n: 1, stageFilter: "" as const, name: tr("dropsStepImportName"), state: stepState.anything > 0 ? tr("dropsStepDone").replace("{n}", stepState.anything.toLocaleString()) : tr("dropsStepWaiting") },
+          { n: 2, stageFilter: null, name: tr("dropsStepProxyName"), state: proxies.filter(p => p.enabled).length > 0 ? tr("dropsStepProxyOn").replace("{n}", String(proxies.filter(p => p.enabled).length)) : tr("dropsStepProxyOff") },
+          { n: 3, stageFilter: "ingested" as const, name: tr("dropsStepDnsName"), state: stepState.ingested > 0 ? tr("dropsStepQueued").replace("{n}", stepState.ingested.toLocaleString()) : tr("dropsStepClear") },
+          { n: 4, stageFilter: "dns_checked" as const, name: tr("dropsStepRegistryName"), state: stepState.dnsChecked > 0 ? tr("dropsStepQueued").replace("{n}", stepState.dnsChecked.toLocaleString()) : tr("dropsStepClear") },
+          { n: 5, stageFilter: "available" as const, name: tr("dropsStepResultName"), state: tr("dropsStepFound").replace("{n}", stepState.decided.toLocaleString()) },
         ]).map(step => {
           const live = step.n === stepState.current;
           // Step 2 is never "current": the pool is optional and out of the sequence.
           const dim = step.n === 2 && proxies.length === 0;
-          return <div key={step.n} style={{
+          // A step card is also a shortcut into the stage filter — it looked clickable and was
+          // not. Step 1 clears the stage, step 2 (the proxy pool) is not a stage at all.
+          const sf = step.stageFilter as "" | DropStage | null;
+          const clickable = sf !== null;
+          const filtering = clickable && sf !== "" && stage === sf;
+          return <div key={step.n}
+            role={clickable ? "button" : undefined} tabIndex={clickable ? 0 : undefined}
+            title={clickable ? (sf === "" ? tr("dropsStepClickAll") : tr("dropsStepClickHint")) : undefined}
+            onClick={clickable ? () => setStage(filtering ? "" : sf) : undefined}
+            onKeyDown={clickable ? e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setStage(filtering ? "" : sf); } } : undefined}
+            style={{
             flex: "1 1 150px", minWidth: 140, padding: "8px 10px", borderRadius: 9,
-            border: `1px solid ${live ? "var(--color-accent-blue)" : "var(--color-border)"}`,
-            background: live ? "rgba(10,132,255,0.06)" : "transparent",
+            border: `1px solid ${filtering ? "var(--color-accent-green, #34c759)" : live ? "var(--color-accent-blue)" : "var(--color-border)"}`,
+            background: filtering ? "rgba(52,199,89,0.08)" : live ? "rgba(10,132,255,0.06)" : "transparent",
             opacity: dim ? 0.6 : 1,
+            cursor: clickable ? "pointer" : "default",
           }}>
             <div style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>{step.n}</div>
             <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--color-text-primary)" }}>{step.name}</div>
@@ -1859,92 +1904,112 @@ export default function DropsPage() {
       <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>{tr("dropsToxHint")}</span>
     </div>
 
-    {/* The funnel. Each chip is also the filter for its stage, because "show me those 1 910"
-        is the only thing anyone wants to do after reading the number. */}
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-      {STAGES.filter(s => (counts[s.value] ?? 0) > 0).map(s => {
-        const active = stage === s.value;
-        return <button key={s.value} onClick={() => setStage(active ? "" : s.value)} style={{
-          display: "flex", alignItems: "center", gap: 7, padding: "7px 13px", borderRadius: 9,
-          border: `1px solid ${active ? s.color : "var(--color-border)"}`,
-          background: active ? "var(--color-card-hover)" : "var(--color-card)",
-          color: "var(--color-text-secondary)", fontSize: 12, cursor: "pointer",
-        }}>
-          {tr(s.key)}
-          <b style={{ color: s.color, fontWeight: 800 }}>{counts[s.value]}</b>
-        </button>;
-      })}
-    </div>
+    {/* ONE filter panel. Folders, stages, search, run, zone, watch and the numeric ranges used
+        to live in four separate places (a chip row, a select bar, a range bar, and a conveyor
+        strip that looked clickable but was not), and it was impossible to tell which of them
+        was narrowing the table. Everything that narrows the table is here, every active filter
+        is highlighted, and one button clears them all. */}
+    <div className="panel" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <b style={{ fontSize: 13, color: "var(--color-text-primary)" }}>{tr("dropsFiltersTitle")}</b>
+        <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
+          {tr("dropsFiltersShown").replace("{n}", total.toLocaleString()).replace("{all}", totalAll.toLocaleString())}
+        </span>
+        <span style={{ flex: 1 }} />
+        {activeFilterCount > 0 && <button onClick={resetAllFilters} style={pagerBtn(false)}>
+          <X size={12} style={{ verticalAlign: -2, marginRight: 4 }} />
+          {tr("dropsFiltersReset").replace("{n}", String(activeFilterCount))}
+        </button>}
+      </div>
 
-    <div className="panel" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-      <Search size={16} color="var(--color-text-tertiary)" />
-      <input className="tool-input" style={{ flex: 1, minWidth: 180 }} value={q}
-        onChange={e => setQ(e.target.value)} placeholder={tr("dropsSearch")} />
-      <select className="tool-input" style={{ width: 190 }} value={runId} onChange={e => setRunId(e.target.value)}>
-        <option value="">{tr("dropsAllRuns")}</option>
-        {runs.map(r => <option key={r.id} value={r.id}>
-          {r.label || new Date(r.createdAt).toLocaleDateString()} · {r.total}
-        </option>)}
-      </select>
-      <select className="tool-input" style={{ width: 150 }} value={tld} onChange={e => setTld(e.target.value)}>
-        <option value="">{tr("dropsAllZones")}</option>
-        {zones.map(z => <option key={z} value={z}>.{z}</option>)}
-      </select>
-      <select className="tool-input" style={{ width: 160 }} value={groupId} onChange={e => setGroupId(e.target.value)}>
-        <option value="">{tr("dropsGroupAll")}</option>
-        <option value="none">{tr("dropsGroupNone")}{ungrouped != null ? ` (${ungrouped.toLocaleString()})` : ""}</option>
-        {groups.map(g => <option key={g.id} value={g.id}>{g.name} ({g.count})</option>)}
-      </select>
-      <select className="tool-input" style={{ width: 170 }} value={watched}
-        onChange={e => setWatchedFilter(e.target.value as "" | "1")}>
-        <option value="">{tr("dropsWatchFilterAll")}</option>
-        <option value="1">{tr("dropsWatchFilterWatched")}</option>
-      </select>
-    </div>
+      {/* Folders — always all of them, with their sizes, so none can hide behind pagination. */}
+      <div style={filterRow}>
+        <span style={filterLabel}>{tr("dropsFilterFolder")}</span>
+        {([
+          { id: "", name: tr("dropsGroupAll"), count: folderTotal },
+          { id: "none", name: tr("dropsGroupNone"), count: ungrouped },
+          ...groups.map(g => ({ id: g.id, name: g.name, count: g.count as number | null })),
+        ]).map(f => <button key={f.id || "all"} onClick={() => setGroupId(f.id)} style={chip(groupId === f.id)}>
+          {f.name}{f.count != null && <b style={{ fontWeight: 800, marginLeft: 6 }}>{f.count.toLocaleString()}</b>}
+        </button>)}
+      </div>
 
-    {/* Numeric ranges — the "выделить всё с DR < 10 и удалить" flow. Empty field = no bound on
-        that side; every range also answers to "выбрать все по фильтру" bulk actions. */}
-    <div className="panel" style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", fontSize: 12.5 }}
-      title={tr("dropsRangeHint")}>
-      <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-        <b style={{ color: "var(--color-text-secondary)" }}>DR</b>
-        <input className="tool-input" style={{ width: 64 }} type="number" inputMode="numeric" placeholder={tr("dropsRangeFrom")}
-          value={drMin} onChange={e => setDrMin(e.target.value)} />
-        <span style={{ color: "var(--color-text-tertiary)" }}>–</span>
-        <input className="tool-input" style={{ width: 64 }} type="number" inputMode="numeric" placeholder={tr("dropsRangeTo")}
-          value={drMax} onChange={e => setDrMax(e.target.value)} />
-        <label style={{ display: "flex", alignItems: "center", gap: 5, marginLeft: 6, color: "var(--color-text-secondary)", cursor: "pointer" }}
-          title={tr("dropsDrNoneHint")}>
-          <input type="checkbox" checked={drNullOnly} onChange={e => setDrNullOnly(e.target.checked)} />
-          {tr("dropsDrNone")}
+      {/* Stages. The counts are the whole catalogue's (they do not shrink with the filters) —
+          they say where the list is; clicking one narrows the table to it. */}
+      <div style={filterRow}>
+        <span style={filterLabel}>{tr("dropsFilterStage")}</span>
+        <button onClick={() => setStage("")} style={chip(stage === "")}>
+          {tr("dropsFilterStageAll")}
+          {totalAll > 0 && <b style={{ fontWeight: 800, marginLeft: 6 }}>{totalAll.toLocaleString()}</b>}
+        </button>
+        {STAGES.filter(st => (counts[st.value] ?? 0) > 0 || stage === st.value).map(st => (
+          <button key={st.value} onClick={() => setStage(stage === st.value ? "" : st.value)}
+            style={{ ...chip(stage === st.value), ...(stage === st.value ? { borderColor: st.color } : {}) }}>
+            {tr(st.key)}
+            <b style={{ color: st.color, fontWeight: 800, marginLeft: 6 }}>{(counts[st.value] ?? 0).toLocaleString()}</b>
+          </button>
+        ))}
+      </div>
+
+      <div style={filterRow}>
+        <Search size={16} color="var(--color-text-tertiary)" />
+        <input className="tool-input" style={{ flex: 1, minWidth: 180, ...activeInput(q.trim() !== "") }} value={q}
+          onChange={e => setQ(e.target.value)} placeholder={tr("dropsSearch")} />
+        <select className="tool-input" style={{ width: 190, ...activeInput(runId !== "") }} value={runId} onChange={e => setRunId(e.target.value)}>
+          <option value="">{tr("dropsAllRuns")}</option>
+          {runs.map(r => <option key={r.id} value={r.id}>
+            {r.label || new Date(r.createdAt).toLocaleDateString()} · {r.total}
+          </option>)}
+        </select>
+        <select className="tool-input" style={{ width: 150, ...activeInput(tld !== "") }} value={tld} onChange={e => setTld(e.target.value)}>
+          <option value="">{tr("dropsAllZones")}</option>
+          {zones.map(z => <option key={z} value={z}>.{z}{zoneList[z] != null ? ` (${zoneList[z].toLocaleString()})` : ""}</option>)}
+        </select>
+        <select className="tool-input" style={{ width: 170, ...activeInput(watched !== "") }} value={watched}
+          onChange={e => setWatchedFilter(e.target.value as "" | "1")}>
+          <option value="">{tr("dropsWatchFilterAll")}</option>
+          <option value="1">{tr("dropsWatchFilterWatched")}</option>
+        </select>
+      </div>
+
+      {/* Numeric ranges — the "выделить всё с DR < 10 и удалить" flow. Empty field = no bound on
+          that side; every range also answers to "выбрать все по фильтру" bulk actions. */}
+      <div style={{ ...filterRow, gap: 14, fontSize: 12.5 }} title={tr("dropsRangeHint")}>
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <b style={{ color: "var(--color-text-secondary)" }}>DR</b>
+          <input className="tool-input" style={{ width: 64, ...activeInput(drMin !== "") }} type="number" inputMode="numeric" placeholder={tr("dropsRangeFrom")}
+            value={drMin} onChange={e => setDrMin(e.target.value)} />
+          <span style={{ color: "var(--color-text-tertiary)" }}>–</span>
+          <input className="tool-input" style={{ width: 64, ...activeInput(drMax !== "") }} type="number" inputMode="numeric" placeholder={tr("dropsRangeTo")}
+            value={drMax} onChange={e => setDrMax(e.target.value)} />
+          <label style={{ display: "flex", alignItems: "center", gap: 5, marginLeft: 6, color: "var(--color-text-secondary)", cursor: "pointer" }}
+            title={tr("dropsDrNoneHint")}>
+            <input type="checkbox" checked={drNullOnly} onChange={e => setDrNullOnly(e.target.checked)} />
+            {tr("dropsDrNone")}
+          </label>
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <b style={{ color: "var(--color-text-secondary)" }}>{tr("dropsColRefdomains")}</b>
+          <input className="tool-input" style={{ width: 76, ...activeInput(refMin !== "") }} type="number" inputMode="numeric" placeholder={tr("dropsRangeFrom")}
+            value={refMin} onChange={e => setRefMin(e.target.value)} />
+          <span style={{ color: "var(--color-text-tertiary)" }}>–</span>
+          <input className="tool-input" style={{ width: 76, ...activeInput(refMax !== "") }} type="number" inputMode="numeric" placeholder={tr("dropsRangeTo")}
+            value={refMax} onChange={e => setRefMax(e.target.value)} />
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <b style={{ color: "var(--color-text-secondary)" }} title={tr("dropsTfHint")}>TF</b>
+          <input className="tool-input" style={{ width: 64, ...activeInput(tfMin !== "") }} type="number" inputMode="numeric" placeholder={tr("dropsRangeFrom")}
+            value={tfMin} onChange={e => setTfMin(e.target.value)} />
+          <span style={{ color: "var(--color-text-tertiary)" }}>–</span>
+          <input className="tool-input" style={{ width: 64, ...activeInput(tfMax !== "") }} type="number" inputMode="numeric" placeholder={tr("dropsRangeTo")}
+            value={tfMax} onChange={e => setTfMax(e.target.value)} />
+        </span>
+        <label style={{ display: "flex", alignItems: "center", gap: 5, color: "var(--color-text-secondary)", cursor: "pointer" }}
+          title={tr("dropsVetoHint")}>
+          <input type="checkbox" checked={noVetoOnly} onChange={e => setNoVetoOnly(e.target.checked)} />
+          {tr("dropsVetoNone")}
         </label>
-      </span>
-      <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-        <b style={{ color: "var(--color-text-secondary)" }}>{tr("dropsColRefdomains")}</b>
-        <input className="tool-input" style={{ width: 76 }} type="number" inputMode="numeric" placeholder={tr("dropsRangeFrom")}
-          value={refMin} onChange={e => setRefMin(e.target.value)} />
-        <span style={{ color: "var(--color-text-tertiary)" }}>–</span>
-        <input className="tool-input" style={{ width: 76 }} type="number" inputMode="numeric" placeholder={tr("dropsRangeTo")}
-          value={refMax} onChange={e => setRefMax(e.target.value)} />
-      </span>
-      <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-        <b style={{ color: "var(--color-text-secondary)" }} title={tr("dropsTfHint")}>TF</b>
-        <input className="tool-input" style={{ width: 64 }} type="number" inputMode="numeric" placeholder={tr("dropsRangeFrom")}
-          value={tfMin} onChange={e => setTfMin(e.target.value)} />
-        <span style={{ color: "var(--color-text-tertiary)" }}>–</span>
-        <input className="tool-input" style={{ width: 64 }} type="number" inputMode="numeric" placeholder={tr("dropsRangeTo")}
-          value={tfMax} onChange={e => setTfMax(e.target.value)} />
-      </span>
-      <label style={{ display: "flex", alignItems: "center", gap: 5, color: "var(--color-text-secondary)", cursor: "pointer" }}
-        title={tr("dropsVetoHint")}>
-        <input type="checkbox" checked={noVetoOnly} onChange={e => setNoVetoOnly(e.target.checked)} />
-        {tr("dropsVetoNone")}
-      </label>
-      {(drMin || drMax || drNullOnly || refMin || refMax || tfMin || tfMax || noVetoOnly) && <button
-        onClick={() => { setDrMin(""); setDrMax(""); setDrNullOnly(false); setRefMin(""); setRefMax(""); setTfMin(""); setTfMax(""); setNoVetoOnly(false); }}
-        style={pagerBtn(false)}>
-        {tr("dropsRangeClear")}
-      </button>}
+      </div>
     </div>
 
     {/* Enrichment. Every source states its cost up front: DR and Wayback are free, TF/CF bills
@@ -2000,6 +2065,15 @@ export default function DropsPage() {
           {tr("dropsOfAll").replace("{n}", totalAll.toLocaleString())}
         </span>}
         {loading && <Loader2 className="spin" size={14} color="var(--color-text-tertiary)" />}
+        {/* The page position up here too: with the pager only under a 200-row table, "page 1 of 2"
+            was invisible, and rows (whole folders, before groupFirst) on page 2 read as missing. */}
+        {total > pageSize && <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--color-text-secondary)" }}>
+          <button onClick={() => setOffset(Math.max(0, offset - pageSize))} disabled={offset === 0}
+            aria-label={tr("dropsPrev")} style={{ ...pagerBtn(offset === 0), padding: "3px 8px" }}>←</button>
+          {tr("dropsPageOf").replace("{from}", pageFrom.toLocaleString()).replace("{to}", pageTo.toLocaleString()).replace("{n}", total.toLocaleString())}
+          <button onClick={() => setOffset(offset + pageSize)} disabled={lastPage}
+            aria-label={tr("dropsNext")} style={{ ...pagerBtn(lastPage), padding: "3px 8px" }}>→</button>
+        </span>}
         <span style={{ flex: 1 }} />
         {/* The loop closes here: an export goes back out the way it came in. Server-side under
             the current filter, not "whatever the table is holding" — the table has one page. */}
@@ -2384,6 +2458,29 @@ const pagerSelect: React.CSSProperties = {
   border: "1px solid var(--color-border)", borderRadius: 7, background: "transparent",
   color: "var(--color-text-secondary)", padding: "5px 8px", fontSize: 12, cursor: "pointer",
 };
+
+/** One row of the filter panel: a label column, then its controls. */
+const filterRow: React.CSSProperties = { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" };
+const filterLabel: React.CSSProperties = {
+  width: 70, flex: "none", fontSize: 12, fontWeight: 600, color: "var(--color-text-tertiary)",
+};
+
+/** A filter chip — folders and stages. Active means "this is narrowing the table right now". */
+function chip(active: boolean): React.CSSProperties {
+  return {
+    display: "inline-flex", alignItems: "center", padding: "6px 12px", borderRadius: 9, fontSize: 12,
+    cursor: "pointer",
+    border: `1px solid ${active ? "var(--color-accent-blue)" : "var(--color-border)"}`,
+    background: active ? "rgba(10,132,255,0.10)" : "var(--color-card)",
+    color: active ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+    fontWeight: active ? 600 : 400,
+  };
+}
+
+/** A filter input that is set gets the same accent as an active chip, so nothing narrows unseen. */
+function activeInput(active: boolean): React.CSSProperties {
+  return active ? { borderColor: "var(--color-accent-blue)", boxShadow: "0 0 0 1px var(--color-accent-blue)" } : {};
+}
 
 function pagerBtn(disabled: boolean): React.CSSProperties {
   return {
