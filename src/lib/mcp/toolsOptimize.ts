@@ -327,7 +327,7 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
     name: "analyze_originality",
     cost: "local",
     description:
-      "FREE and deterministic — no model is called. Measures how ORIGINAL a page is against its template siblings (other cities, services or products built from the same template): the axis that decides whether near-duplicate pages get indexed at all, independent of whether the text reads as AI. Reports shingle gain (share of 3-word phrases no sibling has — catches copy-paste, inflated by paraphrase), substance gain (numbers, dates and identifiers no sibling has, per 1000 words — paraphrase cannot fake it), structure flags (data table, unique subheadings, unique anchors), the closest sibling's similarity, a 0–100 score and a band (template / borderline / original; ≥0.8 similarity to any sibling is always template). Get sibling texts with fetch_page_content first. Pass `facts` — what is actually known about this page — to also get a rewrite instruction that only allows those facts to be added. This is a proxy, not Google's internal originalContentScore.",
+      "FREE and deterministic — no model is called. Measures how ORIGINAL a page is against its template siblings (other cities, services or products built from the same template): the axis that decides whether near-duplicate pages get indexed at all, independent of whether the text reads as AI. Reports shingle gain (share of 3-word phrases no sibling has — catches copy-paste, inflated by paraphrase), substance gain (numbers, dates and identifiers no sibling has, per 1000 words — paraphrase cannot fake it), structure flags (data table, unique subheadings, unique anchors), the closest sibling's similarity (shingles.closest = its index in `siblings`; siblings under 30 words are counted in `skipped`), a 0–100 score and a band (template / borderline / original; ≥0.8 similarity to any sibling is always template). Get sibling texts with fetch_page_content first. Pass `facts` — what is actually known about this page — to also get a rewrite instruction that only allows those facts to be added. This is a proxy, not Google's internal originalContentScore.",
     inputSchema: {
       type: "object",
       properties: {
@@ -340,8 +340,10 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
     handler: async (_userId, args) => {
       const text = String(args.text ?? "");
       if (!text.trim()) throw new Error("Missing required argument: text");
-      const siblings = (Array.isArray(args.siblings) ? args.siblings : []).map(String).filter(s => s.trim()).slice(0, 50);
-      if (!siblings.length) throw new Error("Pass at least one sibling text — originality is measured against something.");
+      // No filtering here: shingles.closest indexes this array as the agent sent it, and the
+      // metric already drops siblings under 30 words (reported as `skipped`).
+      const siblings = (Array.isArray(args.siblings) ? args.siblings : []).slice(0, 50).map(x => String(x ?? ""));
+      if (!siblings.some(s => s.trim())) throw new Error("Pass at least one sibling text — originality is measured against something.");
       const r = originalityReport(text, siblings);
       const facts = String(args.facts ?? "");
       return {

@@ -42,6 +42,8 @@ export interface OriginalityReport {
   words: number;
   /** Siblings that had enough text to compare against. */
   siblings: number;
+  /** Siblings passed in but dropped for having under 30 words. */
+  skipped: number;
   short: boolean;
   shingles: {
     total: number;
@@ -50,7 +52,7 @@ export interface OriginalityReport {
     gain: number;
     /** Jaccard to the most similar sibling, 0..1 */
     maxSimilarity: number;
-    /** index into the siblings array passed in, -1 when none */
+    /** index into the siblings array AS PASSED IN (not the filtered one), -1 when none */
     closest: number;
   };
   substance: {
@@ -139,7 +141,12 @@ export function bandFor(score: number, maxSimilarity: number): OriginalityBand {
 
 export function originalityReport(text: string, siblings: readonly string[]): OriginalityReport {
   const words = tokenize(normalizeForDiff(text)).length;
-  const sibs = siblings.map(s => String(s || "")).filter(s => tokenize(normalizeForDiff(s)).length >= 30);
+  // Keep each sibling's position in the caller's array: short ones are dropped here, and an index
+  // into the filtered list would name the wrong page as "closest" in any UI that labels by input order.
+  const kept = siblings
+    .map((s, i) => ({ s: String(s || ""), i }))
+    .filter(x => tokenize(normalizeForDiff(x.s)).length >= 30);
+  const sibs = kept.map(x => x.s);
   const sibSh = sibs.map(shingles);
   const sibNorm = sibs.map(s => normalizeForDiff(s));
 
@@ -147,7 +154,7 @@ export function originalityReport(text: string, siblings: readonly string[]): Or
   let unique = 0;
   for (const x of own) if (!sibSh.some(s => s.has(x))) unique++;
   let maxSimilarity = 0, closest = -1;
-  sibSh.forEach((s, i) => { const j = jaccard(own, s); if (j > maxSimilarity) { maxSimilarity = j; closest = i; } });
+  sibSh.forEach((s, k) => { const j = jaccard(own, s); if (j > maxSimilarity) { maxSimilarity = j; closest = kept[k].i; } });
   const shingleGain = own.size ? unique / own.size : 0;
 
   const facts = meaningfulFacts(text);
@@ -178,6 +185,7 @@ export function originalityReport(text: string, siblings: readonly string[]): Or
   return {
     words,
     siblings: sibs.length,
+    skipped: siblings.length - sibs.length,
     short: words < ORIG_SHORT_WORDS,
     shingles: { total: own.size, unique, gain: round2(shingleGain), maxSimilarity: round2(maxSimilarity), closest },
     substance: { unique: uniqueFacts.slice(0, 60), shared: facts.size - uniqueFacts.length, per1k: Math.round(per1k * 10) / 10, gain: round2(substanceGain) },

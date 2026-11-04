@@ -244,7 +244,7 @@ function ReportCard({ r, sibLabels }: { r: OriginalityReport; sibLabels: string[
         <div>
           <div style={{ fontSize: "14px", fontWeight: 700, color }}>{t(BAND_KEY[r.band])}</div>
           <div style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
-            {r.words} {t("hmWords")} · {t("hmOrSiblingsCount").replace("{n}", String(r.siblings))}
+            {r.words} {t("hmWords")} · {t("hmOrSiblingsCount").replace("{n}", r.skipped ? `${r.siblings}/${r.siblings + r.skipped}` : String(r.siblings))}
             {r.shingles.closest >= 0 && <> · {t("hmOrClosest").replace("{p}", String(Math.round(r.shingles.maxSimilarity * 100)))} ({sibLabels[r.shingles.closest] ?? `#${r.shingles.closest + 1}`})</>}
           </div>
         </div>

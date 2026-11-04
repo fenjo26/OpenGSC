@@ -49,6 +49,14 @@ test("single digits are not substance", () => {
   assert.deepEqual(r.substance.unique, []);
 });
 
+test("closest indexes the caller's array, not the filtered one", () => {
+  // A short paste first: dropped from the comparison, but it still occupies index 0.
+  const r = originalityReport(body("Sheffield"), ["too short to compare", body("York")]);
+  assert.equal(r.siblings, 1);
+  assert.equal(r.skipped, 1);
+  assert.equal(r.shingles.closest, 1);
+});
+
 test("no siblings → nothing measured against", () => {
   const r = originalityReport(body("Leeds"), []);
   assert.equal(r.siblings, 0);
