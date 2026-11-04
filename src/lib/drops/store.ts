@@ -1,6 +1,7 @@
 // The only module in src/lib/drops that talks to the database. Everything else stays pure so it
 // can be tested without one; the interesting decisions here are about volume, not about logic.
 
+import { pickAcquiredGroup } from "./acquiredGroup";
 import { dbAny } from "@/lib/prisma";
 import { rawQuery } from "@/lib/db/raw";
 import { monthKey, readDrHistory } from "@/lib/seo/drHistory";
@@ -1429,6 +1430,20 @@ export async function createDropGroup(userId: string, name: string): Promise<Dro
   }
   const g = (await db.dropGroup.create({ data: { userId, name: clean } })) as { id: string; name: string; createdAt: Date };
   return { id: g.id, name: g.name, count: 0, createdAt: g.createdAt.toISOString() };
+}
+
+/**
+ * The group bought domains are filed into. Reuses any existing group that already plays that
+ * role under any interface language's name (see acquiredGroup.ts), otherwise creates one under
+ * `preferredName` — the caller passes a name already checked against the table.
+ */
+export async function ensureAcquiredGroup(userId: string, preferredName: string): Promise<string> {
+  const all = (await db.dropGroup.findMany({
+    where: { userId }, select: { id: true, name: true, createdAt: true },
+  })) as { id: string; name: string; createdAt: Date }[];
+  const hit = pickAcquiredGroup(all);
+  if (hit) return hit.id;
+  return (await createDropGroup(userId, preferredName)).id;
 }
 
 export async function renameDropGroup(userId: string, groupId: string, name: string): Promise<boolean> {

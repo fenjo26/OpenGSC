@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import {
   deleteCandidates, listCandidates, setStarred, setWatched, stageCounts, schemaMissing,
-  setCandidateGroup, dropGroupExists, zoneCounts, parseCandidateFilter, markAcquired, EXCLUDE_MAX, IDS_MAX, type CandidateSortField,
+  setCandidateGroup, dropGroupExists, zoneCounts, ensureAcquiredGroup, parseCandidateFilter, markAcquired, EXCLUDE_MAX, IDS_MAX, type CandidateSortField,
 } from "@/lib/drops/store";
 import { ensureAsset } from "@/lib/drops/activationStore";
+import { sanitizeAcquiredGroupName } from "@/lib/drops/acquiredGroup";
 
 const SORT_FIELDS: CandidateSortField[] = ["score", "createdAt", "domain", "dr", "refdomains", "snapshots", "checkedAt", "tf"];
 
@@ -123,7 +124,15 @@ async function bulk(req: Request): Promise<NextResponse> {
       for (const row of flipped) {
         await ensureAsset(userId, row.domain, { candidateId: row.id });
       }
-      return NextResponse.json({ updated: flipped.length, assets: flipped.length });
+      // Bought domains are filed into the "bought" group, so the status and the group never
+      // have to be kept in step by hand. The name follows the interface language the client
+      // sends; an existing group under any language's name is reused (acquiredGroup.ts).
+      let groupId: string | null = null;
+      if (flipped.length) {
+        groupId = await ensureAcquiredGroup(userId, sanitizeAcquiredGroupName(body?.groupName));
+        await setCandidateGroup(userId, { ids: flipped.map(r => r.id) }, groupId);
+      }
+      return NextResponse.json({ updated: flipped.length, assets: flipped.length, groupId });
     }
     return NextResponse.json({ error: "unknown_action" }, { status: 400 });
   } catch (e) {

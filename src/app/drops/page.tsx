@@ -15,6 +15,7 @@ import { watchAcceleration } from "@/lib/drops/watch";
 // because "even the name wasn't changed under the flip" is visible before anything is stored.
 import { scanDomainName } from "@/lib/drops/toxicity/markers";
 import { usePersistedState } from "@/lib/usePersistedState";
+import { acquiredGroupName } from "@/lib/drops/acquiredGroup";
 import { getMetricsCreds } from "@/lib/seo/metricsClient";
 import { drSeriesText, type DrPoint } from "@/components/DrSparkline";
 import BacklinkProfile from "@/components/BacklinkProfile";
@@ -172,7 +173,7 @@ const EXCLUDE_MAX = 500;
 const IDS_MAX = 10_000;
 
 export default function DropsPage() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const tr = (k: string) => t(k as never) as string;
 
   // Top-level tab: the catalogue vs the activation of what it produced. URL-addressable
@@ -1252,6 +1253,9 @@ export default function DropsPage() {
       ? { matchAll: true, action, filter: filterPayload(), ...(excludedIds.size ? { exclude: [...excludedIds] } : {}) }
       : { ids: [...selectedIds], action };
     if (action === "group") payload.groupId = targetGroupId;
+    // The server files bought rows into the "bought" group; on first use it is created under
+    // this interface language's name.
+    if (action === "acquire") payload.groupName = acquiredGroupName(language);
     try {
       const res = await fetch("/api/drops/candidates", {
         method: action === "delete" ? "DELETE" : "PATCH",
@@ -1284,7 +1288,7 @@ export default function DropsPage() {
       // Grouping moves rows between the folders and the working pile; deleting shrinks the
       // pile itself. Both must refresh the counts the select reads, or "Без группы (N)" goes
       // stale until the next full load.
-      if (action === "group" || action === "ungroup" || action === "delete") await loadGroups();
+      if (action === "group" || action === "ungroup" || action === "delete" || action === "acquire") await loadGroups();
       await Promise.all([loadRows(), loadRuns()]);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
