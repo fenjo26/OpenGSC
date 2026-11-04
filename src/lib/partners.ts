@@ -14,7 +14,7 @@ type PartnerEntry<Id extends string = string> = {
   tileBg: string;
   imgStyle: CSSProperties;
   /** Translation key of a running promo badge; omit when the partner has none. */
-  promo?: "partnersPromoMarket369" | "partnersPromoZooproxy";
+  promo?: "partnersPromoMarket369" | "partnersPromoZooproxy" | "partnersPromoLoopway";
 };
 
 // 369 Links Market leads the wall while their top-up bonus promo runs (user's call,
@@ -141,6 +141,15 @@ const PARTNERS = [
     tileBg: "#ffffff",
     imgStyle: { maxWidth: "84px", maxHeight: "20px" } as CSSProperties,
     promo: "partnersPromoZooproxy",
+  },
+  {
+    id: "Loopway",
+    name: "Loopway",
+    href: "https://loopway.io",
+    logo: "/partners/loopway-logo.svg",
+    tileBg: "#ffffff",
+    imgStyle: { maxWidth: "84px", maxHeight: "21px" } as CSSProperties,
+    promo: "partnersPromoLoopway",
   },
 ] as const satisfies readonly PartnerEntry[];
 
