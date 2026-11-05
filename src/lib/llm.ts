@@ -244,11 +244,74 @@ export function getLLMKeyConcurrency(): number { return llmKeyConcurrency; }
 const keySlots = new Map<string, { active: number; waiters: (() => void)[] }>();
 function keyOf(provider: string, apiKey: string): string { return `${provider}|${apiKey}`; }
 
+// ── 429 handling shared by every caller of one key ─────────────────────────────
+// A rate limit is a property of the KEY, not of the one request that happened to
+// see it. Without shared state, eight parallel calls each get their own 429, each
+// back off independently and come back together — the burst that tripped the limit
+// repeats on every retry. Two pieces of state fix that:
+//   cooldownUntil — after a 429, NO new attempt on this key starts before it passes
+//   cap/capUntil  — the key's effective concurrency is halved (min 1) for 10 minutes,
+//                   then returns to the configured limit; another 429 halves again.
+// This is what makes the configured "requests per key" safe to set optimistically:
+// the gate shrinks itself to what the provider actually tolerates.
+const RATE_COOLDOWN_DEFAULT_MS = 30_000;
+const RATE_CAP_TTL_MS = 10 * 60_000;
+const keyThrottle = new Map<string, { cooldownUntil: number; cap: number; capUntil: number }>();
+
+function effectiveLimit(key: string): number {
+  const t = keyThrottle.get(key);
+  if (!t || t.capUntil <= Date.now()) return llmKeyConcurrency;
+  return Math.max(1, Math.min(llmKeyConcurrency, t.cap));
+}
+
+/** Record a 429 on a key: shared cooldown + halve its effective concurrency. */
+export function noteRateLimited(provider: string, apiKey: string, waitMs?: number): void {
+  const key = keyOf(provider, apiKey);
+  const now = Date.now();
+  const t = keyThrottle.get(key) ?? { cooldownUntil: 0, cap: llmKeyConcurrency || 8, capUntil: 0 };
+  const current = t.capUntil > now ? t.cap : (llmKeyConcurrency || 8);
+  // Halve from what is actually in flight, not from the nominal limit — eight
+  // configured slots with three busy means three was already too many.
+  const inFlight = keySlots.get(key)?.active ?? current;
+  t.cap = Math.max(1, Math.floor(Math.min(current, Math.max(1, inFlight)) / 2));
+  t.capUntil = now + RATE_CAP_TTL_MS;
+  t.cooldownUntil = Math.max(t.cooldownUntil, now + (waitMs && waitMs > 0 ? waitMs : RATE_COOLDOWN_DEFAULT_MS));
+  keyThrottle.set(key, t);
+  console.error(`[LLM] ${provider} rate-limited — key cooling down ${Math.round((t.cooldownUntil - now) / 1000)}s, concurrency capped at ${t.cap} for 10 min`);
+}
+
+/** Current self-imposed throttle per provider (for status surfaces). Keys are never exposed. */
+export function getLLMThrottleState(): { provider: string; cap: number; cooldownSec: number; capMinutesLeft: number }[] {
+  const now = Date.now();
+  const out: { provider: string; cap: number; cooldownSec: number; capMinutesLeft: number }[] = [];
+  for (const [key, t] of keyThrottle) {
+    if (t.capUntil <= now && t.cooldownUntil <= now) continue;
+    out.push({
+      provider: key.split("|")[0],
+      cap: t.capUntil > now ? t.cap : llmKeyConcurrency,
+      cooldownSec: Math.max(0, Math.round((t.cooldownUntil - now) / 1000)),
+      capMinutesLeft: Math.max(0, Math.round((t.capUntil - now) / 60_000)),
+    });
+  }
+  return out;
+}
+
+async function waitCooldown(key: string): Promise<void> {
+  for (;;) {
+    const until = keyThrottle.get(key)?.cooldownUntil ?? 0;
+    const left = until - Date.now();
+    if (left <= 0) return;
+    // Jitter so the calls released by one cooldown do not land in the same second.
+    await new Promise(r => setTimeout(r, left + Math.floor(Math.random() * 3_000)));
+  }
+}
+
 async function acquireKeySlot(key: string): Promise<void> {
+  await waitCooldown(key);
   if (llmKeyConcurrency <= 0) return;
   let s = keySlots.get(key);
   if (!s) { s = { active: 0, waiters: [] }; keySlots.set(key, s); }
-  if (s.active < llmKeyConcurrency) { s.active++; return; }
+  if (s.active < effectiveLimit(key)) { s.active++; return; }
   // The slot is transferred by releaseKeySlot WITHOUT an active-- / active++
   // round trip: `active` counts held AND promised slots, so a fresh acquire
   // that races the waiter's microtask still sees a full gate.
@@ -259,10 +322,25 @@ function releaseKeySlot(key: string): void {
   if (llmKeyConcurrency <= 0) return;
   const s = keySlots.get(key);
   if (!s) return;
-  const next = s.waiters.shift();
-  if (next) { next(); return; } // hand the slot over; active stays as-is
+  // A throttled key hands the slot over only while it is under its reduced cap;
+  // over it, the slot is retired and the waiter keeps waiting for the next one.
+  if (s.active <= effectiveLimit(key)) {
+    const next = s.waiters.shift();
+    if (next) { next(); return; } // hand the slot over; active stays as-is
+  }
   s.active = Math.max(0, s.active - 1);
-  if (s.active === 0) keySlots.delete(key);
+  if (s.active === 0 && !s.waiters.length) keySlots.delete(key);
+}
+
+// A 429 that is NOT a rate limit: the account is out of balance or the plan's
+// quota window is spent (Z.AI 1113 / 1308 / 1310, OpenAI insufficient_quota).
+// Waiting minutes will not fix it; retrying only delays the honest error.
+export function isQuotaExhausted(detail: string | undefined): boolean {
+  if (!detail || !/\b429\b/.test(detail)) return false;
+  return /insufficient|balance|quota|usage limit|\[?(1113|1308|1310)\]?|余额|额度/i.test(detail);
+}
+export function isRateLimited(detail: string | undefined): boolean {
+  return !!detail && /\b429\b/.test(detail) && !isQuotaExhausted(detail);
 }
 
 // Public entry: retries transient failures (429 rate limits, 408/5xx, network drops, timeouts)
@@ -303,7 +381,11 @@ export async function fetchLLMDetailed(
   /** Opt back into Z.AI's thinking mode; off by default because it eats the whole max_tokens budget. */
   enableThinking = false,
 ): Promise<{ text: string | null; error?: string; finishReason?: string }> {
-  const delays = [0, 5_000, 20_000]; // 3 attempts total
+  // 3 attempts for ordinary transient failures; a rate limit gets a longer ladder
+  // (switched to below on the first 429) — 5s and 20s are inside the window that
+  // tripped the limit, so they only burn attempts.
+  let delays = [0, 5_000, 20_000];
+  const RATE_DELAYS = [0, 30_000, 60_000, 120_000, 180_000];
   let lastError: string | undefined;
   // Set from the previous attempt when the response told us how long to wait — a `Retry-After`
   // header, or a gateway 5xx that has already exhausted its own routes. It overrides the generic
@@ -326,6 +408,11 @@ export async function fetchLLMDetailed(
     if (r.text != null) return { text: r.text, finishReason: r.finishReason };
     lastError = r.errorDetail;
     askedWait = r.retryAfterMs;
+    if (isQuotaExhausted(lastError)) return { text: null, error: `${lastError} — quota/balance exhausted, not a rate limit; retrying will not help` };
+    if (isRateLimited(lastError)) {
+      if (delays !== RATE_DELAYS) { delays = RATE_DELAYS; cap = Math.max(cap, RATE_DELAYS.length); }
+      noteRateLimited(provider, apiKey, askedWait ?? delays[Math.min(i + 1, delays.length - 1)]);
+    }
     if (!r.retryable) return { text: null, error: lastError };
     cap = Math.min(cap, attemptCapFor(lastError) ?? delays.length);
     if (i < Math.min(cap, delays.length) - 1) console.error(`[LLM] ${provider} transient failure — retrying (${i + 1}/${Math.min(cap, delays.length) - 1}): ${lastError ?? ""}`);
@@ -342,10 +429,28 @@ const retryableStatus = (s: number) => s === 429 || s === 408 || s >= 500;
 // the budget thinking before they answer; 25s is plenty for a trivial prompt on a healthy pool.
 export async function pingProvider(
   provider: string, apiKey: string, model?: string, baseUrl?: string, timeoutMs = 25_000,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; rateLimited?: boolean }> {
   if (!provider || !apiKey) return { ok: false, error: "no provider/key configured" };
-  const r = await fetchLLMOnce("Reply with the single word: ok", provider, apiKey, 2000, model, baseUrl, 0, false, timeoutMs);
-  return r.text != null ? { ok: true } : { ok: false, error: r.errorDetail ?? "no answer" };
+  // Through the same per-key gate as real calls: a ping that skips the gate is one
+  // extra request on top of a key that is already at its limit — exactly the
+  // request that used to collect the 429 and fail the whole job before it began.
+  const key = keyOf(provider, apiKey);
+  await acquireKeySlot(key);
+  let r: Awaited<ReturnType<typeof fetchLLMOnce>>;
+  try {
+    r = await fetchLLMOnce("Reply with the single word: ok", provider, apiKey, 2000, model, baseUrl, 0, false, timeoutMs);
+  } finally {
+    releaseKeySlot(key);
+  }
+  if (r.text != null) return { ok: true };
+  // A rate limit IS an answer: the provider is up and talking, just busy. The
+  // ping exists to catch dead pools, not busy ones — the pipeline's own calls wait
+  // out the limit through the shared cooldown. Out-of-quota stays a failure.
+  if (isRateLimited(r.errorDetail)) {
+    noteRateLimited(provider, apiKey, r.retryAfterMs);
+    return { ok: true, rateLimited: true };
+  }
+  return { ok: false, error: r.errorDetail ?? "no answer" };
 }
 
 // How long to wait before the next attempt, when the response itself says something useful.

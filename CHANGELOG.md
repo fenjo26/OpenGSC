@@ -3,6 +3,20 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
+## [Unreleased]
+
+### Fixed — Generation batch and provider rate limits
+
+- **Batch text phase failed with `no_outline` on every item.** The outline was attached to the item's knobs, but the shared payload resolver copies only the known knob names from the top level, so `outline` was silently dropped before the text job started. It now travels under `payload`, together with any other per-item field.
+- **A 429 no longer kills a job before it starts.** The pre-flight ping bypassed the per-key gate and treated `Rate limit reached` as "provider unreachable". The ping now goes through the same gate, and a rate limit counts as a live provider (an exhausted balance or plan quota — Z.AI 1113/1308/1310 — still fails, with a clear message, and is no longer retried).
+- **429s are handled per key, not per request.** The first 429 starts a shared cooldown for that key (Retry-After, else 30s) and halves its effective concurrency for 10 minutes, so parallel calls back off together instead of retrying into the same limit. Rate-limit retries use a longer ladder (30s / 60s / 120s / 180s).
+- **"Completed" jobs with no content are now errors.** A text whose body is under 400 characters (meta block excluded) or an outline with no sections is marked `empty_result` and handed to the retry policy instead of being filed as done.
+- **History records keep their provenance.** Server-filed History rows now carry `batchId`, `batchItemId`, `language` and `country`, so a page can be traced back to its batch and market.
+
+### Added
+
+- **MCP `batch_action` → `configure`**: an agent can read and change the queue's thread settings — pages at once (`concurrency`) and LLM requests per key (`providerConcurrency`) — and sees which keys are currently self-throttled after a 429. The same two sliders remain in SEO Tools → Batch.
+
 ## [1.13.1] — 2026-10-28
 
 ### Security — Next.js 16.3.8 → 16.4.3

@@ -11,7 +11,8 @@ import { genByType } from "@/lib/seo/generate";
 import { resolveCaptureBodies } from "@/lib/providerLog/bodies";
 import { withCallContext } from "@/lib/providerLog/context";
 import { touchSeoJob, withSeoJobHeartbeat } from "@/lib/jobs/lifecycle";
-import { saveJobToHistory } from "@/lib/seo/historyServer";
+import { saveJobToHistory, historyMetaFrom } from "@/lib/seo/historyServer";
+import { emptyResultReason } from "@/lib/seo/resultGuard";
 import { pickLiveProvider } from "@/lib/seo/providerPing";
 
 const jobs = () => dbAny.seoJob;
@@ -21,6 +22,8 @@ export interface SeoJobRow {
   type: string;
   keyword?: string;
   createdAt?: Date | string;
+  /** JSON meta of the row (the batch queue stamps batchId/batchItemId here). */
+  meta?: string | null;
 }
 
 // Detached background run — not awaited by the caller, so the result persists
@@ -58,7 +61,11 @@ export async function runJob(userId: string, job: SeoJobRow, payload: Record<str
         }
         // The payload is untyped JSON at the boundary; the generator's GenBody is not exported,
         // so take its parameter type here rather than re-declaring the whole shape.
-        return genByType(String(job.type), payload as unknown as Parameters<typeof genByType>[1]);
+        const out = await genByType(String(job.type), payload as unknown as Parameters<typeof genByType>[1]);
+        // A "completed" job with nothing in it is a failure that looks like a success —
+        // the batch counts it done and nobody regenerates it.
+        const empty = out.ok ? emptyResultReason(String(job.type), out.data) : null;
+        return empty ? { ok: false as const, error: empty } : out;
       })());
       await jobs().update({
         where: { id: job.id },
@@ -68,7 +75,7 @@ export async function runJob(userId: string, job: SeoJobRow, payload: Record<str
       });
       // File the finished result into SeoHistory server-side: the record must exist even if
       // no browser tab ever imports the job row (id = job id, so a later import converges).
-      if (r.ok) await saveJobToHistory(userId, job, r.data);
+      if (r.ok) await saveJobToHistory(userId, job, r.data, historyMetaFrom(job.meta, payload));
     } catch (e) {
       try {
         await jobs().update({

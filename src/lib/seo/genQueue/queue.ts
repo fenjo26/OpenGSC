@@ -111,7 +111,13 @@ async function buildItemPayload(item: ItemRow): Promise<Record<string, unknown>>
   }
 
   const jobType = item.phase === "outline" ? "outline" : "text";
-  const { payload } = await resolveJobPayload(item.userId, jobType, knobs);
+  // resolveJobPayload copies only the JOB_KNOBS names from the top level; anything
+  // else — above all `outline` for the text phase — must ride under args.payload
+  // or it is silently dropped. That drop was the batch-wide `no_outline`: every
+  // outline item completed, every text item then started with no outline at all.
+  // Credentials are still resolved and win over anything in here (stripSecrets
+  // already removed key-looking fields from the stored knobs).
+  const { payload } = await resolveJobPayload(item.userId, jobType, { ...knobs, payload: { ...knobs } });
   return payload;
 }
 

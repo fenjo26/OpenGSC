@@ -35,14 +35,18 @@ import { uniquenessPct, wordCount } from "@/lib/seo/textMetrics";
 import { genByType } from "@/lib/seo/generate";
 import { failStaleSeoJobs, touchSeoJob, withSeoJobHeartbeat } from "@/lib/jobs/lifecycle";
 import { coerceOutline } from "./outlineShape";
-import { saveJobToHistory } from "@/lib/seo/historyServer";
+import { saveJobToHistory, historyMetaFrom } from "@/lib/seo/historyServer";
+import { emptyResultReason } from "@/lib/seo/resultGuard";
 import { pickLiveProvider } from "@/lib/seo/providerPing";
 import { pathOf, urlMatches, urlFragmentMatches } from "./urlMatch";
 import { resolveJobPayload, fetchSavedOutline } from "@/lib/seo/jobPayload";
 import {
   createGenBatch, listGenBatches, getGenBatch,
   pauseBatch, resumeBatch, cancelBatch, retryBatchFailures,
+  getGenQueueSettings, saveGenQueueSettings, kickGenQueue,
 } from "@/lib/seo/genQueue/queue";
+import { syncLLMKeyConcurrency } from "@/lib/seo/genQueue/settings";
+import { getLLMThrottleState } from "@/lib/llm";
 import type { BatchItemInput } from "@/lib/seo/genQueue/plan";
 
 const jobs = () => dbAny.seoJob;
@@ -612,7 +616,9 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
         if (!picked.ok) {
           return { ok: false as const, error: `provider_unreachable: ${picked.error} — the provider answered no pre-flight ping. Switch the model/provider for this task in SEO Tools → Settings.` };
         }
-        return genByType(type, payload as unknown as GenPayload);
+        const out = await genByType(type, payload as unknown as GenPayload);
+        const empty = out.ok ? emptyResultReason(type, out.data) : null;
+        return empty ? { ok: false as const, error: empty } : out;
       })())
         .then(async r => {
           await jobs().update({
@@ -625,7 +631,7 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
           // agent-started job has no browser to do that, so the server files it itself.
           // This is what makes a finished outline selectable in the Text generator's
           // structure picker and listed by get_generations.
-          if (r.ok) await saveJobToHistory(userId, job, r.data);
+          if (r.ok) await saveJobToHistory(userId, job, r.data, historyMetaFrom(null, payload));
         })
         .catch(async (e: unknown) => {
           try {
@@ -863,18 +869,44 @@ export const OPTIMIZE_TOOLS: McpTool[] = [
     name: "batch_action",
     cost: "local",
     description:
-      "FREE: control a generation batch. pause stops picking new items (running ones finish — killing a mid-generation job wastes what was already paid); resume clears the error streak and restarts picking (use after the provider is healthy again); cancel skips everything still queued; retry requeues the batch's terminal errors AND skips with a fresh attempt budget. A batch auto-paused by the circuit breaker (statusReason \"auto_paused_errors\") needs exactly this: fix the provider, then resume + retry.",
+      "FREE: control a generation batch, or (action=configure) the queue's thread settings. pause stops picking new items (running ones finish — killing a mid-generation job wastes what was already paid); resume clears the error streak and restarts picking (use after the provider is healthy again); cancel skips everything still queued; retry requeues the batch's terminal errors AND skips with a fresh attempt budget. A batch auto-paused by the circuit breaker (statusReason \"auto_paused_errors\") needs exactly this: fix the provider, then resume + retry.",
     inputSchema: {
       type: "object",
       properties: {
-        batchId: { type: "string", description: "The batch to act on" },
-        action: { type: "string", enum: ["pause", "resume", "cancel", "retry"], description: "What to do" },
+        batchId: { type: "string", description: "The batch to act on (not needed for action=configure)" },
+        action: { type: "string", enum: ["pause", "resume", "cancel", "retry", "configure"], description: "What to do. configure = read/change the workspace queue settings (threads) — applies to every batch immediately" },
+        concurrency: { type: "number", description: "action=configure: PAGES generated at once by the queue (1–16). Each page fans out to ~2 parallel LLM calls." },
+        providerConcurrency: { type: "number", description: "action=configure: max simultaneous LLM requests per API key across the WHOLE instance — batch, start_generation_job and UI jobs all pass this gate (0 = unlimited, max 32). This is the knob for provider 429s; it also self-lowers automatically for 10 min after a 429." },
+        retryAttempts: { type: "number", description: "action=configure: extra attempts per failed item (0–5)" },
+        retryDelayMin: { type: "number", description: "action=configure: minutes before a failed item is retried (1–1440)" },
       },
-      required: ["batchId", "action"],
+      required: ["action"],
     },
     handler: async (userId, args) => {
       const batchId = String(args.batchId ?? "").trim();
       const action = String(args.action ?? "");
+      if (action === "configure") {
+        const cur = await getGenQueueSettings(userId);
+        const pick = (k: "concurrency" | "providerConcurrency" | "retryAttempts" | "retryDelayMin", min: number, max: number) =>
+          args[k] == null || !Number.isFinite(Number(args[k])) ? cur[k] : Math.max(min, Math.min(max, Math.round(Number(args[k]))));
+        const next = {
+          ...cur,
+          concurrency: pick("concurrency", 1, 16),
+          providerConcurrency: pick("providerConcurrency", 0, 32),
+          retryAttempts: pick("retryAttempts", 0, 5),
+          retryDelayMin: pick("retryDelayMin", 1, 1440),
+        };
+        const changed = JSON.stringify(next) !== JSON.stringify(cur);
+        if (changed) await saveGenQueueSettings(userId, next);
+        const effectiveProviderLimit = await syncLLMKeyConcurrency();
+        if (changed && !next.paused) kickGenQueue();
+        return {
+          ok: true, action, changed, settings: next,
+          // The strictest limit configured by any workspace on this instance wins.
+          effectiveProviderLimit,
+          throttled: getLLMThrottleState(),
+        };
+      }
       if (!batchId) throw new Error("batchId is required.");
       if (action === "pause") { await pauseBatch(userId, batchId); return { ok: true, action, batchId }; }
       if (action === "resume") { await resumeBatch(userId, batchId); return { ok: true, action, batchId }; }
