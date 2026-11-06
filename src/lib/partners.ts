@@ -14,7 +14,7 @@ type PartnerEntry<Id extends string = string> = {
   tileBg: string;
   imgStyle: CSSProperties;
   /** Translation key of a running promo badge; omit when the partner has none. */
-  promo?: "partnersPromoMarket369" | "partnersPromoZooproxy" | "partnersPromoLoopway";
+  promo?: "partnersPromoMarket369" | "partnersPromoZooproxy" | "partnersPromoLoopway" | "partnersPromoZikcards";
 };
 
 // 369 Links Market leads the wall while their top-up bonus promo runs (user's call,
@@ -150,6 +150,15 @@ const PARTNERS = [
     tileBg: "#ffffff",
     imgStyle: { maxWidth: "84px", maxHeight: "21px" } as CSSProperties,
     promo: "partnersPromoLoopway",
+  },
+  {
+    id: "Zikcards",
+    name: "ZikCards",
+    href: "https://zikcards.com",
+    logo: "/partners/zikcards-logo.png",
+    tileBg: "#ffffff",
+    imgStyle: { maxWidth: "84px", maxHeight: "19px" } as CSSProperties,
+    promo: "partnersPromoZikcards",
   },
 ] as const satisfies readonly PartnerEntry[];
 
