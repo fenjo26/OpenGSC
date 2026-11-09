@@ -87,7 +87,7 @@ CR.contextMenus.onClicked.addListener(function (info, tab) {
   if (info.menuItemId === MENU_TABLE_CSV) {
     if (!tab || !tab.id) return;
     CR.scripting.executeScript(
-      { target: { tabId: tab.id }, files: ["lib/audit.js", "lib/csv.js", "content.js"] },
+      { target: { tabId: tab.id }, files: ["lib/audit.js", "lib/csv.js", "lib/vitals.js", "lib/donor.js", "content.js"] },
       function (results) {
         var payload = results && results[0] && results[0].result;
         if (!payload || !payload.selection || !payload.selection.inTable) {

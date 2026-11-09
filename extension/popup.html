@@ -11,6 +11,11 @@
     <a id="openOptions" href="#options" data-i18n="optionsLink"></a>
   </header>
 
+  <!-- wave-ext E1: on browsers with a side panel the popup is the fallback; this opens it. -->
+  <div class="panelRow">
+    <button class="ghost wide" id="btnOpenPanel" data-i18n="panelOpen"></button>
+  </div>
+
   <main id="content">
     <div class="state" id="stateLoading"><span class="spinner"></span><span data-i18n="loading"></span></div>
   </main>
@@ -73,6 +78,7 @@
 
   <script src="lib/api.js"></script>
   <script src="lib/audit.js"></script>
+  <script src="lib/protocol.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

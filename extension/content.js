@@ -1,16 +1,16 @@
 // OpenGSC extension — injected into the active tab (chrome.scripting.executeScript with
-// files ["lib/audit.js", "lib/csv.js", "content.js"]; activeTab covers the permission).
+// PANEL_INJECT; activeTab or the standing "all sites" permission covers it).
 //
-// Runs in the page's ISOLATED world: reads the DOM, computes the mini audit locally, reports
-// what the popup needs. Nothing here talks to the network — the popup decides what to send.
+// Runs in the page's ISOLATED world: reads the DOM, computes the audit locally, collects Core
+// Web Vitals and donor facts, reports what the panel needs. Nothing here talks to the network —
+// the panel decides what to send, and content scripts proxy through the background only.
 //
-// The completion value of this file is the payload the popup receives as
-// InjectionResult.result (files injection returns the last script's completion value).
+// The completion value of this file is the payload the panel receives as
+// InjectionResult.result (files injection returns the last script's completion value): the
+// PageScan shape of CONTRACT §4.3.
 
 (function () {
   var facts = ExtensionAudit.collectFacts(document);
-  var issues = ExtensionAudit.deriveIssues(facts);
-
   var selection = { text: "", inTable: false, csv: "" };
   try {
     var sel = window.getSelection ? window.getSelection() : null;
@@ -24,15 +24,24 @@
     /* selection APIs missing (PDF viewer frame etc.) — audit still works */
   }
 
-  return {
-    ok: true,
-    url: location.href,
-    facts: facts,
-    issues: issues,
-    // wave-ext (CONTRACT §4.3): E1 fills PageScan.vitals (ExtVitals.collect, awaited with a
-    // 1500 ms timeout) and E3 fills PageScan.donor (ExtDonor.collect). Nulls until then.
-    vitals: null,
-    donor: null,
-    selection: selection,
-  };
+  // Vitals are awaited with a 1500 ms ceiling: a slow observer must not block the panel
+  // forever — unresolved fields just stay null (the honest "not measured", not 0).
+  var vitalsWait = Promise.race([
+    ExtVitals.collect(),
+    new Promise(function (resolve) { setTimeout(function () { resolve(null); }, 1500); }),
+  ]);
+
+  return vitalsWait.then(function (vitals) {
+    var donor = null;
+    try { donor = ExtDonor.collect(document); } catch { donor = null; }
+    return {
+      ok: true,
+      url: location.href,
+      facts: facts,
+      issues: ExtensionAudit.deriveIssues(facts, vitals),
+      vitals: vitals,
+      donor: donor,
+      selection: selection,
+    };
+  });
 })();

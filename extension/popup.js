@@ -221,6 +221,18 @@ document.addEventListener("DOMContentLoaded", function () {
   applyI18n(document);
   el("openOptions").addEventListener("click", function (e) { e.preventDefault(); CR.runtime.openOptionsPage(); });
 
+  // wave-ext E1: the side panel holds the full UI now; the click (a user gesture) is the only
+  // moment chrome.sidePanel.open may run, so the popup asks the background from here.
+  var panelBtn = el("btnOpenPanel");
+  if (panelBtn) {
+    panelBtn.addEventListener("click", function () {
+      CR.runtime.sendMessage({ type: ExtProtocol.MSG_OPEN_PANEL }, function (res) {
+        void CR.runtime.lastError;
+        if (res && res.opened) window.close();
+      });
+    });
+  }
+
   ExtApi.getSettings().then(function (settings) {
     if (!settings.baseUrl || !settings.token) {
       var st = showState("tplConfigure");
@@ -357,9 +369,10 @@ document.addEventListener("DOMContentLoaded", function () {
         refreshPills();
       });
 
-      // ── gather B: the local mini audit ──
+      // ── gather B: the local mini audit (same injection set as the panel: content.js
+      // collects vitals and donor facts too) ──
       CR.scripting.executeScript(
-        { target: { tabId: tab.id }, files: ["lib/audit.js", "lib/csv.js", "content.js"] },
+        { target: { tabId: tab.id }, files: ["lib/audit.js", "lib/csv.js", "lib/vitals.js", "lib/donor.js", "content.js"] },
         function (results) {
           var payload = results && results[0] && results[0].result;
           state.audit = payload && payload.ok ? payload : null;
