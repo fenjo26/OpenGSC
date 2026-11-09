@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import {
   deleteCandidates, listCandidates, setStarred, setWatched, stageCounts, schemaMissing,
-  setCandidateGroup, dropGroupExists, zoneCounts, ensureAcquiredGroup, parseCandidateFilter, markAcquired, EXCLUDE_MAX, IDS_MAX, type CandidateSortField,
+  setCandidateGroup, dropGroupExists, zoneCounts, ensureAcquiredGroup, candidateGroupCounts, parseCandidateFilter, markAcquired, EXCLUDE_MAX, IDS_MAX, type CandidateSortField,
 } from "@/lib/drops/store";
 import { ensureAsset } from "@/lib/drops/activationStore";
 import { sanitizeAcquiredGroupName } from "@/lib/drops/acquiredGroup";
@@ -36,12 +36,14 @@ export async function GET(req: Request) {
 
     // Counts are for the funnel widget above the table and are not affected by the row filters —
     // they answer "where is the whole list", which is the question the filters exist to narrow.
-    const [counts, zones] = await Promise.all([
+    const [counts, zones, groupCounts] = await Promise.all([
       stageCounts(userId, p.get("runId") ?? undefined),
       zoneCounts(userId),
+      // "All groups" sections: rows per group under this filter, "none" = the pile.
+      p.get("groupCounts") === "1" ? candidateGroupCounts(userId, filterFromParams(p)) : Promise.resolve(undefined),
     ]);
 
-    return NextResponse.json({ ...page, counts, zones });
+    return NextResponse.json({ ...page, counts, zones, ...(groupCounts ? { groupCounts } : {}) });
   } catch (e) {
     if (schemaMissing(e)) {
       return NextResponse.json({ rows: [], total: 0, limit: 0, offset: 0, counts: {}, zones: {}, notMigrated: true });

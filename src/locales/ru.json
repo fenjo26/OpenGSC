@@ -4145,6 +4145,8 @@
   "dropsEnrichNoTfKey": "Ключ Majestic не настроен — Настройки → SEO Metrics",
   "dropsGroupAll": "Все группы",
   "dropsGroupNone": "Без группы",
+  "dropsGroupShowMore": "Показать ещё {n} (осталось {left})",
+  "dropsPileHint": "стрелки страниц листают только эти домены",
   "dropsFiltersTitle": "Фильтры",
   "dropsFiltersShown": "Показано {n} из {all}",
   "dropsFiltersReset": "Сбросить фильтры ({n})",

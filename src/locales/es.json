@@ -4145,6 +4145,8 @@
   "dropsEnrichNoTfKey": "Falta la clave de Majestic — Ajustes → SEO Metrics",
   "dropsGroupAll": "Todos los grupos",
   "dropsGroupNone": "Sin grupo",
+  "dropsGroupShowMore": "Mostrar {n} más (quedan {left})",
+  "dropsPileHint": "las flechas de página solo recorren estos",
   "dropsFiltersTitle": "Filtros",
   "dropsFiltersShown": "Mostrando {n} de {all}",
   "dropsFiltersReset": "Restablecer filtros ({n})",

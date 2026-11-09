@@ -423,6 +423,21 @@ export async function listCandidates(userId: string, f: CandidateFilter = {}) {
 }
 
 /**
+ * Rows per group under a filter, with the ungrouped pile as "none". "All groups" renders one
+ * section per group that has matches and pages only the pile, so it needs these counts
+ * without listing the rows. The filter's own group fields are ignored — this IS the split.
+ */
+export async function candidateGroupCounts(userId: string, f: CandidateFilter = {}): Promise<Record<string, number>> {
+  const where = buildCandidateWhere(userId, { ...f, groupId: undefined, ungrouped: undefined });
+  const grouped = (await db.dropCandidate.groupBy({
+    by: ["groupId"], where, _count: { _all: true },
+  })) as { groupId: string | null; _count: { _all: number } }[];
+  const out: Record<string, number> = {};
+  for (const g of grouped) out[g.groupId ?? "none"] = g._count._all;
+  return out;
+}
+
+/**
  * Every zone in the user's catalogue with its row count — the zone filter's options. They used
  * to be read off the rows on the current page, so a zone that happened to sit on page 2 could
  * not be picked at all.

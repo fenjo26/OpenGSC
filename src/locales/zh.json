@@ -4145,6 +4145,8 @@
   "dropsEnrichNoTfKey": "未配置 Majestic 密钥 — 设置 → SEO Metrics",
   "dropsGroupAll": "所有分组",
   "dropsGroupNone": "未分组",
+  "dropsGroupShowMore": "再显示 {n} 个（剩余 {left}）",
+  "dropsPileHint": "翻页箭头只翻这些",
   "dropsFiltersTitle": "筛选",
   "dropsFiltersShown": "显示 {n} / 共 {all}",
   "dropsFiltersReset": "重置筛选（{n}）",

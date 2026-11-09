@@ -4145,6 +4145,8 @@
   "dropsEnrichNoTfKey": "Geen Majestic-sleutel geconfigureerd — Instellingen → SEO Metrics",
   "dropsGroupAll": "Alle groepen",
   "dropsGroupNone": "Zonder groep",
+  "dropsGroupShowMore": "Toon nog {n} ({left} over)",
+  "dropsPileHint": "de paginapijlen bladeren alleen hierdoor",
   "dropsFiltersTitle": "Filters",
   "dropsFiltersShown": "{n} van {all} getoond",
   "dropsFiltersReset": "Filters wissen ({n})",

@@ -165,7 +165,18 @@ const isGroupFilterValue = (v: unknown): v is string =>
   v === "" || v === "none" || (typeof v === "string" && /^[a-z0-9]{20,32}$/.test(v));
 
 /** One rendered table fragment: either a group's header row or a candidate row. */
-type Segment = { kind: "group"; id: string; name: string; pageRows: number; pageSelected: number } | { kind: "row"; r: Candidate; stripe: number };
+type Segment =
+  | { kind: "group"; id: string; name: string; pageRows: number; pageSelected: number; total: number }
+  | { kind: "row"; r: Candidate; stripe: number }
+  /** The tail of a group section: "show more" while rows remain, a spinner while loading. */
+  | { kind: "more"; id: string; loaded: number; total: number; loading: boolean }
+  /** The header of the ungrouped pile under the groups — the part the pager walks. */
+  | { kind: "pile"; total: number };
+
+/** Rows a group section loads at a time (and adds per "show more"). */
+const GROUP_SLICE = 100;
+/** One loaded group section in "all groups" mode. */
+type GroupSlice = { rows: Candidate[]; total: number; loading: boolean };
 
 /** Mirrors EXCLUDE_MAX in lib/drops/store: the server refuses a longer exclusion list. */
 const EXCLUDE_MAX = 500;
@@ -217,7 +228,16 @@ export default function DropsPage() {
    *  belongs next to the folders' counts in the select, before anything is clicked. */
   const [ungrouped, setUngrouped] = useState<number | null>(null);
   const [rows, setRows] = useState<Candidate[]>([]);
+  /** Every row the filter matches — groups and pile together. Selection and labels use it. */
   const [total, setTotal] = useState(0);
+  /** What the pager walks: the whole result normally, only the ungrouped pile in "all groups". */
+  const [listTotal, setListTotal] = useState(0);
+  /** Per-group counts under the current filter ("none" = the pile); null outside "all groups". */
+  const [groupCountsF, setGroupCountsF] = useState<Record<string, number> | null>(null);
+  /** Group sections' own rows in "all groups" — loaded per group, outside the pager. */
+  const [groupRows, setGroupRows] = useState<Record<string, GroupSlice>>({});
+  /** Bumped on every successful list load, so the open group sections reload with it. */
+  const [listVersion, setListVersion] = useState(0);
   const [counts, setCounts] = useState<Record<string, number>>({});
   /** Every zone in the catalogue with its size — the zone filter's options, from the server. */
   const [zoneList, setZoneList] = useState<Record<string, number>>({});
@@ -281,7 +301,13 @@ export default function DropsPage() {
     const ids: string[] = [];
     let offset = 0;
     for (;;) {
-      const res = await fetch(`/api/drops/candidates?groupId=${encodeURIComponent(gid)}&limit=500&offset=${offset}&orderBy=domain&order=asc`, { cache: "no-store" });
+      // Under the current filter: the checkbox sits on a section that shows only matching rows,
+      // so it selects exactly those — never the group's rows the filter is hiding.
+      const p = listParams();
+      p.delete("ungrouped");
+      p.set("groupId", gid); p.set("limit", "500"); p.set("offset", String(offset));
+      p.set("orderBy", "domain"); p.set("order", "asc");
+      const res = await fetch(`/api/drops/candidates?${p}`, { cache: "no-store" });
       const body = await res.json();
       if (!res.ok) throw new Error(body?.error || "group_failed");
       const page = ((body.rows ?? []) as { id: string }[]).map(r => r.id);
@@ -379,7 +405,14 @@ export default function DropsPage() {
   /** Collapsed group headers. Session-only on purpose: a stray click on "+/−" must heal on
    * refresh, not survive it — a persisted collapse once read as "the table lost its rows". */
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const toggleCollapsed = (id: string) => setCollapsed(prev => ({ ...prev, [id]: !prev[id] }));
+  const toggleCollapsed = (id: string) => {
+    const willCollapse = !collapsed[id];
+    collapsedRef.current = { ...collapsed, [id]: willCollapse };
+    setCollapsed(prev => ({ ...prev, [id]: willCollapse }));
+    // A section collapsed at the last list load was skipped by it — re-pull on opening, so it
+    // never shows rows from an older filter.
+    if (!willCollapse && sectioned) void loadGroupRows(id, Math.max(GROUP_SLICE, groupRows[id]?.rows.length ?? 0));
+  };
 
   /** The group whose id list is in flight. One click at a time: a second click landing before
    * the fetch resolves would apply a stale `full` and undo the first. */
@@ -574,32 +607,118 @@ export default function DropsPage() {
     ...(groupId === "none" ? { ungrouped: "1" } : {}),
   }), [drMin, drMax, drNullOnly, refMin, refMax, tfMin, tfMax, noVetoOnly, groupId]);
 
+  // "All groups" is sectioned: every group is its own section with its own rows (loaded per
+  // group, "show more" inside it), and the pager walks only the ungrouped pile under them. A
+  // single paged list, even ordered group-first, put a group past a big one onto page 2 — a
+  // 224-row group plus a 200-row page was enough to make "Куплено" vanish from page 1.
+  const sectioned = groupId === "";
+
+  /** The filter + sort as list query params, without paging. One builder for the pile and
+   *  for every group section, so they can never disagree about what the filter means. */
+  const listParams = useCallback(() => {
+    const p = new URLSearchParams({ orderBy, order: orderDir });
+    if (runId) p.set("runId", runId);
+    if (stage) p.set("stage", stage);
+    if (tld.trim()) p.set("tld", tld.trim());
+    if (q.trim()) p.set("q", q.trim());
+    if (watched) p.set("watched", watched);
+    for (const [k, v] of Object.entries(numericFilterParams)) p.set(k, v);
+    return p;
+  }, [runId, stage, tld, q, watched, numericFilterParams, orderBy, orderDir]);
+
   const loadRows = useCallback(async () => {
     setLoading(true);
     try {
-      const p = new URLSearchParams({ limit: String(pageSize), offset: String(offset), orderBy, order: orderDir });
-      if (runId) p.set("runId", runId);
-      if (stage) p.set("stage", stage);
-      if (tld.trim()) p.set("tld", tld.trim());
-      if (q.trim()) p.set("q", q.trim());
-      if (watched) p.set("watched", watched);
-      for (const [k, v] of Object.entries(numericFilterParams)) p.set(k, v);
-      // "All folders" keeps every folder's rows together across pages (see groupFirst in
-      // lib/drops/store) — otherwise a folder can sit entirely on a page nobody opened.
-      if (groupId === "") p.set("groupFirst", "1");
+      const p = listParams();
+      p.set("limit", String(pageSize));
+      p.set("offset", String(offset));
+      if (sectioned) { p.set("ungrouped", "1"); p.set("groupCounts", "1"); }
       const res = await fetch(`/api/drops/candidates?${p}`, { cache: "no-store" });
       const body = await res.json();
-      if (body?.notMigrated) { setNotMigrated(true); setRows([]); setTotal(0); return; }
+      if (body?.notMigrated) { setNotMigrated(true); setRows([]); setTotal(0); setListTotal(0); return; }
       setRows(Array.isArray(body.rows) ? body.rows : []);
-      setTotal(body.total ?? 0);
+      setListTotal(body.total ?? 0);
+      if (sectioned && body.groupCounts && typeof body.groupCounts === "object") {
+        const gc = body.groupCounts as Record<string, number>;
+        setGroupCountsF(gc);
+        setTotal(Object.values(gc).reduce((a, b) => a + b, 0));
+      } else {
+        setGroupCountsF(null);
+        setGroupRows({});
+        setTotal(body.total ?? 0);
+      }
       setCounts(body.counts ?? {});
       if (body.zones && typeof body.zones === "object") setZoneList(body.zones);
+      setListVersion(v => v + 1);
     } catch {
       setRows([]);
     } finally {
       setLoading(false);
     }
-  }, [runId, stage, tld, q, watched, numericFilterParams, groupId, orderBy, orderDir, pageSize, offset]);
+  }, [listParams, sectioned, pageSize, offset]);
+
+  /** Load (or reload) one group section's first `want` rows under the current filter. */
+  const loadGroupRows = useCallback(async (gid: string, want: number) => {
+    setGroupRows(prev => ({ ...prev, [gid]: { rows: prev[gid]?.rows ?? [], total: prev[gid]?.total ?? 0, loading: true } }));
+    try {
+      const got: Candidate[] = [];
+      let total = 0;
+      // The route caps a page at 500; a section opened that far walks in server-sized pages.
+      while (got.length < want) {
+        const p = listParams();
+        p.set("groupId", gid);
+        p.set("limit", String(Math.min(500, want - got.length)));
+        p.set("offset", String(got.length));
+        const res = await fetch(`/api/drops/candidates?${p}`, { cache: "no-store" });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body?.error || "group_failed");
+        const page = Array.isArray(body.rows) ? (body.rows as Candidate[]) : [];
+        total = body.total ?? 0;
+        got.push(...page);
+        if (!page.length || got.length >= total) break;
+      }
+      setGroupRows(prev => ({ ...prev, [gid]: { rows: got, total, loading: false } }));
+    } catch {
+      setGroupRows(prev => ({ ...prev, [gid]: { rows: prev[gid]?.rows ?? [], total: prev[gid]?.total ?? 0, loading: false } }));
+    }
+  }, [listParams]);
+
+  // Every list load re-pulls the open group sections, keeping how far each was expanded. The
+  // lengths are read through a ref so this runs once per load, not once per section update.
+  const groupRowsRef = useRef(groupRows);
+  groupRowsRef.current = groupRows;
+  const collapsedRef = useRef<Record<string, boolean>>({});
+  useEffect(() => {
+    if (!sectioned || !groupCountsF) return;
+    for (const [gid, n] of Object.entries(groupCountsF)) {
+      if (gid === "none" || n <= 0 || collapsedRef.current[gid]) continue;
+      void loadGroupRows(gid, Math.max(GROUP_SLICE, groupRowsRef.current[gid]?.rows.length ?? 0));
+    }
+    // listVersion is the trigger; groupCountsF arrives in the same batch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listVersion]);
+
+  /** Every row on screen: the open group sections, then the pile page. Bulk "visible" actions,
+   *  auto-DR and the header checkbox all read this, not just the pile. */
+  const visibleRows = useMemo(() => {
+    if (!sectioned) return rows;
+    const out: Candidate[] = [];
+    for (const g of groups) {
+      if (collapsed[g.id]) continue;
+      out.push(...(groupRows[g.id]?.rows ?? []));
+    }
+    return [...out, ...rows];
+  }, [sectioned, rows, groups, groupRows, collapsed]);
+
+  /** Apply a row patch to the pile and to every loaded group section alike. */
+  const patchRows = useCallback((fn: (r: Candidate) => Candidate) => {
+    setRows(prev => prev.map(fn));
+    setGroupRows(prev => {
+      const n: Record<string, GroupSlice> = {};
+      for (const [k, v] of Object.entries(prev)) n[k] = { ...v, rows: v.rows.map(fn) };
+      return n;
+    });
+  }, []);
 
   // The rule guards against a setState that cascades a second render before paint. This one
   // cannot: every state write inside `loadRuns` happens after an awaited fetch, several ticks
@@ -621,7 +740,7 @@ export default function DropsPage() {
   // before paint — the shape the set-state-in-effect rule actually worries about.
   useEffect(() => {
     if (notMigrated || enrichBusy || autoDrNoKey.current) return;
-    const targets = rows
+    const targets = visibleRows
       .filter(r => r.dr == null && !autoDrTried.current.has(r.domain))
       .map(r => r.domain);
     if (!targets.length) return;
@@ -640,20 +759,20 @@ export default function DropsPage() {
           if (body.keyFound === false) { autoDrNoKey.current = true; setDrKeyMissing(true); return; }
           const ratings = (body?.ratings ?? {}) as Record<string, number>;
           if (Object.keys(ratings).length && !cancelled) {
-            setRows(prev => prev.map(r => (ratings[r.domain] != null ? { ...r, dr: ratings[r.domain] } : r)));
+            patchRows(r => (ratings[r.domain] != null ? { ...r, dr: ratings[r.domain] } : r));
           }
         } catch { return; }
       }
     })();
     return () => { cancelled = true; };
-  }, [rows, enrichBusy, notMigrated]);
+  }, [visibleRows, enrichBusy, notMigrated, patchRows]);
 
   // DR history for the visible page — same one-ask-per-session batch shape as auto-DR. The
   // route is a pure local read (DrSnapshot), so it neither spends anything nor needs a key;
   // domains with no stored series are simply absent from the response.
   useEffect(() => {
     if (notMigrated) return;
-    const targets = [...new Set(rows.map(r => r.domain))].filter(d => !drHistTried.current.has(d));
+    const targets = [...new Set(visibleRows.map(r => r.domain))].filter(d => !drHistTried.current.has(d));
     if (!targets.length) return;
     targets.forEach(d => drHistTried.current.add(d));
     let cancelled = false;
@@ -667,7 +786,7 @@ export default function DropsPage() {
       } catch { /* decorative until it exists */ }
     })();
     return () => { cancelled = true; };
-  }, [rows, notMigrated]);
+  }, [visibleRows, notMigrated]);
 
   // Any filter change invalidates the current page number — page 4 of the old result set is not
   // page 4 of the new one, and staying there shows an empty table for a filter that has matches.
@@ -745,8 +864,8 @@ export default function DropsPage() {
   );
   const enrichTargets = () => {
     const base = selectAllFilter || selectedIds.size
-      ? rows.filter(r => isRowSelected(r.id)).map(r => r.domain)
-      : rows.map(r => r.domain);
+      ? visibleRows.filter(r => isRowSelected(r.id)).map(r => r.domain)
+      : visibleRows.map(r => r.domain);
     return [...new Set(base)];
   };
 
@@ -766,7 +885,7 @@ export default function DropsPage() {
       return;
     }
     const wasChecked = selectedIds.has(id);
-    const groupId = rows.find(r => r.id === id)?.groupId ?? null;
+    const groupId = visibleRows.find(r => r.id === id)?.groupId ?? null;
     setSelectedIds(prev => {
       const n = new Set(prev);
       if (n.has(id)) n.delete(id); else n.add(id);
@@ -1133,7 +1252,7 @@ export default function DropsPage() {
   const HISTORY_SLICE = 5;
   async function enrichHistory() {
     if (enrichBusy) return;
-    const targets = rows.filter(r => isRowSelected(r.id));
+    const targets = visibleRows.filter(r => isRowSelected(r.id));
     if (!targets.length) { setNotice(tr("dropsEnrichHistoryPick")); return; }
     if (!window.confirm(tr("dropsEnrichHistoryConfirm").replace("{n}", String(targets.length)))) { setNotice(tr("dropsEnrichCancelled")); return; }
     enrichStop.current = false;
@@ -1358,7 +1477,7 @@ export default function DropsPage() {
   /** One-row watch toggle — optimistic, like a star: the flag is the whole change. */
   async function toggleWatch(r: Candidate) {
     const next = !r.watched;
-    setRows(prev => prev.map(x => (x.id === r.id ? { ...x, watched: next } : x)));
+    patchRows(x => (x.id === r.id ? { ...x, watched: next } : x));
     try {
       const res = await fetch("/api/drops/candidates", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
@@ -1366,7 +1485,7 @@ export default function DropsPage() {
       });
       if (!res.ok) throw new Error("watch_failed");
     } catch {
-      setRows(prev => prev.map(x => (x.id === r.id ? { ...x, watched: !next } : x)));
+      patchRows(x => (x.id === r.id ? { ...x, watched: !next } : x));
       setError(tr("dropsWatchFailed"));
     }
   }
@@ -1378,7 +1497,7 @@ export default function DropsPage() {
   // is precisely what this replaces.
   const allSelected = selectAllFilter
     ? excludedIds.size === 0
-    : rows.length > 0 && rows.every(r => selectedIds.has(r.id));
+    : visibleRows.length > 0 && visibleRows.every(r => selectedIds.has(r.id));
   const togglePage = () => {
     if (allSelected) clearSelection(); else selectAll();
   };
@@ -1430,9 +1549,9 @@ export default function DropsPage() {
     setTfMin(""); setTfMax(""); setNoVetoOnly(false);
   };
   const totalAll = useMemo(() => Object.values(counts).reduce((a, b) => a + b, 0), [counts]);
-  const pageFrom = total === 0 ? 0 : offset + 1;
-  const pageTo = Math.min(offset + pageSize, total);
-  const lastPage = offset + pageSize >= total;
+  const pageFrom = listTotal === 0 ? 0 : offset + 1;
+  const pageTo = Math.min(offset + pageSize, listTotal);
+  const lastPage = offset + pageSize >= listTotal;
 
   const arrowFor = (field: SortField) =>
     orderBy === field ? (orderDir === "asc" ? "▲" : "▼") : "";
@@ -1445,6 +1564,32 @@ export default function DropsPage() {
    * header and hides its rows.
    */
   const segments = useMemo<Segment[]>(() => {
+    const segs: Segment[] = [];
+    let stripe = 0;
+    if (sectioned) {
+      // Every group that has a matching row, in the chips' order, ABOVE the pile — on every
+      // page of the pile, since the pager does not walk them.
+      for (const g of groups) {
+        const cnt = groupCountsF?.[g.id] ?? 0;
+        if (cnt <= 0) continue;
+        const slice = groupRows[g.id];
+        const rs = slice?.rows ?? [];
+        segs.push({
+          kind: "group", id: g.id, name: g.name, total: cnt,
+          pageRows: rs.length,
+          pageSelected: rs.filter(r => isRowSelected(r.id)).length,
+        });
+        if (collapsed[g.id]) continue;
+        for (const r of rs) segs.push({ kind: "row", r, stripe: stripe++ });
+        if (!slice || slice.loading || rs.length < cnt) {
+          segs.push({ kind: "more", id: g.id, loaded: rs.length, total: cnt, loading: !slice || slice.loading });
+        }
+      }
+      if (rows.length > 0 && segs.length > 0) segs.push({ kind: "pile", total: listTotal });
+      for (const r of rows) segs.push({ kind: "row", r, stripe: stripe++ });
+      return segs;
+    }
+    // A single group or the pile: the page is the list; a group header still marks its rows.
     const byGroup = new Map<string, Candidate[]>();
     const loose: Candidate[] = [];
     for (const r of rows) {
@@ -1455,16 +1600,12 @@ export default function DropsPage() {
         loose.push(r);
       }
     }
-    const orderOf = (gid: string) => {
-      const i = groups.findIndex(g => g.id === gid);
-      return i < 0 ? Number.MAX_SAFE_INTEGER : i;
-    };
-    const segs: Segment[] = [];
-    let stripe = 0;
-    for (const [gid, rs] of [...byGroup.entries()].sort((a, b) => orderOf(a[0]) - orderOf(b[0]))) {
+    for (const [gid, rs] of byGroup.entries()) {
+      const g = groups.find(x => x.id === gid);
       segs.push({
         kind: "group", id: gid,
-        name: rs[0]?.groupName || groups.find(g => g.id === gid)?.name || gid,
+        name: rs[0]?.groupName || g?.name || gid,
+        total: g?.count ?? rs.length,
         pageRows: rs.length,
         pageSelected: rs.filter(r => isRowSelected(r.id)).length,
       });
@@ -1472,7 +1613,7 @@ export default function DropsPage() {
     }
     for (const r of loose) segs.push({ kind: "row", r, stripe: stripe++ });
     return segs;
-  }, [rows, groups, collapsed, isRowSelected]);
+  }, [sectioned, rows, groups, groupRows, groupCountsF, listTotal, collapsed, isRowSelected]);
 
   return <div className="main-content" style={{ display: "flex", flexDirection: "column", gap: 16, paddingTop: 20, paddingBottom: 40 }}>
     <div style={{ display: "flex", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
@@ -2019,7 +2160,7 @@ export default function DropsPage() {
     {/* Enrichment. Every source states its cost up front: DR and Wayback are free, TF/CF bills
         Majestic units (about as cheap as enrichment gets), refdomains bill Ahrefs units and ask
         first. Acts on the selection, or on the visible page. */}
-    {(rows.length > 0 || enrichBusy) && <div className="panel" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12.5 }}>
+    {(visibleRows.length > 0 || enrichBusy) && <div className="panel" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12.5 }}>
       <span style={{ color: "var(--color-text-tertiary)" }}>{tr("dropsEnrichLabel")}</span>
       {/* While a DR pass is running this is its Stop button — same pattern as the DNS and
           registry stages, because a run-wide sweep can legitimately run for a while. */}
@@ -2071,10 +2212,11 @@ export default function DropsPage() {
         {loading && <Loader2 className="spin" size={14} color="var(--color-text-tertiary)" />}
         {/* The page position up here too: with the pager only under a 200-row table, "page 1 of 2"
             was invisible, and rows (whole folders, before groupFirst) on page 2 read as missing. */}
-        {total > pageSize && <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--color-text-secondary)" }}>
+        {listTotal > pageSize && <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--color-text-secondary)" }}>
           <button onClick={() => setOffset(Math.max(0, offset - pageSize))} disabled={offset === 0}
             aria-label={tr("dropsPrev")} style={{ ...pagerBtn(offset === 0), padding: "3px 8px" }}>←</button>
-          {tr("dropsPageOf").replace("{from}", pageFrom.toLocaleString()).replace("{to}", pageTo.toLocaleString()).replace("{n}", total.toLocaleString())}
+          {sectioned && groupCountsF && Object.keys(groupCountsF).some(k => k !== "none") ? `${tr("dropsGroupNone")}: ` : ""}
+          {tr("dropsPageOf").replace("{from}", pageFrom.toLocaleString()).replace("{to}", pageTo.toLocaleString()).replace("{n}", listTotal.toLocaleString())}
           <button onClick={() => setOffset(offset + pageSize)} disabled={lastPage}
             aria-label={tr("dropsNext")} style={{ ...pagerBtn(lastPage), padding: "3px 8px" }}>→</button>
         </span>}
@@ -2127,11 +2269,11 @@ export default function DropsPage() {
         </>}
       </div>
 
-      {!loading && rows.length === 0 && <div style={{ padding: 34, textAlign: "center", fontSize: 13, color: "var(--color-text-secondary)" }}>
+      {!loading && segments.length === 0 && <div style={{ padding: 34, textAlign: "center", fontSize: 13, color: "var(--color-text-secondary)" }}>
         {tr("dropsEmpty")}
       </div>}
 
-      {rows.length > 0 && <div style={{ overflowX: "auto" }}>
+      {segments.length > 0 && <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
           <thead>
             <tr style={{ color: "var(--color-text-tertiary)", textAlign: "left" }}>
@@ -2150,8 +2292,31 @@ export default function DropsPage() {
             </tr>
           </thead>
           <tbody>
-            {segments.map(seg => seg.kind === "group" ? (() => {
-              const totalIn = groups.find(g => g.id === seg.id)?.count ?? seg.pageRows;
+            {segments.map(seg => seg.kind === "more" ? (
+              <tr key={`more-${seg.id}`}>
+                <td colSpan={COLUMNS.length + 1} style={{ padding: "6px 14px 10px 44px", borderBottom: "1px solid var(--color-border)" }}>
+                  {seg.loading
+                    ? <Loader2 className="spin" size={14} color="var(--color-text-tertiary)" />
+                    : <button onClick={() => void loadGroupRows(seg.id, seg.loaded + GROUP_SLICE * 2)} style={pagerBtn(false)}>
+                        {tr("dropsGroupShowMore")
+                          .replace("{n}", Math.min(GROUP_SLICE * 2, seg.total - seg.loaded).toLocaleString())
+                          .replace("{left}", (seg.total - seg.loaded).toLocaleString())}
+                      </button>}
+                </td>
+              </tr>
+            ) : seg.kind === "pile" ? (
+              <tr key="pile" style={{ background: "var(--color-bg)" }}>
+                <td colSpan={COLUMNS.length + 1} style={{ padding: "8px 14px", borderBottom: "1px solid var(--color-border)", borderTop: "2px solid var(--color-border)" }}>
+                  <b style={{ color: "var(--color-text-primary)" }}>{tr("dropsGroupNone")}</b>
+                  <span style={{ color: "var(--color-text-tertiary)", fontSize: 12, marginLeft: 8 }}>{seg.total.toLocaleString()}</span>
+                  {seg.total > pageSize && <span style={{ color: "var(--color-text-tertiary)", fontSize: 12, marginLeft: 8 }}>
+                    · {tr("dropsPileHint")}
+                  </span>}
+                </td>
+              </tr>
+            ) : seg.kind === "group" ? (() => {
+              // The group's size under the current filter — what its checkbox selects.
+              const totalIn = seg.total;
               const isCollapsed = !!collapsed[seg.id];
               // Truth first. Under "выделить всё" the group is full unless one of its rows is
               // a hole — and only this page's rows can be inspected, so a hole punched on
@@ -2410,7 +2575,10 @@ export default function DropsPage() {
           <button onClick={() => setOffset(Math.max(0, offset - pageSize))} disabled={offset === 0} style={pagerBtn(offset === 0)}>
             ← {tr("dropsPrev")}
           </button>
-          <span>{pageFrom.toLocaleString()}–{pageTo.toLocaleString()} / {total.toLocaleString()}</span>
+          <span>
+            {sectioned && groupCountsF && Object.keys(groupCountsF).some(k => k !== "none") ? `${tr("dropsGroupNone")}: ` : ""}
+            {pageFrom.toLocaleString()}–{pageTo.toLocaleString()} / {listTotal.toLocaleString()}
+          </span>
           <button onClick={() => setOffset(offset + pageSize)} disabled={lastPage} style={pagerBtn(lastPage)}>
             {tr("dropsNext")} →
           </button>
