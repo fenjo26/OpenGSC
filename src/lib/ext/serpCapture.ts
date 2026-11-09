@@ -40,7 +40,7 @@ export function validateCapture(body: unknown):
 
   const rawResults = Array.isArray(b.results) ? b.results : [];
   const seen = new Set<string>();
-  const results: CaptureRequest["results"] = [];
+  const results: (CaptureRequest["results"][number] & { clientPos: number | null })[] = [];
   for (const entry of rawResults.slice(0, EXT_CAPTURE_ROWS_MAX)) {
     const r = (entry ?? {}) as Record<string, unknown>;
     const url = String(r.url ?? "");
@@ -58,25 +58,42 @@ export function validateCapture(body: unknown):
     // approx rows are never trusted: whatever URL the client sent, only the host of it is
     // breadcrumb-grade truth, so the row stores the host ROOT. Same-host approx rows then
     // dedupe to one entry at its first position — the honest reading of that SERP shape.
-    const finalUrl0 = url;
     const approx = r.approx === true;
-    let finalUrl = finalUrl0;
+    let finalUrl = url;
     if (approx) {
       try { finalUrl = new URL(url).origin + "/"; } catch { continue; }
       if (seen.has(finalUrl)) continue;
       seen.add(finalUrl);
     }
+    // the client's own numbering: kept when the whole surviving sequence is sane (below).
+    // DOM-order positions with holes are the truth this client sends — the overlay numbers
+    // before its dedupe, the same convention automated snapshots use for rows whose link
+    // could not be resolved (shiftedGotoRows keeps the slot taken).
+    const rawPos = Number(r.position);
+    const clientPos = Number.isInteger(rawPos) && rawPos >= startPosRaw && rawPos <= startPosRaw + 500 ? rawPos : null;
     results.push({
-      position: 0, // recalculated below from startPos, in order
+      position: 0,
       url: finalUrl,
       title: String(r.title ?? "").slice(0, EXT_TITLE_MAX),
       snippet: String(r.snippet ?? "").slice(0, EXT_SNIPPET_MAX),
       approx,
+      clientPos,
     });
   }
   if (!results.length) return { ok: false, error: "no_results" };
-  // positions are strictly ascending from startPos in DOM order — recalculated, never trusted
-  results.forEach((r, i) => { r.position = startPosRaw + i; });
+  // Client positions survive verbatim — holes included — when every row has one and they are
+  // strictly increasing. Only a broken sequence (junk, non-increasing) falls back to a
+  // sequential renumber from startPos; the renumber must never silently shift hosts up past
+  // what the page actually showed (three collapsed same-host rows are two taken slots, not
+  // zero — the diff engine compares against automated snapshots).
+  const sane = results.every((r, i) =>
+    r.clientPos != null && (i === 0 || results[i - 1].clientPos! < r.clientPos));
+  if (sane) {
+    results.forEach(r => { r.position = r.clientPos!; });
+  } else {
+    results.forEach((r, i) => { r.position = startPosRaw + i; });
+  }
+
 
   const features = (Array.isArray(b.features) ? b.features : [])
     .map(f => String(f))
@@ -93,7 +110,7 @@ export function validateCapture(body: unknown):
       device,
       page,
       startPos: startPosRaw,
-      results,
+      results: results.map(({ clientPos, ...rest }) => rest),
       features: [...new Set(features)],
       note: String(b.note ?? "").slice(0, 300),
     },

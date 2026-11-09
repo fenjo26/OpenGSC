@@ -47,7 +47,7 @@ test("validateCapture: page and startPos bounds", () => {
   assert.equal((validateCapture(bodyOf({ startPos: 101 })) as { error: string }).error, "invalid_start");
 });
 
-test("validateCapture: duplicate URLs keep the first; positions are recalculated from startPos", () => {
+test("validateCapture: duplicate URLs keep the first; a BROKEN sequence (positions below startPos) is recalculated", () => {
   const out = validateCapture(bodyOf({
     startPos: 11,
     results: [
@@ -117,22 +117,52 @@ test("validateCapture: approx rows are forced to the host root server-side", () 
   assert.equal(out.value.results[0].approx, true);
 });
 
-test("validateCapture: same-host approx rows collapse to one root entry at the first position", () => {
+test("validateCapture: same-host approx rows collapse to the root at position 1 and the next row KEEPS its 4", () => {
+  // the bizzo-casino shape from the real fixture: one host on 1–3 (encrypted links), YouTube on 4.
+  // Collapsing to the root must not slide YouTube up to 2 — that would read as a rank jump in
+  // every comparison. The two swallowed slots stay taken, like automated snapshots keep the
+  // slot of a row whose link could not be resolved.
   const out = validateCapture(bodyOf({
     startPos: 1,
     results: [
       { position: 1, url: "https://bizzocasino.com/casino/recommended", title: "A", snippet: "sa", approx: true },
       { position: 2, url: "https://bizzocasino.com/promotions", title: "B", snippet: "sb", approx: true },
-      { position: 3, url: "https://www.casino-italia.net/x", title: "C", snippet: "sc", approx: false },
+      { position: 3, url: "https://bizzocasino.com/casino/lobby", title: "C", snippet: "sc", approx: true },
+      { position: 4, url: "https://www.youtube.com/watch?v=x", title: "D", snippet: "sd", approx: false },
     ],
   }));
   assert.equal(out.ok, true);
   if (!out.ok) return;
   assert.deepEqual(
-    out.value.results.map(r => [r.url, r.approx]),
-    [["https://bizzocasino.com/", true], ["https://www.casino-italia.net/x", false]],
+    out.value.results.map(r => [r.url, r.position]),
+    [["https://bizzocasino.com/", 1], ["https://www.youtube.com/watch?v=x", 4]],
   );
-  // positions renumber sequentially after the collapse (the ascending-position contract)
+});
+
+test("validateCapture: a sitelink duplicate leaves a hole in a sane sequence, it does not renumber", () => {
+  const out = validateCapture(bodyOf({
+    startPos: 1,
+    results: [
+      { position: 1, url: "https://a.com/x", title: "A", snippet: "sa" },
+      { position: 2, url: "https://a.com/x", title: "A2", snippet: "sa2" }, // exact dup
+      { position: 3, url: "https://b.com/y", title: "B", snippet: "sb" },
+    ],
+  }));
+  assert.equal(out.ok, true);
+  if (!out.ok) return;
+  assert.deepEqual(out.value.results.map(r => [r.url, r.position]), [["https://a.com/x", 1], ["https://b.com/y", 3]]);
+});
+
+test("validateCapture: a non-increasing client sequence falls back to sequential renumbering", () => {
+  const out = validateCapture(bodyOf({
+    startPos: 1,
+    results: [
+      { position: 5, url: "https://a.com/x", title: "A", snippet: "sa" },
+      { position: 3, url: "https://b.com/y", title: "B", snippet: "sb" }, // not increasing
+    ],
+  }));
+  assert.equal(out.ok, true);
+  if (!out.ok) return;
   assert.deepEqual(out.value.results.map(r => r.position), [1, 2]);
 });
 
