@@ -83,6 +83,16 @@ var ExtApi = (function () {
     page: function (url) { return request("GET", "/api/ext/page?url=" + encodeURIComponent(url)); },
     indexQueue: function (url) { return request("POST", "/api/ext/index-queue", { url: url }); },
     outreach: function (url, note) { return request("POST", "/api/ext/outreach", { url: url, note: note || "" }); },
+    // wave-ext (CONTRACT §5) — the panel/overlay clients. Bodies are the wire shapes of
+    // src/lib/ext/types.ts; the server stubs answer 501 until their tasks land.
+    lists: function () { return request("GET", "/api/ext/lists"); },
+    hosts: function (body) { return request("POST", "/api/ext/hosts", body); },
+    enrichHosts: function (hosts) { return request("POST", "/api/ext/hosts/enrich", { hosts: hosts }); },
+    capture: function (body) { return request("POST", "/api/ext/serp/capture", body); },
+    serpAction: function (body) { return request("POST", "/api/ext/serp/action", body); },
+    cloak: function (body) { return request("POST", "/api/ext/cloak", body); },
+    insights: function (body) { return request("POST", "/api/ext/insights", body); },
+    metaFit: function (body) { return request("POST", "/api/ext/meta-fit", body); },
   };
 })();
 

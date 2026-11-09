@@ -2304,6 +2304,37 @@ model SerpProjectHost {
   @@index([projectId, keywords])
 }
 
+// ─── Browser SERP captures (wave-ext E5) ─────────────────────────────────────
+// One Google results page saved from the browser extension. Deliberately NOT a SerpSnapshot:
+// it was taken from the user's own IP/account (personalised, usually one page deep), so it never
+// enters diffs, storms, volatility baselines, SerpProjectHost or retention thinning. Rows reuse
+// the SerpUrl/SerpHost dictionaries, so the domain catalogue (age/DR) and enrichment work on it.
+model SerpCapture {
+  id         String   @id @default(cuid())
+  userId     String                          // workspace owner (extAuth → auth.userId)
+  projectId  String?                         // SerpProject that tracks this keyword in the same country/lang; null = loose
+  keywordId  String?                         // SerpKeyword in that project, when it exists
+  keyword    String                          // normaliseKeyword(); ≤ 191
+  engineHost String                          // "www.google.gr"
+  country    String   @default("")           // gl as detected, 2 letters lower-case; "" = unknown
+  lang       String   @default("")           // hl as detected; "" = unknown
+  device     String   @default("desktop")    // desktop | mobile
+  page       Int      @default(1)            // 1-based results page
+  startPos   Int      @default(1)            // absolute position of the first organic row on the page
+  got        Int      @default(0)            // organic rows stored
+  // JSON: [position, urlId][] ordered by position — the same shape as SerpSnapshot.rows
+  rows       String   @default("[]")
+  // JSON: string[] — subset of CAPTURE_FEATURES (types.ts)
+  features   String   @default("[]")
+  // JSON: { position: number; title: string; snippet: string }[] — title ≤ 200, snippet ≤ 300 chars
+  snippets   String   @default("[]")
+  note       String   @default("")
+  capturedAt DateTime @default(now())
+
+  @@index([userId, capturedAt])
+  @@index([projectId, keyword])
+}
+
 // ─── Uptime monitor (T2) ─────────────────────────────────────────────────────
 // One HTTP check per site every intervalMin. Raw checks are kept 7 days; UptimeDaily keeps the
 // long history (uptime %, latency) forever at one row per monitor per UTC day. An incident is

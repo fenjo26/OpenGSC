@@ -2,105 +2,926 @@
   "extDescription": {
     "message": "Page summary, quick on-page audit and “Send to OpenGSC” for the page you are on."
   },
-
-  "optionsLink": { "message": "Options" },
-  "loading": { "message": "Reading the page…" },
-  "needConfigure": { "message": "Set your OpenGSC instance URL and token first." },
-  "openOptionsBtn": { "message": "Open options" },
-  "unsupportedPage": { "message": "This page cannot be audited (browser-internal or non-http page)." },
-  "specialNote": { "message": "This is a Google tool page — OpenGSC does not parse it. The data behind it is already in OpenGSC through the API." },
-  "openApp": { "message": "Open this URL in OpenGSC" },
-  "send": { "message": "Send to OpenGSC" },
-  "sendOwn": { "message": "Send to index-check queue" },
-  "sendForeign": { "message": "Save as Outreach prospect" },
-  "sendWaiting": { "message": "The summary has not answered yet — try again in a moment." },
-  "sendKeywords": { "message": "Selection → keywords" },
-  "downloadCsv": { "message": "Table → CSV" },
-  "downloadCsvStaged": { "message": "Download CSV of selected table" },
-  "csvSaved": { "message": "CSV downloaded" },
-  "inOpengsc": { "message": "This page in OpenGSC" },
-  "miniAudit": { "message": "Quick audit (local)" },
-
-  "notInPortfolio": { "message": "This URL does not belong to any site in the portfolio." },
-  "noMetrics": { "message": "No clicks or impressions in the last {n} days." },
-  "openInApp": { "message": "Open in OpenGSC →" },
-  "metricClicks": { "message": "clicks" },
-  "metricImpressions": { "message": "impressions" },
-  "metricPosition": { "message": "avg. position" },
-  "posShort": { "message": "pos." },
-  "localPackShort": { "message": "map " },
-  "indexStatus": { "message": "Index status" },
-  "indexIndexed": { "message": "Indexed" },
-  "indexNotIndexed": { "message": "Not indexed" },
-  "indexUnknown": { "message": "Index: unknown" },
-  "indexUnknownTitle": { "message": "Never checked, or Google returned a state this version does not recognize" },
-  "serverAudit": { "message": "Last site audit" },
-  "yourSite": { "message": "your site" },
-  "auditPill": { "message": "Audit: $1 err · $2 warn" },
-  "auditUnavailable": { "message": "The quick audit could not run on this page." },
-  "auditAllOk": { "message": "No issues found" },
-  "notMigrated": { "message": "The server needs `npx prisma db push` — ask the instance owner." },
-
-  "audit_title_missing": { "message": "No <title>" },
-  "audit_title_short": { "message": "Title too short (under 50)", "description": "detail carries the current length" },
-  "audit_title_long": { "message": "Title too long (over 65)" },
-  "audit_description_missing": { "message": "No meta description" },
-  "audit_description_short": { "message": "Meta description too short (under 150)" },
-  "audit_description_long": { "message": "Meta description too long (over 165)" },
-  "audit_h1_missing": { "message": "No H1" },
-  "audit_h1_multiple": { "message": "More than one H1" },
-  "audit_canonical_missing": { "message": "No canonical link" },
-  "audit_robots_noindex": { "message": "Page is noindex" },
-  "audit_jsonld_missing": { "message": "No JSON-LD structured data" },
-  "audit_jsonld_invalid": { "message": "Invalid JSON-LD block" },
-  "audit_og_missing": { "message": "No Open Graph tags" },
-  "audit_og_incomplete": { "message": "Open Graph incomplete (og:title / og:image)" },
-  "audit_images_no_alt": { "message": "Images without alt" },
-
-  "factWords": { "message": "Words" },
-  "factLinks": { "message": "Links (int/ext)" },
-  "factHreflang": { "message": "hreflang" },
-  "factJsonLd": { "message": "JSON-LD ok/broken" },
-
-  "sentQueued": { "message": "Queued — Google index check will run on the next tick." },
-  "sentProspect": { "message": "Saved to Outreach as a new prospect." },
-  "sentProspectExisting": { "message": "Already in Outreach — existing prospect returned." },
-  "sendFailed": { "message": "Failed" },
-  "sendReason_not_in_portfolio": { "message": "This URL is not a portfolio page." },
-  "sendReason_auto_check_off": { "message": "Auto index-check is off for this site — enable it in the site's Indexing tab." },
-  "sendReason_not_in_inventory": { "message": "This URL is not in the sitemap inventory." },
-  "sendReason_own_site": { "message": "This is your own site — it goes to the index queue, not Outreach." },
-  "errAuth": { "message": "Token rejected (401). Create or rotate it in Settings → Browser extension." },
-  "errOrigin": { "message": "This extension's ID is not allowed (403). Add it in Settings → Browser extension → Allowed extension IDs." },
-  "errNetwork": { "message": "Cannot reach {url} — check the instance URL in options." },
-
-  "menuSendPage": { "message": "Send to OpenGSC" },
-  "menuSelection": { "message": "OpenGSC: use selection as keyword" },
-  "menuTableCsv": { "message": "OpenGSC: table selection → CSV" },
-
-  "optionsIntro": { "message": "Point the extension at your self-hosted OpenGSC instance." },
-  "optionsConnection": { "message": "Connection" },
-  "optionsInstanceUrl": { "message": "Instance URL" },
-  "optionsToken": { "message": "Extension token (Settings → Browser extension)" },
-  "optionsReveal": { "message": "Show" },
-  "optionsSave": { "message": "Save" },
-  "optionsTest": { "message": "Test connection" },
-  "optionsTestHint": { "message": "The test opens one free request: it proves the URL, the token and the extension-ID allowlist together." },
-  "optionsCORS": { "message": "Extension ID for the allowlist" },
-  "optionsCorsHint": { "message": "Copy this ID into OpenGSC → Settings → Browser extension → Allowed extension IDs. Requests are rejected with 403 until it is listed." },
-  "optionsCopy": { "message": "Copy" },
-  "optionsPrivacy": { "message": "What the extension sends" },
-  "optionsPrivacyText": { "message": "Only what you click: the page URL for the summary and for “Send to OpenGSC”, and the token. The quick audit is computed inside the browser and never leaves it." },
-  "optionsErrUrl": { "message": "Enter the instance URL (https://…)." },
-  "optionsErrToken": { "message": "The token starts with ogscext_ — copy it from Settings → Browser extension." },
-  "optionsSaved": { "message": "Saved (host permission granted)" },
-  "optionsSavedNoHost": { "message": "Saved (host permission declined — requests rely on the server's CORS headers)" },
-  "optionsTesting": { "message": "Testing…" },
-  "optionsErrFillFirst": { "message": "Save the URL and token first." },
-  "optionsTestOk": { "message": "OK — connection, token and allowlist all work." },
-  "optionsTest401": { "message": "401: token missing, revoked or wrong." },
-  "optionsTest403": { "message": "403: this extension ID is not on the allowlist." },
-  "optionsTestNetwork": { "message": "No answer — wrong URL or server down." },
-  "optionsTestFail": { "message": "Failed" },
-  "optionsCopied": { "message": "Copied" }
+  "optionsLink": {
+    "message": "Options"
+  },
+  "loading": {
+    "message": "Reading the page…"
+  },
+  "needConfigure": {
+    "message": "Set your OpenGSC instance URL and token first."
+  },
+  "openOptionsBtn": {
+    "message": "Open options"
+  },
+  "unsupportedPage": {
+    "message": "This page cannot be audited (browser-internal or non-http page)."
+  },
+  "specialNote": {
+    "message": "This is a Google tool page — OpenGSC does not parse it. The data behind it is already in OpenGSC through the API."
+  },
+  "openApp": {
+    "message": "Open this URL in OpenGSC"
+  },
+  "send": {
+    "message": "Send to OpenGSC"
+  },
+  "sendOwn": {
+    "message": "Send to index-check queue"
+  },
+  "sendForeign": {
+    "message": "Save as Outreach prospect"
+  },
+  "sendWaiting": {
+    "message": "The summary has not answered yet — try again in a moment."
+  },
+  "sendKeywords": {
+    "message": "Selection → keywords"
+  },
+  "downloadCsv": {
+    "message": "Table → CSV"
+  },
+  "downloadCsvStaged": {
+    "message": "Download CSV of selected table"
+  },
+  "csvSaved": {
+    "message": "CSV downloaded"
+  },
+  "inOpengsc": {
+    "message": "This page in OpenGSC"
+  },
+  "miniAudit": {
+    "message": "Quick audit (local)"
+  },
+  "notInPortfolio": {
+    "message": "This URL does not belong to any site in the portfolio."
+  },
+  "noMetrics": {
+    "message": "No clicks or impressions in the last {n} days."
+  },
+  "openInApp": {
+    "message": "Open in OpenGSC →"
+  },
+  "metricClicks": {
+    "message": "clicks"
+  },
+  "metricImpressions": {
+    "message": "impressions"
+  },
+  "metricPosition": {
+    "message": "avg. position"
+  },
+  "posShort": {
+    "message": "pos."
+  },
+  "localPackShort": {
+    "message": "map "
+  },
+  "indexStatus": {
+    "message": "Index status"
+  },
+  "indexIndexed": {
+    "message": "Indexed"
+  },
+  "indexNotIndexed": {
+    "message": "Not indexed"
+  },
+  "indexUnknown": {
+    "message": "Index: unknown"
+  },
+  "indexUnknownTitle": {
+    "message": "Never checked, or Google returned a state this version does not recognize"
+  },
+  "serverAudit": {
+    "message": "Last site audit"
+  },
+  "yourSite": {
+    "message": "your site"
+  },
+  "auditPill": {
+    "message": "Audit: $1 err · $2 warn"
+  },
+  "auditUnavailable": {
+    "message": "The quick audit could not run on this page."
+  },
+  "auditAllOk": {
+    "message": "No issues found"
+  },
+  "notMigrated": {
+    "message": "The server needs `npx prisma db push` — ask the instance owner."
+  },
+  "audit_title_missing": {
+    "message": "No <title>"
+  },
+  "audit_title_short": {
+    "message": "Title too short (under 50)",
+    "description": "detail carries the current length"
+  },
+  "audit_title_long": {
+    "message": "Title too long (over 65)"
+  },
+  "audit_description_missing": {
+    "message": "No meta description"
+  },
+  "audit_description_short": {
+    "message": "Meta description too short (under 150)"
+  },
+  "audit_description_long": {
+    "message": "Meta description too long (over 165)"
+  },
+  "audit_h1_missing": {
+    "message": "No H1"
+  },
+  "audit_h1_multiple": {
+    "message": "More than one H1"
+  },
+  "audit_canonical_missing": {
+    "message": "No canonical link"
+  },
+  "audit_robots_noindex": {
+    "message": "Page is noindex"
+  },
+  "audit_jsonld_missing": {
+    "message": "No JSON-LD structured data"
+  },
+  "audit_jsonld_invalid": {
+    "message": "Invalid JSON-LD block"
+  },
+  "audit_og_missing": {
+    "message": "No Open Graph tags"
+  },
+  "audit_og_incomplete": {
+    "message": "Open Graph incomplete (og:title / og:image)"
+  },
+  "audit_images_no_alt": {
+    "message": "Images without alt"
+  },
+  "factWords": {
+    "message": "Words"
+  },
+  "factLinks": {
+    "message": "Links (int/ext)"
+  },
+  "factHreflang": {
+    "message": "hreflang"
+  },
+  "factJsonLd": {
+    "message": "JSON-LD ok/broken"
+  },
+  "sentQueued": {
+    "message": "Queued — Google index check will run on the next tick."
+  },
+  "sentProspect": {
+    "message": "Saved to Outreach as a new prospect."
+  },
+  "sentProspectExisting": {
+    "message": "Already in Outreach — existing prospect returned."
+  },
+  "sendFailed": {
+    "message": "Failed"
+  },
+  "sendReason_not_in_portfolio": {
+    "message": "This URL is not a portfolio page."
+  },
+  "sendReason_auto_check_off": {
+    "message": "Auto index-check is off for this site — enable it in the site's Indexing tab."
+  },
+  "sendReason_not_in_inventory": {
+    "message": "This URL is not in the sitemap inventory."
+  },
+  "sendReason_own_site": {
+    "message": "This is your own site — it goes to the index queue, not Outreach."
+  },
+  "errAuth": {
+    "message": "Token rejected (401). Create or rotate it in Settings → Browser extension."
+  },
+  "errOrigin": {
+    "message": "This extension's ID is not allowed (403). Add it in Settings → Browser extension → Allowed extension IDs."
+  },
+  "errNetwork": {
+    "message": "Cannot reach {url} — check the instance URL in options."
+  },
+  "menuSendPage": {
+    "message": "Send to OpenGSC"
+  },
+  "menuSelection": {
+    "message": "OpenGSC: use selection as keyword"
+  },
+  "menuTableCsv": {
+    "message": "OpenGSC: table selection → CSV"
+  },
+  "optionsIntro": {
+    "message": "Point the extension at your self-hosted OpenGSC instance."
+  },
+  "optionsConnection": {
+    "message": "Connection"
+  },
+  "optionsInstanceUrl": {
+    "message": "Instance URL"
+  },
+  "optionsToken": {
+    "message": "Extension token (Settings → Browser extension)"
+  },
+  "optionsReveal": {
+    "message": "Show"
+  },
+  "optionsSave": {
+    "message": "Save"
+  },
+  "optionsTest": {
+    "message": "Test connection"
+  },
+  "optionsTestHint": {
+    "message": "The test opens one free request: it proves the URL, the token and the extension-ID allowlist together."
+  },
+  "optionsCORS": {
+    "message": "Extension ID for the allowlist"
+  },
+  "optionsCorsHint": {
+    "message": "Copy this ID into OpenGSC → Settings → Browser extension → Allowed extension IDs. Requests are rejected with 403 until it is listed."
+  },
+  "optionsCopy": {
+    "message": "Copy"
+  },
+  "optionsPrivacy": {
+    "message": "What the extension sends"
+  },
+  "optionsPrivacyText": {
+    "message": "Only what you click: the page URL for the summary and for “Send to OpenGSC”, and the token. The quick audit is computed inside the browser and never leaves it."
+  },
+  "optionsErrUrl": {
+    "message": "Enter the instance URL (https://…)."
+  },
+  "optionsErrToken": {
+    "message": "The token starts with ogscext_ — copy it from Settings → Browser extension."
+  },
+  "optionsSaved": {
+    "message": "Saved (host permission granted)"
+  },
+  "optionsSavedNoHost": {
+    "message": "Saved (host permission declined — requests rely on the server's CORS headers)"
+  },
+  "optionsTesting": {
+    "message": "Testing…"
+  },
+  "optionsErrFillFirst": {
+    "message": "Save the URL and token first."
+  },
+  "optionsTestOk": {
+    "message": "OK — connection, token and allowlist all work."
+  },
+  "optionsTest401": {
+    "message": "401: token missing, revoked or wrong."
+  },
+  "optionsTest403": {
+    "message": "403: this extension ID is not on the allowlist."
+  },
+  "optionsTestNetwork": {
+    "message": "No answer — wrong URL or server down."
+  },
+  "optionsTestFail": {
+    "message": "Failed"
+  },
+  "optionsCopied": {
+    "message": "Copied"
+  },
+  "optPanelSection": {
+    "message": "Side panel"
+  },
+  "optPanelAllSites": {
+    "message": "Analyze any page without clicking the icon"
+  },
+  "optPermissionGranted": {
+    "message": "Permission granted"
+  },
+  "optPermissionMissing": {
+    "message": "Permission not granted"
+  },
+  "optSerpSection": {
+    "message": "Google results overlay"
+  },
+  "optSerpEnable": {
+    "message": "Show OpenGSC data on Google results"
+  },
+  "optSerpDomains": {
+    "message": "Google domains"
+  },
+  "optSerpDomainsSearch": {
+    "message": "Filter domains…"
+  },
+  "optSerpCompact": {
+    "message": "Compact mode (one line per result)"
+  },
+  "optDefaultSite": {
+    "message": "Site ID for \"Track in Rank Tracker\""
+  },
+  "optDefaultProject": {
+    "message": "SERP Monitor project ID"
+  },
+  "optIdHint": {
+    "message": "The ID is in the OpenGSC address bar: /site/<id>, /serp-monitor/<id>"
+  },
+  "optSaved": {
+    "message": "Saved"
+  },
+  "panelSoon": {
+    "message": "Coming soon"
+  },
+  "panelRefresh": {
+    "message": "Refresh"
+  },
+  "panelUpdating": {
+    "message": "Updating…"
+  },
+  "panelRestricted": {
+    "message": "This page can't be analyzed (browser or store page)."
+  },
+  "panelNoPermission": {
+    "message": "No access to this page yet."
+  },
+  "panelClickIcon": {
+    "message": "Click the OpenGSC icon to analyze this page"
+  },
+  "panelAllowAll": {
+    "message": "Allow on all sites"
+  },
+  "panelInjectFailed": {
+    "message": "Couldn't read the page: $1"
+  },
+  "panelConnectHint": {
+    "message": "Connect OpenGSC in settings to see your data here"
+  },
+  "panelOpen": {
+    "message": "Open side panel"
+  },
+  "panelHighlight": {
+    "message": "Highlight"
+  },
+  "panelExport": {
+    "message": "Export"
+  },
+  "panelTruncated": {
+    "message": "Showing the first $1"
+  },
+  "panelScore": {
+    "message": "Page score"
+  },
+  "panelScoreFormula": {
+    "message": "100 − 10 per error − 4 per warning − 1 per notice"
+  },
+  "tabPage": {
+    "message": "Page"
+  },
+  "pageOverview": {
+    "message": "Overview"
+  },
+  "pageHeadings": {
+    "message": "Headings"
+  },
+  "pageLinks": {
+    "message": "Links"
+  },
+  "pageImages": {
+    "message": "Images"
+  },
+  "pageSchema": {
+    "message": "Schema"
+  },
+  "pageSocial": {
+    "message": "Social"
+  },
+  "pageRobots": {
+    "message": "robots & sitemap"
+  },
+  "pageSpeed": {
+    "message": "Speed"
+  },
+  "pageLenOk": {
+    "message": "OK"
+  },
+  "pageLenShort": {
+    "message": "Too short"
+  },
+  "pageLenLong": {
+    "message": "Too long"
+  },
+  "pageCanonicalOther": {
+    "message": "Canonical points to another URL"
+  },
+  "pageGroupMeta": {
+    "message": "Meta"
+  },
+  "pageGroupContent": {
+    "message": "Content"
+  },
+  "pageGroupTechnical": {
+    "message": "Technical"
+  },
+  "pageGroupPerformance": {
+    "message": "Speed"
+  },
+  "pageGroupAccessibility": {
+    "message": "Accessibility"
+  },
+  "pageHidden": {
+    "message": "hidden"
+  },
+  "pageSkip": {
+    "message": "level skipped"
+  },
+  "pageLinksInternal": {
+    "message": "Internal"
+  },
+  "pageLinksExternal": {
+    "message": "External"
+  },
+  "pageLinksUnique": {
+    "message": "Unique"
+  },
+  "pageAreaContent": {
+    "message": "in text"
+  },
+  "pageAreaNav": {
+    "message": "menu"
+  },
+  "pageAreaHeader": {
+    "message": "header"
+  },
+  "pageAreaFooter": {
+    "message": "footer"
+  },
+  "pageAreaAside": {
+    "message": "sidebar"
+  },
+  "pageAreaTop": {
+    "message": "top of body"
+  },
+  "pageAreaOther": {
+    "message": "other"
+  },
+  "pageNoAlt": {
+    "message": "No alt"
+  },
+  "pageEmptyAlt": {
+    "message": "Empty alt"
+  },
+  "pageNoDims": {
+    "message": "No size"
+  },
+  "pageRichTest": {
+    "message": "Rich Results Test"
+  },
+  "pageRobotsBlocked": {
+    "message": "Blocked for Googlebot by: $1"
+  },
+  "pageRobotsAllowed": {
+    "message": "Allowed for Googlebot"
+  },
+  "pageRobotsMissing": {
+    "message": "No robots.txt"
+  },
+  "pageSitemapFind": {
+    "message": "Find this URL in sitemap"
+  },
+  "pageSitemapFound": {
+    "message": "Found in $1"
+  },
+  "pageSitemapNotFound": {
+    "message": "Not found in $1 files"
+  },
+  "pageLabNote": {
+    "message": "Measured in your browser — lab data, not CrUX"
+  },
+  "pageInpNote": {
+    "message": "Needs an interaction — not measured"
+  },
+  "pagePsi": {
+    "message": "PageSpeed Insights"
+  },
+  "exportLinks": {
+    "message": "Links (CSV)"
+  },
+  "exportImages": {
+    "message": "Images (CSV)"
+  },
+  "exportHeadings": {
+    "message": "Headings (CSV)"
+  },
+  "exportJson": {
+    "message": "Everything (JSON)"
+  },
+  "hlImagesNoAlt": {
+    "message": "Images without alt"
+  },
+  "hlH1": {
+    "message": "H1 headings"
+  },
+  "hlNofollow": {
+    "message": "nofollow links"
+  },
+  "hlExternal": {
+    "message": "External links"
+  },
+  "hlEmptyLinks": {
+    "message": "Links without text"
+  },
+  "audit_heading_skip": {
+    "message": "Heading level skipped"
+  },
+  "audit_heading_empty": {
+    "message": "Empty heading"
+  },
+  "audit_images_no_dims": {
+    "message": "Images without width/height"
+  },
+  "audit_html_lang_missing": {
+    "message": "No <html lang>"
+  },
+  "audit_viewport_missing": {
+    "message": "No meta viewport"
+  },
+  "audit_link_empty_text": {
+    "message": "Links without text"
+  },
+  "audit_canonical_other": {
+    "message": "Canonical points to another URL"
+  },
+  "audit_mixed_content": {
+    "message": "HTTP resources on an HTTPS page"
+  },
+  "audit_lcp_poor": {
+    "message": "Slow LCP"
+  },
+  "audit_cls_poor": {
+    "message": "High CLS"
+  },
+  "tabOpengsc": {
+    "message": "OpenGSC"
+  },
+  "ogOpenInApp": {
+    "message": "Open in OpenGSC"
+  },
+  "ogGsc28": {
+    "message": "Google Search Console, 28 days"
+  },
+  "ogMainQuery": {
+    "message": "Main query"
+  },
+  "ogMatchOk": {
+    "message": "Title/H1 contain the main query"
+  },
+  "ogMatchBad": {
+    "message": "Neither title nor H1 contains the main query"
+  },
+  "ogNoMainQuery": {
+    "message": "No queries for this URL in the last 28 days"
+  },
+  "ogInSitemap": {
+    "message": "In sitemap"
+  },
+  "ogSitemapYes": {
+    "message": "yes"
+  },
+  "ogSitemapNo": {
+    "message": "no"
+  },
+  "ogSitemapUnknown": {
+    "message": "sitemap not loaded in OpenGSC"
+  },
+  "ogCheckIndex": {
+    "message": "Check indexing"
+  },
+  "ogMeta": {
+    "message": "Meta tags"
+  },
+  "ogSuggestion": {
+    "message": "Suggestion ($1 chars)"
+  },
+  "ogCopy": {
+    "message": "Copy"
+  },
+  "ogCopied": {
+    "message": "Copied"
+  },
+  "ogFitAi": {
+    "message": "Fit with AI"
+  },
+  "ogFitAiConfirm": {
+    "message": "Up to 2 requests to your AI model. Continue?"
+  },
+  "ogNoSpendRight": {
+    "message": "Your role can't spend credits"
+  },
+  "ogNoMainQueryFit": {
+    "message": "Can't fit without a main query"
+  },
+  "ogFootprint": {
+    "message": "Footprint across your sites"
+  },
+  "ogFootprintClean": {
+    "message": "This title/description/H1 pattern is not repeated on your other sites"
+  },
+  "ogFootprintKindTitle": {
+    "message": "Title pattern"
+  },
+  "ogFootprintKindDescription": {
+    "message": "Description pattern"
+  },
+  "ogFootprintKindH1": {
+    "message": "H1 pattern"
+  },
+  "ogFootprintAll": {
+    "message": "All patterns"
+  },
+  "ogSimilarity": {
+    "message": "$1% alike"
+  },
+  "ogRanks": {
+    "message": "Rank Tracker"
+  },
+  "ogServerAudit": {
+    "message": "Last site audit"
+  },
+  "tabDonor": {
+    "message": "Donor"
+  },
+  "donorLinksToUs": {
+    "message": "Links to your sites"
+  },
+  "donorLinksToUsRow": {
+    "message": "$1: $2 links, $3 live"
+  },
+  "donorNotInDb": {
+    "message": "not in OpenGSC yet"
+  },
+  "donorDr": {
+    "message": "DR"
+  },
+  "donorAge": {
+    "message": "Age"
+  },
+  "donorAgeValue": {
+    "message": "$1 y $2 m"
+  },
+  "donorRefdomains": {
+    "message": "Ref. domains"
+  },
+  "donorInOutreach": {
+    "message": "In Outreach: $1"
+  },
+  "donorInDrops": {
+    "message": "In drops: $1"
+  },
+  "donorWatched": {
+    "message": "watched"
+  },
+  "donorAsset": {
+    "message": "Bought drop"
+  },
+  "donorOwnPbn": {
+    "message": "Your PBN site"
+  },
+  "donorToOutreach": {
+    "message": "Add to Outreach"
+  },
+  "donorWatchDrop": {
+    "message": "Watch as a drop"
+  },
+  "donorEnrich": {
+    "message": "Get age and DR (free, public sources)"
+  },
+  "donorSignals": {
+    "message": "Signals"
+  },
+  "donorVerdictRestored": {
+    "message": "Looks like a restored drop"
+  },
+  "donorVerdictSuspicious": {
+    "message": "Looks suspicious"
+  },
+  "donorVerdictClean": {
+    "message": "No signs found"
+  },
+  "donorVerdictUnknown": {
+    "message": "Couldn't check"
+  },
+  "donorSig_wayforge_marker": {
+    "message": "WayForge markup found"
+  },
+  "donorSig_wayback_toolbar": {
+    "message": "Wayback Machine leftovers"
+  },
+  "donorSig_archive_refs": {
+    "message": "Links to web.archive.org"
+  },
+  "donorSig_link_above_content": {
+    "message": "External link above all content"
+  },
+  "donorSig_many_outbound_hosts": {
+    "message": "Many outbound hosts in the text"
+  },
+  "donorSig_sitewide_footer_links": {
+    "message": "Site-wide footer links"
+  },
+  "donorSig_generator_restore_tool": {
+    "message": "Built by a site-restore tool"
+  },
+  "donorOutbound": {
+    "message": "Outbound links"
+  },
+  "donorOutboundSummary": {
+    "message": "$1 links to $2 hosts, $3 dofollow"
+  },
+  "donorAlreadyLinks": {
+    "message": "Already links to $1"
+  },
+  "donorFilterDofollow": {
+    "message": "dofollow"
+  },
+  "donorFilterContent": {
+    "message": "in text"
+  },
+  "donorFilterMine": {
+    "message": "my sites only"
+  },
+  "donorHighlightTop": {
+    "message": "Highlight links above content"
+  },
+  "serpYourSite": {
+    "message": "Your site: $1"
+  },
+  "serpYourUrlStats": {
+    "message": "your URL: $1 clicks, $2 impr., pos. $3 (GSC, 28 d)"
+  },
+  "serpOtherUrlRanks": {
+    "message": "For this query you rank with another URL: $1"
+  },
+  "serpDrUnknown": {
+    "message": "Not in the database yet. Get it for free from the header"
+  },
+  "serpAgeYears": {
+    "message": "$1 y"
+  },
+  "serpAgeMonths": {
+    "message": "$1 mo"
+  },
+  "serpMonitorChip": {
+    "message": "SERP Monitor: $1 kw, top-10: $2, since $3"
+  },
+  "serpTag_new": {
+    "message": "new"
+  },
+  "serpTag_young": {
+    "message": "young"
+  },
+  "serpTag_rising": {
+    "message": "rising"
+  },
+  "serpTag_falling": {
+    "message": "falling"
+  },
+  "serpTag_bounced": {
+    "message": "bounced"
+  },
+  "serpTag_platform": {
+    "message": "platform"
+  },
+  "serpTag_own": {
+    "message": "yours"
+  },
+  "serpLinksToYou": {
+    "message": "links to you: $1"
+  },
+  "serpOutreachStage": {
+    "message": "Outreach: $1"
+  },
+  "serpDropWatched": {
+    "message": "Drop: watched"
+  },
+  "serpDropStage": {
+    "message": "Drop: $1"
+  },
+  "serpPbn": {
+    "message": "PBN"
+  },
+  "serpMenuOutreach": {
+    "message": "Add to Outreach"
+  },
+  "serpMenuWatch": {
+    "message": "Watch as a drop"
+  },
+  "serpMenuCloak": {
+    "message": "Check for cloaking"
+  },
+  "serpMenuOpenDomain": {
+    "message": "Open domain in SERP Monitor"
+  },
+  "serpCloakSame": {
+    "message": "Same for Googlebot and browser"
+  },
+  "serpCloakDiffers": {
+    "message": "Differs between Googlebot and browser"
+  },
+  "serpCloakBlocked": {
+    "message": "Bot blocked by the site"
+  },
+  "serpCloakError": {
+    "message": "Check failed"
+  },
+  "serpCloakSnippet": {
+    "message": "Snippet found — Googlebot: $1, browser: $2"
+  },
+  "serpYes": {
+    "message": "yes"
+  },
+  "serpNo": {
+    "message": "no"
+  },
+  "serpWaitMinute": {
+    "message": "Too many checks — wait a minute"
+  },
+  "serpRegionUnknown": {
+    "message": "region not detected"
+  },
+  "serpYourPositions": {
+    "message": "Your positions"
+  },
+  "serpTracked": {
+    "message": "Rank Tracker: pos. $1 ($2)"
+  },
+  "serpMonitored": {
+    "message": "Tracked in SERP Monitor project $1"
+  },
+  "serpStorm": {
+    "message": "storm on the last run"
+  },
+  "serpNoStorm": {
+    "message": "no storm on the last run"
+  },
+  "serpQueryMetrics": {
+    "message": "volume $1 · KD $2 · data from $3"
+  },
+  "serpToRank": {
+    "message": "Track in Rank Tracker"
+  },
+  "serpToMonitor": {
+    "message": "Add to SERP Monitor"
+  },
+  "serpCapture": {
+    "message": "Save these results"
+  },
+  "serpCaptured": {
+    "message": "Saved · open"
+  },
+  "serpEnrich": {
+    "message": "Get age and DR for $1 hosts (free)"
+  },
+  "serpPickSite": {
+    "message": "Choose a site"
+  },
+  "serpPickProject": {
+    "message": "Choose a project"
+  },
+  "serpAdded": {
+    "message": "Added"
+  },
+  "serpAlready": {
+    "message": "Already there"
+  },
+  "serpNotConfigured": {
+    "message": "OpenGSC: connect the extension in settings"
+  },
+  "serpCollapse": {
+    "message": "Collapse"
+  },
+  "serpExpand": {
+    "message": "OpenGSC"
+  },
+  "err_invalid_url": {
+    "message": "Invalid URL"
+  },
+  "err_too_many_hosts": {
+    "message": "Too many hosts"
+  },
+  "err_private_host": {
+    "message": "Private address — not checked"
+  },
+  "err_confirm_required": {
+    "message": "Needs confirmation"
+  },
+  "err_project_not_found": {
+    "message": "SERP Monitor project not found"
+  },
+  "err_site_not_found": {
+    "message": "Site not found"
+  },
+  "err_rate_limited": {
+    "message": "Too many requests — wait a minute"
+  },
+  "err_forbidden": {
+    "message": "Your role doesn't allow this"
+  },
+  "err_not_migrated": {
+    "message": "Run `npx prisma db push` on the server"
+  }
 }

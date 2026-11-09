@@ -5728,5 +5728,21 @@
   "blpCgGapFailed": "La tâche de gap a échoué (l'API ne rembourse pas les tâches échouées)",
   "blpCgGapTitle": "Gap de liens",
   "blpCgGapFoundOn": "Pointe vers les concurrents",
-  "blsrcCgUpgrade": "L'analyse de gap nécessite une offre Crawlgraph payante — les clés gratuites ne couvrent que les requêtes backlinks"
+  "blsrcCgUpgrade": "L'analyse de gap nécessite une offre Crawlgraph payante — les clés gratuites ne couvrent que les requêtes backlinks",
+  "serpmonTabCaptures": "Captures du navigateur",
+  "serpmonCaptureSoon": "Bientôt disponible",
+  "serpmonCaptureTitle": "Captures du navigateur",
+  "serpmonCaptureNote": "Capturée depuis votre navigateur : résultats personnalisés depuis votre IP. Hors diffs et tempêtes.",
+  "serpmonCaptureEmpty": "Aucune capture pour l'instant. Activez la superposition dans l'extension et cliquez « Enregistrer ces résultats ».",
+  "serpmonCaptureQuery": "Requête",
+  "serpmonCaptureEngine": "Domaine Google",
+  "serpmonCaptureRegion": "Région",
+  "serpmonCapturePage": "Page",
+  "serpmonCaptureRows": "Résultats",
+  "serpmonCaptureWhen": "Capturée",
+  "serpmonCaptureLoose": "sans projet",
+  "serpmonCaptureCompare": "Comparer avec le snapshot automatisé le plus proche",
+  "serpmonCaptureNoSnapshot": "Aucun snapshot automatisé de cette requête à comparer",
+  "serpmonCaptureDelete": "Supprimer",
+  "serpmonCaptureDeleteConfirm": "Supprimer cette capture ?"
 }

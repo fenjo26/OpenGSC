@@ -14,9 +14,9 @@
 - `src/lib/ext/types.ts` — дословно из §2.
 - Роуты из §3 (`hosts`, `hosts/enrich`, `serp/capture`, `serp/action`, `cloak`, `insights`,
   `meta-fit`, `serpmon/captures`, `serpmon/captures/[id]`) — каркас: правильное право в
-  `extAuth` (для `/api/serpmon/captures` — `workspaceUserId()`, как остальные роуты serpmon),
+  `extAuth` (для `/api/serp-monitor/captures` — `workspaceUserId()`, как остальные роуты serpmon),
   `OPTIONS` у `/api/ext/*`, ответ `501 { error: "not_implemented" }` с CORS-заголовками.
-  Параметры динамического роута — как в существующих `src/app/api/serpmon/**/[id]/route.ts`.
+  Параметры динамического роута — как в существующих `src/app/api/serp-monitor/**/[id]/route.ts`.
 - `src/lib/ext/{hostIntel,hostIntelPure,serpCapture,snippet,insights}.ts` — экспортируй имена
   функций из брифов E2 и E5 (раздел «Сигнатуры» в каждом) с телом `throw new Error("not_implemented")`.
 - `src/lib/mcp/toolsSerpCaptures.ts` — `SERP_CAPTURE_TOOLS` с описанием из §6 и handler,
@@ -96,7 +96,7 @@
 ```bash
 npx prisma generate && npm run check
 npx tsc -p tsconfig.json --noEmit     # не больше ошибок, чем на main до тебя
-npx eslint src/lib/ext/types.ts src/app/api/ext src/app/api/serpmon/captures src/components/serpmon/CapturesTab.tsx src/lib/mcp/toolsSerpCaptures.ts
+npx eslint src/lib/ext/types.ts src/app/api/ext src/app/api/serp-monitor/captures src/components/serpmon/CapturesTab.tsx src/lib/mcp/toolsSerpCaptures.ts
 ```
 
 Руками: «Обновить» расширение → нет ошибок на карточке; клик по иконке открывает панель со

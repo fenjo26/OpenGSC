@@ -22,11 +22,12 @@ import KeywordDrawer from "@/components/serpmon/KeywordDrawer";
 import MarketTab from "@/components/serpmon/MarketTab";
 import ProjectDialog from "@/components/serpmon/ProjectDialog";
 import StormsTab from "@/components/serpmon/StormsTab";
+import CapturesTab from "@/components/serpmon/CapturesTab"; // wave-ext E5
 import {
   btnGhost, btnPrimary, ErrorLine, fmtDate, getJson, relTime, sendJson, trOf,
 } from "@/components/serpmon/shared";
 
-const TABS = ["market", "storms", "domains"] as const;
+const TABS = ["market", "storms", "domains", "captures"] as const;
 type Tab = (typeof TABS)[number];
 const isTab = (v: unknown): boolean => typeof v === "string" && (TABS as readonly string[]).includes(v);
 const isStr = (v: unknown): boolean => typeof v === "string";
@@ -299,6 +300,7 @@ export default function SerpProjectPage() {
           { v: "market", key: "serpmonTabMarket" },
           { v: "storms", key: "serpmonTabStorms" },
           { v: "domains", key: "serpmonTabDomains" },
+          { v: "captures", key: "serpmonTabCaptures" },
         ] as const).map(tb => (
           <button key={tb.v} onClick={() => setTab(tb.v)}
             style={{
@@ -333,6 +335,9 @@ export default function SerpProjectPage() {
           version={version}
           onOpenDomain={h => { setHost(h); setTab("market"); }}
         />
+      )}
+      {project && tab === "captures" && (
+        <CapturesTab projectId={projectId} />
       )}
 
       {keyword && (

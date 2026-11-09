@@ -5728,5 +5728,21 @@
   "blpCgGapFailed": "Gap-Job fehlgeschlagen (die API erstattet fehlgeschlagene Jobs nicht)",
   "blpCgGapTitle": "Link-Lücke",
   "blpCgGapFoundOn": "Verlinkt auf Konkurrenten",
-  "blsrcCgUpgrade": "Die Gap-Analyse braucht einen bezahlten Crawlgraph-Tarif — freie Schlüssel decken nur Backlink-Abfragen ab"
+  "blsrcCgUpgrade": "Die Gap-Analyse braucht einen bezahlten Crawlgraph-Tarif — freie Schlüssel decken nur Backlink-Abfragen ab",
+  "serpmonTabCaptures": "Browser-Aufnahmen",
+  "serpmonCaptureSoon": "Demnächst",
+  "serpmonCaptureTitle": "Browser-Aufnahmen",
+  "serpmonCaptureNote": "Aus deinem Browser aufgenommen: personalisierte Ergebnisse von deiner IP. Kein Teil von Diffs oder Stürmen.",
+  "serpmonCaptureEmpty": "Noch keine Aufnahmen. Aktiviere das Overlay in der Erweiterung und klicke „Diese Ergebnisse speichern“.",
+  "serpmonCaptureQuery": "Anfrage",
+  "serpmonCaptureEngine": "Google-Domain",
+  "serpmonCaptureRegion": "Region",
+  "serpmonCapturePage": "S.",
+  "serpmonCaptureRows": "Ergebnisse",
+  "serpmonCaptureWhen": "Aufgenommen",
+  "serpmonCaptureLoose": "ohne Projekt",
+  "serpmonCaptureCompare": "Mit dem nächsten automatischen Snapshot vergleichen",
+  "serpmonCaptureNoSnapshot": "Kein automatischer Snapshot dieser Anfrage zum Vergleichen",
+  "serpmonCaptureDelete": "Löschen",
+  "serpmonCaptureDeleteConfirm": "Diese Aufnahme löschen?"
 }

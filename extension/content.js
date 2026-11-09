@@ -29,6 +29,10 @@
     url: location.href,
     facts: facts,
     issues: issues,
+    // wave-ext (CONTRACT §4.3): E1 fills PageScan.vitals (ExtVitals.collect, awaited with a
+    // 1500 ms timeout) and E3 fills PageScan.donor (ExtDonor.collect). Nulls until then.
+    vitals: null,
+    donor: null,
     selection: selection,
   };
 })();

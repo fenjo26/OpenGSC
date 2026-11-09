@@ -34,6 +34,54 @@
     </section>
 
     <section class="card">
+      <h2 data-i18n="optPanelSection"></h2>
+      <label class="toggle">
+        <input id="panelAllSites" type="checkbox" />
+        <span data-i18n="optPanelAllSites"></span>
+      </label>
+      <p class="hint" id="panelPerm"></p>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="optSerpSection"></h2>
+
+      <label class="toggle">
+        <input id="serpOverlay" type="checkbox" />
+        <span data-i18n="optSerpEnable"></span>
+      </label>
+
+      <div class="field">
+        <span data-i18n="optSerpDomains"></span>
+        <input id="domainSearch" type="search" data-i18n-placeholder="optSerpDomainsSearch" spellcheck="false" autocomplete="off" />
+        <div id="domainList" class="domains"></div>
+      </div>
+
+      <label class="toggle">
+        <input id="serpCompact" type="checkbox" />
+        <span data-i18n="optSerpCompact"></span>
+      </label>
+
+      <div class="grid2">
+        <label class="field" id="defaultSiteField">
+          <span data-i18n="optDefaultSite"></span>
+          <select id="defaultSite"></select>
+          <input id="defaultSiteText" type="text" class="hidden" spellcheck="false" autocomplete="off" />
+        </label>
+        <label class="field" id="defaultProjectField">
+          <span data-i18n="optDefaultProject"></span>
+          <select id="defaultProject"></select>
+          <input id="defaultProjectText" type="text" class="hidden" spellcheck="false" autocomplete="off" />
+        </label>
+      </div>
+      <p class="hint" data-i18n="optIdHint"></p>
+
+      <div class="row">
+        <button id="serpSave" type="button" class="primary" data-i18n="optionsSave"></button>
+        <span id="serpStatus" class="status" role="status"></span>
+      </div>
+    </section>
+
+    <section class="card">
       <h2 data-i18n="optionsCORS"></h2>
       <p class="hint" data-i18n="optionsCorsHint"></p>
       <div class="row">
@@ -48,6 +96,9 @@
     </section>
   </main>
   <script src="lib/api.js"></script>
+  <script src="lib/protocol.js"></script>
+  <script src="lib/settings.js"></script>
+  <script src="lib/googleDomains.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

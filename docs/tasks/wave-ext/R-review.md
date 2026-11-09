@@ -37,7 +37,7 @@ for c in $(git rev-list <коммит E0>..main); do echo "== $(git log -1 --for
 ```bash
 npx prisma generate && npm run check
 npx tsc -p tsconfig.json --noEmit           # не больше ошибок, чем до E0
-npx eslint src/lib/ext src/app/api/ext src/app/api/serpmon/captures src/components/serpmon/CapturesTab.tsx src/lib/mcp/toolsSerpCaptures.ts
+npx eslint src/lib/ext src/app/api/ext src/app/api/serp-monitor/captures src/components/serpmon/CapturesTab.tsx src/lib/mcp/toolsSerpCaptures.ts
 node -e "JSON.parse(require('fs').readFileSync('extension/manifest.json'))"
 grep -rn "fetch(" extension/serp extension/lib/serpParse.js extension/lib/donor.js extension/content.js   # должно быть пусто: content-скрипты не ходят в сеть
 grep -rn "setAttribute\|classList\|\.style\." extension/serp extension/lib/highlight.js | grep -v shadow   # следов на чужой странице быть не должно

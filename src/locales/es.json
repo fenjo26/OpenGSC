@@ -5728,5 +5728,21 @@
   "blpCgGapFailed": "La tarea de hueco falló (la API no reembolsa tareas fallidas)",
   "blpCgGapTitle": "Hueco de enlaces",
   "blpCgGapFoundOn": "Enlaza a los competidores",
-  "blsrcCgUpgrade": "El análisis de huecos requiere un plan de pago de Crawlgraph — las claves gratuitas solo cubren consultas de backlinks"
+  "blsrcCgUpgrade": "El análisis de huecos requiere un plan de pago de Crawlgraph — las claves gratuitas solo cubren consultas de backlinks",
+  "serpmonTabCaptures": "Capturas del navegador",
+  "serpmonCaptureSoon": "Próximamente",
+  "serpmonCaptureTitle": "Capturas del navegador",
+  "serpmonCaptureNote": "Capturada desde tu navegador: resultados personalizados desde tu IP. No forma parte de los diffs ni de las tormentas.",
+  "serpmonCaptureEmpty": "Aún no hay capturas. Activa la superposición en la extensión y pulsa «Guardar estos resultados».",
+  "serpmonCaptureQuery": "Consulta",
+  "serpmonCaptureEngine": "Dominio de Google",
+  "serpmonCaptureRegion": "Región",
+  "serpmonCapturePage": "Pág.",
+  "serpmonCaptureRows": "Resultados",
+  "serpmonCaptureWhen": "Capturada",
+  "serpmonCaptureLoose": "sin proyecto",
+  "serpmonCaptureCompare": "Comparar con la instantánea automatizada más cercana",
+  "serpmonCaptureNoSnapshot": "No hay instantánea automatizada de esta consulta para comparar",
+  "serpmonCaptureDelete": "Eliminar",
+  "serpmonCaptureDeleteConfirm": "¿Eliminar esta captura?"
 }

@@ -5728,5 +5728,21 @@
   "blpCgGapFailed": "Gap job failed (the API does not refund failed jobs)",
   "blpCgGapTitle": "Link gap",
   "blpCgGapFoundOn": "Links to competitors",
-  "blsrcCgUpgrade": "Gap analysis needs a paid Crawlgraph plan — free keys cover backlink lookups only"
+  "blsrcCgUpgrade": "Gap analysis needs a paid Crawlgraph plan — free keys cover backlink lookups only",
+  "serpmonTabCaptures": "Browser captures",
+  "serpmonCaptureSoon": "Coming soon",
+  "serpmonCaptureTitle": "Browser captures",
+  "serpmonCaptureNote": "Taken from your browser: personalised results from your IP. Not part of diffs or storms.",
+  "serpmonCaptureEmpty": "No captures yet. Turn on the overlay in the extension and press “Save these results”.",
+  "serpmonCaptureQuery": "Query",
+  "serpmonCaptureEngine": "Google domain",
+  "serpmonCaptureRegion": "Region",
+  "serpmonCapturePage": "Page",
+  "serpmonCaptureRows": "Results",
+  "serpmonCaptureWhen": "Captured",
+  "serpmonCaptureLoose": "not linked",
+  "serpmonCaptureCompare": "Compare with the nearest automated snapshot",
+  "serpmonCaptureNoSnapshot": "No automated snapshot of this keyword to compare with",
+  "serpmonCaptureDelete": "Delete",
+  "serpmonCaptureDeleteConfirm": "Delete this capture?"
 }

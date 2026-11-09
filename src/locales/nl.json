@@ -5728,5 +5728,21 @@
   "blpCgGapFailed": "Gap-taak mislukt (de API retourneert mislukte taken niet)",
   "blpCgGapTitle": "Linkgap",
   "blpCgGapFoundOn": "Linkt naar concurrenten",
-  "blsrcCgUpgrade": "Gap-analyse vereist een betaald Crawlgraph-plan — gratis sleutels dekken alleen backlink-lookups"
+  "blsrcCgUpgrade": "Gap-analyse vereist een betaald Crawlgraph-plan — gratis sleutels dekken alleen backlink-lookups",
+  "serpmonTabCaptures": "Browser-opnames",
+  "serpmonCaptureSoon": "Binnenkort",
+  "serpmonCaptureTitle": "Browser-opnames",
+  "serpmonCaptureNote": "Uit je browser opgenomen: gepersonaliseerde resultaten vanaf je IP. Geen onderdeel van diffs of storms.",
+  "serpmonCaptureEmpty": "Nog geen opnames. Zet de overlay aan in de extensie en klik „Deze resultaten opslaan“.",
+  "serpmonCaptureQuery": "Zoekopdracht",
+  "serpmonCaptureEngine": "Google-domein",
+  "serpmonCaptureRegion": "Regio",
+  "serpmonCapturePage": "Pag.",
+  "serpmonCaptureRows": "Resultaten",
+  "serpmonCaptureWhen": "Opgenomen",
+  "serpmonCaptureLoose": "zonder project",
+  "serpmonCaptureCompare": "Vergelijk met de dichtstbijzijnde automatische snapshot",
+  "serpmonCaptureNoSnapshot": "Geen automatische snapshot van deze zoekopdracht om mee te vergelijken",
+  "serpmonCaptureDelete": "Verwijderen",
+  "serpmonCaptureDeleteConfirm": "Deze opname verwijderen?"
 }

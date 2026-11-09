@@ -95,6 +95,57 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .status.err { color: var(--color-accent-red); }
 .status.warn { color: var(--color-accent-orange); }
 
+/* wave-ext E0: panel + overlay blocks */
+.hint.ok { color: var(--color-accent-green); }
+.hint.warn { color: var(--color-accent-orange); }
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  margin: 6px 0;
+  cursor: pointer;
+}
+.toggle input { margin: 0; }
+
+.domains {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  max-height: 168px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  padding: 8px 10px;
+  margin-top: 4px;
+}
+.domain {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+
+select {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  outline: none;
+}
+
+.hidden { display: none !important; }
+
 .mono {
   font-family: ui-monospace, monospace;
   font-size: 13px;

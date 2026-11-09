@@ -262,9 +262,9 @@ export interface ExtMetaFitResponse { title: MetaFitResult | null; description: 
 | `POST /api/ext/cloak` | act | net (2 запроса к странице) | E5 | `CloakRequest` → `CloakResponse` |
 | `POST /api/ext/insights` | read | local | E2 | `InsightsRequest` → `InsightsResponse` |
 | `POST /api/ext/meta-fit` | act / spend | local / paid | E2 | `ExtMetaFitRequest` → `ExtMetaFitResponse` |
-| `GET /api/serpmon/captures?projectId=&keyword=&limit=` | read (сессия) | local | E5 | → `{ captures: CaptureListItem[] }` |
-| `GET /api/serpmon/captures/[id]?compare=nearest\|<snapshotId>` | read (сессия) | local | E5 | → `CaptureView` |
-| `DELETE /api/serpmon/captures/[id]` | write (сессия) | local | E5 | → `{ ok: true }` |
+| `GET /api/serp-monitor/captures?projectId=&keyword=&limit=` | read (сессия) | local | E5 | → `{ captures: CaptureListItem[] }` |
+| `GET /api/serp-monitor/captures/[id]?compare=nearest\|<snapshotId>` | read (сессия) | local | E5 | → `CaptureView` |
+| `DELETE /api/serp-monitor/captures/[id]` | write (сессия) | local | E5 | → `{ ok: true }` |
 
 Существующие `GET /api/ext/page`, `POST /api/ext/index-queue`, `POST /api/ext/outreach`,
 `/api/ext/token` не меняются.

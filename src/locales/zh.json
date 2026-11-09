@@ -5728,5 +5728,21 @@
   "blpCgGapFailed": "差距任务失败（API 不返还失败任务的名额）",
   "blpCgGapTitle": "链接差距",
   "blpCgGapFoundOn": "链接到的竞争对手",
-  "blsrcCgUpgrade": "差距分析需要 Crawlgraph 付费方案 — 免费密钥仅支持反链查询"
+  "blsrcCgUpgrade": "差距分析需要 Crawlgraph 付费方案 — 免费密钥仅支持反链查询",
+  "serpmonTabCaptures": "浏览器快照",
+  "serpmonCaptureSoon": "即将推出",
+  "serpmonCaptureTitle": "浏览器快照",
+  "serpmonCaptureNote": "从你的浏览器捕获：来自你的 IP 的个性化结果。不参与差异和风暴计算。",
+  "serpmonCaptureEmpty": "还没有快照。在扩展中启用叠加层并点击“保存这些结果”。",
+  "serpmonCaptureQuery": "查询",
+  "serpmonCaptureEngine": "Google 域名",
+  "serpmonCaptureRegion": "地区",
+  "serpmonCapturePage": "页",
+  "serpmonCaptureRows": "结果数",
+  "serpmonCaptureWhen": "捕获时间",
+  "serpmonCaptureLoose": "未关联项目",
+  "serpmonCaptureCompare": "与最近的自动快照比较",
+  "serpmonCaptureNoSnapshot": "没有该查询的自动快照可供比较",
+  "serpmonCaptureDelete": "删除",
+  "serpmonCaptureDeleteConfirm": "删除此快照？"
 }

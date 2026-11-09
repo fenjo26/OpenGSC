@@ -137,7 +137,7 @@ cd ~/Downloads/opengsc && git merge --ff-only feat/ext-eN
 | `extension/panel/tab-opengsc.js`, `src/app/api/ext/insights/route.ts`, `src/app/api/ext/meta-fit/route.ts`, `src/lib/ext/insights.ts`, `src/lib/ext/insights.test.ts` | E2 |
 | `extension/panel/tab-donor.js`, `extension/lib/donor.js`, `src/lib/ext/donor.test.ts` | E3 |
 | `extension/serp/overlay.js`, `extension/lib/serpParse.js`, `extension/bg/serp.js`, `src/lib/ext/serpParse.test.ts`, `src/lib/ext/__fixtures__/serp/**` | E4 |
-| `src/app/api/ext/hosts/**`, `src/app/api/ext/serp/**`, `src/app/api/ext/cloak/route.ts`, `src/lib/ext/hostIntel.ts`, `src/lib/ext/hostIntelPure.ts`, `src/lib/ext/serpCapture.ts`, `src/lib/ext/snippet.ts`, `src/lib/ext/{hostIntel,serpCapture,snippet}.test.ts`, `src/app/api/serpmon/captures/**`, `src/components/serpmon/CapturesTab.tsx`, `src/lib/mcp/toolsSerpCaptures.ts` | E5 |
+| `src/app/api/ext/hosts/**`, `src/app/api/ext/serp/**`, `src/app/api/ext/cloak/route.ts`, `src/lib/ext/hostIntel.ts`, `src/lib/ext/hostIntelPure.ts`, `src/lib/ext/serpCapture.ts`, `src/lib/ext/snippet.ts`, `src/lib/ext/{hostIntel,serpCapture,snippet}.test.ts`, `src/app/api/serp-monitor/captures/**`, `src/components/serpmon/CapturesTab.tsx`, `src/lib/mcp/toolsSerpCaptures.ts` | E5 |
 | `CHANGELOG.md`, `README*.md` (строки про расширение) | R |
 
 Заглушки всех файлов создаёт E0. После его коммита каждым файлом владеет задача из таблицы и

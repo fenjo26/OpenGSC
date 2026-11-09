@@ -7,7 +7,7 @@
 Владеешь: `src/app/api/ext/hosts/**`, `src/app/api/ext/serp/**`,
 `src/app/api/ext/cloak/route.ts`, `src/lib/ext/hostIntel.ts`, `src/lib/ext/hostIntelPure.ts`,
 `src/lib/ext/serpCapture.ts`, `src/lib/ext/snippet.ts`, тесты
-`src/lib/ext/{hostIntel,serpCapture,snippet}.test.ts`, `src/app/api/serpmon/captures/**`,
+`src/lib/ext/{hostIntel,serpCapture,snippet}.test.ts`, `src/app/api/serp-monitor/captures/**`,
 `src/components/serpmon/CapturesTab.tsx`, `src/lib/mcp/toolsSerpCaptures.ts`.
 
 Модули `serpmon/**`, `drops/**`, `footprint/**`, `seo/googlebot.ts` — только импортировать.
@@ -168,15 +168,15 @@ NFKC, пунктуация → пробел, схлопнуть), оставит
 ## 5. SERP Monitor — «Снимки из браузера»
 
 **API** (`workspaceUserId()` для GET, `workspaceUserId("write")` для DELETE):
-- `GET /api/serpmon/captures?projectId=&keyword=&limit=` → `{ captures }` (по `capturedAt`
+- `GET /api/serp-monitor/captures?projectId=&keyword=&limit=` → `{ captures }` (по `capturedAt`
   desc; `projectId` — снимки с этим проектом **плюс** «свободные» (`projectId null`) с
   совпадающими `country/lang` проекта — их помечаем `loose`);
-- `GET /api/serpmon/captures/[id]?compare=nearest|<snapshotId>` → `CaptureView`. `nearest` —
+- `GET /api/serp-monitor/captures/[id]?compare=nearest|<snapshotId>` → `CaptureView`. `nearest` —
   `SerpSnapshot` того же `keywordId` со статусом `ok|partial`, ближайший по `takenAt` (до или
   после). Сравнение — `diffKeyword(snapshotRows, captureRows, { depth, ignore })` из
   `serpmon/diff.ts`, где `depth` = последняя позиция снимка из браузера (обычно 10), `ignore` —
   `ignorePredicate` проекта. Это только просмотр: ничего не сохраняется.
-- `DELETE /api/serpmon/captures/[id]`.
+- `DELETE /api/serp-monitor/captures/[id]`.
 
 **`CapturesTab.tsx`**: таблица снимков (запрос, домен Google, регион, стр., строк, когда,
 фичи-пилюли, пометка «свободный»). Клик → панель снимка: позиции с хостом, title и сниппетом.

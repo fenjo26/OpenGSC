@@ -2,105 +2,926 @@
   "extDescription": {
     "message": "Сводка по странице, быстрый аудит и «Отправить в OpenGSC» для открытой вкладки."
   },
-
-  "optionsLink": { "message": "Настройки" },
-  "loading": { "message": "Читаем страницу…" },
-  "needConfigure": { "message": "Сначала укажите URL инстанса OpenGSC и токен." },
-  "openOptionsBtn": { "message": "Открыть настройки" },
-  "unsupportedPage": { "message": "Эту страницу нельзя проаудитить (внутренняя страница браузера или не-http)." },
-  "specialNote": { "message": "Это страница инструмента Google — OpenGSC её не парсит. Данные из него и так попадают в OpenGSC через API." },
-  "openApp": { "message": "Открыть этот URL в OpenGSC" },
-  "send": { "message": "Отправить в OpenGSC" },
-  "sendOwn": { "message": "В очередь проверки индекса" },
-  "sendForeign": { "message": "Сохранить как проспект Outreach" },
-  "sendWaiting": { "message": "Сводка ещё не ответила — попробуйте через мгновение." },
-  "sendKeywords": { "message": "Выделение → ключи" },
-  "downloadCsv": { "message": "Таблица → CSV" },
-  "downloadCsvStaged": { "message": "Скачать CSV выделенной таблицы" },
-  "csvSaved": { "message": "CSV скачан" },
-  "inOpengsc": { "message": "Эта страница в OpenGSC" },
-  "miniAudit": { "message": "Быстрый аудит (локально)" },
-
-  "notInPortfolio": { "message": "URL не принадлежит ни одному сайту портфеля." },
-  "noMetrics": { "message": "Ни клика, ни показа за последние {n} дней." },
-  "openInApp": { "message": "Открыть в OpenGSC →" },
-  "metricClicks": { "message": "клики" },
-  "metricImpressions": { "message": "показы" },
-  "metricPosition": { "message": "ср. позиция" },
-  "posShort": { "message": "поз." },
-  "localPackShort": { "message": "карта " },
-  "indexStatus": { "message": "Статус индекса" },
-  "indexIndexed": { "message": "В индексе" },
-  "indexNotIndexed": { "message": "Не в индексе" },
-  "indexUnknown": { "message": "Индекс: неизвестно" },
-  "indexUnknownTitle": { "message": "Не проверялся или Google вернул состояние, которое эта версия не распознаёт" },
-  "serverAudit": { "message": "Последний аудит сайта" },
-  "yourSite": { "message": "ваш сайт" },
-  "auditPill": { "message": "Аудит: $1 ошиб. · $2 предупр." },
-  "auditUnavailable": { "message": "Быстрый аудит на этой странице не запустился." },
-  "auditAllOk": { "message": "Проблем не найдено" },
-  "notMigrated": { "message": "Серверу нужен `npx prisma db push` — скажите владельцу инстанса." },
-
-  "audit_title_missing": { "message": "Нет <title>" },
-  "audit_title_short": { "message": "Title короче 50", "description": "в detail — текущая длина" },
-  "audit_title_long": { "message": "Title длиннее 65" },
-  "audit_description_missing": { "message": "Нет meta description" },
-  "audit_description_short": { "message": "Description короче 150" },
-  "audit_description_long": { "message": "Description длиннее 165" },
-  "audit_h1_missing": { "message": "Нет H1" },
-  "audit_h1_multiple": { "message": "Больше одного H1" },
-  "audit_canonical_missing": { "message": "Нет canonical" },
-  "audit_robots_noindex": { "message": "Страница в noindex" },
-  "audit_jsonld_missing": { "message": "Нет JSON-LD разметки" },
-  "audit_jsonld_invalid": { "message": "Битый JSON-LD блок" },
-  "audit_og_missing": { "message": "Нет Open Graph тегов" },
-  "audit_og_incomplete": { "message": "Open Graph неполный (og:title / og:image)" },
-  "audit_images_no_alt": { "message": "Картинки без alt" },
-
-  "factWords": { "message": "Слов" },
-  "factLinks": { "message": "Ссылки (внутр./внешн.)" },
-  "factHreflang": { "message": "hreflang" },
-  "factJsonLd": { "message": "JSON-LD целых/битых" },
-
-  "sentQueued": { "message": "В очереди — проверка индекса пройдёт ближайшим тиком." },
-  "sentProspect": { "message": "Сохранено в Outreach как новый проспект." },
-  "sentProspectExisting": { "message": "Уже есть в Outreach — вернулся существующий проспект." },
-  "sendFailed": { "message": "Не получилось" },
-  "sendReason_not_in_portfolio": { "message": "Этот URL — не страница портфеля." },
-  "sendReason_auto_check_off": { "message": "Автопроверка индекса для сайта выключена — включите во вкладке Indexing." },
-  "sendReason_not_in_inventory": { "message": "Этого URL нет в инвентаре sitemap." },
-  "sendReason_own_site": { "message": "Это ваш сайт — он идёт в очередь индекса, а не в Outreach." },
-  "errAuth": { "message": "Токен отклонён (401). Создайте или перевыпустите его в Настройки → Браузерное расширение." },
-  "errOrigin": { "message": "ID этого расширения не разрешён (403). Добавьте его в Настройки → Браузерное расширение → Разрешённые ID." },
-  "errNetwork": { "message": "Нет ответа от {url} — проверьте URL инстанса в настройках." },
-
-  "menuSendPage": { "message": "Отправить в OpenGSC" },
-  "menuSelection": { "message": "OpenGSC: выделенное — как ключ" },
-  "menuTableCsv": { "message": "OpenGSC: таблица из выделения → CSV" },
-
-  "optionsIntro": { "message": "Подключите расширение к своему инстансу OpenGSC." },
-  "optionsConnection": { "message": "Подключение" },
-  "optionsInstanceUrl": { "message": "URL инстанса" },
-  "optionsToken": { "message": "Токен расширения (Настройки → Браузерное расширение)" },
-  "optionsReveal": { "message": "Показать" },
-  "optionsSave": { "message": "Сохранить" },
-  "optionsTest": { "message": "Проверить связь" },
-  "optionsTestHint": { "message": "Проверка открывает один бесплатный запрос: она доказывает сразу URL, токен и разрешённый ID расширения." },
-  "optionsCORS": { "message": "ID расширения для белого списка" },
-  "optionsCorsHint": { "message": "Скопируйте этот ID в OpenGSC → Настройки → Браузерное расширение → Разрешённые ID расширения. Без него запросы получают 403." },
-  "optionsCopy": { "message": "Копировать" },
-  "optionsPrivacy": { "message": "Что расширение отправляет" },
-  "optionsPrivacyText": { "message": "Только то, что вы нажали: URL страницы для сводки и для «Отправить в OpenGSC», и токен. Быстрый аудит считается внутри браузера и наружу не уходит." },
-  "optionsErrUrl": { "message": "Введите URL инстанса (https://…)." },
-  "optionsErrToken": { "message": "Токен начинается с ogscext_ — скопируйте его из Настройки → Браузерное расширение." },
-  "optionsSaved": { "message": "Сохранено (host-разрешение выдано)" },
-  "optionsSavedNoHost": { "message": "Сохранено (host-разрешение отклонено — запросы идут через CORS сервера)" },
-  "optionsTesting": { "message": "Проверяем…" },
-  "optionsErrFillFirst": { "message": "Сначала сохраните URL и токен." },
-  "optionsTestOk": { "message": "ОК — связь, токен и белый список работают." },
-  "optionsTest401": { "message": "401: токена нет, отозван или неверен." },
-  "optionsTest403": { "message": "403: этого ID расширения нет в белом списке." },
-  "optionsTestNetwork": { "message": "Нет ответа — неверный URL или сервер не работает." },
-  "optionsTestFail": { "message": "Не получилось" },
-  "optionsCopied": { "message": "Скопировано" }
+  "optionsLink": {
+    "message": "Настройки"
+  },
+  "loading": {
+    "message": "Читаем страницу…"
+  },
+  "needConfigure": {
+    "message": "Сначала укажите URL инстанса OpenGSC и токен."
+  },
+  "openOptionsBtn": {
+    "message": "Открыть настройки"
+  },
+  "unsupportedPage": {
+    "message": "Эту страницу нельзя проаудитить (внутренняя страница браузера или не-http)."
+  },
+  "specialNote": {
+    "message": "Это страница инструмента Google — OpenGSC её не парсит. Данные из него и так попадают в OpenGSC через API."
+  },
+  "openApp": {
+    "message": "Открыть этот URL в OpenGSC"
+  },
+  "send": {
+    "message": "Отправить в OpenGSC"
+  },
+  "sendOwn": {
+    "message": "В очередь проверки индекса"
+  },
+  "sendForeign": {
+    "message": "Сохранить как проспект Outreach"
+  },
+  "sendWaiting": {
+    "message": "Сводка ещё не ответила — попробуйте через мгновение."
+  },
+  "sendKeywords": {
+    "message": "Выделение → ключи"
+  },
+  "downloadCsv": {
+    "message": "Таблица → CSV"
+  },
+  "downloadCsvStaged": {
+    "message": "Скачать CSV выделенной таблицы"
+  },
+  "csvSaved": {
+    "message": "CSV скачан"
+  },
+  "inOpengsc": {
+    "message": "Эта страница в OpenGSC"
+  },
+  "miniAudit": {
+    "message": "Быстрый аудит (локально)"
+  },
+  "notInPortfolio": {
+    "message": "URL не принадлежит ни одному сайту портфеля."
+  },
+  "noMetrics": {
+    "message": "Ни клика, ни показа за последние {n} дней."
+  },
+  "openInApp": {
+    "message": "Открыть в OpenGSC →"
+  },
+  "metricClicks": {
+    "message": "клики"
+  },
+  "metricImpressions": {
+    "message": "показы"
+  },
+  "metricPosition": {
+    "message": "ср. позиция"
+  },
+  "posShort": {
+    "message": "поз."
+  },
+  "localPackShort": {
+    "message": "карта "
+  },
+  "indexStatus": {
+    "message": "Статус индекса"
+  },
+  "indexIndexed": {
+    "message": "В индексе"
+  },
+  "indexNotIndexed": {
+    "message": "Не в индексе"
+  },
+  "indexUnknown": {
+    "message": "Индекс: неизвестно"
+  },
+  "indexUnknownTitle": {
+    "message": "Не проверялся или Google вернул состояние, которое эта версия не распознаёт"
+  },
+  "serverAudit": {
+    "message": "Последний аудит сайта"
+  },
+  "yourSite": {
+    "message": "ваш сайт"
+  },
+  "auditPill": {
+    "message": "Аудит: $1 ошиб. · $2 предупр."
+  },
+  "auditUnavailable": {
+    "message": "Быстрый аудит на этой странице не запустился."
+  },
+  "auditAllOk": {
+    "message": "Проблем не найдено"
+  },
+  "notMigrated": {
+    "message": "Серверу нужен `npx prisma db push` — скажите владельцу инстанса."
+  },
+  "audit_title_missing": {
+    "message": "Нет <title>"
+  },
+  "audit_title_short": {
+    "message": "Title короче 50",
+    "description": "в detail — текущая длина"
+  },
+  "audit_title_long": {
+    "message": "Title длиннее 65"
+  },
+  "audit_description_missing": {
+    "message": "Нет meta description"
+  },
+  "audit_description_short": {
+    "message": "Description короче 150"
+  },
+  "audit_description_long": {
+    "message": "Description длиннее 165"
+  },
+  "audit_h1_missing": {
+    "message": "Нет H1"
+  },
+  "audit_h1_multiple": {
+    "message": "Больше одного H1"
+  },
+  "audit_canonical_missing": {
+    "message": "Нет canonical"
+  },
+  "audit_robots_noindex": {
+    "message": "Страница в noindex"
+  },
+  "audit_jsonld_missing": {
+    "message": "Нет JSON-LD разметки"
+  },
+  "audit_jsonld_invalid": {
+    "message": "Битый JSON-LD блок"
+  },
+  "audit_og_missing": {
+    "message": "Нет Open Graph тегов"
+  },
+  "audit_og_incomplete": {
+    "message": "Open Graph неполный (og:title / og:image)"
+  },
+  "audit_images_no_alt": {
+    "message": "Картинки без alt"
+  },
+  "factWords": {
+    "message": "Слов"
+  },
+  "factLinks": {
+    "message": "Ссылки (внутр./внешн.)"
+  },
+  "factHreflang": {
+    "message": "hreflang"
+  },
+  "factJsonLd": {
+    "message": "JSON-LD целых/битых"
+  },
+  "sentQueued": {
+    "message": "В очереди — проверка индекса пройдёт ближайшим тиком."
+  },
+  "sentProspect": {
+    "message": "Сохранено в Outreach как новый проспект."
+  },
+  "sentProspectExisting": {
+    "message": "Уже есть в Outreach — вернулся существующий проспект."
+  },
+  "sendFailed": {
+    "message": "Не получилось"
+  },
+  "sendReason_not_in_portfolio": {
+    "message": "Этот URL — не страница портфеля."
+  },
+  "sendReason_auto_check_off": {
+    "message": "Автопроверка индекса для сайта выключена — включите во вкладке Indexing."
+  },
+  "sendReason_not_in_inventory": {
+    "message": "Этого URL нет в инвентаре sitemap."
+  },
+  "sendReason_own_site": {
+    "message": "Это ваш сайт — он идёт в очередь индекса, а не в Outreach."
+  },
+  "errAuth": {
+    "message": "Токен отклонён (401). Создайте или перевыпустите его в Настройки → Браузерное расширение."
+  },
+  "errOrigin": {
+    "message": "ID этого расширения не разрешён (403). Добавьте его в Настройки → Браузерное расширение → Разрешённые ID."
+  },
+  "errNetwork": {
+    "message": "Нет ответа от {url} — проверьте URL инстанса в настройках."
+  },
+  "menuSendPage": {
+    "message": "Отправить в OpenGSC"
+  },
+  "menuSelection": {
+    "message": "OpenGSC: выделенное — как ключ"
+  },
+  "menuTableCsv": {
+    "message": "OpenGSC: таблица из выделения → CSV"
+  },
+  "optionsIntro": {
+    "message": "Подключите расширение к своему инстансу OpenGSC."
+  },
+  "optionsConnection": {
+    "message": "Подключение"
+  },
+  "optionsInstanceUrl": {
+    "message": "URL инстанса"
+  },
+  "optionsToken": {
+    "message": "Токен расширения (Настройки → Браузерное расширение)"
+  },
+  "optionsReveal": {
+    "message": "Показать"
+  },
+  "optionsSave": {
+    "message": "Сохранить"
+  },
+  "optionsTest": {
+    "message": "Проверить связь"
+  },
+  "optionsTestHint": {
+    "message": "Проверка открывает один бесплатный запрос: она доказывает сразу URL, токен и разрешённый ID расширения."
+  },
+  "optionsCORS": {
+    "message": "ID расширения для белого списка"
+  },
+  "optionsCorsHint": {
+    "message": "Скопируйте этот ID в OpenGSC → Настройки → Браузерное расширение → Разрешённые ID расширения. Без него запросы получают 403."
+  },
+  "optionsCopy": {
+    "message": "Копировать"
+  },
+  "optionsPrivacy": {
+    "message": "Что расширение отправляет"
+  },
+  "optionsPrivacyText": {
+    "message": "Только то, что вы нажали: URL страницы для сводки и для «Отправить в OpenGSC», и токен. Быстрый аудит считается внутри браузера и наружу не уходит."
+  },
+  "optionsErrUrl": {
+    "message": "Введите URL инстанса (https://…)."
+  },
+  "optionsErrToken": {
+    "message": "Токен начинается с ogscext_ — скопируйте его из Настройки → Браузерное расширение."
+  },
+  "optionsSaved": {
+    "message": "Сохранено (host-разрешение выдано)"
+  },
+  "optionsSavedNoHost": {
+    "message": "Сохранено (host-разрешение отклонено — запросы идут через CORS сервера)"
+  },
+  "optionsTesting": {
+    "message": "Проверяем…"
+  },
+  "optionsErrFillFirst": {
+    "message": "Сначала сохраните URL и токен."
+  },
+  "optionsTestOk": {
+    "message": "ОК — связь, токен и белый список работают."
+  },
+  "optionsTest401": {
+    "message": "401: токена нет, отозван или неверен."
+  },
+  "optionsTest403": {
+    "message": "403: этого ID расширения нет в белом списке."
+  },
+  "optionsTestNetwork": {
+    "message": "Нет ответа — неверный URL или сервер не работает."
+  },
+  "optionsTestFail": {
+    "message": "Не получилось"
+  },
+  "optionsCopied": {
+    "message": "Скопировано"
+  },
+  "optPanelSection": {
+    "message": "Боковая панель"
+  },
+  "optPanelAllSites": {
+    "message": "Анализировать любую страницу без клика по иконке"
+  },
+  "optPermissionGranted": {
+    "message": "Разрешение выдано"
+  },
+  "optPermissionMissing": {
+    "message": "Разрешение не выдано"
+  },
+  "optSerpSection": {
+    "message": "Оверлей выдачи Google"
+  },
+  "optSerpEnable": {
+    "message": "Показывать данные OpenGSC в выдаче Google"
+  },
+  "optSerpDomains": {
+    "message": "Домены Google"
+  },
+  "optSerpDomainsSearch": {
+    "message": "Найти домен…"
+  },
+  "optSerpCompact": {
+    "message": "Компактный режим (одна строка на результат)"
+  },
+  "optDefaultSite": {
+    "message": "ID сайта для «В Rank Tracker»"
+  },
+  "optDefaultProject": {
+    "message": "ID проекта SERP Monitor"
+  },
+  "optIdHint": {
+    "message": "ID видно в адресной строке OpenGSC: /site/<id>, /serp-monitor/<id>"
+  },
+  "optSaved": {
+    "message": "Сохранено"
+  },
+  "panelSoon": {
+    "message": "Скоро"
+  },
+  "panelRefresh": {
+    "message": "Обновить"
+  },
+  "panelUpdating": {
+    "message": "Обновляется…"
+  },
+  "panelRestricted": {
+    "message": "Эту страницу проанализировать нельзя (служебная страница браузера или магазина)."
+  },
+  "panelNoPermission": {
+    "message": "Пока нет доступа к этой странице."
+  },
+  "panelClickIcon": {
+    "message": "Нажмите на иконку OpenGSC, чтобы проанализировать страницу"
+  },
+  "panelAllowAll": {
+    "message": "Разрешить для всех сайтов"
+  },
+  "panelInjectFailed": {
+    "message": "Не удалось прочитать страницу: $1"
+  },
+  "panelConnectHint": {
+    "message": "Подключите OpenGSC в настройках, чтобы видеть здесь свои данные"
+  },
+  "panelOpen": {
+    "message": "Открыть боковую панель"
+  },
+  "panelHighlight": {
+    "message": "Подсветить"
+  },
+  "panelExport": {
+    "message": "Экспорт"
+  },
+  "panelTruncated": {
+    "message": "Показаны первые $1"
+  },
+  "panelScore": {
+    "message": "Оценка страницы"
+  },
+  "panelScoreFormula": {
+    "message": "100 − 10 за ошибку − 4 за предупреждение − 1 за замечание"
+  },
+  "tabPage": {
+    "message": "Страница"
+  },
+  "pageOverview": {
+    "message": "Обзор"
+  },
+  "pageHeadings": {
+    "message": "Заголовки"
+  },
+  "pageLinks": {
+    "message": "Ссылки"
+  },
+  "pageImages": {
+    "message": "Картинки"
+  },
+  "pageSchema": {
+    "message": "Schema"
+  },
+  "pageSocial": {
+    "message": "Соцсети"
+  },
+  "pageRobots": {
+    "message": "robots и sitemap"
+  },
+  "pageSpeed": {
+    "message": "Скорость"
+  },
+  "pageLenOk": {
+    "message": "Норма"
+  },
+  "pageLenShort": {
+    "message": "Коротко"
+  },
+  "pageLenLong": {
+    "message": "Длинно"
+  },
+  "pageCanonicalOther": {
+    "message": "Canonical ведёт на другой URL"
+  },
+  "pageGroupMeta": {
+    "message": "Мета"
+  },
+  "pageGroupContent": {
+    "message": "Контент"
+  },
+  "pageGroupTechnical": {
+    "message": "Техника"
+  },
+  "pageGroupPerformance": {
+    "message": "Скорость"
+  },
+  "pageGroupAccessibility": {
+    "message": "Доступность"
+  },
+  "pageHidden": {
+    "message": "скрыт"
+  },
+  "pageSkip": {
+    "message": "пропущен уровень"
+  },
+  "pageLinksInternal": {
+    "message": "Внутренние"
+  },
+  "pageLinksExternal": {
+    "message": "Внешние"
+  },
+  "pageLinksUnique": {
+    "message": "Уникальные"
+  },
+  "pageAreaContent": {
+    "message": "в тексте"
+  },
+  "pageAreaNav": {
+    "message": "меню"
+  },
+  "pageAreaHeader": {
+    "message": "шапка"
+  },
+  "pageAreaFooter": {
+    "message": "подвал"
+  },
+  "pageAreaAside": {
+    "message": "сайдбар"
+  },
+  "pageAreaTop": {
+    "message": "вверху body"
+  },
+  "pageAreaOther": {
+    "message": "другое"
+  },
+  "pageNoAlt": {
+    "message": "Без alt"
+  },
+  "pageEmptyAlt": {
+    "message": "Пустой alt"
+  },
+  "pageNoDims": {
+    "message": "Без размеров"
+  },
+  "pageRichTest": {
+    "message": "Проверка расширенных результатов"
+  },
+  "pageRobotsBlocked": {
+    "message": "Закрыт для Googlebot правилом: $1"
+  },
+  "pageRobotsAllowed": {
+    "message": "Открыт для Googlebot"
+  },
+  "pageRobotsMissing": {
+    "message": "robots.txt нет"
+  },
+  "pageSitemapFind": {
+    "message": "Найти этот URL в sitemap"
+  },
+  "pageSitemapFound": {
+    "message": "Найден в $1"
+  },
+  "pageSitemapNotFound": {
+    "message": "Не найден в $1 файлах"
+  },
+  "pageLabNote": {
+    "message": "Измерено в вашем браузере — лабораторные данные, не CrUX"
+  },
+  "pageInpNote": {
+    "message": "Нужно взаимодействие — не измеряется"
+  },
+  "pagePsi": {
+    "message": "PageSpeed Insights"
+  },
+  "exportLinks": {
+    "message": "Ссылки (CSV)"
+  },
+  "exportImages": {
+    "message": "Картинки (CSV)"
+  },
+  "exportHeadings": {
+    "message": "Заголовки (CSV)"
+  },
+  "exportJson": {
+    "message": "Всё (JSON)"
+  },
+  "hlImagesNoAlt": {
+    "message": "Картинки без alt"
+  },
+  "hlH1": {
+    "message": "Заголовки H1"
+  },
+  "hlNofollow": {
+    "message": "nofollow-ссылки"
+  },
+  "hlExternal": {
+    "message": "Внешние ссылки"
+  },
+  "hlEmptyLinks": {
+    "message": "Ссылки без текста"
+  },
+  "audit_heading_skip": {
+    "message": "Пропущен уровень заголовка"
+  },
+  "audit_heading_empty": {
+    "message": "Пустой заголовок"
+  },
+  "audit_images_no_dims": {
+    "message": "Картинки без width/height"
+  },
+  "audit_html_lang_missing": {
+    "message": "Нет <html lang>"
+  },
+  "audit_viewport_missing": {
+    "message": "Нет meta viewport"
+  },
+  "audit_link_empty_text": {
+    "message": "Ссылки без текста"
+  },
+  "audit_canonical_other": {
+    "message": "Canonical ведёт на другой URL"
+  },
+  "audit_mixed_content": {
+    "message": "HTTP-ресурсы на HTTPS-странице"
+  },
+  "audit_lcp_poor": {
+    "message": "Медленный LCP"
+  },
+  "audit_cls_poor": {
+    "message": "Высокий CLS"
+  },
+  "tabOpengsc": {
+    "message": "OpenGSC"
+  },
+  "ogOpenInApp": {
+    "message": "Открыть в OpenGSC"
+  },
+  "ogGsc28": {
+    "message": "Google Search Console, 28 дней"
+  },
+  "ogMainQuery": {
+    "message": "Главный запрос"
+  },
+  "ogMatchOk": {
+    "message": "Title/H1 содержат главный запрос"
+  },
+  "ogMatchBad": {
+    "message": "Ни title, ни H1 не содержат главный запрос"
+  },
+  "ogNoMainQuery": {
+    "message": "За 28 дней по этому URL нет запросов"
+  },
+  "ogInSitemap": {
+    "message": "В sitemap"
+  },
+  "ogSitemapYes": {
+    "message": "да"
+  },
+  "ogSitemapNo": {
+    "message": "нет"
+  },
+  "ogSitemapUnknown": {
+    "message": "sitemap не загружен в OpenGSC"
+  },
+  "ogCheckIndex": {
+    "message": "Проверить индексацию"
+  },
+  "ogMeta": {
+    "message": "Мета-теги"
+  },
+  "ogSuggestion": {
+    "message": "Предложение ($1 симв.)"
+  },
+  "ogCopy": {
+    "message": "Копировать"
+  },
+  "ogCopied": {
+    "message": "Скопировано"
+  },
+  "ogFitAi": {
+    "message": "Подобрать с ИИ"
+  },
+  "ogFitAiConfirm": {
+    "message": "До 2 запросов к вашей модели ИИ. Продолжить?"
+  },
+  "ogNoSpendRight": {
+    "message": "У вашей роли нет права тратить кредиты"
+  },
+  "ogNoMainQueryFit": {
+    "message": "Без главного запроса подгонять нельзя"
+  },
+  "ogFootprint": {
+    "message": "Футпринт по сетке"
+  },
+  "ogFootprintClean": {
+    "message": "Шаблон title/description/H1 не повторяется на других сайтах сетки"
+  },
+  "ogFootprintKindTitle": {
+    "message": "Шаблон title"
+  },
+  "ogFootprintKindDescription": {
+    "message": "Шаблон description"
+  },
+  "ogFootprintKindH1": {
+    "message": "Шаблон H1"
+  },
+  "ogFootprintAll": {
+    "message": "Все шаблоны сетки"
+  },
+  "ogSimilarity": {
+    "message": "сходство $1%"
+  },
+  "ogRanks": {
+    "message": "Rank Tracker"
+  },
+  "ogServerAudit": {
+    "message": "Последний аудит сайта"
+  },
+  "tabDonor": {
+    "message": "Донор"
+  },
+  "donorLinksToUs": {
+    "message": "Ссылается на ваши сайты"
+  },
+  "donorLinksToUsRow": {
+    "message": "$1: ссылок $2, живых $3"
+  },
+  "donorNotInDb": {
+    "message": "пока нет в базе OpenGSC"
+  },
+  "donorDr": {
+    "message": "DR"
+  },
+  "donorAge": {
+    "message": "Возраст"
+  },
+  "donorAgeValue": {
+    "message": "$1 г. $2 мес."
+  },
+  "donorRefdomains": {
+    "message": "Рефдомены"
+  },
+  "donorInOutreach": {
+    "message": "В Outreach: $1"
+  },
+  "donorInDrops": {
+    "message": "В дропах: $1"
+  },
+  "donorWatched": {
+    "message": "под наблюдением"
+  },
+  "donorAsset": {
+    "message": "Купленный дроп"
+  },
+  "donorOwnPbn": {
+    "message": "Ваш сайт PBN"
+  },
+  "donorToOutreach": {
+    "message": "В Outreach"
+  },
+  "donorWatchDrop": {
+    "message": "Следить как дроп"
+  },
+  "donorEnrich": {
+    "message": "Узнать возраст и DR (бесплатно, публичные источники)"
+  },
+  "donorSignals": {
+    "message": "Сигналы"
+  },
+  "donorVerdictRestored": {
+    "message": "Похоже на восстановленный дроп"
+  },
+  "donorVerdictSuspicious": {
+    "message": "Выглядит подозрительно"
+  },
+  "donorVerdictClean": {
+    "message": "Признаков не найдено"
+  },
+  "donorVerdictUnknown": {
+    "message": "Проверить не удалось"
+  },
+  "donorSig_wayforge_marker": {
+    "message": "Найдена разметка WayForge"
+  },
+  "donorSig_wayback_toolbar": {
+    "message": "Остатки Wayback Machine"
+  },
+  "donorSig_archive_refs": {
+    "message": "Ссылки на web.archive.org"
+  },
+  "donorSig_link_above_content": {
+    "message": "Внешняя ссылка выше всего текста"
+  },
+  "donorSig_many_outbound_hosts": {
+    "message": "Много внешних хостов в тексте"
+  },
+  "donorSig_sitewide_footer_links": {
+    "message": "Сквозные ссылки в подвале"
+  },
+  "donorSig_generator_restore_tool": {
+    "message": "Сделан инструментом восстановления сайтов"
+  },
+  "donorOutbound": {
+    "message": "Исходящие ссылки"
+  },
+  "donorOutboundSummary": {
+    "message": "$1 ссылок на $2 хостов, dofollow $3"
+  },
+  "donorAlreadyLinks": {
+    "message": "Уже ссылается на $1"
+  },
+  "donorFilterDofollow": {
+    "message": "dofollow"
+  },
+  "donorFilterContent": {
+    "message": "в тексте"
+  },
+  "donorFilterMine": {
+    "message": "только мои сайты"
+  },
+  "donorHighlightTop": {
+    "message": "Подсветить ссылки над контентом"
+  },
+  "serpYourSite": {
+    "message": "Ваш сайт: $1"
+  },
+  "serpYourUrlStats": {
+    "message": "ваш URL: клики $1, показы $2, поз. $3 (GSC, 28 дн.)"
+  },
+  "serpOtherUrlRanks": {
+    "message": "По этому запросу у вас ранжируется другой URL: $1"
+  },
+  "serpDrUnknown": {
+    "message": "Нет в базе. Узнать бесплатно — в шапке"
+  },
+  "serpAgeYears": {
+    "message": "$1 г."
+  },
+  "serpAgeMonths": {
+    "message": "$1 мес."
+  },
+  "serpMonitorChip": {
+    "message": "SERP Monitor: $1 запр., топ-10: $2, с $3"
+  },
+  "serpTag_new": {
+    "message": "новый"
+  },
+  "serpTag_young": {
+    "message": "молодой"
+  },
+  "serpTag_rising": {
+    "message": "растёт"
+  },
+  "serpTag_falling": {
+    "message": "падает"
+  },
+  "serpTag_bounced": {
+    "message": "отскок"
+  },
+  "serpTag_platform": {
+    "message": "платформа"
+  },
+  "serpTag_own": {
+    "message": "ваш"
+  },
+  "serpLinksToYou": {
+    "message": "ссылается на вас: $1"
+  },
+  "serpOutreachStage": {
+    "message": "Outreach: $1"
+  },
+  "serpDropWatched": {
+    "message": "Дроп: под наблюдением"
+  },
+  "serpDropStage": {
+    "message": "Дроп: $1"
+  },
+  "serpPbn": {
+    "message": "PBN"
+  },
+  "serpMenuOutreach": {
+    "message": "В Outreach"
+  },
+  "serpMenuWatch": {
+    "message": "Следить как дроп"
+  },
+  "serpMenuCloak": {
+    "message": "Проверить клоакинг"
+  },
+  "serpMenuOpenDomain": {
+    "message": "Открыть домен в SERP Monitor"
+  },
+  "serpCloakSame": {
+    "message": "Одинаково для Googlebot и браузера"
+  },
+  "serpCloakDiffers": {
+    "message": "Googlebot и браузер видят разное"
+  },
+  "serpCloakBlocked": {
+    "message": "Сайт блокирует бота"
+  },
+  "serpCloakError": {
+    "message": "Проверка не удалась"
+  },
+  "serpCloakSnippet": {
+    "message": "Сниппет найден — у Googlebot: $1, у браузера: $2"
+  },
+  "serpYes": {
+    "message": "да"
+  },
+  "serpNo": {
+    "message": "нет"
+  },
+  "serpWaitMinute": {
+    "message": "Слишком много проверок — подождите минуту"
+  },
+  "serpRegionUnknown": {
+    "message": "регион не определён"
+  },
+  "serpYourPositions": {
+    "message": "Ваши позиции"
+  },
+  "serpTracked": {
+    "message": "Rank Tracker: поз. $1 ($2)"
+  },
+  "serpMonitored": {
+    "message": "Отслеживается в проекте SERP Monitor $1"
+  },
+  "serpStorm": {
+    "message": "шторм в последнем прогоне"
+  },
+  "serpNoStorm": {
+    "message": "последний прогон без шторма"
+  },
+  "serpQueryMetrics": {
+    "message": "объём $1 · KD $2 · данные от $3"
+  },
+  "serpToRank": {
+    "message": "В Rank Tracker"
+  },
+  "serpToMonitor": {
+    "message": "В SERP Monitor"
+  },
+  "serpCapture": {
+    "message": "Сохранить выдачу"
+  },
+  "serpCaptured": {
+    "message": "Сохранено · открыть"
+  },
+  "serpEnrich": {
+    "message": "Узнать возраст и DR для $1 хостов (бесплатно)"
+  },
+  "serpPickSite": {
+    "message": "Выберите сайт"
+  },
+  "serpPickProject": {
+    "message": "Выберите проект"
+  },
+  "serpAdded": {
+    "message": "Добавлено"
+  },
+  "serpAlready": {
+    "message": "Уже есть"
+  },
+  "serpNotConfigured": {
+    "message": "OpenGSC: подключите расширение в настройках"
+  },
+  "serpCollapse": {
+    "message": "Свернуть"
+  },
+  "serpExpand": {
+    "message": "OpenGSC"
+  },
+  "err_invalid_url": {
+    "message": "Неверный URL"
+  },
+  "err_too_many_hosts": {
+    "message": "Слишком много хостов"
+  },
+  "err_private_host": {
+    "message": "Частный адрес — не проверяется"
+  },
+  "err_confirm_required": {
+    "message": "Нужно подтверждение"
+  },
+  "err_project_not_found": {
+    "message": "Проект SERP Monitor не найден"
+  },
+  "err_site_not_found": {
+    "message": "Сайт не найден"
+  },
+  "err_rate_limited": {
+    "message": "Слишком много запросов — подождите минуту"
+  },
+  "err_forbidden": {
+    "message": "Ваша роль этого не позволяет"
+  },
+  "err_not_migrated": {
+    "message": "Выполните на сервере `npx prisma db push`"
+  }
 }

@@ -5728,5 +5728,21 @@
   "blpCgGapFailed": "Gap-джоба не удалась (API не возвращает списанное)",
   "blpCgGapTitle": "Разрыв по ссылкам",
   "blpCgGapFoundOn": "Ссылается на конкурентов",
-  "blsrcCgUpgrade": "Gap-анализ требует платный тариф Crawlgraph — бесплатный ключ покрывает только запросы ссылок"
+  "blsrcCgUpgrade": "Gap-анализ требует платный тариф Crawlgraph — бесплатный ключ покрывает только запросы ссылок",
+  "serpmonTabCaptures": "Снимки из браузера",
+  "serpmonCaptureSoon": "Скоро",
+  "serpmonCaptureTitle": "Снимки из браузера",
+  "serpmonCaptureNote": "Снято из вашего браузера: персонализированная выдача с вашего IP. В диффы и штормы не входит.",
+  "serpmonCaptureEmpty": "Снимков пока нет. Включите оверлей в расширении и нажмите «Сохранить выдачу».",
+  "serpmonCaptureQuery": "Запрос",
+  "serpmonCaptureEngine": "Домен Google",
+  "serpmonCaptureRegion": "Регион",
+  "serpmonCapturePage": "Стр.",
+  "serpmonCaptureRows": "Результатов",
+  "serpmonCaptureWhen": "Снято",
+  "serpmonCaptureLoose": "без проекта",
+  "serpmonCaptureCompare": "Сравнить с ближайшим автоматическим снимком",
+  "serpmonCaptureNoSnapshot": "Нет автоматического снимка этого запроса для сравнения",
+  "serpmonCaptureDelete": "Удалить",
+  "serpmonCaptureDeleteConfirm": "Удалить снимок?"
 }
