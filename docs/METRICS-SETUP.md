@@ -51,10 +51,12 @@ Two details worth knowing:
 **Settings → SEO Metrics.** Everything for these providers is on that one screen — key,
 host, cap and usage. Nothing about Ahrefs, Semrush or Majestic is configured anywhere else.
 
-1. **Data provider** — Ahrefs, Semrush or Majestic. Ahrefs and Semrush cover keywords and
-   links; **Majestic covers links only** — Trust Flow, Citation Flow, referring domains and
-   backlink counts, at a fraction of Ahrefs' link-pull price. With Majestic active the keyword
-   tools keep running on your Ahrefs or Semrush key automatically.
+1. **Data provider** — Ahrefs, Semrush, Majestic, Keys.so, DataForSEO or Crawlgraph. Ahrefs
+   and Semrush cover keywords and links; **Majestic covers links only** — Trust Flow, Citation
+   Flow, referring domains and backlink counts, at a fraction of Ahrefs' link-pull price. With
+   Majestic active the keyword tools keep running on your Ahrefs or Semrush key automatically.
+   **Crawlgraph covers links only too**, domain-level and flat-priced: one API call = one unit
+   (quarterly Common Crawl snapshots; its `cg_authority` is its own percentile, not DR).
 2. **Where your key comes from** — this is the question that decides the host, so you answer it
    in those words rather than typing a URL:
    - **Official API** — you have your own Ahrefs/Semrush/Majestic subscription with API access.
@@ -166,6 +168,7 @@ Every button shows its price before you press it. Rough figures at group-buy rat
 | Domain metrics, one domain (Ahrefs / Majestic) | 100 / 1 | $0.01 / $0.000002 |
 | Backlink profile, 100 referring domains (Ahrefs / Majestic) | 550 / 1 101 | $0.055 / $0.0022 |
 | Competitor keywords, 200 rows | 2 600 | $0.26 |
+| Crawlgraph: profile pull / changes diff / gap job (1 call each) | 1 | $0.019 |
 
 (Ahrefs rates were $0.000025/unit until the reseller raised them in September 2026 — fourfold,
 which is why Majestic earns its place: the same referring-domain pull now costs roughly 25×

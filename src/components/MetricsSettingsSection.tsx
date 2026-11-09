@@ -110,6 +110,7 @@ const OFFICIAL_DOCS: Record<MetricsProvider, string> = {
   majestic: "https://developer-support.majestic.com/api/",
   keysso: "https://apidoc.keys.so/",
   dataforseo: "https://app.dataforseo.com/api-access",
+  crawlgraph: "https://crawlgraph.com/docs/api",
 };
 
 /** Shown under the key field so the destination is never implicit. */
@@ -119,6 +120,7 @@ const OFFICIAL_HOST: Record<MetricsProvider, string> = {
   majestic: "https://api.majestic.com",
   keysso: "https://api.keys.so",
   dataforseo: "https://api.dataforseo.com",
+  crawlgraph: "https://crawlgraph.com",
 };
 
 const PROVIDER_LABEL: Record<MetricsProvider, string> = {
@@ -127,6 +129,7 @@ const PROVIDER_LABEL: Record<MetricsProvider, string> = {
   majestic: "Majestic",
   keysso: "Keys.so",
   dataforseo: "DataForSEO",
+  crawlgraph: "Crawlgraph",
 };
 
 /** Micro-dollar meter units ↔ the dollars the DataForSEO cap field shows. */
@@ -275,7 +278,7 @@ export default function MetricsSettingsSection() {
         {/* 1. Which data provider */}
         <span className="tool-section-label">{t("metricsStep1")}</span>
         <div style={{ display: "flex", gap: "8px", marginBottom: "18px", flexWrap: "wrap" }}>
-          {(["ahrefs", "semrush", "majestic", "keysso", "dataforseo"] as const).map(p => (
+          {(["ahrefs", "semrush", "majestic", "keysso", "dataforseo", "crawlgraph"] as const).map(p => (
             <button key={p} className={provider === p ? "pill active" : "pill"}
               onClick={() => chooseProvider(p)} style={{ cursor: "pointer" }}>
               {PROVIDER_LABEL[p]}
@@ -306,6 +309,13 @@ export default function MetricsSettingsSection() {
             {t("metricsDfsHint")}
           </div>
         )}
+        {/* Crawlgraph: flat per-call pricing over quarterly Common Crawl snapshots — the two
+            things nobody must discover by comparing numbers with Ahrefs'. */}
+        {provider === "crawlgraph" && (
+          <div style={{ margin: "-10px 0 18px", fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.55, maxWidth: "620px" }}>
+            {t("metricsCrawlgraphHint")}
+          </div>
+        )}
         {/* The one Keys.so-specific setting: which Yandex region the region-scoped reports read.
             Here, once, rather than a selector on every screen that uses it. */}
         {provider === "keysso" && (
@@ -323,9 +333,9 @@ export default function MetricsSettingsSection() {
         <span className="tool-section-label">{t("metricsStep2")}</span>
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "12px" }}>
           {modeOption("official", t("metricsModeOfficial"), t("metricsModeOfficialDesc"))}
-          {/* DataForSEO has no reseller gateway — offering one would invent a host. */}
-          {provider !== "dataforseo" && modeOption("reseller", t("metricsModeReseller"), t("metricsModeResellerDesc"))}
-          {provider !== "dataforseo" && modeOption("custom", t("metricsModeCustom"), t("metricsModeCustomDesc"))}
+          {/* DataForSEO and Crawlgraph have no reseller gateway — offering one would invent a host. */}
+          {provider !== "dataforseo" && provider !== "crawlgraph" && modeOption("reseller", t("metricsModeReseller"), t("metricsModeResellerDesc"))}
+          {provider !== "dataforseo" && provider !== "crawlgraph" && modeOption("custom", t("metricsModeCustom"), t("metricsModeCustomDesc"))}
         </div>
 
         {mode === "official" && (
@@ -415,6 +425,16 @@ export default function MetricsSettingsSection() {
             {/* DataForSEO's free user_data is the real account balance, in dollars. */}
             {provider === "dataforseo" && sub?.info?.unitsRemaining != null && (
               <span> · {t("blsrcDfsBalance")} <strong style={{ color: "var(--color-text-primary)" }}>{formatProviderUnits(sub.info.unitsRemaining, "dataforseo")}</strong></span>
+            )}
+            {/* Crawlgraph's free /releases headers say how many calls the month still has. */}
+            {provider === "crawlgraph" && sub?.info?.unitsRemaining != null && (
+              <span> · {t("blsrcRemaining")} <strong style={{ color: "var(--color-text-primary)" }}>{sub.info.unitsRemaining.toLocaleString()}</strong> {t("blsrcCgCalls")}</span>
+            )}
+            {provider === "crawlgraph" && sub?.info?.usageResetDate && (
+              <span style={{ color: "var(--color-text-tertiary)" }}> · {t("blsrcResetAt")} {sub.info.usageResetDate}</span>
+            )}
+            {provider === "crawlgraph" && sub && !sub.info && sub.gatewayStatus === 401 && (
+              <div style={{ marginTop: "4px", color: "var(--color-warning)" }}>{t("metricsCgBadKey")}</div>
             )}
             {provider === "dataforseo" && sub && !sub.info && (sub.gatewayStatus === 401 || sub.gatewayStatus === 402 || sub.gatewayStatus === 403) && (
               <div style={{ marginTop: "4px", color: "var(--color-warning)" }}>

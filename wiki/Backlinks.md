@@ -5,7 +5,7 @@ Site → **Backlinks** tab. Three different questions, three parts of the tab:
 | Part | Question | Data comes from |
 |---|---|---|
 | **Your link list** (inventory) | Did the links *I* built or bought survive, and are they indexed? | URLs you paste or import, checked from your server |
-| **Backlink profile** | What does a link index see pointing at my site, and what was lost? | Ahrefs, Semrush, Majestic, DataForSEO, Keys.so, or a free CSV import |
+| **Backlink profile** | What does a link index see pointing at my site, and what was lost? | Ahrefs, Semrush, Majestic, DataForSEO, Keys.so, Crawlgraph, or a free CSV import |
 | **Toxicity · Disavow · Recovery** | Which donors are bad *for this site*, what goes into the disavow file, which lost link to win back first? | Local math over the profile rows |
 
 Competitor backlinks are a separate tool: [SEO Tools → Link Monitor](SEO-Tools#link-monitor).
@@ -25,12 +25,13 @@ Links published from [Publishing](Publishing-and-Magic-Links) and bought through
 
 Referring domains, live and lost, with stored history of counts.
 
-- **Provider pills**: **All (merged)** combines every provider into unique domains, with DR from Ahrefs, TF/CF from Majestic and AS from Semrush in their own columns. Each provider tab keeps that source's own live/lost verdicts and refreshes from its own key. Keys.so shows a separate `DR·KS` (Yandex/Runet index) and DataForSEO its own `Rank·DFS` (0–100). These scales aren't comparable with Ahrefs DR.
+- **Provider pills**: **All (merged)** combines every provider into unique domains, with DR from Ahrefs, TF/CF from Majestic and AS from Semrush in their own columns. Each provider tab keeps that source's own live/lost verdicts and refreshes from its own key. Keys.so shows a separate `DR·KS` (Yandex/Runet index), DataForSEO its own `Rank·DFS` (0–100) and Crawlgraph its own `Auth·CG` (a Common Crawl centrality percentile). These scales aren't comparable with Ahrefs DR.
 - **Refresh profile** pulls from the API, priced before it runs and counted against your monthly unit cap.
 - **No key?** Import a *Referring domains* export from Ahrefs or Semrush (Settings → SEO Metrics → Import, or the site's Settings tab). It fills exactly the same table.
 - **Lost links come from diffing pulls.** The first pull has no lost rows. A filtered, partial or truncated pull marks nothing as lost, because it can't prove a link is gone. The UI says when a provider returned only a sample.
 - **Lost-backlink alert** (Settings → Notifications): fires when a referring domain above a DR threshold disappears. It reads stored rows only, so enabling it costs nothing; it can only fire after a refresh.
 - **DataForSEO weekly auto-refresh** (optional) keeps profiles current within your monthly cap; a small site costs about $0.05 a week. It also offers a 12-month history backfill and a weekly new/lost table.
+- **Crawlgraph's tab** adds a between-releases changes panel (added / removed / authority-moved domains, one call) and a competitor gap job (one call, paid tier). The data is quarterly snapshots: every answer names its release, and "absent from the newer snapshot" is never treated as a lost link. Domain-level only — no anchors, so it feeds neither toxicity nor the per-link export.
 
 Which provider to use: see [SEO Metrics Providers](SEO-Metrics-Providers). In short, Majestic and DataForSEO are the budget picks for links, Ahrefs is the reference, and Semrush's backlinks API is about 10× Ahrefs' price.
 

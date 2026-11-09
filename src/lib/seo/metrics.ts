@@ -21,7 +21,7 @@
 
 import { loggedFetch } from "@/lib/providerLog/log";
 
-import { AHREFS_UNIT_FLOOR, DEFAULT_BASE_URL, DOMAIN_UNITS, IDEA_FIELDS_BASE, KEYWORD_FIELDS_BASE, KEYWORD_FIELDS_KD, MAJESTIC_REFDOMAIN_ANALYSIS_UNITS, MAJESTIC_REFDOMAIN_PAGE_SIZE, MAJESTIC_STATS_UNITS, SEMRUSH_BACKLINKS_OVERVIEW_UNITS, SEMRUSH_BACKLINKS_UNITS_PER_ROW, SEMRUSH_COMPETITOR_UNITS_PER_ROW, SEMRUSH_IDEA_UNITS_PER_ROW, SEMRUSH_ORGANIC_KEYWORD_UNITS_PER_ROW, COMPETITOR_FIELDS, ORGANIC_KEYWORD_FIELDS, REFDOMAIN_FIELDS, estimateCompetitorUnits, estimateIdeaUnits, estimateOrganicKeywordUnits, estimateUnits, gatewayStatusFromError, isKeywordCapable, parseKeyssoBase, KEYSSO_REFDOMAIN_PAGE_SIZE, KEYSSO_STATS_UNITS, DATAFORSEO_PAGE_SIZE, DATAFORSEO_STATS_UNITS, DATAFORSEO_HISTORY_MONTHS, DATAFORSEO_NEWLOST_WEEKS, type IdeaMode, type MetricsCreds, type MetricsProvider, type SubscriptionInfo } from "./metricsPricing";
+import { AHREFS_UNIT_FLOOR, DEFAULT_BASE_URL, DOMAIN_UNITS, IDEA_FIELDS_BASE, KEYWORD_FIELDS_BASE, KEYWORD_FIELDS_KD, MAJESTIC_REFDOMAIN_ANALYSIS_UNITS, MAJESTIC_REFDOMAIN_PAGE_SIZE, MAJESTIC_STATS_UNITS, SEMRUSH_BACKLINKS_OVERVIEW_UNITS, SEMRUSH_BACKLINKS_UNITS_PER_ROW, SEMRUSH_COMPETITOR_UNITS_PER_ROW, SEMRUSH_IDEA_UNITS_PER_ROW, SEMRUSH_ORGANIC_KEYWORD_UNITS_PER_ROW, COMPETITOR_FIELDS, ORGANIC_KEYWORD_FIELDS, REFDOMAIN_FIELDS, estimateCompetitorUnits, estimateIdeaUnits, estimateOrganicKeywordUnits, estimateUnits, gatewayStatusFromError, isKeywordCapable, parseKeyssoBase, KEYSSO_REFDOMAIN_PAGE_SIZE, KEYSSO_STATS_UNITS, DATAFORSEO_PAGE_SIZE, DATAFORSEO_STATS_UNITS, DATAFORSEO_HISTORY_MONTHS, DATAFORSEO_NEWLOST_WEEKS, CRAWLGRAPH_LIMIT, CRAWLGRAPH_STATS_UNITS, type IdeaMode, type MetricsCreds, type MetricsProvider, type SubscriptionInfo } from "./metricsPricing";
 import {
   keyssoErrorText, keyssoNextStep, keyssoRemainingCredits, mapKeyssoAiAnswer, mapKeyssoAiCompetitor,
   mapKeyssoDashboard, mapKeyssoRefDomain, parseKeyssoEnvelope, keyssoBacklinkToExportRow,
@@ -34,6 +34,10 @@ import {
   mapDfsNewLost, mapDfsRefDomain, mapDfsSummary, monthsAgo, parseDfsEnvelope,
   type DfsHistoryPoint, type DfsNewLostPoint, type DfsSummary,
 } from "./dataforseoBacklinksParse";
+import {
+  cgTarget, mapCgBacklinks, mapCgChanges, mapCgGapJob, mapCgGapSubmit, mapCgReleases, parseCgEnvelope,
+  type CgChanges, type CgGapJob, type CgGapSubmit, type CgRelease, type CgSummary,
+} from "./crawlgraphParse";
 
 // The prices live next door so the browser can quote them without importing this module's
 // network half — see the header of `metricsPricing.ts`. Re-exported wholesale, so every
@@ -136,6 +140,7 @@ export async function fetchSubscriptionInfo(creds: MetricsCreds): Promise<Subscr
   if (!creds.apiKey) return { info: null, status: 0, error: "no_key" };
   if (creds.provider === "keysso") return keyssoSubscription(creds);
   if (creds.provider === "dataforseo") return dataforseoSubscription(creds);
+  if (creds.provider === "crawlgraph") return crawlgraphSubscription(creds);
   // Semrush's protocol has no equivalent report; Majestic's `GetSubscriptionInfo` reports the
   // pooled upstream plan, deliberately not the caller's own credit ledger. Both fall back to
   // our own estimate rather than quote somebody else's wallet.
@@ -455,6 +460,7 @@ export async function fetchBacklinkStats(
   }
   if (creds.provider === "keysso") return keyssoBacklinkStats(creds, domain);
   if (creds.provider === "dataforseo") return dataforseoBacklinkStats(creds, domain);
+  if (creds.provider === "crawlgraph") return crawlgraphBacklinkStats(creds, domain);
   if (creds.provider === "semrush") {
     const r = await semrushBacklinksCall(creds, {
       type: "backlinks_overview", target: domain, target_type: "root_domain",
@@ -674,6 +680,8 @@ export async function fetchBacklinkProfile(
         ? await keyssoProfile(creds, domain, opts)
       : creds.provider === "dataforseo"
         ? await dataforseoProfile(creds, domain, opts)
+      : creds.provider === "crawlgraph"
+        ? await crawlgraphProfile(creds, domain, opts)
       : creds.provider === "semrush"
         ? await semrushProfile(creds, domain, opts)
         : await ahrefsProfile(creds, domain, opts);
@@ -1842,6 +1850,275 @@ export async function fetchDataforseoNewLost(
   return { points: mapDfsNewLost(r.result), units: r.units };
 }
 
+// ─── Crawlgraph Backlinks API ──────────────────────────────────────────────────
+//
+// The sixth provider (issue #40): flat-priced calls over quarterly Common Crawl snapshots.
+// One unit here is one API call — POST /backlinks, GET /changes or a gap-job submission — and
+// unlike every provider before it, the quota is charged BEFORE the work: a failed gap job is
+// not refunded, a `comparison_available: false` answer still burned a call. So `cgCall` counts
+// a unit for every 2xx and every 5xx (the vendor's own wording: "a failure after charging can
+// consume one"), and zero only for the answers the docs name as uncharged: auth, validation,
+// quota-rejection (429) and 409 release_unavailable. Overcounting on the ambiguous cases is
+// deliberate — the cap must err on the side of stopping early.
+//
+// `cg_authority` is a 0–100 percentile of Common Crawl harmonic centrality, not DR; it sits in
+// RefDomainRow.dr under provider `crawlgraph` and never in an Ahrefs slot. Every response
+// carries the release it was built from (`release_id`/`release_label`) — quarterly, not live,
+// and the UI shows that label so a "missing" link is never read as "lost".
+//
+// Every 2xx also carries X-RateLimit-* headers (remaining calls, gap jobs, reset). They are
+// parsed on every call and surfaced through the subscription placard at zero cost.
+
+const CG_TIMEOUT_MS = 60_000;
+
+/** What the X-RateLimit headers said, when the answer carried them. */
+export interface CgRate {
+  remainingBacklinks: number | null;
+  remainingGap: number | null;
+  /** Unix seconds of the next UTC-month rollover. */
+  resetAt: number | null;
+}
+
+export type CgAnswer<T> =
+  | { ok: true; result: T; units: number; rate: CgRate | null }
+  | { ok: false; status: number; error: string; units: number; rate: CgRate | null };
+
+function cgRateFrom(h: Headers | null): CgRate | null {
+  if (!h) return null;
+  // Number(null) is 0, so an absent header must be caught before the cast — a missing
+  // X-RateLimit read as "0 left" once shipped exactly that to a placard with quota to spare.
+  const n = (name: string) => {
+    const raw = h.get(name);
+    if (raw == null || raw === "") return null;
+    const v = Number(raw);
+    return Number.isFinite(v) && v >= 0 ? v : null;
+  };
+  const rate: CgRate = {
+    remainingBacklinks: n("X-RateLimit-Remaining-Backlinks"),
+    remainingGap: n("X-RateLimit-Remaining-Gap"),
+    resetAt: n("X-RateLimit-Reset"),
+  };
+  return rate.remainingBacklinks == null && rate.remainingGap == null && rate.resetAt == null ? null : rate;
+}
+
+/**
+ * The one transport for every /api/v1 call: bearer auth, the shared error envelope, retries on
+ * 429/5xx with back-off. `quota` is the units this call counts against our meter — 1 for the
+ * paid endpoints, 0 for the free ones (GET /releases, gap polling). A Retry-After on a 429 is
+ * respected when it names a pause shorter than the attempt budget.
+ */
+async function cgCall<T>(
+  creds: MetricsCreds,
+  path: string,
+  q: { method?: "GET" | "POST"; body?: Record<string, unknown>; parse: (r: JsonRecord | null) => T; quota?: number },
+): Promise<CgAnswer<T>> {
+  const base = (creds.baseUrl || DEFAULT_BASE_URL.crawlgraph).replace(/\/+$/, "");
+  const url = q.method === "POST" ? `${base}${path}` : `${base}${path}`;
+  const init: RequestInit = q.method === "POST"
+    ? {
+        method: "POST",
+        headers: { Authorization: `Bearer ${creds.apiKey}`, "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(q.body ?? {}),
+      }
+    : { method: "GET", headers: { Authorization: `Bearer ${creds.apiKey}`, Accept: "application/json" } };
+
+  const quota = q.quota ?? 1;
+  let units = 0;
+  let last: CgAnswer<T> = { ok: false, status: 0, error: "crawlgraph 0: request failed", units: 0, rate: null };
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    let res: Response;
+    let call: { finish: (o?: { error?: string }) => void };
+    try {
+      ({ res, call } = await withSlot(`crawlgraph:${creds.apiKey}`, () =>
+        loggedFetch(url, { ...init, signal: AbortSignal.timeout(CG_TIMEOUT_MS) }, { provider: "crawlgraph", attempt }),
+      ));
+    } catch (e) {
+      last = { ok: false, status: 0, error: `crawlgraph 0: ${String((e as { cause?: { code?: string; message?: string } })?.cause?.code || (e as Error)?.message || e)}`, units, rate: null };
+      if (attempt < 3) { await sleep(800 * 2 ** (attempt - 1) + Math.random() * 400); continue; }
+      return last;
+    }
+    const rate = cgRateFrom(res.headers);
+    const data = await res.json().catch(() => null);
+    const env = parseCgEnvelope(res.status, data);
+    if (env.ok) {
+      units += quota;
+      call.finish();
+      return { ok: true, result: q.parse(env.result), units, rate };
+    }
+    // The docs' uncharged set: 401 auth, 400 validation, 429 quota rejection, 409 release
+    // unavailable, 404 not found — plus 402 `upgrade_required`, the free-tier paywall on gap
+    // submissions, which is refused before any quota work. Everything else that reached the
+    // server may have billed.
+    const billed = env.status === 401 || env.status === 400 || env.status === 402 || env.status === 404 || env.status === 409 || env.status === 429 ? 0 : quota;
+    units += billed;
+    call.finish({ error: env.error });
+    last = { ok: false, status: env.status, error: env.error, units, rate };
+    if ((env.status === 429 || env.status >= 500) && attempt < 3) {
+      const retryAfter = Number(res.headers.get("Retry-After"));
+      const pause = Number.isFinite(retryAfter) && retryAfter > 0 && retryAfter <= 30
+        ? retryAfter * 1000
+        : 800 * 2 ** (attempt - 1) + Math.random() * 400;
+      await sleep(pause);
+      continue;
+    }
+    return last;
+  }
+  return last;
+}
+
+/** GET /api/v1/releases — free, unlimited: the key check, the freshness label, and (through
+ *  the X-RateLimit headers every 2xx carries) what is left of the monthly quota. */
+export async function crawlgraphReleases(
+  creds: MetricsCreds,
+): Promise<{ ok: true; releases: CgRelease[]; rate: CgRate | null } | { ok: false; status: number; error: string }> {
+  const r = await cgCall(creds, "/api/v1/releases", { parse: mapCgReleases, quota: 0 });
+  return r.ok ? { ok: true, releases: r.result, rate: r.rate } : { ok: false, status: r.status, error: r.error };
+}
+
+/** The free /releases call doubles as the balance answer: the headers say what is left. */
+async function crawlgraphSubscription(creds: MetricsCreds): Promise<SubscriptionResult> {
+  const cacheKey = `crawlgraph|${creds.apiKey}`;
+  const hit = subscriptionCache.get(cacheKey);
+  if (hit && Date.now() - hit.at < SUBSCRIPTION_TTL_MS) return { info: hit.info, status: 200 };
+  const r = await crawlgraphReleases(creds);
+  if (!r.ok) return { info: null, status: r.status, error: r.error };
+  const resetDay = r.rate?.resetAt ? new Date(r.rate.resetAt * 1000).toISOString().slice(0, 10) : "";
+  const info: SubscriptionInfo = {
+    unitsLimitApiKey: null, unitsUsageApiKey: null,
+    unitsLimitWorkspace: null, unitsUsageWorkspace: null,
+    usageResetDate: resetDay,
+    apiKeyExpirationDate: "",
+    fetchedAt: new Date().toISOString(),
+    unitsRemaining: r.rate?.remainingBacklinks ?? null,
+  };
+  subscriptionCache.set(cacheKey, { at: Date.now(), info });
+  return { info, status: 200 };
+}
+
+/**
+ * One POST /backlinks call — the stats pre-flight AND the whole profile pull in one: the API
+ * has no separate summary endpoint, and any `limit` costs the same single call, so the pull
+ * asks for the API maximum (10 000) and the route hands `raw` to `crawlgraphProfile`, which
+ * meters from it instead of paying twice (the DataForSEO move, one step further).
+ */
+async function crawlgraphBacklinkStats(
+  creds: MetricsCreds, domain: string,
+): Promise<{ ok: true; raw: JsonRecord; totals: BacklinkStatsTotals } | { ok: false; error: string }> {
+  const r = await cgCall(creds, "/api/v1/backlinks", {
+    method: "POST",
+    body: { domain: cgTarget(domain), limit: CRAWLGRAPH_LIMIT, sort: "authority" },
+    parse: mapCgBacklinks,
+  });
+  if (!r.ok) return { ok: false, error: r.error };
+  return {
+    ok: true,
+    raw: { ...r.result.summary, refDomains: r.result.refDomains.map(x => ({ ...x })), units: r.units, source: "crawlgraph" },
+    totals: { refDomainsTotal: r.result.summary.totalLinkingDomains, backlinksTotal: null },
+  };
+}
+
+/** Crawlgraph domain card for the drops/table path: one call, authority in its own scale. */
+async function crawlgraphDomain(creds: MetricsCreds, domain: string): Promise<MetricsResult<DomainMetric>> {
+  const r = await cgCall(creds, "/api/v1/backlinks", {
+    method: "POST",
+    body: { domain: cgTarget(domain), limit: 1, sort: "authority" },
+    parse: mapCgBacklinks,
+  });
+  if (!r.ok) return { items: [], units: r.units, error: r.error };
+  const s: CgSummary = r.result.summary;
+  return {
+    units: r.units,
+    items: [{
+      domain,
+      dr: s.authority,
+      refDomains: s.totalLinkingDomains,
+      backlinks: null,
+      orgTraffic: null,
+      orgKeywords: null,
+      orgCost: null,
+      payload: {
+        source: "crawlgraph", authorityScale: "percentile", authority: s.authority, rank: s.rank,
+        releaseId: s.releaseId, releaseLabel: s.releaseLabel,
+      },
+    }],
+  };
+}
+
+/**
+ * The profile from the stats call's own answer — no second request when the route hands the
+ * raw over (the normal path). `sawEnd` is false whenever the API truncated (`returned <
+ * total_linking_domains`), which licenses no lost-marking: an absent domain was simply beyond
+ * the 10 000 cap. `minDr` is ignored on purpose — the call is flat-priced, so filtering rows
+ * would throw away stored truth to save nothing.
+ */
+async function crawlgraphProfile(
+  creds: MetricsCreds,
+  domain: string,
+  opts: { minDr?: number; stats?: JsonRecord } = {},
+): Promise<MetricsResult<BacklinkProfile> & { sawEnd?: boolean; unitsSpent?: number }> {
+  let stats = opts.stats ?? null;
+  if (!stats || stats.source !== "crawlgraph") {
+    const s = await crawlgraphBacklinkStats(creds, domain);
+    if (!s.ok) return { items: [], units: 0, error: s.error, unitsSpent: 0 };
+    stats = s.raw;
+  }
+  const unitsSpent = Number(stats.units ?? CRAWLGRAPH_STATS_UNITS) || 0;
+  const summary: CgSummary = stats as unknown as CgSummary;
+  const rows = Array.isArray((stats as { refDomains?: unknown }).refDomains) ? (stats as { refDomains: { refDomain: string; authority: number | null; linksToTarget: number | null }[] }).refDomains : [];
+  return {
+    units: unitsSpent,
+    unitsSpent,
+    sawEnd: !summary.truncated,
+    items: [{
+      refDomainsTotal: summary.totalLinkingDomains,
+      backlinksTotal: null, // the API counts hosts per donor, never total backlinks
+      dofollowPct: null,    // and has no dofollow signal at all
+      refDomains: rows.map(x => ({
+        refDomain: x.refDomain,
+        dr: x.authority,
+        linksToTarget: x.linksToTarget,
+        dofollow: true,
+        firstSeen: "",
+      })),
+    }],
+  };
+}
+
+/** GET /api/v1/changes — one call, both snapshot variants mapped by the parser. */
+export async function crawlgraphChanges(
+  creds: MetricsCreds, target: string, q: { from?: string; to?: string } = {},
+): Promise<{ ok: true; changes: CgChanges; units: number } | { ok: false; error: string; units: number }> {
+  const params = new URLSearchParams({ domain: cgTarget(target) });
+  if (q.from) params.set("from", q.from);
+  if (q.to) params.set("to", q.to);
+  const r = await cgCall(creds, `/api/v1/changes?${params}`, { parse: mapCgChanges, quota: 1 });
+  return r.ok ? { ok: true, changes: r.result, units: r.units } : { ok: false, error: r.error, units: r.units };
+}
+
+/** POST /api/v1/gap-analysis — submits one job. Failed jobs are not refunded: never auto-resubmit. */
+export async function crawlgraphGapSubmit(
+  creds: MetricsCreds, myDomain: string, competitors: string[],
+): Promise<{ ok: true; submit: CgGapSubmit; units: number } | { ok: false; error: string; units: number }> {
+  const r = await cgCall(creds, "/api/v1/gap-analysis", {
+    method: "POST",
+    body: { my_domain: cgTarget(myDomain), competitor_domains: competitors.map(cgTarget).slice(0, 5) },
+    parse: mapCgGapSubmit,
+  });
+  if (!r.ok) return { ok: false, error: r.error, units: r.units };
+  if (!r.result) return { ok: false, error: "crawlgraph 502: submit answered without a job id", units: r.units };
+  return { ok: true, submit: r.result, units: r.units };
+}
+
+/** GET /api/v1/gap-analysis/{job_id} — free polling; jobs are kept 7 days. */
+export async function crawlgraphGapPoll(
+  creds: MetricsCreds, jobId: string,
+): Promise<{ ok: true; job: CgGapJob } | { ok: false; error: string }> {
+  const r = await cgCall(creds, `/api/v1/gap-analysis/${encodeURIComponent(jobId)}`, { parse: mapCgGapJob, quota: 0 });
+  if (!r.ok) return { ok: false, error: r.error };
+  if (!r.result) return { ok: false, error: "crawlgraph 502: poll answered without a job" };
+  return { ok: true, job: r.result };
+}
+
 // ─── Competitors and their keywords ────────────────────────────────────────────
 
 export interface CompetitorItem {
@@ -2382,7 +2659,9 @@ export async function fetchDomainMetrics(
           ? await keyssoDomain(creds, domain)
           : creds.provider === "dataforseo"
             ? await dataforseoDomain(creds, domain)
-            : await ahrefsDomain(creds, domain);
+            : creds.provider === "crawlgraph"
+              ? await crawlgraphDomain(creds, domain)
+              : await ahrefsDomain(creds, domain);
   } catch (e) {
     return { items: [], units: 0, error: String((e as Error)?.message ?? e) };
   }

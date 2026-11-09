@@ -15,7 +15,7 @@
 // in Settings is.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { History, Link2, Loader2, RefreshCw, TrendingDown } from "lucide-react";
+import { GitCompare, History, Link2, Loader2, RefreshCw, TrendingDown, Users } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import {
   getMetricsCreds, getMetricsMode, getMetricsProvider, estimateCostUsd, formatUsd, type MetricsMode,
@@ -25,8 +25,8 @@ import { isGuestView, shareTokenFromPath } from "@/lib/shareParam";
 // `@/lib/seo/metrics` drags the Prisma client into the browser bundle.
 import {
   estimateProfileUnits, estimateMajesticProfileUnits, estimateSemrushProfileUnits, estimateKeyssoProfileUnits,
-  estimateDataforseoProfileUnits, formatProviderUnits, metersInDollars,
-  DATAFORSEO_HISTORY_UNITS, DATAFORSEO_NEWLOST_UNITS,
+  estimateDataforseoProfileUnits, estimateCrawlgraphProfileUnits, formatProviderUnits, metersInDollars,
+  DATAFORSEO_HISTORY_UNITS, DATAFORSEO_NEWLOST_UNITS, CRAWLGRAPH_CHANGES_UNITS,
   DEFAULT_BASE_URL, gatewayStatusFromError,
   type MetricsProvider, type SubscriptionInfo,
 } from "@/lib/seo/metricsPricing";
@@ -44,7 +44,7 @@ const fill = (s: string, vars: Record<string, string>) =>
  *  the DOM at a sane size instead of deciding how many domains the user may look at. */
 const TABLE_ROWS_PER_PAGE = 100;
 
-type View = "all" | "ahrefs" | "majestic" | "semrush" | "keysso" | "dataforseo";
+type View = "all" | "ahrefs" | "majestic" | "semrush" | "keysso" | "dataforseo" | "crawlgraph";
 /** The providers this component can read or refresh — one tab each, plus the merged view. */
 type BlProvider = MetricsProvider;
 /** N2 sections inside the profile: the provider view plus toxicity/disavow/recovery.
@@ -64,6 +64,8 @@ interface Row {
   ks: number | null;
   /** DataForSEO rank, 0–100 — its own index and scale; never merged into Ahrefs DR. */
   dfs: number | null;
+  /** Crawlgraph cg_authority, 0–100 percentile of Common Crawl centrality; never merged into DR. */
+  cg: number | null;
   cf: number | null;
   links: number | null;
   dofollow: boolean;
@@ -92,6 +94,7 @@ interface ApiRefDomainRow {
   as?: number | null;
   ks?: number | null;
   dfs?: number | null;
+  cg?: number | null;
   cf?: number | null;
   links?: number | null;
   linksToTarget?: number | null;
@@ -115,6 +118,44 @@ interface DfsExtras {
   historyPoints: number;
 }
 
+/** Crawlgraph's extras for the site (issue #40), same free-local-read contract. The release
+ *  label is the freshness statement: the data is a quarterly Common Crawl snapshot, not live. */
+interface CgExtras {
+  releaseId: string | null;
+  releaseLabel: string | null;
+  totalLinkingDomains: number | null;
+  returned: number | null;
+  truncated: boolean;
+  authority: number | null;
+  checkedAt: string | null;
+  changes: {
+    comparisonAvailable: boolean;
+    fromRelease: { id: string; label: string } | null;
+    toRelease: { id: string; label: string } | null;
+    counts: { fromSnapshot: number | null; toSnapshot: number | null; added: number | null; removed: number | null; authorityMoved: number | null };
+    added: Array<{ refDomain: string; linksToTarget: number | null; authority: number | null }>;
+    removed: Array<{ refDomain: string; linksToTarget: number | null; authority: number | null }>;
+    authorityMoved: Array<{ refDomain: string; fromAuthority: number | null; toAuthority: number | null; delta: number | null }>;
+    truncated: boolean;
+    message: string;
+    snapshotCaveat: string;
+    checkedAt: string;
+  } | null;
+  gap: { jobId: string; status: string; competitors: string[]; checkedAt: string; job?: GapJob } | null;
+}
+
+interface GapJob {
+  jobId: string;
+  status: "queued" | "running" | "completed" | "failed";
+  progressPct: number | null;
+  error: { code: string; message: string } | null;
+  result: {
+    myDomain: string; competitors: string[];
+    gaps: Array<{ refDomain: string; foundOn: string[] }>;
+    totalGaps: number | null; truncated: boolean;
+  } | null;
+}
+
 function drColor(dr: number) {
   if (dr >= 70) return "var(--color-success)";
   if (dr >= 50) return "var(--color-accent-green)";
@@ -127,10 +168,11 @@ const fmt = (n: number | null | undefined) =>
 
 const PROVIDER_NAME: Record<MetricsProvider, string> = {
   ahrefs: "Ahrefs", semrush: "Semrush", majestic: "Majestic", keysso: "Keys.so", dataforseo: "DataForSEO",
+  crawlgraph: "Crawlgraph",
 };
 
-const NO_PROVIDER = { ahrefs: null, majestic: null, semrush: null, keysso: null, dataforseo: null };
-const NO_HISTORY = { ahrefs: [], majestic: [], semrush: [], keysso: [], dataforseo: [] };
+const NO_PROVIDER = { ahrefs: null, majestic: null, semrush: null, keysso: null, dataforseo: null, crawlgraph: null };
+const NO_HISTORY = { ahrefs: [], majestic: [], semrush: [], keysso: [], dataforseo: [], crawlgraph: [] };
 
 /** Everything the source placard needs about where one provider's paid calls go. */
 interface SourceCfg {
@@ -179,6 +221,12 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
   const [dfsBalance, setDfsBalance] = useState<{ remaining: number | null; gatewayStatus: number | null } | null>(null);
   const [dfsExtras, setDfsExtras] = useState<DfsExtras | null>(null);
   const [dfsBusy, setDfsBusy] = useState<"" | "history" | "newlost">("");
+  // Crawlgraph: remaining calls of the month from the free /releases headers, and the extras
+  // (release label, truncation, the changes panel, the gap job) every response refreshes.
+  const [cgBalance, setCgBalance] = useState<{ remaining: number | null; gatewayStatus: number | null } | null>(null);
+  const [cgExtras, setCgExtras] = useState<CgExtras | null>(null);
+  const [cgBusy, setCgBusy] = useState<"" | "changes" | "gap_submit">("");
+  const [gapCompetitors, setGapCompetitors] = useState("");
   // The DataForSEO credential is shared with SERP and keyword demand, so holding it does NOT
   // mean "pull my backlinks from DataForSEO too". The merged view's refresh includes DataForSEO
   // only once the user chose it as the metrics provider or already has a DataForSEO profile —
@@ -202,7 +250,7 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
         hasKey: creds.apiKey.length > 4,
       };
     };
-    setSrcs({ ahrefs: build("ahrefs"), majestic: build("majestic"), semrush: build("semrush"), keysso: build("keysso"), dataforseo: build("dataforseo") });
+    setSrcs({ ahrefs: build("ahrefs"), majestic: build("majestic"), semrush: build("semrush"), keysso: build("keysso"), dataforseo: build("dataforseo"), crawlgraph: build("crawlgraph") });
     setDfsActive(getMetricsProvider() === "dataforseo");
   }, [guest]);
 
@@ -235,6 +283,21 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
         .catch(() => setDfsBalance({ remaining: null, gatewayStatus: null }));
     }
     const creds = getMetricsCreds("ahrefs");
+    // Crawlgraph's check is free (GET /releases): a 401 says the key is bad, the headers say
+    // how many calls the month still has. No account, no wallet — the tier is the key's own.
+    const cg = getMetricsCreds("crawlgraph");
+    if (cg.apiKey.length > 4) {
+      fetch("/api/metrics/subscription", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: "crawlgraph", apiKey: cg.apiKey }),
+      })
+        .then(r => r.json())
+        .then(d => setCgBalance({
+          remaining: typeof d.info?.unitsRemaining === "number" ? d.info.unitsRemaining : null,
+          gatewayStatus: typeof d.gatewayStatus === "number" ? d.gatewayStatus : null,
+        }))
+        .catch(() => setCgBalance({ remaining: null, gatewayStatus: null }));
+    }
     if (creds.apiKey.length <= 4) return;
     try {
       const res = await fetch("/api/metrics/subscription", {
@@ -273,6 +336,17 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
         : gw != null && gw >= 500 ? t("blsrcErr502")
         : null;
     }
+    // Crawlgraph has no wallet to top up from the API — 429 is the monthly quota of the key's
+    // tier (free keys get 15 calls and 0 gap jobs), and 402 is `upgrade_required`: the endpoint
+    // itself sits behind the paid tier, which is what a free key hits on a gap submit.
+    if (/^crawlgraph /.test(String(raw ?? ""))) {
+      return gw === 401 ? t("metricsCgBadKey")
+        : gw === 402 ? t("blsrcCgUpgrade")
+        : gw === 429 ? t("blsrcCgQuota")
+        : gw === 409 ? t("blsrcCg409")
+        : gw != null && gw >= 500 ? t("blsrcErr502")
+        : null;
+    }
     return gw === 401 ? fill(t("blsrcErr401"), { host })
       : gw === 402 ? (<>
           {fill(t("blsrcErr402"), { host })}{" "}
@@ -291,6 +365,7 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
     const credsS = getMetricsCreds("semrush");
     const credsK = getMetricsCreds("keysso");
     const credsD = getMetricsCreds("dataforseo");
+    const credsC = getMetricsCreds("crawlgraph");
     const body: Record<string, unknown> = dropDomain ? { dropDomain } : { siteId: siteDbId, view, fetch: doFetch };
     if (dropDomain) { body.view = view; body.fetch = doFetch; }
     const token = shareTokenFromPath();
@@ -306,6 +381,9 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
         ...(view === "dataforseo" || dfsInAll.current
           ? { dataforseo: { apiKey: credsD.apiKey, baseUrl: credsD.baseUrl, cap: credsD.cap } }
           : {}),
+        // The Crawlgraph key exists for backlinks only, so holding it IS the opt-in — no
+        // dfs-style gate needed (the DataForSEO key is shared with SERP, which is why it has one).
+        crawlgraph: { apiKey: credsC.apiKey, baseUrl: credsC.baseUrl, cap: credsC.cap },
       };
     }
 
@@ -329,6 +407,7 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
           as: merged ? (r.as ?? null) : view === "semrush" ? (r.dr ?? null) : null,
           ks: merged ? (r.ks ?? null) : view === "keysso" ? (r.dr ?? null) : null,
           dfs: merged ? (r.dfs ?? null) : view === "dataforseo" ? (r.dr ?? null) : null,
+          cg: merged ? (r.cg ?? null) : view === "crawlgraph" ? (r.dr ?? null) : null,
           cf: r.cf ?? null,
           links: r.links ?? r.linksToTarget ?? null,
           dofollow: r.dofollow !== false,
@@ -343,9 +422,10 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
       }));
     }
     if (d.history && typeof d.history === "object") {
-      setHistory({ ahrefs: d.history.ahrefs ?? [], majestic: d.history.majestic ?? [], semrush: d.history.semrush ?? [], keysso: d.history.keysso ?? [], dataforseo: d.history.dataforseo ?? [] });
+      setHistory({ ahrefs: d.history.ahrefs ?? [], majestic: d.history.majestic ?? [], semrush: d.history.semrush ?? [], keysso: d.history.keysso ?? [], dataforseo: d.history.dataforseo ?? [], crawlgraph: d.history.crawlgraph ?? [] });
     }
     if (d.dataforseo && typeof d.dataforseo === "object") setDfsExtras(d.dataforseo as DfsExtras);
+    if (d.crawlgraph && typeof d.crawlgraph === "object") setCgExtras(d.crawlgraph as CgExtras);
     if (d.usage && typeof d.usage === "object") {
       setUsage({
         ahrefs: d.usage.ahrefs?.units ?? null,
@@ -353,6 +433,7 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
         semrush: d.usage.semrush?.units ?? null,
         keysso: d.usage.keysso?.units ?? null,
         dataforseo: d.usage.dataforseo?.units ?? null,
+        crawlgraph: d.usage.crawlgraph?.units ?? null,
       });
     }
     if (!res.ok && doFetch) {
@@ -427,6 +508,56 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
     setDfsBusy("");
   }
 
+  // The two Crawlgraph extras of this tab (issue #40). "changes" is one priced call (cached);
+  // "gap_submit" is one priced job submission — on a free key the API answers 429 quota_exceeded,
+  // which lands in the notice as its own sentence rather than a generic failure. After a submit
+  // the job is polled (free) until it completes or fails; a failed job is not refunded, so the
+  // poll loop never resubmits on its own.
+  async function runCgOp(op: "changes" | "gap_submit") {
+    if (!siteDbId || cgBusy) return;
+    setCgBusy(op); setNotice("");
+    try {
+      const c = getMetricsCreds("crawlgraph");
+      const competitors = op === "gap_submit"
+        ? gapCompetitors.split(/[\s,;]+/).map(s => s.trim().toLowerCase()).filter(Boolean)
+        : undefined;
+      const post = (o: string) => fetch("/api/metrics/backlinks/crawlgraph", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ siteId: siteDbId, op: o, apiKey: c.apiKey, cap: c.cap, competitors }),
+      });
+      const res = await post(op);
+      const d = await res.json().catch(() => ({}));
+      const apply = (dd: Record<string, unknown>) => {
+        if (dd.crawlgraph && typeof dd.crawlgraph === "object") setCgExtras(dd.crawlgraph as CgExtras);
+        if (dd.usage && typeof (dd.usage as { units?: unknown }).units === "number") {
+          setUsage(u => ({ ...u, crawlgraph: Number((dd.usage as { units: number }).units) }));
+        }
+      };
+      apply(d);
+      if (!res.ok) {
+        const e = String(d.error ?? "");
+        setNotice(e === "cap_exceeded" ? t("kwCapExceeded")
+          : e === "no_key" ? t("blsrcNoKey")
+          : e === "bad_competitors" ? t("blpCgGapCompetitorsHint")
+          : gatewayNotice(e, DEFAULT_BASE_URL.crawlgraph) ?? (e || t("blpFailed")));
+      } else if (op === "changes") {
+        setNotice(t("blpCgChangesDone"));
+      } else {
+        // Poll the submitted job, free, until it lands. The loop gives up after ~5 minutes —
+        // the job keeps running server-side and its answer is cached for the next visit.
+        for (let i = 0; i < 60; i++) {
+          await new Promise(r => setTimeout(r, 5000));
+          const pr = await post("gap_poll");
+          const pd = await pr.json().catch(() => ({}));
+          apply(pd);
+          const st = String(pd.result?.status ?? pd.crawlgraph?.gap?.status ?? "");
+          if (st === "completed" || st === "failed") break;
+        }
+      }
+    } catch { setNotice(t("blpFailed")); }
+    setCgBusy("");
+  }
+
   async function refresh() {
     if (busy) return;
     setBusy(true); setNotice("");
@@ -443,7 +574,7 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
   // Which providers this view reads and refreshes from.
   const dfsOptedIn = dfsActive || (history.dataforseo?.length ?? 0) > 0;
   const viewProviders: BlProvider[] = view === "all"
-    ? (["ahrefs", "majestic", "semrush", "keysso", "dataforseo"] as BlProvider[]).filter(p => p !== "dataforseo" || dfsOptedIn)
+    ? (["ahrefs", "majestic", "semrush", "keysso", "dataforseo", "crawlgraph"] as BlProvider[]).filter(p => p !== "dataforseo" || dfsOptedIn)
     : [view];
   const refreshable: BlProvider[] = viewProviders.filter(p => srcs[p]?.hasKey);
   const anyKey = refreshable.length > 0;
@@ -463,12 +594,15 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
     let usd = 0;
     for (const p of refreshable) {
       const rd = histFor(p).slice(-1)[0]?.refDomains ?? null;
-      if (rd == null) continue;
-      const units = p === "majestic" ? estimateMajesticProfileUnits(rd)
-        : p === "semrush" ? estimateSemrushProfileUnits(rd)
-        : p === "keysso" ? estimateKeyssoProfileUnits(rd)
-        : p === "dataforseo" ? estimateDataforseoProfileUnits(rd)
-        : estimateProfileUnits(rd);
+      // Crawlgraph is flat-priced per call, so its chip can quote before the first pull; every
+      // row-based provider needs its last pull's count or there is nothing honest to quote.
+      if (rd == null && p !== "crawlgraph") continue;
+      const units = p === "majestic" ? estimateMajesticProfileUnits(rd ?? 1)
+        : p === "semrush" ? estimateSemrushProfileUnits(rd ?? 1)
+        : p === "keysso" ? estimateKeyssoProfileUnits(rd ?? 1)
+        : p === "dataforseo" ? estimateDataforseoProfileUnits(rd ?? 1)
+        : p === "crawlgraph" ? estimateCrawlgraphProfileUnits()
+        : estimateProfileUnits(rd ?? 1);
       parts.push({ p, units });
       usd += estimateCostUsd(units, p);
     }
@@ -522,7 +656,7 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
     return (
       <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
         <span>{withBalance ? `${PROVIDER_NAME[p]}: ` : ""}<strong style={{ color: "var(--color-text-primary)" }}>
-          {p === "ahrefs" ? "Ahrefs API v3" : p === "majestic" ? "Majestic API" : p === "keysso" ? "Keys.so API" : p === "dataforseo" ? "DataForSEO Backlinks API" : "Semrush API"}
+          {p === "ahrefs" ? "Ahrefs API v3" : p === "majestic" ? "Majestic API" : p === "keysso" ? "Keys.so API" : p === "dataforseo" ? "DataForSEO Backlinks API" : p === "crawlgraph" ? "Crawlgraph Backlinks API" : "Semrush API"}
         </strong></span>
         {p === "keysso" && <span className="metric-chip" style={{ fontWeight: 500 }} title={t("blpKsMarketHint")}>{t("blpKsMarket")}</span>}
         <code style={{ fontFamily: "monospace", fontSize: "11px" }}>{src.host.replace(/^https?:\/\//, "")}</code>
@@ -542,6 +676,12 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
               </span>
           : p === "keysso" && ksBalance?.remaining != null
             ? <span>{t("blsrcRemaining")} <strong style={{ color: "var(--color-text-primary)" }}>{ksBalance.remaining.toLocaleString()}</strong> {t("blsrcKsCredits")}</span>
+          : p === "crawlgraph" && cgBalance?.gatewayStatus === 401
+            ? <span style={{ color: "var(--color-warning)" }}>{t("metricsCgBadKey")}</span>
+          : p === "crawlgraph" && cgBalance?.remaining != null
+            ? <span>{t("blsrcRemaining")} <strong style={{ color: "var(--color-text-primary)" }}>{cgBalance.remaining.toLocaleString()}</strong> {t("blsrcCgCalls")}
+              {used > 0 && <> · {t("metricsUsage")}: <strong style={{ color: "var(--color-text-primary)" }}>{formatProviderUnits(used, "crawlgraph")}</strong></>}
+            </span>
           : p === "ahrefs" && remaining != null && balLimit != null
             ? <span>{t("blsrcRemaining")} <strong style={{ color: "var(--color-text-primary)" }}>{remaining.toLocaleString()}</strong> {t("blsrcOf")} {balLimit.toLocaleString()}</span>
             : <span>
@@ -554,6 +694,11 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
           <span style={{ color: "var(--color-text-tertiary)" }}>{t("blsrcNoKey")}</span>
         )}
         {p === "ahrefs" && info && updated && <span>{t("blsrcUpdated")} {updated}</span>}
+        {/* The freshness statement that matters here: Crawlgraph answers from a quarterly Common
+            Crawl snapshot, and the release label is the honest "as of" — not the fetch time. */}
+        {p === "crawlgraph" && cgExtras?.releaseLabel && (
+          <span title={t("blpCgReleaseHint")}>{t("blpCgRelease")}: <strong style={{ color: "var(--color-text-primary)" }}>{cgExtras.releaseLabel}</strong></span>
+        )}
         {p === "ahrefs" && info?.usageResetDate && <span>{t("blsrcResetAt")} {info.usageResetDate}</span>}
         {p === "ahrefs" && expDate && <span style={expSoon ? { color: "var(--color-warning)" } : undefined}>
           {t("blsrcKeyExpires")} {expDate}
@@ -574,9 +719,12 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
   const showKs = view === "keysso" || (view === "all" && rows.some(r => r.ks != null));
   // Same rule for DataForSEO's rank: its own column, shown once a DataForSEO pull exists.
   const showDfs = view === "dataforseo" || (view === "all" && rows.some(r => r.dfs != null));
+  // And the same for Crawlgraph's authority percentile.
+  const showCg = view === "crawlgraph" || (view === "all" && rows.some(r => r.cg != null));
   const showCf = view === "majestic";
-  // Keys.so rows carry no topic and no per-donor IP (its `ips` is a count), so no empty columns.
-  const showExtras = view !== "ahrefs" && view !== "keysso" && view !== "dataforseo";
+  // Keys.so rows carry no topic and no per-donor IP (its `ips` is a count), and Crawlgraph rows
+  // carry neither either — no empty columns for providers that never fill them.
+  const showExtras = view !== "ahrefs" && view !== "keysso" && view !== "dataforseo" && view !== "crawlgraph";
 
   return (
     <div className="panel" style={{ marginBottom: "16px" }}>
@@ -630,7 +778,7 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
           main table; the provider tabs show that source's own view and refresh its own key. */}
       {!guest && (
         <div style={{ display: "flex", gap: "6px", marginBottom: "12px", flexWrap: "wrap" }}>
-          {(["all", "ahrefs", "majestic", "semrush", "keysso", "dataforseo"] as const).map(v => (
+          {(["all", "ahrefs", "majestic", "semrush", "keysso", "dataforseo", "crawlgraph"] as const).map(v => (
             <button key={v} className={view === v ? "pill active" : "pill"}
               onClick={() => setView(v)} style={{ cursor: "pointer" }}>
               {v === "all" ? t("blpTabAll") : PROVIDER_NAME[v]}
@@ -709,6 +857,151 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
         </div>
       )}
 
+      {/* Crawlgraph's own extras (issue #40) — the snapshot the data comes from, the
+          between-releases changes panel, and the competitor-gap job. Only on its tab, same
+          rule as DataForSEO's block: the figures say whose they are by where they live. */}
+      {!guest && view === "crawlgraph" && (
+        <div className="privacy-blur-all" style={{ marginBottom: "14px" }}>
+          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center", marginBottom: "10px" }}>
+            {cgExtras?.authority != null && chip(t("blpCgAuth"), String(Math.round(cgExtras.authority)), t("blpCgAuthorityHint"))}
+            {cgExtras?.totalLinkingDomains != null && chip(t("blpRefDomains"), fmt(cgExtras.totalLinkingDomains))}
+            {cgExtras?.releaseLabel && chip(t("blpCgRelease"), cgExtras.releaseLabel, t("blpCgReleaseHint"))}
+            {cgExtras?.truncated && chip(t("blpCgTruncated"), fmt(cgExtras.returned), t("blpCgTruncatedHint"))}
+          </div>
+
+          {/* Changes between the two newest quarterly releases — one priced call, cached. The
+              API's own caveat rides under the table: "removed" means "absent from the newer
+              snapshot", never "proven deleted". */}
+          {siteDbId && srcs.crawlgraph?.hasKey && (
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center", marginBottom: "10px" }}>
+              <button className="metric-action" onClick={() => { void runCgOp("changes"); }} disabled={!!cgBusy}
+                title={t("blpCgChangesHint")}>
+                {cgBusy === "changes" ? <Loader2 size={13} className="spin" /> : <GitCompare size={13} />}
+                {t("blpCgChanges")} · ≈ {formatProviderUnits(CRAWLGRAPH_CHANGES_UNITS, "crawlgraph")} {t("metricsUnits")}
+              </button>
+            </div>
+          )}
+          {cgExtras?.changes && (cgExtras.changes.comparisonAvailable ? (
+            <div style={{ overflowX: "auto", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", marginBottom: "12px" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ background: "var(--color-bg)", borderBottom: "1px solid var(--color-border)" }}>
+                    <th style={th}>{t("blpDomain")}</th>
+                    <th style={thC}>{t("blpChange")}</th>
+                    <th style={thC}>Auth·CG</th>
+                    <th style={thC}>{t("blpLinks")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cgExtras.changes.added.slice(0, 25).map(x => (
+                    <tr key={`a-${x.refDomain}`} style={{ borderBottom: "1px solid var(--color-border)" }}>
+                      <td style={{ ...cell, fontSize: "12px" }}>
+                        <a href={`https://${x.refDomain}`} target="_blank" rel="noreferrer noopener nofollow" style={{ color: "var(--color-text-primary)", textDecoration: "none" }}>{x.refDomain}</a>
+                      </td>
+                      <td style={{ ...cell, textAlign: "center", color: "var(--color-success)" }}>+</td>
+                      {numCell(x.authority, x.authority != null ? drColor(x.authority) : undefined)}
+                      {numCell(x.linksToTarget)}
+                    </tr>
+                  ))}
+                  {cgExtras.changes.removed.slice(0, 25).map(x => (
+                    <tr key={`r-${x.refDomain}`} style={{ borderBottom: "1px solid var(--color-border)" }}>
+                      <td style={{ ...cell, fontSize: "12px" }}>
+                        <a href={`https://${x.refDomain}`} target="_blank" rel="noreferrer noopener nofollow" style={{ color: "var(--color-text-secondary)", textDecoration: "none" }}>{x.refDomain}</a>
+                      </td>
+                      <td style={{ ...cell, textAlign: "center", color: "var(--color-warning)" }}>−</td>
+                      {numCell(x.authority, x.authority != null ? drColor(x.authority) : undefined)}
+                      {numCell(x.linksToTarget)}
+                    </tr>
+                  ))}
+                  {cgExtras.changes.authorityMoved.slice(0, 10).map(x => (
+                    <tr key={`m-${x.refDomain}`} style={{ borderBottom: "1px solid var(--color-border)" }}>
+                      <td style={{ ...cell, fontSize: "12px" }}>
+                        <a href={`https://${x.refDomain}`} target="_blank" rel="noreferrer noopener nofollow" style={{ color: "var(--color-text-primary)", textDecoration: "none" }}>{x.refDomain}</a>
+                      </td>
+                      <td style={{ ...cell, textAlign: "center", color: "var(--color-text-secondary)" }}>Δ</td>
+                      <td style={{ ...cell, textAlign: "center", fontWeight: 700, color: (x.delta ?? 0) >= 0 ? "var(--color-success)" : "var(--color-warning)" }}>
+                        {x.fromAuthority ?? "—"} → {x.toAuthority ?? "—"}
+                      </td>
+                      <td style={{ ...cell, textAlign: "center", color: "var(--color-text-secondary)" }}>
+                        {x.delta != null ? (x.delta >= 0 ? `+${x.delta}` : String(x.delta)) : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                  {!cgExtras.changes.added.length && !cgExtras.changes.removed.length && !cgExtras.changes.authorityMoved.length && (
+                    <tr><td colSpan={4} style={{ ...cell, textAlign: "center", color: "var(--color-text-secondary)", padding: "18px" }}>{t("blpCgNoChanges")}</td></tr>
+                  )}
+                </tbody>
+              </table>
+              <div style={{ padding: "6px 12px", fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+                {cgExtras.changes.fromRelease?.label ?? "?"} → {cgExtras.changes.toRelease?.label ?? "?"}
+                {cgExtras.changes.counts.added != null && <> · +{cgExtras.changes.counts.added}</>}
+                {cgExtras.changes.counts.removed != null && <> · −{cgExtras.changes.counts.removed}</>}
+                {cgExtras.changes.truncated && <> · {t("blpCgTruncated")}</>}
+                {" "}{cgExtras.changes.snapshotCaveat}
+                {" "}· {new Date(cgExtras.changes.checkedAt).toLocaleString(undefined, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+              </div>
+            </div>
+          ) : (
+            <div style={{ marginBottom: "12px", fontSize: "12px", color: "var(--color-text-secondary)" }}>
+              {t("blpCgUnavailable")}{cgExtras.changes.message ? ` — ${cgExtras.changes.message}` : ""}
+            </div>
+          ))}
+
+          {/* The competitor gap: domains linking to 1–5 competitors but not to this site. One
+              paid submission (a paid-tier feature — a free key answers quota_exceeded, shown
+              as its own sentence); polling until it lands is free and never resubmits. */}
+          {siteDbId && srcs.crawlgraph?.hasKey && (
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+              <input
+                value={gapCompetitors}
+                onChange={e => setGapCompetitors(e.target.value)}
+                placeholder={t("blpCgGapCompetitors")}
+                title={t("blpCgGapCompetitorsHint")}
+                style={{ flex: "1 1 220px", minWidth: "180px", padding: "7px 10px", fontSize: "12px", borderRadius: "var(--radius-md)", border: "1px solid var(--color-border)", background: "var(--color-bg)", color: "var(--color-text-primary)" }}
+              />
+              <button className="metric-action" onClick={() => { void runCgOp("gap_submit"); }} disabled={!!cgBusy}
+                title={t("blpCgGapHint")}>
+                {cgBusy === "gap_submit" ? <Loader2 size={13} className="spin" /> : <Users size={13} />}
+                {cgBusy === "gap_submit" ? t("blpCgGapPolling") : `${t("blpCgGapBtn")} · ≈ 1 ${t("metricsUnits")}`}
+              </button>
+            </div>
+          )}
+          {cgExtras?.gap?.job?.status === "failed" && (
+            <div style={{ marginTop: "8px", fontSize: "12px", color: "var(--color-warning)" }}>
+              {t("blpCgGapFailed")}{cgExtras.gap.job.error?.message ? `: ${cgExtras.gap.job.error.message}` : ""}
+            </div>
+          )}
+          {cgExtras?.gap?.job?.result && cgExtras.gap.job.result.gaps.length > 0 && (
+            <div style={{ marginTop: "10px", overflowX: "auto", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)" }}>
+              <div style={{ padding: "8px 12px", fontSize: "12px", color: "var(--color-text-secondary)", borderBottom: "1px solid var(--color-border)" }}>
+                {t("blpCgGapTitle")}: <strong style={{ color: "var(--color-text-primary)" }}>{fmt(cgExtras.gap.job.result.totalGaps ?? cgExtras.gap.job.result.gaps.length)}</strong>
+                {cgExtras.gap.job.result.truncated && <> · {t("blpCgTruncated")}</>}
+                {" "}(vs {cgExtras.gap.competitors.join(", ")})
+              </div>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ background: "var(--color-bg)", borderBottom: "1px solid var(--color-border)" }}>
+                    <th style={th}>{t("blpDomain")}</th>
+                    <th style={th}>{t("blpCgGapFoundOn")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cgExtras.gap.job.result.gaps.slice(0, 50).map(g => (
+                    <tr key={g.refDomain} style={{ borderBottom: "1px solid var(--color-border)" }}>
+                      <td style={{ ...cell, fontSize: "12px" }}>
+                        <a href={`https://${g.refDomain}`} target="_blank" rel="noreferrer noopener nofollow" style={{ color: "var(--color-text-primary)", textDecoration: "none" }}>{g.refDomain}</a>
+                      </td>
+                      <td style={{ ...cell, fontSize: "12px", color: "var(--color-text-secondary)" }}>
+                        {g.foundOn.join(", ")}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {rows.length === 0 ? (
         <div style={{ padding: "28px", textAlign: "center", border: "1px dashed var(--color-border)", borderRadius: "var(--radius-md)", fontSize: "13px", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
@@ -728,6 +1021,8 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
                   chip("Keys.so · RD", fmt(histFor("keysso").slice(-1)[0]!.refDomains), t("blpKsMarketHint"))}
                 {histFor("dataforseo").slice(-1)[0]?.refDomains != null &&
                   chip("DataForSEO · RD", fmt(histFor("dataforseo").slice(-1)[0]!.refDomains))}
+                {histFor("crawlgraph").slice(-1)[0]?.refDomains != null &&
+                  chip("Crawlgraph · RD", fmt(histFor("crawlgraph").slice(-1)[0]!.refDomains), t("blpCgReleaseHint"))}
                 {lost.length > 0 && chip(t("blpLost"), String(lost.length))}
               </>
             ) : (
@@ -760,6 +1055,7 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
                   {showAs && <th style={thC}>AS</th>}
                   {showKs && <th style={thC} title={t("blpKsDrHint")}>DR·KS</th>}
                   {showDfs && <th style={thC} title={t("blpDfsRankHint")}>Rank·DFS</th>}
+                  {showCg && <th style={thC} title={t("blpCgAuthorityHint")}>Auth·CG</th>}
                   {showCf && <th style={thC}>CF</th>}
                   <th style={thC}>{t("blpLinks")}</th>
                   {showExtras && <th style={th}>{t("blpTopic")}</th>}
@@ -777,7 +1073,7 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
                           show two. */}
                       {view === "all" && (
                         <span className="metric-chip" style={{ marginLeft: "6px", fontWeight: 500 }} title={r.providers.join(", ")}>
-                          {r.providers.map(x => x === "ahrefs" ? "A" : x === "majestic" ? "M" : x === "keysso" ? "K" : x === "dataforseo" ? "D" : "S").join("+")}
+                          {r.providers.map(x => x === "ahrefs" ? "A" : x === "majestic" ? "M" : x === "keysso" ? "K" : x === "dataforseo" ? "D" : x === "crawlgraph" ? "C" : "S").join("+")}
                         </span>
                       )}
                       {r.dofollow === false && (
@@ -789,6 +1085,7 @@ export default function BacklinkProfile({ siteDbId, dropDomain }: { siteDbId?: s
                     {showAs && numCell(r.as, r.as != null ? drColor(r.as) : undefined)}
                     {showKs && numCell(r.ks, r.ks != null ? drColor(r.ks) : undefined)}
                     {showDfs && numCell(r.dfs, r.dfs != null ? drColor(r.dfs) : undefined)}
+                    {showCg && numCell(r.cg, r.cg != null ? drColor(r.cg) : undefined)}
                     {showCf && numCell(r.cf)}
                     <td style={{ ...cell, textAlign: "center", color: "var(--color-text-secondary)" }}>{r.links ?? "—"}</td>
                     {showExtras && <td style={{ ...cell, color: "var(--color-text-secondary)", fontSize: "12px", maxWidth: "180px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.topic}>

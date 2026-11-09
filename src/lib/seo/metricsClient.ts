@@ -8,7 +8,7 @@
 // the provider log and through it the Prisma client. Prices are shared knowledge; sockets are not.
 import { MetricsProvider, parseMetricsProvider, parseKeyssoBase, UNIT_PRICE_USD, estimateCostUsd, estimateKeywordUnits, priceExpand, priceEnrich } from "./metricsPricing";
 
-export const METRICS_PROVIDERS: MetricsProvider[] = ["ahrefs", "semrush", "majestic", "keysso", "dataforseo"];
+export const METRICS_PROVIDERS: MetricsProvider[] = ["ahrefs", "semrush", "majestic", "keysso", "dataforseo", "crawlgraph"];
 
 // Keyword-source pricing is defined in `metrics.ts` and re-exported here so the existing browser
 // imports (`priceExpand`/`priceEnrich` from `@/lib/seo/metricsClient`) keep working. The functions
@@ -44,6 +44,8 @@ export const RESELLER_BASE_URL: Record<MetricsProvider, string> = {
   // DataForSEO has no reseller gateway; the settings screen offers only the official host for
   // it. The entry exists so the record stays total — it is the official host, not a gateway.
   dataforseo: "https://api.dataforseo.com",
+  // Same for Crawlgraph: official host only, no gateway (issue #40).
+  crawlgraph: "https://crawlgraph.com",
 };
 
 export interface MetricsClientCreds {

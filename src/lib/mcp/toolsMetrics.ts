@@ -78,13 +78,15 @@ export const METRICS_TOOLS: McpTool[] = [
       "Keys.so, the Yandex/Runet index: its `dr` is Keys.so's own DR (not comparable with Ahrefs DR), organic traffic " +
       "fields stay null, and Yandex visibility/top-50/AI-answer counts ride in `payload` (vis, it50, dashboard); " +
       "or dataforseo — its `dr` is DataForSEO rank on a 0–100 scale (not Ahrefs DR), traffic fields stay null, and " +
-      "the backlink spam score, broken-backlink count and referring main domains ride in `payload`.",
+      "the backlink spam score, broken-backlink count and referring main domains ride in `payload`; " +
+      "or crawlgraph — its `dr` is cg_authority, a 0–100 percentile of Common Crawl centrality (not Ahrefs DR, " +
+      "and quarterly-snapshot data, not live), traffic fields stay null, and the release label rides in `payload`.",
     cost: "local",
     inputSchema: {
       type: "object",
       properties: {
         domains: { type: "array", items: { type: "string" }, description: "Domains to look up (max 100)" },
-        provider: { type: "string", description: "ahrefs (default), semrush, majestic, keysso (Yandex/Runet), or dataforseo" },
+        provider: { type: "string", description: "ahrefs (default), semrush, majestic, keysso (Yandex/Runet), dataforseo, or crawlgraph (quarterly Common Crawl snapshots)" },
       },
       required: ["domains"],
     },
@@ -157,7 +159,7 @@ export const METRICS_TOOLS: McpTool[] = [
       properties: {
         site: siteArg,
         includeLost: { type: "boolean", description: "Include referring domains recorded as lost. Default true" },
-        provider: { type: "string", description: "Whose stored rows to read: ahrefs (default), semrush, majestic (dr = Trust Flow), keysso (dr = Keys.so DR, Yandex/Runet index), dataforseo (dr = DataForSEO rank 0–100), or all" },
+        provider: { type: "string", description: "Whose stored rows to read: ahrefs (default), semrush, majestic (dr = Trust Flow), keysso (dr = Keys.so DR, Yandex/Runet index), dataforseo (dr = DataForSEO rank 0–100), crawlgraph (dr = cg_authority percentile, quarterly Common Crawl snapshots), or all" },
         minDr: { type: "number", description: "Only return referring domains at or above this rating (in the chosen provider's own scale)" },
         limit: { type: "number", description: "Max referring domains to return (default 100, max 500)" },
       },

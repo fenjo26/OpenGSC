@@ -47,6 +47,7 @@ The **file's own date** is used, not the upload time. An old export won't overwr
    - **Semrush**: keywords + links. Supported for existing subscribers; more expensive here.
    - **Majestic**: **links only** (Trust Flow, Citation Flow, referring domains) at a fraction of Ahrefs' link price. With Majestic active, keyword tools keep using your Ahrefs/Semrush key.
    - **DataForSEO**: backlink profiles pay-as-you-go ($0.024 per request + $0.000036 per row, no subscription), using the same credential as SERP and Demand.
+   - **Crawlgraph**: links only, flat-priced — one API call = one unit (profile pull, changes diff or gap job; $19/month for 1 000 calls, free tier 15). Domain-level data over quarterly Common Crawl snapshots; `cg_authority` is its own 0–100 percentile, never DR.
    - **Keys.so**: the Yandex / Runet market. Backlink profile and domain metrics from its own index (labelled `DR·KS`), Yandex AI answers, a Yandex market for Competitors and Demand, Yandex Direct in Ads. Works with an official `api.keys.so` token or a GroupBuySEO key; the settings card checks the key for free and shows remaining credits.
 2. **Where your key comes from**:
    - **Official API**: `api.ahrefs.com` / `api.semrush.com` / `api.majestic.com`.

@@ -3,7 +3,8 @@ import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import {
   fetchBacklinkProfile, fetchBacklinkStats, estimateProfileUnits, estimateMajesticProfileUnits,
-  estimateSemrushProfileUnits, estimateKeyssoProfileUnits, estimateDataforseoProfileUnits, parseMetricsProvider,
+  estimateSemrushProfileUnits, estimateKeyssoProfileUnits, estimateDataforseoProfileUnits,
+  estimateCrawlgraphProfileUnits, parseMetricsProvider,
   REFDOMAIN_PAGE_SIZE, MetricsProvider,
 } from "@/lib/seo/metrics";
 import { readUsage, recordUsage, releaseUnusedUnits, withinCap, UsageState } from "@/lib/seo/metricsStore";
@@ -12,6 +13,7 @@ import {
   RefDomainRecord,
 } from "@/lib/seo/backlinkStore";
 import { readDfsExtras, writeDfsSummary } from "@/lib/seo/dataforseoBacklinks";
+import { readCgExtras, writeCgSummary } from "@/lib/seo/crawlgraphBacklinks";
 
 // POST /api/metrics/backlinks { siteId, dropDomain?, shareToken?, view?, fetch?, creds?, minDr? }
 //
@@ -19,8 +21,8 @@ import { readDfsExtras, writeDfsSummary } from "@/lib/seo/dataforseoBacklinks";
 // opt-in paid refresh. The stored side is what an imported CSV fills, so the whole tab works
 // with no key at all.
 //
-// `view` picks which stored rows come back: "ahrefs", "majestic", "semrush", "keysso" or
-// "dataforseo" read one provider's rows,
+// `view` picks which stored rows come back: "ahrefs", "majestic", "semrush", "keysso",
+// "dataforseo" or "crawlgraph" read one provider's rows,
 // "all" (the default) merges both into unique domains — one row per domain carrying each
 // provider's number in its own column. The refresh pulls whichever providers the view needs
 // and the caller holds keys for; a merged refresh is two independent pulls, each metered and
@@ -47,6 +49,8 @@ export interface MergedRefDomain {
   ks: number | null;
   /** DataForSEO rank (0–100) — its own column, never Ahrefs' DR. */
   dfs: number | null;
+  /** Crawlgraph cg_authority (0–100 percentile) — its own column, never Ahrefs' DR. */
+  cg: number | null;
   cf: number | null;
   links: number | null;
   firstSeen: string;
@@ -71,6 +75,7 @@ function mergeRefDomains(all: RefDomainRecord[]): MergedRefDomain[] {
         as: r.provider === "semrush" ? r.dr : null,
         ks: r.provider === "keysso" ? r.dr : null,
         dfs: r.provider === "dataforseo" ? r.dr : null,
+        cg: r.provider === "crawlgraph" ? r.dr : null,
         cf: r.cf,
         links: r.linksToTarget,
         firstSeen: r.firstSeen,
@@ -87,6 +92,7 @@ function mergeRefDomains(all: RefDomainRecord[]): MergedRefDomain[] {
     else if (r.provider === "majestic") cur.tf = r.dr;
     else if (r.provider === "keysso") cur.ks = r.dr;
     else if (r.provider === "dataforseo") cur.dfs = r.dr;
+    else if (r.provider === "crawlgraph") cur.cg = r.dr;
     else if (r.provider === "semrush") cur.as = r.dr;
     cur.cf = cur.cf ?? r.cf;
     cur.links = cur.links ?? r.linksToTarget;
@@ -103,7 +109,7 @@ function mergeRefDomains(all: RefDomainRecord[]): MergedRefDomain[] {
   // this ordering is a display heuristic, not a ranking.
   return [...byDomain.values()].sort((a, b) =>
     (a.lost ? 1 : 0) - (b.lost ? 1 : 0)
-    || Math.max(b.dr ?? 0, b.tf ?? 0, b.as ?? 0, b.ks ?? 0, b.dfs ?? 0) - Math.max(a.dr ?? 0, a.tf ?? 0, a.as ?? 0, a.ks ?? 0, a.dfs ?? 0));
+    || Math.max(b.dr ?? 0, b.tf ?? 0, b.as ?? 0, b.ks ?? 0, b.dfs ?? 0, b.cg ?? 0) - Math.max(a.dr ?? 0, a.tf ?? 0, a.as ?? 0, a.ks ?? 0, a.dfs ?? 0, a.cg ?? 0));
 }
 
 export async function POST(req: Request) {
@@ -145,7 +151,7 @@ export async function POST(req: Request) {
   const target = resolved;
 
   const view = b.view === "ahrefs" || b.view === "majestic" || b.view === "semrush" || b.view === "keysso"
-    || b.view === "dataforseo" ? b.view : "all";
+    || b.view === "dataforseo" || b.view === "crawlgraph" ? b.view : "all";
   // Legacy body.provider still names a single-provider refresh for old clients.
   const fetchProvider: MetricsProvider = view === "all"
     ? parseMetricsProvider(b.provider ?? "ahrefs")
@@ -168,6 +174,7 @@ export async function POST(req: Request) {
     semrush: await readSnapshots(target, 90, "semrush"),
     keysso: await readSnapshots(target, 90, "keysso"),
     dataforseo: await readSnapshots(target, 90, "dataforseo"),
+    crawlgraph: await readSnapshots(target, 90, "crawlgraph"),
   };
   const usage: Record<MetricsProvider, UsageState | null> = {
     ahrefs: userId ? await readUsage(userId, "ahrefs") : null,
@@ -175,6 +182,7 @@ export async function POST(req: Request) {
     semrush: userId ? await readUsage(userId, "semrush") : null,
     keysso: userId ? await readUsage(userId, "keysso") : null,
     dataforseo: userId ? await readUsage(userId, "dataforseo") : null,
+    crawlgraph: userId ? await readUsage(userId, "crawlgraph") : null,
   };
 
   const readRows = () => {
@@ -195,6 +203,8 @@ export async function POST(req: Request) {
       // DataForSEO's summary extras (rank, spam score, broken links, weekly new/lost) — a local
       // read of what earlier pulls stored, free like the rest of this response.
       dataforseo: await readDfsExtras(target),
+      // Crawlgraph's extras (release label, truncation, changes panel, gap job) — same deal.
+      crawlgraph: await readCgExtras(target),
       ...extra,
     }, { status });
 
@@ -202,7 +212,7 @@ export async function POST(req: Request) {
 
   // ── The refresh: one independent pull per provider the view needs. ──
   const pulls: MetricsProvider[] = view === "all"
-    ? (["ahrefs", "majestic", "semrush", "keysso", "dataforseo"] as MetricsProvider[]).filter(p => credsFor(p).apiKey)
+    ? (["ahrefs", "majestic", "semrush", "keysso", "dataforseo", "crawlgraph"] as MetricsProvider[]).filter(p => credsFor(p).apiKey)
     : [fetchProvider];
   if (!pulls.length) return respond({ error: "no_key" });
 
@@ -227,7 +237,9 @@ export async function POST(req: Request) {
           ? estimateKeyssoProfileUnits(stats.totals.refDomainsTotal ?? REFDOMAIN_PAGE_SIZE)
           : p === "dataforseo"
             ? estimateDataforseoProfileUnits(stats.totals.refDomainsTotal ?? REFDOMAIN_PAGE_SIZE)
-            : estimateProfileUnits(stats.totals.refDomainsTotal ?? REFDOMAIN_PAGE_SIZE);
+            : p === "crawlgraph"
+              ? estimateCrawlgraphProfileUnits()
+              : estimateProfileUnits(stats.totals.refDomainsTotal ?? REFDOMAIN_PAGE_SIZE);
     if (!userId || !(await withinCap(userId, p, units, cap))) {
       errors[p] = "cap_exceeded";
       continue;
@@ -242,9 +254,10 @@ export async function POST(req: Request) {
     // happened (or were refused, which the gateway does not charge for) come back off the
     // reservation.
     const spent = res.unitsSpent ?? 0;
-    // DataForSEO's spend is its own reported `cost`, not an estimate — when the profile grew
-    // past the quote, the overage goes on the meter instead of silently vanishing.
-    if (userId && p === "dataforseo" && spent > units) await recordUsage(userId, p, spent - units);
+    // DataForSEO's spend is its own reported `cost` and Crawlgraph's is its attempt count, not
+    // an estimate — when either grew past the quote (a retried 5xx that had already billed),
+    // the overage goes on the meter instead of silently vanishing.
+    if (userId && (p === "dataforseo" || p === "crawlgraph") && spent > units) await recordUsage(userId, p, spent - units);
     else if (userId) await releaseUnusedUnits(userId, p, units, spent);
 
     if (!res.items.length) { errors[p] = res.error ?? "empty"; continue; }
@@ -262,6 +275,7 @@ export async function POST(req: Request) {
       dofollowPct: profile.dofollowPct,
     }, { provider: p, source: "api" });
     if (p === "dataforseo") await writeDfsSummary(target, stats.raw);
+    if (p === "crawlgraph") await writeCgSummary(target, stats.raw);
 
     perProvider[p] = {
       units: spent, complete, sync,
@@ -284,6 +298,7 @@ export async function POST(req: Request) {
     semrush: userId ? await readUsage(userId, "semrush") : null,
     keysso: userId ? await readUsage(userId, "keysso") : null,
     dataforseo: userId ? await readUsage(userId, "dataforseo") : null,
+    crawlgraph: userId ? await readUsage(userId, "crawlgraph") : null,
   };
 
   if (!pulledAny) {

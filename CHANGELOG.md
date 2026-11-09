@@ -5,6 +5,15 @@ All notable changes to OpenGSC. Dates are release dates; the version shown in
 
 ## [Unreleased]
 
+### Added — Crawlgraph: a sixth backlink provider, flat-priced per call (#40)
+
+- **One API call = one unit**, whether it is a profile pull (up to 10 000 referring domains in a single call), a between-releases changes diff or a competitor-gap job. $99 lifetime or $19/month for 1 000 calls + 50 gap jobs; the free tier (15 calls a month, no card) works for trying it.
+- **The backlink profile gets a Crawlgraph tab** (Settings → SEO Metrics → Crawlgraph, `cg_live_…` bearer key) and a merged-view `Auth·CG` column with a `C` provenance badge — `cg_authority`, a 0–100 percentile of Common Crawl centrality, in its own column the way Majestic's TF and DataForSEO's rank are. The placard shows the snapshot release every answer names and, via the free `/releases` headers, how many calls the month still has (that free read also powers a `balance_low` alert).
+- **Two extras on the tab**: *Changes between releases* — added domains, observed absences and authority movement between the two newest quarterly snapshots (one call, cached; the API's own caveat that absence ≠ a removed link is shown verbatim), and *Find link gap* — one async job against 1–5 competitors, polled free until it lands (a failed job is never auto-resubmitted: the vendor does not refund those).
+- **Drops and SERP-monitor enrichment work through it** when it is the active provider: one flat call a domain instead of ~100 Ahrefs units — the use case the vendor pitched it for in #40. MCP `get_domain_metrics` / `get_backlink_profile` accept `provider: "crawlgraph"`; `drops_enrich_refdomains` pricing text is now provider-honest.
+- **Two honest limits, enforced in code**: the data is quarterly Common Crawl snapshots, not a live crawl (a truncated pull — `returned < total_linking_domains` — never marks absent domains lost), and it is domain-level only: no anchors, no per-link rows, no dofollow — so it feeds neither the toxicity check nor the per-link export, and `minDr` filtering is skipped for it (the call is flat-priced; filtering would discard stored truth to save nothing).
+- No database changes — deploy is `update.sh` as usual, without `prisma db push`.
+
 ### Fixed — Generation batch and provider rate limits
 
 - **Batch text phase failed with `no_outline` on every item.** The outline was attached to the item's knobs, but the shared payload resolver copies only the known knob names from the top level, so `outline` was silently dropped before the text job started. It now travels under `payload`, together with any other per-item field.

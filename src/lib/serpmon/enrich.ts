@@ -284,6 +284,7 @@ function refdomainStatsUnits(provider: MetricsProvider): number {
   if (provider === "majestic") return MAJESTIC_STATS_UNITS;
   if (provider === "keysso") return KEYSSO_STATS_UNITS; // two one-row totals reads
   if (provider === "dataforseo") return DATAFORSEO_STATS_UNITS; // one summary request, micro-dollar units
+  if (provider === "crawlgraph") return 1; // one flat-priced call, whatever the totals
   if (provider === "semrush") return SEMRUSH_BACKLINKS_OVERVIEW_UNITS;
   return AHREFS_UNIT_FLOOR;
 }

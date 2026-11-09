@@ -341,17 +341,17 @@ export const DROPS_TOOLS: McpTool[] = [
     cost: "paid",
     idempotent: false,
     description:
-      "PAID: fetch Ahrefs refdomains/backlink counts for up to 25 domains through the configured metrics provider — spends the owner's Ahrefs units (~100 units per domain, the 50-unit floor doubled). Do not run for the whole catalogue; run for shortlisted rows. Needs confirm: true.",
+      "PAID: fetch refdomains/backlink counts for up to 25 domains through the configured metrics provider. Cost depends on the active provider: Ahrefs ~100 units per domain (the 50-unit floor doubled), Majestic 1 unit a domain, Semrush 10, DataForSEO one $0.024 summary, Crawlgraph one flat call. Do not run for the whole catalogue; run for shortlisted rows. Needs confirm: true.",
     inputSchema: {
       type: "object",
       required: ["domains", "confirm"],
       properties: {
         domains: { type: "array", items: { type: "string" }, description: "up to 25 shortlisted domains" },
-        confirm: { type: "boolean", description: "must be true — this spends Ahrefs units" },
+        confirm: { type: "boolean", description: "must be true — this spends the metrics provider's units" },
       },
     },
     handler: async (userId, args) => {
-      assertConfirmed(args, "drops_enrich_refdomains bills metrics units (Ahrefs or Majestic)");
+      assertConfirmed(args, "drops_enrich_refdomains bills the active metrics provider's units (Ahrefs, Majestic, Semrush, DataForSEO or Crawlgraph)");
       const domains = domainsArg(args).slice(0, 25);
       if (!domains.length) throw new Error("domains required");
       // Same key chain the warmup cron uses — the one server-side authority on where this

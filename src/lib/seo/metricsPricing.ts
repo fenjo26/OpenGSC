@@ -15,7 +15,7 @@
 // in `metrics.ts`, which re-exports this whole module so every existing server-side import keeps
 // working unchanged.
 
-export type MetricsProvider = "ahrefs" | "semrush" | "majestic" | "keysso" | "dataforseo";
+export type MetricsProvider = "ahrefs" | "semrush" | "majestic" | "keysso" | "dataforseo" | "crawlgraph";
 
 /**
  * Providers that can serve keyword-side calls (volumes, difficulty, ideas, organic rows).
@@ -55,6 +55,9 @@ export const DEFAULT_BASE_URL: Record<MetricsProvider, string> = {
   // DataForSEO Backlinks API. One host, no reseller: the credential is the same "login:password"
   // (or Base64 token) the SERP and keyword-demand modules already read from `seoKey_dataforseo`.
   dataforseo: "https://api.dataforseo.com",
+  // Crawlgraph — referring domains and competitor gaps over quarterly Common Crawl snapshots.
+  // One host, no reseller; bearer `cg_live_…` key. Domain-level only (issue #40).
+  crawlgraph: "https://crawlgraph.com",
 };
 
 /**
@@ -66,7 +69,7 @@ export const DEFAULT_BASE_URL: Record<MetricsProvider, string> = {
  * ahrefs, which keeps old clients (and hand-rolled curl calls) working unchanged.
  */
 export function parseMetricsProvider(v: unknown): MetricsProvider {
-  return v === "semrush" || v === "majestic" || v === "keysso" || v === "dataforseo" ? v : "ahrefs";
+  return v === "semrush" || v === "majestic" || v === "keysso" || v === "dataforseo" || v === "crawlgraph" ? v : "ahrefs";
 }
 
 // ─── Cost model ────────────────────────────────────────────────────────────────
@@ -92,6 +95,11 @@ export const UNIT_PRICE_USD: Record<MetricsProvider, number> = {
   // unchanged and every figure stays an integer: $0.024 per request = 24 000 units, $0.000036
   // per row = 36 units. Screens show these as dollars (`formatProviderUnits`), never as units.
   dataforseo: 0.000001,
+  // Crawlgraph meters in API calls, not rows: one "unit" = one backlinks/changes call or one
+  // gap job. $19/month buys 1 000 calls (the current experiment price; $99 lifetime is the same
+  // bucket), so one call ≈ $0.019. Used only to turn the call count into a judgeable dollar
+  // figure — the vendor enforces its own per-user quota on top.
+  crawlgraph: 0.019,
 };
 
 export function estimateCostUsd(units: number, provider: MetricsProvider): number {
@@ -324,7 +332,7 @@ export interface SubscriptionInfo {
  * them; this lets a caller distinguish "key rejected" from "gateway down" without re-fetching.
  */
 export function gatewayStatusFromError(error: string | null | undefined): number | null {
-  const m = /^(?:ahrefs|semrush|majestic|keysso|dataforseo) (\d{3})/.exec(String(error ?? "").trim());
+  const m = /^(?:ahrefs|semrush|majestic|keysso|dataforseo|crawlgraph) (\d{3})/.exec(String(error ?? "").trim());
   return m ? Number(m[1]) : null;
 }
 
@@ -496,6 +504,28 @@ export const DATAFORSEO_HISTORY_UNITS = DATAFORSEO_REQUEST_UNITS + DATAFORSEO_RO
 export const DATAFORSEO_NEWLOST_WEEKS = 12;
 export const DATAFORSEO_NEWLOST_UNITS = DATAFORSEO_REQUEST_UNITS + DATAFORSEO_ROW_UNITS * (DATAFORSEO_NEWLOST_WEEKS + 1);
 
+// ─── Crawlgraph Backlinks API ─────────────────────────────────────────────────
+//
+// Flat-priced, domain-level, quarterly Common Crawl snapshots (issue #40). The meter is calls,
+// not rows: one POST /backlinks or GET /changes = 1 unit, one gap-analysis job = 1 unit. The
+// API returns up to `CRAWLGRAPH_LIMIT` referring domains in a single call — there is no paging
+// and no per-row fee, so `limit` is set to the API maximum every time. Truncation is detected
+// from `returned < total_linking_domains` in the response, not from a short page.
+
+/** Rows per backlinks call — the API maximum (default 1000, hard cap 10 000). */
+export const CRAWLGRAPH_LIMIT = 10_000;
+/** One backlinks call: the stats pre-flight (`limit: 1`) or the full profile pull alike. */
+export const CRAWLGRAPH_STATS_UNITS = 1;
+export const CRAWLGRAPH_PROFILE_UNITS = 1;
+/** Reserve for a profile refresh: the stats pre-flight plus the pull itself. */
+export function estimateCrawlgraphProfileUnits(): number {
+  return CRAWLGRAPH_STATS_UNITS + CRAWLGRAPH_PROFILE_UNITS;
+}
+/** One GET /changes comparison — same quota bucket as POST /backlinks. */
+export const CRAWLGRAPH_CHANGES_UNITS = 1;
+/** One gap-analysis job submission; polling the job is free. */
+export const CRAWLGRAPH_GAP_UNITS = 1;
+
 /**
  * A meter figure in the provider's own currency, for screens: DataForSEO's micro-dollar units
  * as dollars, every other provider's units as a plain count. One helper so no screen ever prints
@@ -545,6 +575,7 @@ export function domainUnits(provider: MetricsProvider): number {
   if (provider === "semrush") return 10; // `domain_ranks`: 10 units per line, one line per domain
   if (provider === "keysso") return KEYSSO_DOMAIN_UNITS;
   if (provider === "dataforseo") return DATAFORSEO_STATS_UNITS;
+  if (provider === "crawlgraph") return CRAWLGRAPH_STATS_UNITS; // one flat-priced call
   return DOMAIN_UNITS;
 }
 

@@ -84,6 +84,39 @@ async function fetch2Index(token: string): Promise<BalanceFetch> {
   return { provider: "2index", unit: "pages", left: isFinite(left) ? left : null, limit: null, resetAt: null, ok: isFinite(left) };
 }
 
+// Crawlgraph has no balance endpoint — but every 2xx (including the free, unlimited
+// GET /api/v1/releases) carries X-RateLimit headers naming the key's tier caps and what the
+// UTC month still holds. That is the provider's own counter, fetched at zero quota cost.
+async function fetchCrawlgraph(key: string): Promise<BalanceFetch> {
+  const res = await fetch("https://crawlgraph.com/api/v1/releases", {
+    headers: { Authorization: `Bearer ${key}`, Accept: "application/json" },
+    signal: timeout(15_000),
+  });
+  if (!res.ok) return { provider: "crawlgraph", unit: "calls", left: null, limit: null, resetAt: null, ok: false, error: `HTTP ${res.status}` };
+  // The headers are documented on every 2xx but were absent from /releases when verified live
+  // (2026-11-09). A 200 with no headers still proves the key — ok stays true, the figures stay
+  // null, and the page shows "checked, balance unknown" rather than "check failed". The absent
+  // check comes before Number(): Number(null) is 0, and a missing header read as "0 left" would
+  // fire a false balance_low alert on a healthy key.
+  const num = (name: string) => {
+    const raw = res.headers.get(name);
+    if (raw == null || raw === "") return null;
+    const v = Number(raw);
+    return Number.isFinite(v) && v >= 0 ? v : null;
+  };
+  const left = num("X-RateLimit-Remaining-Backlinks");
+  const limit = num("X-RateLimit-Limit-Backlinks");
+  const resetUnix = num("X-RateLimit-Reset");
+  const resetAt = resetUnix != null && resetUnix > 0 ? new Date(resetUnix * 1000) : null;
+  return {
+    provider: "crawlgraph", unit: "calls",
+    left: Number.isFinite(left) ? left : null,
+    limit: Number.isFinite(limit) ? limit : null,
+    resetAt: resetAt && !isNaN(resetAt.getTime()) ? resetAt : null,
+    ok: true,
+  };
+}
+
 // Resolve one provider's credential from the owner's mirrored settings (same storage names the
 // SeoKeysSync mirror writes) or, for 2index, the dedicated User column.
 async function credentialFor(userId: string, provider: string): Promise<string | null> {
@@ -94,6 +127,10 @@ async function credentialFor(userId: string, provider: string): Promise<string |
   }
   if (provider === "dataforseo") {
     const key = String(s.seoKey_dataforseo ?? s.dataforseoKey ?? "").trim();
+    return key || null;
+  }
+  if (provider === "crawlgraph") {
+    const key = String(s.seoKey_crawlgraph ?? "").trim();
     return key || null;
   }
   if (provider === "openrouter") {
@@ -111,6 +148,7 @@ async function credentialFor(userId: string, provider: string): Promise<string |
 const FETCHERS: Record<string, (key: string) => Promise<BalanceFetch>> = {
   ahrefs: fetchAhrefs,
   dataforseo: fetchDataForSeo,
+  crawlgraph: fetchCrawlgraph,
   openrouter: fetchOpenRouter,
   "2index": fetch2Index,
 };

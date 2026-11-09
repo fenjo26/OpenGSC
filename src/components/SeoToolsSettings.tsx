@@ -65,6 +65,8 @@ export const METRICS_PROVIDER_CARDS: KeyCardProvider[] = [
   // The same `seoKey_dataforseo` cell as the SERP card above — one credential, one place it is
   // stored, so the backlink provider and SERP/keyword demand can never disagree about it.
   { id: "dataforseo", storageKey: "seoKey_dataforseo", name: "DataForSEO", roleKey: "seoRoleDfs", placeholder: "login:password / Base64", hintKey: "seoSetHintDfs", instrKey: "seoSetInstrDfs", docsUrl: "https://app.dataforseo.com/api-access", color: "#2997ff", logo: "D" },
+  // Crawlgraph's own cell — a backlinks-only credential, unlike DataForSEO's shared one.
+  { id: "crawlgraph", storageKey: "seoKey_crawlgraph", name: "Crawlgraph", roleKey: "seoRoleCrawlgraph", placeholder: "cg_live_…", hintKey: "seoSetHintCrawlgraph", instrKey: "seoSetInstrCrawlgraph", docsUrl: "https://crawlgraph.com/docs/api", color: "#14B8A6", logo: "C" },
 ];
 
 // AEO citation-check engines that aren't already covered by the main AI provider keys
