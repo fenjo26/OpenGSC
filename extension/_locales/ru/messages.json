@@ -923,5 +923,8 @@
   },
   "err_not_migrated": {
     "message": "Выполните на сервере `npx prisma db push`"
+  },
+  "serpApproxUrl": {
+    "message": "Точный URL неизвестен (зашифрованные ссылки выдачи) — известен только хост"
   }
 }

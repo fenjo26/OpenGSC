@@ -101,3 +101,47 @@ test("validateCapture: unknown features are dropped; the known set is CAPTURE_FE
     "ai_overview", "paa", "local_pack", "top_stories", "video", "images", "shopping", "knowledge_panel", "sitelinks",
   ]);
 });
+
+
+// ─── approx rows (the /goto breadcrumb shape) ─────────────────────────────────────
+
+test("validateCapture: approx rows are forced to the host root server-side", () => {
+  const out = validateCapture(bodyOf({
+    results: [
+      { position: 1, url: "https://bizzocasino.com/casino/recommended", title: "A", snippet: "sa", approx: true },
+    ],
+  }));
+  assert.equal(out.ok, true);
+  if (!out.ok) return;
+  assert.equal(out.value.results[0].url, "https://bizzocasino.com/");
+  assert.equal(out.value.results[0].approx, true);
+});
+
+test("validateCapture: same-host approx rows collapse to one root entry at the first position", () => {
+  const out = validateCapture(bodyOf({
+    startPos: 1,
+    results: [
+      { position: 1, url: "https://bizzocasino.com/casino/recommended", title: "A", snippet: "sa", approx: true },
+      { position: 2, url: "https://bizzocasino.com/promotions", title: "B", snippet: "sb", approx: true },
+      { position: 3, url: "https://www.casino-italia.net/x", title: "C", snippet: "sc", approx: false },
+    ],
+  }));
+  assert.equal(out.ok, true);
+  if (!out.ok) return;
+  assert.deepEqual(
+    out.value.results.map(r => [r.url, r.approx]),
+    [["https://bizzocasino.com/", true], ["https://www.casino-italia.net/x", false]],
+  );
+  // positions renumber sequentially after the collapse (the ascending-position contract)
+  assert.deepEqual(out.value.results.map(r => r.position), [1, 2]);
+});
+
+test("validateCapture: a normal row's URL is never rewritten", () => {
+  const out = validateCapture(bodyOf({
+    results: [{ position: 1, url: "https://example.com/deep/path?x=1", title: "A", snippet: "sa" }],
+  }));
+  assert.equal(out.ok, true);
+  if (!out.ok) return;
+  assert.equal(out.value.results[0].url, "https://example.com/deep/path?x=1");
+  assert.equal(out.value.results[0].approx, false);
+});

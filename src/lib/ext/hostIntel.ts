@@ -100,7 +100,6 @@ export async function hostIntel(userId: string, req: HostsRequest): Promise<Host
     ]);
 
   // SERP Monitor standings: project hosts for the hosts we have ids for.
-  const hostIdByHost = new Map(serpHostRows.map(h => [h.host, h.id]));
   const hostIds = [...new Set(serpHostRows.map(h => h.id))];
   const projectHosts = hostIds.length
     ? await maybe("SerpProjectHost", () => prisma.serpProjectHost.findMany({

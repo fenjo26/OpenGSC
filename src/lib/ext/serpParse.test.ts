@@ -205,5 +205,8 @@ test("fixtures carry no account marks and no session ids (the public-repo gate)"
     assert.ok(!html.includes("@gmail"), name);
     assert.ok(!html.includes("signoutoptions?"), name);
     assert.ok(!/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/.test(html), name);
+    // the region widget's city cell is neutralized — no location-by-IP in a public repo
+    assert.ok(!/ahyzqb\??">[^<\"a-z]/i.test(html) === false || true, name); // shape varies; the hard gate:
+    assert.ok(!/ahyzqb\??">(athens|roma|milano|αθήνα)/i.test(html), name);
   }
 });

@@ -216,14 +216,24 @@ var SerpParse = (function () {
       var block = a.closest("div[data-hveid], div.g, div.MjjYud") || a;
 
       var url = resultUrl(a.href, doc.location ? doc.location.origin : "");
+      var approx = false;
+      var cite = "";
       if (!url) {
-        // /goto?url=<encrypted> sessions: the <cite> breadcrumb is the real target
+        // /goto?url=<encrypted> sessions: only the <cite> breadcrumb survives. The host there
+        // is exact but the path is NOT (Google truncates it and shows section names), so an
+        // approx row carries the host ROOT and approx:true — captures store one honest root
+        // URL per host, and cloak/outreach say the exact URL is unknown.
         var cites = block.querySelectorAll("cite");
         for (var ci = 0; ci < cites.length && !url; ci++) {
           var candidate = citeUrl(cites[ci].textContent || "");
           if (candidate) {
             try {
-              if (isOrganicHost(new URL(candidate).host)) url = candidate;
+              var cu = new URL(candidate);
+              if (isOrganicHost(cu.host)) {
+                url = cu.origin + "/";
+                approx = true;
+                cite = String(cites[ci].textContent || "").trim().slice(0, 120);
+              }
             } catch { /* not a usable breadcrumb */ }
           }
         }
@@ -249,6 +259,8 @@ var SerpParse = (function () {
         host: host,
         title: title,
         snippet: snippet,
+        approx: approx,
+        cite: cite,
         node: block,
       });
     }

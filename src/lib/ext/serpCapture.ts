@@ -55,11 +55,23 @@ export function validateCapture(body: unknown):
     }
     if (seen.has(url)) continue; // sitelinks duplicate — the first position wins
     seen.add(url);
+    // approx rows are never trusted: whatever URL the client sent, only the host of it is
+    // breadcrumb-grade truth, so the row stores the host ROOT. Same-host approx rows then
+    // dedupe to one entry at its first position — the honest reading of that SERP shape.
+    const finalUrl0 = url;
+    const approx = r.approx === true;
+    let finalUrl = finalUrl0;
+    if (approx) {
+      try { finalUrl = new URL(url).origin + "/"; } catch { continue; }
+      if (seen.has(finalUrl)) continue;
+      seen.add(finalUrl);
+    }
     results.push({
       position: 0, // recalculated below from startPos, in order
-      url,
+      url: finalUrl,
       title: String(r.title ?? "").slice(0, EXT_TITLE_MAX),
       snippet: String(r.snippet ?? "").slice(0, EXT_SNIPPET_MAX),
+      approx,
     });
   }
   if (!results.length) return { ok: false, error: "no_results" };

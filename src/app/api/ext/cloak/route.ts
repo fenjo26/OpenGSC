@@ -3,7 +3,7 @@ import { extAuth, extPreflight } from "@/lib/ext/auth";
 import { SlidingWindowRateLimiter } from "@/lib/ext/rateLimit";
 import { assertSafeTarget, SafeFetchError } from "@/lib/security/safeFetch";
 import { analyzeUrl } from "@/lib/seo/googlebot";
-import { snippetFound } from "@/lib/ext/snippet";
+import { snippetFound, htmlToText } from "@/lib/ext/snippet";
 import { EXT_CLOAK_PER_MIN, type CloakRequest, type CloakResponse } from "@/lib/ext/types";
 
 // POST /api/ext/cloak — does this URL serve the same page to Googlebot and to a browser?
@@ -57,11 +57,15 @@ export async function POST(req: Request) {
     const bot = result.views.find(v => v.ua.startsWith("gb")) ?? result.views[0];
     const browser = result.views.find(v => v.ua === "chrome") ?? result.views[1] ?? null;
 
+    // bodyText can hit its cap inside a nav wall before the article (seen on a mobile
+    // Wikipedia serve); the raw HTML the server actually sent is the honest second source.
     const view = (v: typeof bot | null) => ({
       status: v ? v.finalStatus : null,
       finalUrl: v ? v.finalUrl : null,
       title: v ? (v.signals.title || null) : null,
-      snippetFound: v && snippet ? snippetFound(snippet, v.bodyText || "") : null,
+      snippetFound: v && snippet
+        ? snippetFound(snippet, (v.bodyText || "") + "\n" + htmlToText(v.htmlRaw || ""))
+        : null,
     });
 
     let out: CloakResponse;

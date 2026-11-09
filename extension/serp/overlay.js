@@ -131,6 +131,10 @@
 
   function chipRow(intel, result) {
     var row = d("div", "chip");
+    if (result.approx) {
+      row.title = msg("serpApproxUrl") + (result.cite ? "\n" + result.cite : "");
+      row.appendChild(d("span", "muted", "≈"));
+    }
     var q = state.hostsData && state.hostsData.query;
 
     if (intel && intel.own) {
@@ -202,6 +206,11 @@
         });
       }],
       [msg("serpMenuCloak"), function (note) {
+        if (result.approx) {
+          note.textContent = msg("serpApproxUrl");
+          note.className = "cloak warn";
+          // still check the host root — the only URL that SERP shape honestly names
+        }
         runCloak(result, note);
       }],
       [msg("serpMenuOpenDomain"), function () {
@@ -393,7 +402,7 @@
       page: meta.page,
       startPos: meta.startPos,
       results: state.parsed.results.map(function (r) {
-        return { position: r.position, url: r.url, title: r.title, snippet: r.snippet };
+        return { position: r.position, url: r.url, title: r.title, snippet: r.snippet, approx: !!r.approx };
       }),
       features: state.parsed.features,
     };

@@ -99,6 +99,7 @@ export interface CaptureResult {
   url: string;
   title: string;            // ≤ EXT_TITLE_MAX
   snippet: string;          // ≤ EXT_SNIPPET_MAX
+  approx?: boolean;         // true when the URL is the host ROOT reconstructed from a <cite> breadcrumb (encrypted /goto hrefs): the host is exact, the path is unknown
 }
 
 export interface CaptureRequest {

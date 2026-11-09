@@ -923,5 +923,8 @@
   },
   "err_not_migrated": {
     "message": "Run `npx prisma db push` on the server"
+  },
+  "serpApproxUrl": {
+    "message": "Exact URL unknown (encrypted SERP links) — host only"
   }
 }
