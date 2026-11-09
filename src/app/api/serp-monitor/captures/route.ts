@@ -1,13 +1,25 @@
 import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
-import { unauthorized } from "../shared";
+import { listCaptures } from "@/lib/ext/serpCapture";
+import { unauthorized, serpmonError } from "../shared";
 
 // GET /api/serp-monitor/captures?projectId=&keyword=&limit= — SERP pages saved from the browser
-// extension, newest first. Session-authenticated like every other /api/serp-monitor route.
-// E0 lays the guard; the body is wave-ext E5 (src/lib/ext/serpCapture.ts → listCaptures).
+// extension, newest first. With projectId: that project's captures PLUS the loose ones
+// (projectId null) whose country/lang match the project — they are the same market's SERPs.
 
-export async function GET(_req: Request) {
-  const userId = await workspaceUserId();
-  if (!userId) return unauthorized();
-  return NextResponse.json({ error: "not_implemented" }, { status: 501 });
+export async function GET(req: Request) {
+  try {
+    const userId = await workspaceUserId();
+    if (!userId) return unauthorized();
+
+    const sp = new URL(req.url).searchParams;
+    const projectId = sp.get("projectId") || undefined;
+    const keyword = sp.get("keyword") || undefined;
+    const limit = Number(sp.get("limit")) || 20;
+
+    const captures = await listCaptures(userId, { projectId, keyword, limit });
+    return NextResponse.json({ captures });
+  } catch (e) {
+    return serpmonError(e, { captures: [] });
+  }
 }

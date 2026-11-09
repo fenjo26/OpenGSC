@@ -1,9 +1,9 @@
 // MCP tools for browser SERP captures (wave-ext E5) — pages saved from the extension's overlay.
 // Local reads of SerpCapture only: a capture is personalised (the user's own IP) and never part
-// of diffs/storms, which the tool descriptions state up front. E0 registers the tool; E5 wires
-// the handler to listCaptures/captureView.
+// of diffs/storms, which the tool description states up front.
 
-import { type Json, type McpTool } from "./shared";
+import { type Json, type McpTool, lim } from "./shared";
+import { listCaptures, captureView } from "@/lib/ext/serpCapture";
 
 export const SERP_CAPTURE_TOOLS: McpTool[] = [
   {
@@ -17,8 +17,20 @@ export const SERP_CAPTURE_TOOLS: McpTool[] = [
       compare: { type: "string", description: "\"nearest\" or a snapshot id" },
       limit: { type: "number", description: "default 20, max 100" },
     } },
-    handler: async (_userId: string, _args: Json) => {
-      throw new Error("not_implemented");
+    handler: async (userId, args: Json) => {
+      const captureId = String(args.captureId ?? "").trim();
+      if (captureId) {
+        const compare = String(args.compare ?? "").trim() || undefined;
+        const view = await captureView(userId, captureId, (compare as "nearest" | string | undefined) ?? undefined);
+        if (!view) throw new Error("capture not found");
+        return { capture: view };
+      }
+      const captures = await listCaptures(userId, {
+        projectId: String(args.projectId ?? "") || undefined,
+        keyword: String(args.keyword ?? "") || undefined,
+        limit: lim(args.limit, 20, 100),
+      });
+      return { count: captures.length, captures };
     },
   },
 ];

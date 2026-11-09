@@ -10,7 +10,7 @@ import ExtDonor from "../../../extension/lib/donor.js";
 const { MARKERS, deriveSignals, verdict } = ExtDonor as {
   MARKERS: string[];
   deriveSignals: (facts: Record<string, unknown>) => { id: string; severity: string; evidence: string }[];
-  verdict: (signals: { severity: string }[], scanOk?: boolean) => string;
+  verdict: (signals?: { severity: string }[] | null, scanOk?: boolean) => string;
 };
 
 // ─── the marker copy must not drift from src/lib/pbn/clean.ts ─────────────────────

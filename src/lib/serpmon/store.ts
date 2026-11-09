@@ -250,7 +250,8 @@ export function ensureHosts(hosts: string[]): Promise<Map<string, number>> {
   return ensureHostsWith(db, hosts);
 }
 
-const urlHash = (url: string) => createHash("sha1").update(url).digest("hex");
+// wave-ext E5: exported so the browser-capture writer keys the same dictionary rows the same way.
+export const urlHash = (url: string) => createHash("sha1").update(url).digest("hex");
 
 /**
  * URL ids keyed by sha1(url), inserting the missing ones under their host. Existing rows get one
