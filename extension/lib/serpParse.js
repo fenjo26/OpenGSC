@@ -133,6 +133,35 @@ var SerpParse = (function () {
     return out;
   }
 
+  /**
+   * Reconstruct a URL from a result's <cite> breadcrumb ("https://site.gr › a › b"). Some
+   * Google sessions serve organic hrefs as /goto?url=<encrypted blob> — undecodable without
+   * Google's JS — and the breadcrumb is the only place the real target survives. The host is
+   * exact; the path is the visible segments (Google truncates long ones with …, so this is a
+   * host-grade reconstruction, which is what the overlay and captures actually consume).
+   */
+  function citeUrl(citeText) {
+    var parts = String(citeText || "")
+      .replace(/\s+/g, " ")
+      .replace(/^https?:\/\//i, "")
+      .split(/›|\//)
+      .map(function (s) { return s.trim(); })
+      .filter(Boolean);
+    if (!parts.length) return null;
+    var hostPart = parts[0].replace(/^www\./i, "");
+    // a host carries at least one dot and no spaces; "…" means the breadcrumb was truncated
+    if (!/\./.test(hostPart) || /\s/.test(hostPart) || hostPart.indexOf("…") !== -1 || hostPart.indexOf("...") !== -1) return null;
+    var path = parts.slice(1).filter(function (p) { return p.indexOf("…") === -1 && p.indexOf("...") === -1; })
+      .map(function (p) { return p.replace(/[?#].*$/, ""); })
+      .map(encodeURIComponentSafe)
+      .join("/");
+    return "https://" + hostPart.toLowerCase() + (path ? "/" + path : "");
+  }
+
+  function encodeURIComponentSafe(s) {
+    try { return encodeURIComponent(s); } catch { return s; }
+  }
+
   // ─── DOM layer ─────────────────────────────────────────────────────────────────
 
   function inAd(el, adNodes) {
@@ -182,14 +211,27 @@ var SerpParse = (function () {
       var heading = a.querySelector("h3") || a.querySelector('[role="heading"]');
       if (!heading) continue;
       var title = String(heading.textContent || "").trim().slice(0, 200);
+
+      // the result block: the anchor's clickable container (Google nests a inside a wrapper)
+      var block = a.closest("div[data-hveid], div.g, div.MjjYud") || a;
+
       var url = resultUrl(a.href, doc.location ? doc.location.origin : "");
+      if (!url) {
+        // /goto?url=<encrypted> sessions: the <cite> breadcrumb is the real target
+        var cites = block.querySelectorAll("cite");
+        for (var ci = 0; ci < cites.length && !url; ci++) {
+          var candidate = citeUrl(cites[ci].textContent || "");
+          if (candidate) {
+            try {
+              if (isOrganicHost(new URL(candidate).host)) url = candidate;
+            } catch { /* not a usable breadcrumb */ }
+          }
+        }
+      }
       if (!url) continue;
       var host = "";
       try { host = new URL(url).host.toLowerCase(); } catch { continue; }
       if (!isOrganicHost(host)) continue;
-
-      // the result block: the anchor's clickable container (Google nests a inside a wrapper)
-      var block = a.closest("div[data-hveid], div.g, div.MjjYud") || a;
 
       // snippet: first non-empty of the fallback selectors within the block
       var snippet = "";
@@ -236,6 +278,7 @@ var SerpParse = (function () {
     SELECTORS: SELECTORS,
     locale: locale,
     resultUrl: resultUrl,
+    citeUrl: citeUrl,
     isOrganicHost: isOrganicHost,
     dedupe: dedupe,
     parse: parse,

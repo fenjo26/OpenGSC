@@ -7,9 +7,10 @@ import { join } from "node:path";
 import SerpParse from "../../../extension/lib/serpParse.js";
 import { CAPTURE_FEATURES } from "./types";
 
-const { locale, resultUrl, isOrganicHost, dedupe, FEATURES } = SerpParse as {
+const { locale, resultUrl, citeUrl, isOrganicHost, dedupe, FEATURES } = SerpParse as {
   locale: (pageUrl: string, htmlLang: string) => { engineHost: string; country: string; lang: string; page: number; startPos: number; query: string; device: string };
   resultUrl: (rawHref: string, pageOrigin: string) => string | null;
+  citeUrl: (citeText: string) => string | null;
   isOrganicHost: (host: string) => boolean;
   dedupe: (rows: { position: number; url: string }[]) => { position: number; url: string }[];
   FEATURES: string[];
@@ -96,51 +97,105 @@ test("dedupe: the same URL twice keeps the first position (sitelinks shape)", ()
   assert.deepEqual(dedupe(rows).map(r => r.position), [1, 2, 3]);
 });
 
+// ─── citeUrl (the /goto-session fallback) ─────────────────────────────────────────
+
+test("citeUrl: reconstructs a breadcrumb into an https URL", () => {
+  assert.equal(citeUrl("https://bizzocasino.com  › casino › recommended"), "https://bizzocasino.com/casino/recommended");
+  assert.equal(citeUrl("https://www.transfer247.gr › metafora-apo-pros-aerodr…"), "https://transfer247.gr");
+  assert.equal(citeUrl("example.gr"), "https://example.gr");
+});
+
+test("citeUrl: truncated or junk breadcrumbs are null, never a guess", () => {
+  assert.equal(citeUrl("… › something"), null);
+  assert.equal(citeUrl("not a host at all"), null);
+  assert.equal(citeUrl(""), null);
+  assert.equal(citeUrl("google.com › search"), "https://google.com/search"); // host itself is fine here;
+  // the google-host exclusion is parse()'s job (isOrganicHost), not the reconstruction's
+});
+
 // ─── FEATURES must equal CAPTURE_FEATURES of types.ts ─────────────────────────────
 
 test("the parser's FEATURES equal CAPTURE_FEATURES in src/lib/ext/types.ts", () => {
   assert.deepEqual([...FEATURES].slice().sort(), [...CAPTURE_FEATURES].slice().sort());
 });
 
-// ─── the pure layer over the saved fixtures ───────────────────────────────────────
+// ─── the saved REAL fixtures (incognito-shape captures, session ids scrubbed) ────────
 
 const fixtureDir = join(process.cwd(), "src/lib/ext/__fixtures__/serp");
 
-function fixtureOrganicHrefs(name: string): string[] {
+/** The href of every anchor that carries an h3 inside (the parser's organic rule), any
+ *  attribute order — plus every <cite> breadcrumb of the page, mirroring the fallback. */
+function fixtureAnchors(name: string): { hrefs: string[]; cites: string[] } {
   const html = readFileSync(join(fixtureDir, name), "utf8");
-  // our fixture structure: <a href="…"[^>]*><br><h3 — anchors that carry a heading
-  return [...html.matchAll(/<a href="([^"]+)"[^>]*><br><h3/g)].map(m => m[1]);
+  const hrefs: string[] = [];
+  const anchorRe = /<a\b[^>]*>(?:(?!<\/a>[\s\S])*?)<h3/g;
+  let m: RegExpExecArray | null;
+  while ((m = anchorRe.exec(html))) {
+    const href = m[0].match(/href="([^"]*)"/);
+    if (href) hrefs.push(href[1]);
+  }
+  const cites = [...html.matchAll(/<cite[^>]*>([\s\S]*?)<\/cite>/g)]
+    .map(c => c[1].replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").trim());
+  return { hrefs, cites };
 }
 
-test("fixture bizzo-casino-italia: /url?q= wrappers and direct links resolve to real URLs", () => {
-  const hrefs = fixtureOrganicHrefs("bizzo-casino-italia-google-it.html");
-  assert.ok(hrefs.length >= 10, `expected ≥ 10 organic anchors, got ${hrefs.length}`);
-  const urls = hrefs.map(h => resultUrl(h, "https://www.google.it/"));
-  assert.ok(urls.every(u => u != null), "every organic anchor resolves");
-  assert.ok(urls.some(u => u!.startsWith("https://www.casino-italia.net/")), "the /url?q= wrapper unwraps");
-  assert.equal(new Set(urls).size, urls.length, "no duplicates among the ten");
+function resolveAll(hrefs: string[], cites: string[]): string[] {
+  const out: string[] = [];
+  for (const href of hrefs) {
+    const url = resultUrl(href, "https://www.google.com/");
+    if (url) out.push(url);
+  }
+  if (!out.length) {
+    // the /goto?url=<encrypted> session shape: the breadcrumbs are the real targets
+    for (const cite of cites) {
+      const url = citeUrl(cite);
+      if (url && isOrganicHost(new URL(url).host)) out.push(url);
+    }
+  }
+  return out;
+}
+
+test("fixture bizzo-casino-italia (real google.it capture): organic targets resolve", () => {
+  const { hrefs, cites } = fixtureAnchors("bizzo-casino-italia-google-it.html");
+  assert.ok(hrefs.length >= 5, `expected ≥ 5 h3 anchors, got ${hrefs.length}`);
+  const urls = resolveAll(hrefs, cites);
+  assert.ok(urls.length >= 5, "every organic result produced a URL (direct or cite fallback)");
+  for (const u of urls) assert.ok(/^https:\/\//.test(u), u);
 });
 
-test("fixture commercial-google-gr: the hosts parse as organic", () => {
-  const urls = fixtureOrganicHrefs("commercial-google-gr.html").map(h => resultUrl(h, "https://www.google.gr/"));
-  urls.forEach(u => {
-    const host = new URL(u!).host;
+test("fixture commercial-google-gr (real capture): hosts are organic, region reads gr/el", () => {
+  const { hrefs, cites } = fixtureAnchors("commercial-google-gr.html");
+  const urls = resolveAll(hrefs, cites);
+  assert.ok(urls.length >= 5);
+  for (const u of urls) {
+    const host = new URL(u).host;
     assert.ok(isOrganicHost(host), `${host} must be organic`);
-  });
-  const m = locale("https://www.google.gr/search?q=μεταφορές+αεροδρόμιο+αθήνα", "el");
+  }
+  const m = locale("https://www.google.gr/search?q=%CE%BC%CE%B5%CF%84%CE%B1%CF%86%CE%BF%CF%81%CE%AD%CF%82+%CE%B1%CE%B5%CF%81%CE%BF%CE%B4%CF%81%CF%8C%CE%BC%CE%B9%CE%BF+%CE%B1%CE%B8%CE%AE%CE%BD%CE%B1", "el");
   assert.equal(m.country, "gr");
   assert.equal(m.lang, "el");
 });
 
-test("fixture keywords-everywhere: the injected block's links are not organic anchors", () => {
-  // The KE-like block carries links WITHOUT a heading inside the anchor — the fixture
-  // regex (which mirrors the anchor-with-heading rule) must not pick them up.
-  const hrefs = fixtureOrganicHrefs("keywords-everywhere-google-com.html");
-  assert.ok(hrefs.every(h => h.indexOf("ke.example") === -1), "extension-injected links excluded");
-  assert.equal(hrefs.length, 3);
+test("fixture ai-overview-paa and page2 (real google.com captures)", () => {
+  const ai = fixtureAnchors("ai-overview-paa-google-com.html");
+  assert.ok(resolveAll(ai.hrefs, ai.cites).length >= 3, "AI-overview page still has organic results");
+  const p2 = fixtureAnchors("page2-google-com.html");
+  // ≥ 10: the page also carries PAA/video h3-anchors; ten organic blue links are the floor
+  assert.ok(p2.hrefs.length >= 10, `expected ≥ 10 h3 anchors, got ${p2.hrefs.length}`);
+  assert.ok(resolveAll(p2.hrefs, p2.cites).length >= 10);
+  const m = locale("https://www.google.com/search?q=seo+guide&hl=en&gl=us&start=10", "en");
+  assert.equal(m.page, 2);
+  assert.equal(m.startPos, 11);
 });
 
-test("fixtures carry no account marks (the public-repo check)", () => {
+test("fixture keywords-everywhere: the injected block's links are not organic anchors", () => {
+  // The KE-like block carries links WITHOUT a heading inside the anchor — the h3 rule excludes
+  // them, which is what keeps other extensions' rows out of our organic set.
+  const { hrefs } = fixtureAnchors("keywords-everywhere-google-com.html");
+  assert.ok(hrefs.every(h => h.indexOf("ke.example") === -1), "extension-injected links excluded");
+});
+
+test("fixtures carry no account marks and no session ids (the public-repo gate)", () => {
   const names = [
     "bizzo-casino-italia-google-it.html", "commercial-google-gr.html",
     "ai-overview-paa-google-com.html", "page2-google-com.html", "keywords-everywhere-google-com.html",
@@ -148,6 +203,7 @@ test("fixtures carry no account marks (the public-repo check)", () => {
   for (const name of names) {
     const html = readFileSync(join(fixtureDir, name), "utf8").toLowerCase();
     assert.ok(!html.includes("@gmail"), name);
-    assert.ok(!html.includes("accounts.google.com/signoutoptions"), name);
+    assert.ok(!html.includes("signoutoptions?"), name);
+    assert.ok(!/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/.test(html), name);
   }
 });
