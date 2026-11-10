@@ -862,10 +862,10 @@
     "message": "объём $1 · KD $2 · данные от $3"
   },
   "serpToRank": {
-    "message": "В Rank Tracker"
+    "message": "+ Rank Tracker"
   },
   "serpToMonitor": {
-    "message": "В SERP Monitor"
+    "message": "+ SERP Monitor"
   },
   "serpCapture": {
     "message": "Сохранить выдачу"
@@ -968,5 +968,38 @@
   },
   "pageReload": {
     "message": "Перезагрузить страницу"
+  },
+  "serpCollected": {
+    "message": "Мой список"
+  },
+  "serpCollectAdd": {
+    "message": "В мой список"
+  },
+  "serpCollectAll": {
+    "message": "+ Добавить все"
+  },
+  "serpClear": {
+    "message": "Очистить"
+  },
+  "serpAddBtn": {
+    "message": "Добавить"
+  },
+  "serpCancel": {
+    "message": "Отмена"
+  },
+  "serpDataMissing": {
+    "message": "Нет DR/возраста: $1 из $2 сайтов"
+  },
+  "serpRefresh": {
+    "message": "Подгрузить"
+  },
+  "serpNoDrKey": {
+    "message": "Для DR нужен бесплатный ключ Ahrefs DR в настройках OpenGSC."
+  },
+  "serpSetKey": {
+    "message": "Открыть настройки"
+  },
+  "serpListEmpty": {
+    "message": "Добавляйте запросы плюсиком — они соберутся здесь."
   }
 }

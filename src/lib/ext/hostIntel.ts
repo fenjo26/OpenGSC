@@ -12,7 +12,7 @@ import { calcAgeMonths, domainTags } from "@/lib/serpmon/domains";
 import { ignorePredicate, parseHostList } from "@/lib/serpmon/hosts";
 import { normaliseKeyword } from "@/lib/serpmon/keywords";
 import { ensureHosts } from "@/lib/serpmon/store";
-import { enrichPendingHosts } from "@/lib/serpmon/enrich";
+import { enrichPendingHosts, serpmonDrKeyFound } from "@/lib/serpmon/enrich";
 import { withCallContext } from "@/lib/providerLog/context";
 import { resolveCaptureBodies } from "@/lib/providerLog/bodies";
 import { YOUNG_HOST_MONTHS } from "@/lib/serpmon/types";
@@ -384,6 +384,7 @@ export async function enrichHosts(userId: string, hosts: string[]): Promise<Enri
   const clean = normaliseHosts(hosts ?? [], EXT_ENRICH_MAX);
   const result: EnrichResponse = { age: 0, dr: 0, errors: 0, remaining: 0 };
   if (!clean.length) return result;
+  result.drKey = await serpmonDrKeyFound(userId);
 
   const before = await maybe("SerpHost(before)", () => prisma.serpHost.findMany({
     where: { host: { in: clean } },

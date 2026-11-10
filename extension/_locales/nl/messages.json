@@ -861,10 +861,10 @@
     "message": "volume $1 · KD $2 · gegevens van $3"
   },
   "serpToRank": {
-    "message": "Volgen in Rank Tracker"
+    "message": "+ Rank Tracker"
   },
   "serpToMonitor": {
-    "message": "Toevoegen aan SERP Monitor"
+    "message": "+ SERP Monitor"
   },
   "serpCapture": {
     "message": "Deze resultaten opslaan"
@@ -967,5 +967,38 @@
   },
   "pageReload": {
     "message": "Pagina opnieuw laden"
+  },
+  "serpCollected": {
+    "message": "Mijn lijst"
+  },
+  "serpCollectAdd": {
+    "message": "Aan mijn lijst toevoegen"
+  },
+  "serpCollectAll": {
+    "message": "+ Alles toevoegen"
+  },
+  "serpClear": {
+    "message": "Wissen"
+  },
+  "serpAddBtn": {
+    "message": "Toevoegen"
+  },
+  "serpCancel": {
+    "message": "Annuleren"
+  },
+  "serpDataMissing": {
+    "message": "Nog geen DR/leeftijd: $1 van $2 sites"
+  },
+  "serpRefresh": {
+    "message": "Nu ophalen"
+  },
+  "serpNoDrKey": {
+    "message": "Voor DR is een gratis Ahrefs DR-sleutel nodig in de OpenGSC-instellingen."
+  },
+  "serpSetKey": {
+    "message": "Instellingen openen"
+  },
+  "serpListEmpty": {
+    "message": "Voeg zoekopdrachten toe met + en ze verzamelen zich hier."
   }
 }

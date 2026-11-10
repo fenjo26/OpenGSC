@@ -861,10 +861,10 @@
     "message": "обсяг $1 · KD $2 · дані від $3"
   },
   "serpToRank": {
-    "message": "У Rank Tracker"
+    "message": "+ Rank Tracker"
   },
   "serpToMonitor": {
-    "message": "У SERP Monitor"
+    "message": "+ SERP Monitor"
   },
   "serpCapture": {
     "message": "Зберегти видачу"
@@ -967,5 +967,38 @@
   },
   "pageReload": {
     "message": "Перезавантажити сторінку"
+  },
+  "serpCollected": {
+    "message": "Мій список"
+  },
+  "serpCollectAdd": {
+    "message": "До мого списку"
+  },
+  "serpCollectAll": {
+    "message": "+ Додати всі"
+  },
+  "serpClear": {
+    "message": "Очистити"
+  },
+  "serpAddBtn": {
+    "message": "Додати"
+  },
+  "serpCancel": {
+    "message": "Скасувати"
+  },
+  "serpDataMissing": {
+    "message": "Немає DR/віку: $1 з $2 сайтів"
+  },
+  "serpRefresh": {
+    "message": "Підвантажити"
+  },
+  "serpNoDrKey": {
+    "message": "Для DR потрібен безкоштовний ключ Ahrefs DR у налаштуваннях OpenGSC."
+  },
+  "serpSetKey": {
+    "message": "Відкрити налаштування"
+  },
+  "serpListEmpty": {
+    "message": "Додавайте запити плюсиком — вони зберуться тут."
   }
 }

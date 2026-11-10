@@ -88,7 +88,11 @@ export interface HostsResponse {
 
 // ─── /api/ext/hosts/enrich ───────────────────────────────────────────────────
 export interface EnrichRequest { hosts: string[] }           // ≤ EXT_ENRICH_MAX
-export interface EnrichResponse { age: number; dr: number; errors: number; remaining: number }
+export interface EnrichResponse {
+  age: number; dr: number; errors: number; remaining: number;
+  /** false = the workspace has no Ahrefs DR key (free or paid): DR can never be fetched, the overlay says so */
+  drKey?: boolean;
+}
 
 // ─── /api/ext/serp/capture ───────────────────────────────────────────────────
 export const CAPTURE_FEATURES = ["ai_overview", "paa", "local_pack", "top_stories", "video", "images", "shopping", "knowledge_panel", "sitelinks"] as const;

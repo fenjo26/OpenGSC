@@ -1,5 +1,5 @@
 // OpenGSC extension — the Google SERP overlay (wave-ext E4). Registered as "opengsc-serp"
-// on the domains the user enabled; runs at document_idle, reads the results the user opened
+// on every search domain from the manifest; runs at document_idle, reads the results the user opened
 // themselves and draws ONLY our own shadow hosts — no attributes, classes or styles on
 // Google's elements, nothing breaks when the layout changes (a failed parse is silence).
 //
@@ -27,6 +27,10 @@
     extras: { paa: [], related: [] },
     cardTab: "related",
     enriching: false,
+    noDrKey: false,        // the instance has no Ahrefs DR key: say so instead of "DR —" forever
+    collected: [],         // the user's own list of related / PAA queries (storage.local)
+    placeTimer: 0,
+    statusTimer: 0,
     requestedHosts: {},    // hosts already asked for (infinite scroll dedupe)
     perf: { parseMs: 0, renderMs: 0 },
   };
@@ -119,7 +123,7 @@
     ".card .muted{color:#70757a;}",
     ".card .sec{margin:6px 0;line-height:1.5;}",
     ".card .lbl{color:#70757a;font-size:11px;text-transform:uppercase;letter-spacing:.4px;margin-top:8px;}",
-    ".card .btns{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 6px;}",
+    ".card .btns{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 6px;}",
     ".card button{padding:4px 10px;border-radius:7px;border:1px solid #dadce0;background:#fff;color:#1a73e8;font-size:12px;font-weight:600;cursor:pointer;}",
     ".card button:hover{background:#f8f9fa;}",
     ".card button:disabled{opacity:.55;cursor:default;}",
@@ -131,6 +135,23 @@
     ".list{list-style:none;margin:0;padding:0;}",
     ".list li{padding:7px 0;border-bottom:1px solid #f1f3f4;}",
     ".list li a{color:#202124;}",
+    ".card .info{margin:8px 0 2px;font-size:11.5px;line-height:1.5;}",
+    ".card .warn{color:#b06000;}",
+    ".card .status{font-size:11.5px;color:#137333;min-height:0;}",
+    ".card .status:not(:empty){margin:4px 0 6px;}",
+    ".card .pick{border:1px solid #e8eaed;border-radius:10px;padding:10px;margin:4px 0 8px;background:#f8f9fa;}",
+    ".card .pick .pt{font-weight:600;color:#202124;margin-bottom:6px;}",
+    ".card .pick select{width:100%;padding:5px 6px;margin-bottom:8px;box-sizing:border-box;}",
+    ".card .pick .pr{display:flex;gap:6px;}",
+    ".card button.primary{background:#1a73e8;border-color:#1a73e8;color:#fff;}",
+    ".card button.primary:hover{background:#1765cc;}",
+    ".lbar{display:flex;gap:14px;justify-content:flex-end;margin:6px 0 2px;}",
+    ".card button.link{border:none;background:none;padding:0;color:#1a73e8;font-weight:500;font-size:11.5px;}",
+    ".card button.link:hover{text-decoration:underline;background:none;}",
+    ".list li{display:flex;align-items:center;gap:8px;}",
+    ".list li .txt{flex:1;min-width:0;}",
+    ".card button.plus{flex:0 0 auto;width:22px;height:22px;padding:0;border-radius:50%;font-size:14px;line-height:20px;text-align:center;color:#5f6368;}",
+    ".card button.plus.on{background:#e6f4ea;border-color:#ceead6;color:#137333;}",
     ".toggle{display:inline-flex;align-items:center;gap:5px;color:#5f6368;font-size:11.5px;cursor:pointer;white-space:nowrap;}",
     "@media (prefers-color-scheme:dark){",
     "  .pos{color:#9aa0a6;}.dr b{color:#e8eaed;}",
@@ -138,6 +159,7 @@
     "  .card button{background:#202124;border-color:#5f6368;color:#8ab4f8;}.card button:hover{background:#303134;}",
     "  .tabs{border-color:#3c4043;}.tabs .t{color:#9aa0a6;}.tabs .t.on{color:#e8eaed;border-bottom-color:#8ab4f8;}.list li{border-color:#303134;}.list li a{color:#e8eaed;}",
     "  .card select{background:#202124;border-color:#5f6368;color:#e8eaed;}",
+    "  .card .pick{background:#303134;border-color:#3c4043;}.card .pick .pt{color:#e8eaed;}.card button.link{color:#8ab4f8;}.card button.plus.on{background:#1e3327;border-color:#1e3327;color:#81c995;}",
     "  .row{color:#bdc1c6;}.row.own{background:rgba(138,180,248,0.12);}",
     "  .chip{color:#bdc1c6;}.chip b{color:#8ab4f8;}",
     "  .pill{background:#1f3141;color:#8ab4f8;}.pill.o{background:#1e3327;color:#81c995;}.pill.r{background:#3c1f1e;color:#f28b82;}.pill.g{background:#2f3136;color:#9aa0a6;}",
@@ -430,31 +452,45 @@
     if (engine === "google") side = document.getElementById("rhs");
     if (engine === "bing") side = document.getElementById("b_context");
     if (engine === "yandex") side = document.querySelector("#search-result-aside, .content__right");
-    if (side) {
+    if (side && side.getBoundingClientRect().width > 200) {
       side.insertBefore(host.el, side.firstChild);
       host.el.style.maxWidth = "420px";
       return host;
     }
-    var rcnt = engine === "google" ? document.getElementById("rcnt") : null;
-    var center = document.getElementById("center_col");
-    var results = document.getElementById("rso") || document.getElementById("b_results") || document.getElementById("search-result");
-    if (rcnt && results) {
-      // Google lays #rcnt out as a CSS grid; the native right column (#rhs) spans
-      // "span 7 / -2". Taking the same columns right after #center_col auto-places the card
-      // in the results' row. On an older flex layout the width/flex values do the same job.
-      if (center && center.parentNode === rcnt) rcnt.insertBefore(host.el, center.nextSibling);
-      else rcnt.appendChild(host.el);
-      host.el.style.cssText = getComputedStyle(rcnt).display === "grid"
-        ? "display:block;grid-column:span 7 / -2;align-self:start;max-width:372px;"
-        : "display:block;width:360px;flex:0 0 360px;margin-left:56px;";
-      // not a flex row on this layout → it fell below the results; put it on top instead
-      var fell = host.el.getBoundingClientRect().top - results.getBoundingClientRect().top > 200;
-      if (!fell) return host;
-      host.el.style.cssText = "display:block;";
-    }
-    if (results && results.parentNode) results.parentNode.insertBefore(host.el, results);
-    host.el.style.maxWidth = "652px";
+    // No native right column on this SERP (local pack, no knowledge panel…). Google's grid
+    // placement proved unreliable across layouts, so the card floats in the free space to
+    // the right of the results instead — measured, and re-measured on resize.
+    host.floating = true;
+    placeCard(host);
+    window.addEventListener("resize", function () {
+      clearTimeout(state.placeTimer);
+      state.placeTimer = setTimeout(function () { placeCard(host); }, 150);
+    });
     return host;
+  }
+
+  function resultsColumn() {
+    return document.getElementById("center_col") || document.getElementById("rso") ||
+      document.getElementById("b_results") || document.getElementById("search-result");
+  }
+
+  function placeCard(host) {
+    var col = resultsColumn();
+    var top = document.getElementById("rcnt") || col;
+    var room = col ? document.documentElement.clientWidth - col.getBoundingClientRect().right - 48 - 24 : 0;
+    if (col && room >= 300) {
+      var cr = col.getBoundingClientRect();
+      if (host.el.parentNode !== document.body) document.body.appendChild(host.el);
+      host.el.style.cssText = "display:block;position:absolute;z-index:2;" +
+        "top:" + Math.round(top.getBoundingClientRect().top + window.scrollY) + "px;" +
+        "left:" + Math.round(cr.right + window.scrollX + 48) + "px;" +
+        "width:" + Math.min(380, Math.round(room)) + "px;";
+      return;
+    }
+    // narrow window: above the results, in the flow
+    var results = document.getElementById("rso") || document.getElementById("b_results") || document.getElementById("search-result");
+    if (results && results.parentNode && host.el.nextSibling !== results) results.parentNode.insertBefore(host.el, results);
+    host.el.style.cssText = "display:block;max-width:652px;";
   }
 
   function regionText(meta) {
@@ -472,10 +508,11 @@
 
   function renderCard() {
     var layer = state.card.layer;
+    // keep an open picker / a fresh status line across repaints (enrich finishing, a tab click)
+    var oldPicker = cardPart("picker"), oldStatus = cardPart("status");
     layer.textContent = "";
     var meta = state.parsed.meta;
     var q = state.hostsData.query;
-    var missing = state.hostsData.missing || { age: 0, dr: 0 };
 
     var card = d("div", "card");
     var top = d("div", "top");
@@ -484,26 +521,9 @@
     top.appendChild(d("span", "muted", regionText(meta)));
     card.appendChild(top);
 
-    // quick ad toggle — same setting as in the options page
-    var adToggle = d("label", "toggle");
-    var adBox = document.createElement("input");
-    adBox.type = "checkbox";
-    adBox.checked = !!state.settings.serpHideAds;
-    adBox.addEventListener("change", function () {
-      state.settings.serpHideAds = adBox.checked;
-      applyAdHiding(adBox.checked);
-      CR.storage.local.get(["extSettings"], function (stored) {
-        var s = (stored && stored.extSettings) || {};
-        s.serpHideAds = adBox.checked;
-        CR.storage.local.set({ extSettings: s });
-      });
-    });
-    adToggle.appendChild(adBox);
-    adToggle.appendChild(document.createTextNode(msg("optSerpHideAds")));
-
     if (state.notConfigured) {
       card.appendChild(d("div", "sec warn", msg("serpNotConfigured")));
-      card.appendChild(adToggle);
+      card.appendChild(adToggle());
       layer.appendChild(card);
       return;
     }
@@ -540,76 +560,197 @@
       }
     }
 
+    // actions: one tidy segmented row; the pickers open in their own panel below it
     var btns = d("div", "btns");
-    var toRank = d("button", null, msg("serpToRank"));
-    toRank.type = "button";
-    toRank.addEventListener("click", function () { pickSiteAndTrack(meta); });
-    btns.appendChild(toRank);
-    var toMon = d("button", null, msg("serpToMonitor"));
-    toMon.type = "button";
-    toMon.addEventListener("click", function () { pickProjectAndAdd(meta); });
-    btns.appendChild(toMon);
-    var save = d("button", null, msg("serpCapture"));
-    save.type = "button";
-    save.addEventListener("click", function () { saveCapture(save, meta); });
-    btns.appendChild(save);
-    if (missing.age + missing.dr > 0 && !state.enriching) {
-      var enrich = d("button", null, msg("serpEnrich", [String(missing.age + missing.dr)]));
-      enrich.type = "button";
-      enrich.addEventListener("click", function () { enrich.disabled = true; runEnrich(true); });
-      btns.appendChild(enrich);
-    }
-    if (state.enriching) btns.appendChild(d("span", "muted", msg("serpEnriching")));
+    [["serpToRank", function () { pickSiteAndTrack(meta); }],
+      ["serpToMonitor", function () { pickProjectAndAdd(meta); }],
+      ["serpCapture", function (b) { saveCapture(b, meta); }]].forEach(function (a) {
+      var b = d("button", null, msg(a[0]));
+      b.type = "button";
+      b.addEventListener("click", function () { a[1](b); });
+      btns.appendChild(b);
+    });
     card.appendChild(btns);
-    card.appendChild(adToggle);
+    card.appendChild(oldPicker || d("div", "picker"));
+    card.appendChild(oldStatus || d("div", "status"));
 
-    // related searches / people also ask, from the page itself
-    var ex = state.extras || { paa: [], related: [] };
-    if (ex.related.length || ex.paa.length) {
-      if (state.cardTab === "related" && !ex.related.length) state.cardTab = "paa";
-      if (state.cardTab === "paa" && !ex.paa.length) state.cardTab = "related";
-      var tabs = d("div", "tabs");
-      [["related", "serpRelated", ex.related], ["paa", "serpPaa", ex.paa]].forEach(function (t) {
-        if (!t[2].length) return;
-        var b = d("button", "t" + (state.cardTab === t[0] ? " on" : ""), msg(t[1]));
-        b.type = "button";
-        b.addEventListener("click", function () { state.cardTab = t[0]; renderCard(); });
-        tabs.appendChild(b);
-      });
-      var list = state.cardTab === "paa" ? ex.paa : ex.related;
-      var copy = d("button", "copy", msg("serpCopy"));
-      copy.type = "button";
-      copy.addEventListener("click", function () {
-        try {
-          navigator.clipboard.writeText(list.join("\n")).then(function () { copy.textContent = msg("ogCopied"); });
-        } catch { /* clipboard blocked */ }
-      });
-      tabs.appendChild(copy);
-      card.appendChild(tabs);
-      var ul = d("ul", "list");
-      list.forEach(function (text) {
-        var li = d("li");
-        if (state.cardTab === "related") {
-          var a = d("a", null, text);
-          var u = new URL(window.location.href);
-          u.searchParams.set(state.parsed.engine === "yandex" ? "text" : "q", text);
-          u.searchParams.delete("start"); u.searchParams.delete("first"); u.searchParams.delete("p");
-          a.href = u.href;
-          li.appendChild(a);
-        } else {
-          li.textContent = text;
-        }
-        ul.appendChild(li);
-      });
-      card.appendChild(ul);
+    // data line: what the rows are missing, with a quiet refresh — not a fourth big button
+    var info = d("div", "info");
+    var miss = missingHosts();
+    if (state.enriching) {
+      info.appendChild(d("span", "spin"));
+      info.appendChild(d("span", "muted", " " + msg("serpEnriching")));
+    } else if (state.noDrKey) {
+      info.appendChild(d("span", "warn", msg("serpNoDrKey") + " "));
+      if (state.instanceBase) {
+        var k = d("a", null, msg("serpSetKey"));
+        k.href = state.instanceBase + "/settings?tab=metrics";
+        k.target = "_blank"; k.rel = "noopener";
+        info.appendChild(k);
+      }
+    } else if (miss.length) {
+      info.appendChild(d("span", "muted", msg("serpDataMissing", [String(miss.length), String(uniqueHosts().length)]) + " · "));
+      var re = d("a", null, msg("serpRefresh"));
+      re.href = "#";
+      re.addEventListener("click", function (e) { e.preventDefault(); runEnrich(true); });
+      info.appendChild(re);
     }
+    if (info.childNodes.length) card.appendChild(info);
+    card.appendChild(adToggle());
 
+    renderLists(card);
     layer.appendChild(card);
+  }
+
+  function adToggle() {
+    var label = d("label", "toggle");
+    var box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = !!state.settings.serpHideAds;
+    box.addEventListener("change", function () {
+      state.settings.serpHideAds = box.checked;
+      applyAdHiding(box.checked);
+      CR.storage.local.get(["extSettings"], function (stored) {
+        var s = (stored && stored.extSettings) || {};
+        s.serpHideAds = box.checked;
+        CR.storage.local.set({ extSettings: s });
+      });
+    });
+    label.appendChild(box);
+    label.appendChild(document.createTextNode(msg("optSerpHideAds")));
+    return label;
+  }
+
+  function uniqueHosts() {
+    var seen = {};
+    return state.parsed.results.map(function (r) { return r.host; }).filter(function (h) {
+      if (!h || seen[h]) return false;
+      seen[h] = 1;
+      return true;
+    });
+  }
+
+  function missingHosts() {
+    return uniqueHosts().filter(function (h) {
+      var i = state.intelByHost[h];
+      return i && (i.dr == null || i.ageMonths == null);
+    });
+  }
+
+  // ─── related / PAA lists + the user's own collected list ────────────────────────
+
+  var COLLECT_KEY = "serpCollected";
+
+  function loadCollected(cb) {
+    CR.storage.local.get([COLLECT_KEY], function (stored) {
+      var list = stored && Array.isArray(stored[COLLECT_KEY]) ? stored[COLLECT_KEY] : [];
+      state.collected = list;
+      cb();
+    });
+  }
+
+  function saveCollected() {
+    var set = {};
+    set[COLLECT_KEY] = state.collected.slice(0, 1000);
+    CR.storage.local.set(set);
+  }
+
+  function isCollected(text) {
+    return state.collected.indexOf(text) !== -1;
+  }
+
+  function toggleCollected(text) {
+    var i = state.collected.indexOf(text);
+    if (i === -1) state.collected.push(text); else state.collected.splice(i, 1);
+    saveCollected();
+    renderCard();
+  }
+
+  function copyText(btn, text) {
+    try {
+      navigator.clipboard.writeText(text).then(function () {
+        var was = btn.textContent;
+        btn.textContent = msg("ogCopied");
+        setTimeout(function () { btn.textContent = was; }, 1500);
+      });
+    } catch { /* clipboard blocked */ }
+  }
+
+  function renderLists(card) {
+    var ex = state.extras || { paa: [], related: [] };
+    var collected = state.collected || [];
+    var tabsDef = [["related", "serpRelated", ex.related], ["paa", "serpPaa", ex.paa], ["mine", "serpCollected", collected]]
+      .filter(function (t) { return t[0] === "mine" || t[2].length; });
+    if (tabsDef.length === 1 && !collected.length) return; // nothing on this page, nothing saved
+    if (!tabsDef.some(function (t) { return t[0] === state.cardTab; })) state.cardTab = tabsDef[0][0];
+
+    var tabs = d("div", "tabs");
+    tabsDef.forEach(function (t) {
+      var label = msg(t[1]) + (t[0] === "mine" ? " (" + collected.length + ")" : "");
+      var b = d("button", "t" + (state.cardTab === t[0] ? " on" : ""), label);
+      b.type = "button";
+      b.addEventListener("click", function () { state.cardTab = t[0]; renderCard(); });
+      tabs.appendChild(b);
+    });
+    card.appendChild(tabs);
+
+    var list = state.cardTab === "paa" ? ex.paa : state.cardTab === "mine" ? collected : ex.related;
+    var bar = d("div", "lbar");
+    if (state.cardTab === "mine") {
+      if (list.length) {
+        var copy = d("button", "link", msg("serpCopy"));
+        copy.type = "button";
+        copy.addEventListener("click", function () { copyText(copy, list.join("\n")); });
+        bar.appendChild(copy);
+        var clear = d("button", "link", msg("serpClear"));
+        clear.type = "button";
+        clear.addEventListener("click", function () { state.collected = []; saveCollected(); renderCard(); });
+        bar.appendChild(clear);
+      }
+    } else {
+      var all = d("button", "link", msg("serpCollectAll"));
+      all.type = "button";
+      all.addEventListener("click", function () {
+        list.forEach(function (t) { if (!isCollected(t)) state.collected.push(t); });
+        saveCollected();
+        renderCard();
+      });
+      bar.appendChild(all);
+      var copyAll = d("button", "link", msg("serpCopy"));
+      copyAll.type = "button";
+      copyAll.addEventListener("click", function () { copyText(copyAll, list.join("\n")); });
+      bar.appendChild(copyAll);
+    }
+    if (bar.childNodes.length) card.appendChild(bar);
+
+    var ul = d("ul", "list");
+    if (!list.length) ul.appendChild(d("li", "muted", msg("serpListEmpty")));
+    list.forEach(function (text) {
+      var li = d("li");
+      var on = isCollected(text);
+      var plus = d("button", "plus" + (on ? " on" : ""), state.cardTab === "mine" ? "×" : on ? "✓" : "+");
+      plus.type = "button";
+      plus.title = msg("serpCollectAdd");
+      plus.addEventListener("click", function () { toggleCollected(text); });
+      if (state.cardTab === "paa") {
+        li.appendChild(d("span", "txt", text));
+      } else {
+        var a = d("a", "txt", text);
+        var u = new URL(window.location.href);
+        u.searchParams.set(state.parsed.engine === "yandex" ? "text" : "q", text);
+        u.searchParams.delete("start"); u.searchParams.delete("first"); u.searchParams.delete("p");
+        a.href = u.href;
+        li.appendChild(a);
+      }
+      li.appendChild(plus);
+      ul.appendChild(li);
+    });
+    card.appendChild(ul);
   }
 
   // ─── free age + DR, automatically ─────────────────────────────────────────────
 
-  var ENRICH_TRIED_KEY = "serpEnrichTried";
+  var ENRICH_TRIED_KEY = "serpEnrichTried2"; // v1 marks were written while DR was never fetched
   var ENRICH_RETRY_MS = 3 * 24 * 3600 * 1000;
 
   /** Ask the server to fill age + DR for hosts it does not know yet (free: RDAP/WHOIS and the
@@ -630,9 +771,6 @@
       });
       hosts = hosts.slice(0, 40);
       if (!hosts.length) return;
-      hosts.forEach(function (h) { tried[h] = now; });
-      var set = {}; set[ENRICH_TRIED_KEY] = tried;
-      CR.storage.local.set(set);
 
       state.enriching = true;
       redrawRows();
@@ -640,10 +778,20 @@
       var chain = Promise.resolve();
       for (var i = 0; i < hosts.length; i += 20) {
         (function (batch) {
-          chain = chain.then(function () { return extApi("POST", "/api/ext/hosts/enrich", { hosts: batch }); });
+          chain = chain.then(function () {
+            return extApi("POST", "/api/ext/hosts/enrich", { hosts: batch }).then(function (res) {
+              var ok = res && res.status === 200 && res.data && !res.data.error;
+              if (!ok) return; // a failed call marks nothing — the next search asks again
+              if (res.data.drKey === false) state.noDrKey = true;
+              // a host is "tried" only once the server really looked at it with a DR key
+              if (res.data.drKey !== false) batch.forEach(function (h) { tried[h] = now; });
+            });
+          });
         })(hosts.slice(i, i + 20));
       }
       chain.then(function () {
+        var set = {}; set[ENRICH_TRIED_KEY] = tried;
+        CR.storage.local.set(set);
         return new Promise(function (resolve) {
           CR.runtime.sendMessage({ type: ExtProtocol.MSG_SERP_INVALIDATE, query: state.parsed.meta.query }, function () {
             void CR.runtime.lastError;
@@ -700,6 +848,40 @@
     });
   }
 
+  function cardPart(cls) {
+    var headEl = state.card && state.card.layer;
+    return headEl ? headEl.querySelector("." + cls) : null;
+  }
+
+  /** A small labelled panel under the action row: title, full-width select, Add / Cancel. */
+  function openPicker(title, options, onPick) {
+    var place = cardPart("picker");
+    if (!place) return;
+    place.textContent = "";
+    var box = d("div", "pick");
+    box.appendChild(d("div", "pt", title));
+    var sel = document.createElement("select");
+    options.forEach(function (o) {
+      var opt = document.createElement("option");
+      opt.value = o.value;
+      opt.textContent = o.label;
+      sel.appendChild(opt);
+    });
+    box.appendChild(sel);
+    var row = d("div", "pr");
+    var ok = d("button", "primary", msg("serpAddBtn"));
+    ok.type = "button";
+    ok.addEventListener("click", function () { place.textContent = ""; onPick(sel.value); });
+    var no = d("button", null, msg("serpCancel"));
+    no.type = "button";
+    no.addEventListener("click", function () { place.textContent = ""; });
+    row.appendChild(ok);
+    row.appendChild(no);
+    box.appendChild(row);
+    place.appendChild(box);
+    sel.focus();
+  }
+
   function pickSiteAndTrack(meta) {
     var ownSite = Object.keys(state.intelByHost).map(function (h) { return state.intelByHost[h]; })
       .find(function (i) { return i && i.own; });
@@ -708,23 +890,14 @@
       trackKeyword(meta, siteId);
       return;
     }
-    // no own site on this SERP and no default: offer the dropdown
     extApi("GET", "/api/ext/lists").then(function (res) {
       if (res.status !== 200 || !res.data || !res.data.sites || !res.data.sites.length) {
         alertBox(msg("serpPickSite"));
         return;
       }
-      var sel = document.createElement("select");
-      res.data.sites.slice(0, 200).forEach(function (s) {
-        var o = document.createElement("option");
-        o.value = s.id;
-        o.textContent = s.label;
-        sel.appendChild(o);
-      });
-      sel.addEventListener("change", function () { if (sel.value) trackKeyword(meta, sel.value); });
-      var headEl = document.querySelector("opengsc-serp-head");
-      var place = headEl && headEl.shadowRoot && headEl.shadowRoot.querySelector(".card");
-      if (place) { place.appendChild(sel); place.appendChild(d("span", "muted", msg("serpPickSite"))); }
+      openPicker(msg("serpPickSite"),
+        res.data.sites.slice(0, 300).map(function (s) { return { value: s.id, label: s.label }; }),
+        function (id) { trackKeyword(meta, id); });
     });
   }
 
@@ -742,7 +915,6 @@
   function pickProjectAndAdd(meta) {
     var matching = null;
     if (state.hostsData && state.hostsData.query) {
-      // a project that tracks this keyword — from q.serpmon
       matching = (state.hostsData.query.serpmon || [])[0];
     }
     var projectId = matching ? matching.projectId : state.settings.defaultProjectId;
@@ -758,18 +930,11 @@
       var projects = res.data.projects.filter(function (p) {
         return !meta.country || !p.country || p.country === meta.country;
       });
+      if (!projects.length) projects = res.data.projects;
       if (projects.length === 1) { addKeyword(meta, projects[0].id); return; }
-      var sel = document.createElement("select");
-      projects.slice(0, 100).forEach(function (p) {
-        var o = document.createElement("option");
-        o.value = p.id;
-        o.textContent = p.name + " · " + p.country + "/" + p.lang;
-        sel.appendChild(o);
-      });
-      sel.addEventListener("change", function () { if (sel.value) addKeyword(meta, sel.value); });
-      var headEl = document.querySelector("opengsc-serp-head");
-      var place = headEl && headEl.shadowRoot && headEl.shadowRoot.querySelector(".card");
-      if (place) { place.appendChild(sel); place.appendChild(d("span", "muted", msg("serpPickProject"))); }
+      openPicker(msg("serpPickProject"),
+        projects.slice(0, 200).map(function (p) { return { value: p.id, label: p.name + " · " + p.country + "/" + p.lang }; }),
+        function (id) { addKeyword(meta, id); });
     });
   }
 
@@ -783,13 +948,11 @@
   }
 
   function alertBox(text) {
-    var headEl = document.querySelector("opengsc-serp-head");
-    var place = headEl && headEl.shadowRoot && headEl.shadowRoot.querySelector(".card");
-    if (place) {
-      var note = d("span", "muted", text);
-      place.appendChild(note);
-      setTimeout(function () { note.remove(); }, 6000);
-    }
+    var place = cardPart("status");
+    if (!place) return;
+    place.textContent = text;
+    clearTimeout(state.statusTimer);
+    state.statusTimer = setTimeout(function () { place.textContent = ""; }, 6000);
   }
 
   // ─── boot ──────────────────────────────────────────────────────────────────────
@@ -841,10 +1004,12 @@
             state.error = res.data && res.data.error;
             state.hostsData = { hosts: [], query: null, missing: { age: 0, dr: 0 } };
           }
-          drawHeader();
-          drawRows();
-          watchScroll();
-          if (state.settings.serpAutoEnrich) runEnrich(false);
+          loadCollected(function () {
+            drawHeader();
+            drawRows();
+            watchScroll();
+            if (state.settings.serpAutoEnrich) runEnrich(false);
+          });
         });
       });
     });

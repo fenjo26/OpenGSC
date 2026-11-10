@@ -861,10 +861,10 @@
     "message": "搜索量 $1 · KD $2 · 数据日期 $3"
   },
   "serpToRank": {
-    "message": "加入 Rank Tracker"
+    "message": "+ Rank Tracker"
   },
   "serpToMonitor": {
-    "message": "加入 SERP Monitor"
+    "message": "+ SERP Monitor"
   },
   "serpCapture": {
     "message": "保存这些结果"
@@ -967,5 +967,38 @@
   },
   "pageReload": {
     "message": "重新加载页面"
+  },
+  "serpCollected": {
+    "message": "我的列表"
+  },
+  "serpCollectAdd": {
+    "message": "加入我的列表"
+  },
+  "serpCollectAll": {
+    "message": "+ 全部加入"
+  },
+  "serpClear": {
+    "message": "清空"
+  },
+  "serpAddBtn": {
+    "message": "添加"
+  },
+  "serpCancel": {
+    "message": "取消"
+  },
+  "serpDataMissing": {
+    "message": "缺少 DR/年龄：$2 个网站中的 $1 个"
+  },
+  "serpRefresh": {
+    "message": "立即获取"
+  },
+  "serpNoDrKey": {
+    "message": "DR 需要在 OpenGSC 设置中添加免费的 Ahrefs DR 密钥。"
+  },
+  "serpSetKey": {
+    "message": "打开设置"
+  },
+  "serpListEmpty": {
+    "message": "用 + 添加查询，它们会汇总在这里。"
   }
 }

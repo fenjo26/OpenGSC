@@ -862,10 +862,10 @@
     "message": "volume $1 · KD $2 · data from $3"
   },
   "serpToRank": {
-    "message": "Track in Rank Tracker"
+    "message": "+ Rank Tracker"
   },
   "serpToMonitor": {
-    "message": "Add to SERP Monitor"
+    "message": "+ SERP Monitor"
   },
   "serpCapture": {
     "message": "Save these results"
@@ -968,5 +968,38 @@
   },
   "pageReload": {
     "message": "Reload page"
+  },
+  "serpCollected": {
+    "message": "My list"
+  },
+  "serpCollectAdd": {
+    "message": "Add to my list"
+  },
+  "serpCollectAll": {
+    "message": "+ Add all"
+  },
+  "serpClear": {
+    "message": "Clear"
+  },
+  "serpAddBtn": {
+    "message": "Add"
+  },
+  "serpCancel": {
+    "message": "Cancel"
+  },
+  "serpDataMissing": {
+    "message": "No DR/age yet: $1 of $2 sites"
+  },
+  "serpRefresh": {
+    "message": "Fetch now"
+  },
+  "serpNoDrKey": {
+    "message": "DR needs a free Ahrefs DR key in OpenGSC settings."
+  },
+  "serpSetKey": {
+    "message": "Open settings"
+  },
+  "serpListEmpty": {
+    "message": "Add queries with + and they collect here."
   }
 }
