@@ -22,6 +22,12 @@
   <script src="lib/api.js"></script>
   <script src="lib/protocol.js"></script>
   <script src="lib/settings.js"></script>
+  <!-- audit.js / donor.js / highlight.js are ALSO injected into the page, but the panel calls
+       them too (META_LIMITS, deriveIssues, robotsAllows, deriveSignals, ExtHighlight.apply as the
+       injected func) — without these tags every tab threw "ExtensionAudit is not defined". -->
+  <script src="lib/audit.js"></script>
+  <script src="lib/donor.js"></script>
+  <script src="lib/highlight.js"></script>
   <script src="lib/csv.js"></script>
   <script src="lib/export.js"></script>
   <script src="panel/core.js"></script>

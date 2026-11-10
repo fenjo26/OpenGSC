@@ -477,7 +477,39 @@
 
   // ─── robots & sitemap ──────────────────────────────────────────────────────────
 
-  var robotsCache = { origin: "", text: null, failed: false };
+  var robotsCache = { origin: "", text: null, failed: false, status: 0 };
+
+  /**
+   * GET a text file for the robots/sitemap tab. Same-origin files are fetched INSIDE the tab
+   * (executeScript): that works whenever the page scan works — activeTab included — with no
+   * extra permission. Anything else, or if injection is refused, falls back to a fetch from the
+   * panel, which needs a host permission. Resolves { status, text }; status 0 = could not reach
+   * it at all (permission / network), never confused with a real 404.
+   */
+  function fetchText(ctx, url) {
+    var direct = function () {
+      return fetch(url, { credentials: "omit" })
+        .then(function (r) { return r.text().then(function (t) { return { status: r.status, text: r.ok ? t : "" }; }); })
+        .catch(function () { return { status: 0, text: "" }; });
+    };
+    var sameOrigin = false;
+    try { sameOrigin = new URL(url).origin === new URL(ctx.url).origin; } catch { /* */ }
+    if (!sameOrigin || !ctx.tabId || !chrome.scripting) return direct();
+    return new Promise(function (resolve) {
+      chrome.scripting.executeScript({
+        target: { tabId: ctx.tabId },
+        func: function (u) {
+          return fetch(u, { credentials: "omit" })
+            .then(function (r) { return r.text().then(function (t) { return { status: r.status, text: r.ok ? t.slice(0, 5 * 1024 * 1024) : "" }; }); })
+            .catch(function () { return { status: 0, text: "" }; });
+        },
+        args: [url],
+      }, function (results) {
+        var res = !chrome.runtime.lastError && results && results[0] && results[0].result;
+        if (res && res.status) resolve(res); else direct().then(resolve);
+      });
+    });
+  }
 
   function renderRobots(root, ctx) {
     var origin = "";
@@ -491,45 +523,48 @@
     var load = function () {
       box.textContent = "";
       box.appendChild(tag("div", "muted small", "…"));
-      fetch(origin + "/robots.txt", { credentials: "omit" })
-        .then(function (r) { return r.ok ? r.text() : Promise.reject(new Error("HTTP " + r.status)); })
-        .then(function (text) {
-          robotsCache = { origin: origin, text: text.slice(0, 50 * 1024), failed: false };
-          paintRobots();
-        })
-        .catch(function () {
-          robotsCache = { origin: origin, text: null, failed: true };
-          paintRobots();
-        });
+      fetchText(ctx, origin + "/robots.txt").then(function (res) {
+        // 200 → the file; 4xx → "no robots.txt" (Google treats that as allow-all);
+        // 0 or 5xx → we could not read it, which is NOT the same as "there is none".
+        if (res.status >= 200 && res.status < 300) robotsCache = { origin: origin, text: res.text.slice(0, 50 * 1024), failed: false, status: res.status };
+        else if (res.status >= 400 && res.status < 500) robotsCache = { origin: origin, text: "", failed: false, status: res.status };
+        else robotsCache = { origin: origin, text: null, failed: true, status: res.status };
+        paintRobots();
+      });
     };
 
     var paintRobots = function () {
       box.textContent = "";
       findBox.textContent = "";
       if (robotsCache.failed || robotsCache.text == null) {
-        box.appendChild(tag("div", "muted", ctxMsg("pageRobotsMissing")));
+        // could not read it (no access to this site, network, 5xx) — say so and offer the fix
+        box.appendChild(tag("div", "muted", ctx.msg("panelNoPermission") + (robotsCache.status ? " (HTTP " + robotsCache.status + ")" : "")));
         var allow = tag("button", "btn", ctx.msg("panelAllowAll"));
         allow.type = "button";
         allow.addEventListener("click", function () {
           ExtSettings.requestAllSites().then(function (granted) { if (granted) load(); });
         });
         box.appendChild(allow);
-        // a 404 robots.txt is also "no robots.txt" — allowed by definition
-        if (robotsCache.text == null && !robotsCache.failed) box.textContent = "";
         return;
+      }
+      if (robotsCache.text === "") {
+        // a 4xx robots.txt: there is none, everything is allowed — still let the user check the sitemap
+        box.appendChild(tag("div", "ok-inline", ctxMsg("pageRobotsMissing") + " (HTTP " + robotsCache.status + ") — " + ctxMsg("pageRobotsAllowed")));
       }
 
       var path = "/";
       try { path = new URL(ctx.url).pathname || "/"; } catch { /* */ }
       var verdict = ExtensionAudit.robotsAllows(robotsCache.text, "Googlebot", path);
-      var line = verdict.allowed
+      var line = !robotsCache.text ? null : verdict.allowed
         ? tag("div", "ok-inline", ctxMsg("pageRobotsAllowed"))
         : tag("div", "warn-inline", ctxMsg("pageRobotsBlocked", [verdict.rule || ""]));
-      box.appendChild(line);
+      if (line) box.appendChild(line);
 
-      var pre = tag("pre", "mono small robotspre");
-      pre.textContent = robotsCache.text;
-      box.appendChild(pre);
+      if (robotsCache.text) {
+        var pre = tag("pre", "mono small robotspre");
+        pre.textContent = robotsCache.text;
+        box.appendChild(pre);
+      }
 
       // sitemaps from robots.txt + the default /sitemap.xml
       var sitemaps = [];
@@ -564,8 +599,8 @@
         return;
       }
       files++;
-      fetch(sitemaps[index], { credentials: "omit" })
-        .then(function (r) { return r.ok ? r.text() : ""; })
+      fetchText(ctx, sitemaps[index])
+        .then(function (res) { return res.status >= 200 && res.status < 300 ? res.text : ""; })
         .then(function (xml) {
           if (!xml || xml.length > 5 * 1024 * 1024) return checkOne(index + 1);
           if (xml.indexOf(target) !== -1) { found = sitemaps[index]; return checkOne(index); }

@@ -219,7 +219,7 @@ var Panel = (function () {
 
     var favicon = tag("img", "favicon");
     favicon.alt = "";
-    favicon.src = state.url ? "https://www.google.com/s2/favicons?sz=32&domain=" + encodeURIComponent(hostOf(state.url)) : "";
+    favicon.src = /^https?:/i.test(state.url || "") ? "https://www.google.com/s2/favicons?sz=32&domain=" + encodeURIComponent(hostOf(state.url)) : "";
     favicon.onerror = function () { favicon.style.visibility = "hidden"; };
     head.appendChild(favicon);
 
