@@ -1,10 +1,10 @@
 // Credentials sign-in lockout for a single Node process.
 //
 // NextAuth's credentials `authorize` is the only place a password is checked, and it had no
-// limit. The deployment sits behind a Cloudflare Tunnel, so the client address is whatever
-// Cloudflare wrote in `CF-Connecting-IP` — not the first `X-Forwarded-For` hop, which a client
-// can still supply. That header is only trustworthy while nothing except cloudflared can open
-// the port; a direct connection can forge it.
+// limit. The client address comes from whichever header the deployment's proxy sets
+// (OPENGSC_CLIENT_IP_HEADER, see src/lib/security/clientIp.ts); a header the proxy does not
+// overwrite is one the client can forge, so on an instance without that variable the per-IP
+// bucket is advisory and the per-account bucket is the real limit.
 //
 // State lives in the process. A restart clears it, which is the same trade the extension and
 // the public widget already make, and this app cannot run more than one process against SQLite.
@@ -42,44 +42,10 @@ export function normalizeLoginEmail(email: string): string {
   return email.trim().toLowerCase().slice(0, 320);
 }
 
-/**
- * The address a credentials attempt is counted against.
- *
- * `CF-Connecting-IP` wins when it is present. Cloudflare sets it to the visitor and, on a
- * tunnel, the client cannot overwrite it. `X-Real-IP` and the first `X-Forwarded-For` hop are
- * fallbacks for local development, where no Cloudflare header exists.
- */
-export function clientIpFromHeaders(
-  headers: { get?(name: string): string | null } | Record<string, string | string[] | undefined> | undefined | null,
-): string {
-  const cf = firstHop(readHeader(headers, "cf-connecting-ip"));
-  if (cf) return cf;
-  const real = firstHop(readHeader(headers, "x-real-ip"));
-  if (real) return real;
-  const forwarded = firstHop(readHeader(headers, "x-forwarded-for"));
-  if (forwarded) return forwarded;
-  return "unknown";
-}
-
-function readHeader(
-  headers: { get?(name: string): string | null } | Record<string, string | string[] | undefined> | undefined | null,
-  name: string,
-): string {
-  if (!headers) return "";
-  if (typeof headers.get === "function") return headers.get(name) ?? "";
-  const want = name.toLowerCase();
-  for (const [key, value] of Object.entries(headers)) {
-    if (key.toLowerCase() !== want || value == null) continue;
-    return Array.isArray(value) ? String(value[0] ?? "") : String(value);
-  }
-  return "";
-}
-
-function firstHop(value: string): string {
-  const hop = value.split(",")[0]?.trim().slice(0, 128) ?? "";
-  if (!hop || /[\s\u0000]/.test(hop)) return "";
-  return hop;
-}
+// The address a credentials attempt is counted against. Which header is trustworthy depends on the
+// deployment, so the logic lives in src/lib/security/clientIp.ts (OPENGSC_CLIENT_IP_HEADER) and is
+// shared with the public widget's limits; re-exported here for existing callers.
+export { clientIpFromHeaders } from "@/lib/security/clientIp";
 
 export class LoginAttemptLimiter {
   private readonly buckets = new Map<string, number[]>();

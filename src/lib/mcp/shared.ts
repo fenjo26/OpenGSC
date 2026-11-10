@@ -8,6 +8,7 @@
 import { prisma } from "@/lib/prisma";
 import { rawQuery } from "@/lib/db/raw";
 import { normalizePolicy, type EditorialPolicy } from "@/lib/seo/policy";
+import type { Capability } from "@/lib/team/roles";
 
 export type Json = Record<string, unknown>;
 
@@ -36,6 +37,11 @@ export interface McpTool {
   idempotent?: boolean;
   destructive?: boolean;
   openWorld?: boolean;
+  /**
+   * The workspace capability a call needs, when it is stricter than what `cost` and `readOnly`
+   * imply. Unset = derived as before (paid → spend, mutating → write, else read).
+   */
+  capability?: Capability;
   handler: (userId: string, args: Json) => Promise<unknown>;
 }
 

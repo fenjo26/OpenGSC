@@ -88,7 +88,7 @@ Paid tools include `start_rewrite_job`, `start_generation_job`, `research_keywor
 | Site memory | `get_site_context`, `update_site_context` |
 | Local, trends, reports | `get_local_profile`, `check_nap`, `local_grid_*`, `get_trends`, `get_footprints`, `list_reports`, `list_leads`, `get_source_audit` |
 | SERP Monitor, Drops, Publishing | `serpmon_*`, `drops_*`, `glue_*`, `publish_*` |
-| Advanced | `execute_sql_query`: a single read-only `SELECT` on a read-only SQLite connection, credential tables blocked, 500-row cap, scoped to your sites |
+| Advanced | `execute_sql_query`: a single read-only `SELECT` on a read-only SQLite connection, owner's token only, credential tables and secret columns (tokens, keys, passwords) refused, 500-row cap, scoped to your sites |
 
 The full list with descriptions: [docs/MCP-SETUP.md](https://github.com/fenjo26/OpenGSC/blob/main/docs/MCP-SETUP.md), or `GET /api/mcp/tools` with your token.
 

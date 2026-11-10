@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { rawExec } from "@/lib/db/raw";
+import { parseWebhookBody } from "@/lib/indexer/webhookInput";
 
 // Valid bot types the doorway may report directly (kept in sync with the doorway script).
 const VALID_BOT_TYPES = ["google", "bing", "yandex", "mailru", "ai", "other"];
@@ -38,12 +39,13 @@ function getBotType(ua: string): string {
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { apiKey, url, ip, userAgent, statusCode, referer, isRedirect } = body;
-
-    if (!apiKey) {
-      return NextResponse.json({ error: "Missing API Key" }, { status: 400 });
+    // Every field is type- and length-checked before it reaches a query: see webhookInput.ts for
+    // why a non-string apiKey must never get as far as `findFirst`.
+    const parsed = parseWebhookBody(await req.json().catch(() => null));
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 });
     }
+    const { apiKey, url, ip, userAgent, statusCode: code, referer, isRedirect, botType: reported } = parsed.value;
 
     // Find domain associated with this API key
     const domain = await prisma.indexerDomain.findFirst({
@@ -55,11 +57,9 @@ export async function POST(req: Request) {
     }
 
     // Prefer the bot type the doorway already computed (newer scripts send it); else parse the UA.
-    const reported = typeof body.botType === "string" ? body.botType.toLowerCase() : "";
     const botType = isRedirect
       ? "redirect"
-      : (VALID_BOT_TYPES.includes(reported) ? reported : getBotType(userAgent || ""));
-    const code = statusCode ? parseInt(statusCode) : 200;
+      : (VALID_BOT_TYPES.includes(reported) ? reported : getBotType(userAgent));
     const dateStr = new Date().toISOString().split("T")[0];
 
     // 1. Increment pre-aggregated daily stat (fast O(1) upsert)
@@ -80,12 +80,12 @@ export async function POST(req: Request) {
     await prisma.indexerLog.create({
       data: {
         domainId: domain.id,
-        url: url || "/",
-        ip: ip || "0.0.0.0",
-        userAgent: userAgent || "Unknown",
+        url,
+        ip,
+        userAgent,
         botType,
         statusCode: code,
-        referer: referer || null,
+        referer,
       },
     });
 

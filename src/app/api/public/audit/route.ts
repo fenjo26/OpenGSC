@@ -9,6 +9,7 @@
 // → audit. Error responses carry short codes only — no internal detail, ever.
 
 import { NextResponse } from "next/server";
+import { clientIpFromHeaders } from "@/lib/security/clientIp";
 import { auditCache } from "@/lib/leads/cache";
 import { LEAD_STRINGS, localizeFindings } from "@/lib/leads/i18n";
 import { LiteAuditError, normalizeAuditDomain, runLiteAudit, topFindings } from "@/lib/leads/liteAudit";
@@ -22,10 +23,9 @@ export const dynamic = "force-dynamic";
 /** One counter per process — the same instance every widget request lands on. */
 const counter = new WindowCounter();
 
+// Which header is trusted is a deployment setting (OPENGSC_CLIENT_IP_HEADER) — see clientIp.ts.
 function clientIp(req: Request): string {
-  const forwarded = req.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim();
-  return req.headers.get("x-real-ip")?.trim() || "";
+  return clientIpFromHeaders(req.headers);
 }
 
 function originAndReferer(req: Request): { origin: string | null; referer: string | null } {
@@ -82,7 +82,7 @@ export async function POST(req: Request) {
     }
 
     const ip = clientIp(req);
-    if (!(await verifyTurnstile(String(body.captchaToken ?? ""), ip))) {
+    if (!(await verifyTurnstile(String(body.captchaToken ?? ""), ip === "unknown" ? "" : ip))) {
       return NextResponse.json({ error: "captcha" }, { status: 400 });
     }
 

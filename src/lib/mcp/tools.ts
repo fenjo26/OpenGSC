@@ -38,6 +38,7 @@ import {
   sinceDate, lim, pct, r1, resolveSite, resolveSites, siteArg, siteOrAllArg,
 } from "./shared";
 import { DATA_TOOLS, dataModuleCounts } from "./toolsData";
+import { checkSqlitePlan, screenSqlText, stripSecretKeys } from "./sqlGuard";
 import { OPTIMIZE_TOOLS } from "./toolsOptimize";
 import { METRICS_TOOLS } from "./toolsMetrics";
 import { DEMAND_TOOLS } from "./toolsDemand";
@@ -735,8 +736,11 @@ const CORE_TOOLS: McpTool[] = [
   {
     name: "execute_sql_query",
     cost: "local",
+    // Free-form SQL over the whole database is the owner's tool: a member's role is meant to bound
+    // what they can see, and no query filter is a tight enough fence for that.
+    capability: "manageSecrets",
     description:
-      "Run a custom read-only SELECT (or WITH…SELECT) query over the local database — for cohorts, cross-table joins, and aggregations the standard tools don't cover. Available tables: Site, DailyMetric, TrackedKeyword, RankCheck, TrackedQuestion, AeoCheck, Backlink, SitemapUrl, PageInspection, PageInspectionHistory, SiteHealth, SiteAudit, SiteAuditPage, LinkWatchBrand, LinkMention, DrCache, AlertEvent, Digest, ContentGroup, TopicCluster; sqlite_master (SQLite) or information_schema (MySQL) for schema discovery. Credential tables (User, Account, Session) are blocked, the connection is read-only, and results are capped at 500 rows.",
+      "Owner only. Run a custom read-only SELECT (or WITH…SELECT) query over the local database — for cohorts, cross-table joins, and aggregations the standard tools don't cover. Useful tables: Site, DailyMetric, TrackedKeyword, RankCheck, TrackedQuestion, AeoCheck, Backlink, SitemapUrl, PageInspection, PageInspectionHistory, SiteHealth, SiteAudit, SiteAuditPage, LinkWatchBrand, LinkMention, DrCache, AlertEvent, Digest, ContentGroup, TopicCluster; sqlite_master (SQLite) or information_schema (MySQL) for schema discovery. Credentials are not readable: tables such as User, Account, Session, Membership, InstanceSetting, BlogConnection and DropProxy are refused, and so is any column that holds a token, key, password or similar — name columns explicitly instead of SELECT * on tables that have one (e.g. Site). The connection is read-only and results are capped at 500 rows.",
     inputSchema: {
       type: "object",
       properties: {
@@ -747,29 +751,24 @@ const CORE_TOOLS: McpTool[] = [
     handler: async (userId, args) => {
       const sql = String(args.sql ?? "").trim().replace(/;+\s*$/, "");
       if (!sql) throw new Error("Missing required argument: sql");
-      if (!/^(select|with)\b/i.test(sql)) throw new Error("Only SELECT (or WITH…SELECT) queries are allowed.");
-
-      // Keyword screening runs on the query with string literals blanked out, so a
-      // legitimate `WHERE query LIKE '%delete user%'` is not a false positive.
-      const stripped = sql.replace(/'(?:[^']|'')*'/g, "''");
-      const banned = stripped.match(/\b(User|Account|Session|VerificationToken|attach|detach|pragma|vacuum|reindex|load_extension|insert|update|delete|drop|alter|create|replace)\b/i);
-      if (banned) {
-        throw new Error(`Blocked keyword/table: "${banned[0]}". Credential tables (User/Account/Session) and write operations are not accessible through this tool.`);
-      }
 
       const url = process.env.DATABASE_URL || "";
       const isMysql = /^(mysql|mariadb):/i.test(url);
+      // Layer 1 (both engines): the text. See src/lib/mcp/sqlGuard.ts for all three layers.
+      const refused = screenSqlText(sql, isMysql ? "mysql" : "sqlite");
+      if (refused) throw new Error(refused);
       let rows: Record<string, unknown>[];
 
       if (isMysql) {
         // On MySQL there is no local file to open read-only, so the SQLite path below does not
         // apply. The query runs through the same `rawQuery` the rest of the app uses, which means
         // portableSql rewrites `"identifier"` to backticks — so an agent writing the SQLite-style
-        // `FROM "User"` it sees everywhere else in this tool's output still works, and a query
+        // `FROM "Site"` it sees everywhere else in this tool's output still works, and a query
         // already using backticks is left untouched (portableSql only touches double quotes).
-        // The keyword screen above is the only write-guard on this branch: a MySQL account separate
-        // from the app's (e.g. a SELECT-only grant) would be a stronger one, but that is a
-        // deployment choice, not something the code can enforce on a connection it did not open.
+        // The text screen and the result filter are the guards on this branch: a MySQL account
+        // separate from the app's (e.g. a SELECT-only grant on the app schema) would be a stronger
+        // one, but that is a deployment choice, not something the code can enforce on a connection
+        // it did not open.
         rows = await rawQuery<Record<string, unknown>[]>(sql);
       } else {
         // True read-only enforcement on SQLite: a separate connection opened with the
@@ -799,12 +798,16 @@ const CORE_TOOLS: McpTool[] = [
         // @ts-expect-error -- no declaration file for better-sqlite3
         const { default: Database } = (await import(/* turbopackIgnore: true */ "better-sqlite3")) as {
           default: new (path: string, options: { readonly: true; fileMustExist: true }) => {
-            prepare(sql: string): { reader: boolean; all(): Record<string, unknown>[] };
+            prepare(sql: string): { reader: boolean; all(...params: unknown[]): Record<string, unknown>[] };
             close(): void;
           };
         };
         const db = new Database(dbPath, { readonly: true, fileMustExist: true });
         try {
+          // Layer 2: compile with EXPLAIN and refuse any secret table, index or column the query
+          // would touch — including through views, CTEs and SELECT *.
+          const planRefused = checkSqlitePlan(db, sql);
+          if (planRefused) throw new Error(planRefused);
           const stmt = db.prepare(sql);
           if (!stmt.reader) throw new Error("Query does not return rows — only SELECT queries are allowed.");
           rows = stmt.all();
@@ -818,7 +821,8 @@ const CORE_TOOLS: McpTool[] = [
       // cross-user rows out when userId/siteId columns are present in the result).
       const userSites = await prisma.site.findMany({ where: { userId }, select: { id: true } });
       const allowedSiteIds = new Set(userSites.map(s => s.id));
-      const filtered = rows.filter(row =>
+      // Layer 3: drop any result key that looks like a secret, whatever produced it.
+      const filtered = stripSecretKeys(rows).filter(row =>
         (row.userId === undefined || row.userId === userId) &&
         (row.siteId === undefined || allowedSiteIds.has(row.siteId as string)));
 

@@ -6,6 +6,7 @@
 // cannot be driven by posting the form directly.
 
 import { NextResponse } from "next/server";
+import { clientIpFromHeaders } from "@/lib/security/clientIp";
 import { auditCache } from "@/lib/leads/cache";
 import { sendFullReportEmail, sendLeadNotificationCopy } from "@/lib/leads/email";
 import { localizeFindings } from "@/lib/leads/i18n";
@@ -21,10 +22,9 @@ export const dynamic = "force-dynamic";
 const counter = new WindowCounter();
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
+// Which header is trusted is a deployment setting (OPENGSC_CLIENT_IP_HEADER) — see clientIp.ts.
 function clientIp(req: Request): string {
-  const forwarded = req.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim();
-  return req.headers.get("x-real-ip")?.trim() || "";
+  return clientIpFromHeaders(req.headers);
 }
 
 export async function POST(req: Request) {

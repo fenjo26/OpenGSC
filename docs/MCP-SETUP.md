@@ -207,7 +207,7 @@ refuse to run without `confirm: true`, price stated up front.
 | `get_indexer_stats` | Private indexer network: per-domain verified bot hits, 304 rate, never-crawled domains |
 | `get_alerts` | Alerts that actually fired: rank drops, traffic drops, SSL expiry, low audit scores |
 | `get_digests` | Previously generated portfolio digests |
-| `execute_sql_query` | An arbitrary read-only SELECT against the local SQLite tables (advanced analysis) |
+| `execute_sql_query` | An arbitrary read-only SELECT against the local SQLite tables (advanced analysis). Owner's token only; credential tables and token/key/password columns are refused |
 
 ### Content optimization
 

@@ -163,7 +163,8 @@ async function handleMessage(msg: RpcMsg, userId: string, ws: { role: WorkspaceR
       if (!tool) return rpcError(id, -32602, `Unknown tool: ${name}`);
       // The registry already declares what a call costs, so the permission follows from the tool
       // rather than from a second list that can drift out of sync with it.
-      const needed = tool.cost === "paid" ? "spend" : tool.readOnly === false ? "write" : "read";
+      // A tool may also name a stricter capability itself (execute_sql_query → manageSecrets).
+      const needed: Capability = tool.capability ?? (tool.cost === "paid" ? "spend" : tool.readOnly === false ? "write" : "read");
       if (!can(ws, needed)) {
         return rpcResult(id, {
           content: [{ type: "text", text: `This workspace role (${ws.role}) may not call ${name}. Required: ${needed}.` }],
