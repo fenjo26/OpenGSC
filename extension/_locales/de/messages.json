@@ -1,0 +1,971 @@
+{
+  "extDescription": {
+    "message": "Seitenübersicht, schneller On-Page-Audit und „An OpenGSC senden“ für die aktuelle Seite."
+  },
+  "optionsLink": {
+    "message": "Einstellungen"
+  },
+  "loading": {
+    "message": "Seite wird gelesen…"
+  },
+  "needConfigure": {
+    "message": "Bitte zuerst die URL deiner OpenGSC-Instanz und das Token eintragen."
+  },
+  "openOptionsBtn": {
+    "message": "Einstellungen öffnen"
+  },
+  "unsupportedPage": {
+    "message": "Diese Seite kann nicht geprüft werden (Browser-interne oder Nicht-HTTP-Seite)."
+  },
+  "specialNote": {
+    "message": "Das ist eine Google-Tool-Seite — OpenGSC liest sie nicht aus. Die Daten dahinter sind über die API bereits in OpenGSC."
+  },
+  "openApp": {
+    "message": "Diese URL in OpenGSC öffnen"
+  },
+  "send": {
+    "message": "An OpenGSC senden"
+  },
+  "sendOwn": {
+    "message": "In die Indexprüfung einreihen"
+  },
+  "sendForeign": {
+    "message": "Als Outreach-Kontakt speichern"
+  },
+  "sendWaiting": {
+    "message": "Die Übersicht hat noch nicht geantwortet — gleich noch einmal versuchen."
+  },
+  "sendKeywords": {
+    "message": "Auswahl → Keywords"
+  },
+  "downloadCsv": {
+    "message": "Tabelle → CSV"
+  },
+  "downloadCsvStaged": {
+    "message": "CSV der ausgewählten Tabelle herunterladen"
+  },
+  "csvSaved": {
+    "message": "CSV heruntergeladen"
+  },
+  "inOpengsc": {
+    "message": "Diese Seite in OpenGSC"
+  },
+  "miniAudit": {
+    "message": "Schnell-Audit (lokal)"
+  },
+  "notInPortfolio": {
+    "message": "Diese URL gehört zu keiner Website im Portfolio."
+  },
+  "noMetrics": {
+    "message": "Keine Klicks oder Impressionen in den letzten {n} Tagen."
+  },
+  "openInApp": {
+    "message": "In OpenGSC öffnen →"
+  },
+  "metricClicks": {
+    "message": "Klicks"
+  },
+  "metricImpressions": {
+    "message": "Impressionen"
+  },
+  "metricPosition": {
+    "message": "Ø Position"
+  },
+  "posShort": {
+    "message": "Pos."
+  },
+  "localPackShort": {
+    "message": "Karte"
+  },
+  "indexStatus": {
+    "message": "Indexstatus"
+  },
+  "indexIndexed": {
+    "message": "Indexiert"
+  },
+  "indexNotIndexed": {
+    "message": "Nicht indexiert"
+  },
+  "indexUnknown": {
+    "message": "Index: unbekannt"
+  },
+  "indexUnknownTitle": {
+    "message": "Noch nie geprüft, oder Google meldete einen Status, den diese Version nicht kennt"
+  },
+  "serverAudit": {
+    "message": "Letzter Website-Audit"
+  },
+  "yourSite": {
+    "message": "deine Website"
+  },
+  "auditPill": {
+    "message": "Audit: $1 Fehler · $2 Warn."
+  },
+  "auditUnavailable": {
+    "message": "Der Schnell-Audit konnte auf dieser Seite nicht laufen."
+  },
+  "auditAllOk": {
+    "message": "Keine Probleme gefunden"
+  },
+  "notMigrated": {
+    "message": "Der Server braucht `npx prisma db push` — bitte den Betreiber fragen."
+  },
+  "audit_title_missing": {
+    "message": "Kein <title>"
+  },
+  "audit_title_short": {
+    "message": "Title zu kurz (unter 50)"
+  },
+  "audit_title_long": {
+    "message": "Title zu lang (über 65)"
+  },
+  "audit_description_missing": {
+    "message": "Keine Meta-Description"
+  },
+  "audit_description_short": {
+    "message": "Meta-Description zu kurz (unter 150)"
+  },
+  "audit_description_long": {
+    "message": "Meta-Description zu lang (über 165)"
+  },
+  "audit_h1_missing": {
+    "message": "Keine H1"
+  },
+  "audit_h1_multiple": {
+    "message": "Mehr als eine H1"
+  },
+  "audit_canonical_missing": {
+    "message": "Kein Canonical-Link"
+  },
+  "audit_robots_noindex": {
+    "message": "Seite ist noindex"
+  },
+  "audit_jsonld_missing": {
+    "message": "Keine strukturierten Daten (JSON-LD)"
+  },
+  "audit_jsonld_invalid": {
+    "message": "Ungültiger JSON-LD-Block"
+  },
+  "audit_og_missing": {
+    "message": "Keine Open-Graph-Tags"
+  },
+  "audit_og_incomplete": {
+    "message": "Open Graph unvollständig (og:title / og:image)"
+  },
+  "audit_images_no_alt": {
+    "message": "Bilder ohne alt"
+  },
+  "factWords": {
+    "message": "Wörter"
+  },
+  "factLinks": {
+    "message": "Links (int./ext.)"
+  },
+  "factHreflang": {
+    "message": "hreflang"
+  },
+  "factJsonLd": {
+    "message": "JSON-LD ok/defekt"
+  },
+  "sentQueued": {
+    "message": "Eingereiht — die Google-Indexprüfung läuft beim nächsten Durchgang."
+  },
+  "sentProspect": {
+    "message": "Als neuer Kontakt in Outreach gespeichert."
+  },
+  "sentProspectExisting": {
+    "message": "Bereits in Outreach — bestehender Kontakt zurückgegeben."
+  },
+  "sendFailed": {
+    "message": "Fehlgeschlagen"
+  },
+  "sendReason_not_in_portfolio": {
+    "message": "Diese URL ist keine Portfolio-Seite."
+  },
+  "sendReason_auto_check_off": {
+    "message": "Die automatische Indexprüfung ist für diese Website aus — im Tab „Indexierung“ einschalten."
+  },
+  "sendReason_not_in_inventory": {
+    "message": "Diese URL ist nicht im Sitemap-Bestand."
+  },
+  "sendReason_own_site": {
+    "message": "Das ist deine eigene Website — sie geht in die Indexprüfung, nicht in Outreach."
+  },
+  "errAuth": {
+    "message": "Token abgelehnt (401). In Einstellungen → Browser-Erweiterung erstellen oder erneuern."
+  },
+  "errOrigin": {
+    "message": "Die ID dieser Erweiterung ist nicht erlaubt (403). Unter Einstellungen → Browser-Erweiterung → Erlaubte Erweiterungs-IDs hinzufügen."
+  },
+  "errNetwork": {
+    "message": "{url} ist nicht erreichbar — Instanz-URL in den Einstellungen prüfen."
+  },
+  "menuSendPage": {
+    "message": "An OpenGSC senden"
+  },
+  "menuSelection": {
+    "message": "OpenGSC: Auswahl als Keyword verwenden"
+  },
+  "menuTableCsv": {
+    "message": "OpenGSC: Tabellenauswahl → CSV"
+  },
+  "optionsIntro": {
+    "message": "Verbinde die Erweiterung mit deiner selbst gehosteten OpenGSC-Instanz."
+  },
+  "optionsConnection": {
+    "message": "Verbindung"
+  },
+  "optionsInstanceUrl": {
+    "message": "Instanz-URL"
+  },
+  "optionsToken": {
+    "message": "Erweiterungs-Token (Einstellungen → Browser-Erweiterung)"
+  },
+  "optionsReveal": {
+    "message": "Anzeigen"
+  },
+  "optionsSave": {
+    "message": "Speichern"
+  },
+  "optionsTest": {
+    "message": "Verbindung testen"
+  },
+  "optionsTestHint": {
+    "message": "Der Test sendet eine kostenlose Anfrage: Er prüft URL, Token und die ID-Freigabeliste zugleich."
+  },
+  "optionsCORS": {
+    "message": "Erweiterungs-ID für die Freigabeliste"
+  },
+  "optionsCorsHint": {
+    "message": "Diese ID in OpenGSC → Einstellungen → Browser-Erweiterung → Erlaubte Erweiterungs-IDs eintragen. Bis dahin werden Anfragen mit 403 abgelehnt."
+  },
+  "optionsCopy": {
+    "message": "Kopieren"
+  },
+  "optionsPrivacy": {
+    "message": "Was die Erweiterung sendet"
+  },
+  "optionsPrivacyText": {
+    "message": "Nur, was du anklickst: die Seiten-URL für die Übersicht und für „An OpenGSC senden“ sowie das Token. Der Schnell-Audit wird im Browser berechnet und verlässt ihn nie."
+  },
+  "optionsErrUrl": {
+    "message": "Instanz-URL eingeben (https://…)."
+  },
+  "optionsErrToken": {
+    "message": "Das Token beginnt mit ogscext_ — aus Einstellungen → Browser-Erweiterung kopieren."
+  },
+  "optionsSaved": {
+    "message": "Gespeichert (Website-Zugriff erteilt)"
+  },
+  "optionsSavedNoHost": {
+    "message": "Gespeichert (Website-Zugriff abgelehnt — Anfragen hängen von den CORS-Headern des Servers ab)"
+  },
+  "optionsTesting": {
+    "message": "Teste…"
+  },
+  "optionsErrFillFirst": {
+    "message": "Zuerst URL und Token speichern."
+  },
+  "optionsTestOk": {
+    "message": "OK — Verbindung, Token und Freigabeliste funktionieren."
+  },
+  "optionsTest401": {
+    "message": "401: Token fehlt, wurde widerrufen oder ist falsch."
+  },
+  "optionsTest403": {
+    "message": "403: Diese Erweiterungs-ID steht nicht auf der Freigabeliste."
+  },
+  "optionsTestNetwork": {
+    "message": "Keine Antwort — falsche URL oder Server nicht erreichbar."
+  },
+  "optionsTestFail": {
+    "message": "Fehlgeschlagen"
+  },
+  "optionsCopied": {
+    "message": "Kopiert"
+  },
+  "optPanelSection": {
+    "message": "Seitenleiste"
+  },
+  "optPanelAllSites": {
+    "message": "Jede Seite ohne Klick auf das Symbol analysieren"
+  },
+  "optPermissionGranted": {
+    "message": "Berechtigung erteilt"
+  },
+  "optPermissionMissing": {
+    "message": "Berechtigung nicht erteilt"
+  },
+  "optSerpSection": {
+    "message": "Overlay für Suchergebnisse (Google, Bing, Yandex)"
+  },
+  "optSerpEnable": {
+    "message": "OpenGSC-Daten in den Suchergebnissen anzeigen"
+  },
+  "optSerpDomains": {
+    "message": "Suchmaschinen-Domains"
+  },
+  "optSerpDomainsSearch": {
+    "message": "Domains filtern…"
+  },
+  "optSerpCompact": {
+    "message": "Kompaktmodus (eine Zeile pro Ergebnis)"
+  },
+  "optDefaultSite": {
+    "message": "Website-ID für „In Rank Tracker aufnehmen“"
+  },
+  "optDefaultProject": {
+    "message": "SERP-Monitor-Projekt-ID"
+  },
+  "optIdHint": {
+    "message": "Die ID steht in der Adressleiste von OpenGSC: /site/<id>, /serp-monitor/<id>"
+  },
+  "optSaved": {
+    "message": "Gespeichert"
+  },
+  "panelSoon": {
+    "message": "Demnächst"
+  },
+  "panelRefresh": {
+    "message": "Aktualisieren"
+  },
+  "panelUpdating": {
+    "message": "Wird aktualisiert…"
+  },
+  "panelRestricted": {
+    "message": "Diese Seite kann nicht analysiert werden (Browser- oder Store-Seite)."
+  },
+  "panelNoPermission": {
+    "message": "Noch kein Zugriff auf diese Seite."
+  },
+  "panelClickIcon": {
+    "message": "Klicke auf das OpenGSC-Symbol, um diese Seite zu analysieren"
+  },
+  "panelAllowAll": {
+    "message": "Auf allen Websites erlauben"
+  },
+  "panelInjectFailed": {
+    "message": "Seite konnte nicht gelesen werden: $1"
+  },
+  "panelConnectHint": {
+    "message": "Verbinde OpenGSC in den Einstellungen, um hier deine Daten zu sehen"
+  },
+  "panelOpen": {
+    "message": "Seitenleiste öffnen"
+  },
+  "panelHighlight": {
+    "message": "Hervorheben"
+  },
+  "panelExport": {
+    "message": "Export"
+  },
+  "panelTruncated": {
+    "message": "Die ersten $1 werden angezeigt"
+  },
+  "panelScore": {
+    "message": "Seitenbewertung"
+  },
+  "panelScoreFormula": {
+    "message": "100 − 10 je Fehler − 4 je Warnung − 1 je Hinweis"
+  },
+  "tabPage": {
+    "message": "Seite"
+  },
+  "pageOverview": {
+    "message": "Übersicht"
+  },
+  "pageHeadings": {
+    "message": "Überschriften"
+  },
+  "pageLinks": {
+    "message": "Links"
+  },
+  "pageImages": {
+    "message": "Bilder"
+  },
+  "pageSchema": {
+    "message": "Schema"
+  },
+  "pageSocial": {
+    "message": "Social"
+  },
+  "pageRobots": {
+    "message": "robots & Sitemap"
+  },
+  "pageSpeed": {
+    "message": "Geschwindigkeit"
+  },
+  "pageLenOk": {
+    "message": "OK"
+  },
+  "pageLenShort": {
+    "message": "Zu kurz"
+  },
+  "pageLenLong": {
+    "message": "Zu lang"
+  },
+  "pageCanonicalOther": {
+    "message": "Canonical zeigt auf eine andere URL"
+  },
+  "pageGroupMeta": {
+    "message": "Meta"
+  },
+  "pageGroupContent": {
+    "message": "Inhalt"
+  },
+  "pageGroupTechnical": {
+    "message": "Technik"
+  },
+  "pageGroupPerformance": {
+    "message": "Geschwindigkeit"
+  },
+  "pageGroupAccessibility": {
+    "message": "Barrierefreiheit"
+  },
+  "pageHidden": {
+    "message": "versteckt"
+  },
+  "pageSkip": {
+    "message": "Ebene übersprungen"
+  },
+  "pageLinksInternal": {
+    "message": "Intern"
+  },
+  "pageLinksExternal": {
+    "message": "Extern"
+  },
+  "pageLinksUnique": {
+    "message": "Eindeutig"
+  },
+  "pageAreaContent": {
+    "message": "im Text"
+  },
+  "pageAreaNav": {
+    "message": "Menü"
+  },
+  "pageAreaHeader": {
+    "message": "Kopfbereich"
+  },
+  "pageAreaFooter": {
+    "message": "Footer"
+  },
+  "pageAreaAside": {
+    "message": "Seitenleiste"
+  },
+  "pageAreaTop": {
+    "message": "oben im body"
+  },
+  "pageAreaOther": {
+    "message": "sonstige"
+  },
+  "pageNoAlt": {
+    "message": "Ohne alt"
+  },
+  "pageEmptyAlt": {
+    "message": "Leeres alt"
+  },
+  "pageNoDims": {
+    "message": "Ohne Größe"
+  },
+  "pageRichTest": {
+    "message": "Test für Rich-Suchergebnisse"
+  },
+  "pageRobotsBlocked": {
+    "message": "Für Googlebot gesperrt durch: $1"
+  },
+  "pageRobotsAllowed": {
+    "message": "Für Googlebot erlaubt"
+  },
+  "pageRobotsMissing": {
+    "message": "Keine robots.txt"
+  },
+  "pageSitemapFind": {
+    "message": "Diese URL in der Sitemap suchen"
+  },
+  "pageSitemapFound": {
+    "message": "Gefunden in $1"
+  },
+  "pageSitemapNotFound": {
+    "message": "In $1 Dateien nicht gefunden"
+  },
+  "pageLabNote": {
+    "message": "In deinem Browser gemessen — Labordaten, nicht CrUX"
+  },
+  "pageInpNote": {
+    "message": "Braucht eine Interaktion — nicht gemessen"
+  },
+  "pagePsi": {
+    "message": "PageSpeed Insights"
+  },
+  "exportLinks": {
+    "message": "Links (CSV)"
+  },
+  "exportImages": {
+    "message": "Bilder (CSV)"
+  },
+  "exportHeadings": {
+    "message": "Überschriften (CSV)"
+  },
+  "exportJson": {
+    "message": "Alles (JSON)"
+  },
+  "hlImagesNoAlt": {
+    "message": "Bilder ohne alt"
+  },
+  "hlH1": {
+    "message": "H1-Überschriften"
+  },
+  "hlNofollow": {
+    "message": "nofollow-Links"
+  },
+  "hlExternal": {
+    "message": "Externe Links"
+  },
+  "hlEmptyLinks": {
+    "message": "Links ohne Text"
+  },
+  "audit_heading_skip": {
+    "message": "Überschriftenebene übersprungen"
+  },
+  "audit_heading_empty": {
+    "message": "Leere Überschrift"
+  },
+  "audit_images_no_dims": {
+    "message": "Bilder ohne width/height"
+  },
+  "audit_html_lang_missing": {
+    "message": "Kein <html lang>"
+  },
+  "audit_viewport_missing": {
+    "message": "Kein Meta-Viewport"
+  },
+  "audit_link_empty_text": {
+    "message": "Links ohne Text"
+  },
+  "audit_canonical_other": {
+    "message": "Canonical zeigt auf eine andere URL"
+  },
+  "audit_mixed_content": {
+    "message": "HTTP-Ressourcen auf einer HTTPS-Seite"
+  },
+  "audit_lcp_poor": {
+    "message": "Langsamer LCP"
+  },
+  "audit_cls_poor": {
+    "message": "Hoher CLS"
+  },
+  "tabOpengsc": {
+    "message": "OpenGSC"
+  },
+  "ogOpenInApp": {
+    "message": "In OpenGSC öffnen"
+  },
+  "ogGsc28": {
+    "message": "Google Search Console, 28 Tage"
+  },
+  "ogMainQuery": {
+    "message": "Hauptsuchanfrage"
+  },
+  "ogMatchOk": {
+    "message": "Title/H1 enthalten die Hauptsuchanfrage"
+  },
+  "ogMatchBad": {
+    "message": "Weder Title noch H1 enthalten die Hauptsuchanfrage"
+  },
+  "ogNoMainQuery": {
+    "message": "Keine Suchanfragen für diese URL in den letzten 28 Tagen"
+  },
+  "ogInSitemap": {
+    "message": "In der Sitemap"
+  },
+  "ogSitemapYes": {
+    "message": "ja"
+  },
+  "ogSitemapNo": {
+    "message": "nein"
+  },
+  "ogSitemapUnknown": {
+    "message": "Sitemap nicht in OpenGSC geladen"
+  },
+  "ogCheckIndex": {
+    "message": "Indexierung prüfen"
+  },
+  "ogMeta": {
+    "message": "Meta-Tags"
+  },
+  "ogSuggestion": {
+    "message": "Vorschlag ($1 Zeichen)"
+  },
+  "ogCopy": {
+    "message": "Kopieren"
+  },
+  "ogCopied": {
+    "message": "Kopiert"
+  },
+  "ogFitAi": {
+    "message": "Mit KI anpassen"
+  },
+  "ogFitAiConfirm": {
+    "message": "Bis zu 2 Anfragen an dein KI-Modell. Fortfahren?"
+  },
+  "ogNoSpendRight": {
+    "message": "Deine Rolle darf keine Credits ausgeben"
+  },
+  "ogNoMainQueryFit": {
+    "message": "Ohne Hauptsuchanfrage nicht anpassbar"
+  },
+  "ogFootprint": {
+    "message": "Footprint über deine Websites"
+  },
+  "ogFootprintClean": {
+    "message": "Dieses Title/Description/H1-Muster wiederholt sich auf deinen anderen Websites nicht"
+  },
+  "ogFootprintKindTitle": {
+    "message": "Title-Muster"
+  },
+  "ogFootprintKindDescription": {
+    "message": "Description-Muster"
+  },
+  "ogFootprintKindH1": {
+    "message": "H1-Muster"
+  },
+  "ogFootprintAll": {
+    "message": "Alle Muster"
+  },
+  "ogSimilarity": {
+    "message": "$1 % ähnlich"
+  },
+  "ogRanks": {
+    "message": "Rank Tracker"
+  },
+  "ogServerAudit": {
+    "message": "Letzter Website-Audit"
+  },
+  "tabDonor": {
+    "message": "Spender"
+  },
+  "donorLinksToUs": {
+    "message": "Verlinkt auf deine Websites"
+  },
+  "donorLinksToUsRow": {
+    "message": "$1: $2 Links, $3 aktiv"
+  },
+  "donorNotInDb": {
+    "message": "noch nicht in OpenGSC"
+  },
+  "donorDr": {
+    "message": "DR"
+  },
+  "donorAge": {
+    "message": "Alter"
+  },
+  "donorAgeValue": {
+    "message": "$1 J. $2 M."
+  },
+  "donorRefdomains": {
+    "message": "Ref. Domains"
+  },
+  "donorInOutreach": {
+    "message": "In Outreach: $1"
+  },
+  "donorInDrops": {
+    "message": "In Drops: $1"
+  },
+  "donorWatched": {
+    "message": "beobachtet"
+  },
+  "donorAsset": {
+    "message": "Gekaufter Drop"
+  },
+  "donorOwnPbn": {
+    "message": "Deine PBN-Website"
+  },
+  "donorToOutreach": {
+    "message": "Zu Outreach hinzufügen"
+  },
+  "donorWatchDrop": {
+    "message": "Als Drop beobachten"
+  },
+  "donorEnrich": {
+    "message": "Alter und DR abrufen (kostenlos, öffentliche Quellen)"
+  },
+  "donorSignals": {
+    "message": "Signale"
+  },
+  "donorVerdictRestored": {
+    "message": "Sieht nach einem wiederhergestellten Drop aus"
+  },
+  "donorVerdictSuspicious": {
+    "message": "Sieht verdächtig aus"
+  },
+  "donorVerdictClean": {
+    "message": "Keine Anzeichen gefunden"
+  },
+  "donorVerdictUnknown": {
+    "message": "Prüfung nicht möglich"
+  },
+  "donorSig_wayforge_marker": {
+    "message": "WayForge-Markup gefunden"
+  },
+  "donorSig_wayback_toolbar": {
+    "message": "Reste der Wayback Machine"
+  },
+  "donorSig_archive_refs": {
+    "message": "Links zu web.archive.org"
+  },
+  "donorSig_link_above_content": {
+    "message": "Externer Link über dem gesamten Inhalt"
+  },
+  "donorSig_many_outbound_hosts": {
+    "message": "Viele ausgehende Hosts im Text"
+  },
+  "donorSig_sitewide_footer_links": {
+    "message": "Seitenweite Footer-Links"
+  },
+  "donorSig_generator_restore_tool": {
+    "message": "Mit einem Website-Wiederherstellungstool erstellt"
+  },
+  "donorOutbound": {
+    "message": "Ausgehende Links"
+  },
+  "donorOutboundSummary": {
+    "message": "$1 Links zu $2 Hosts, $3 dofollow"
+  },
+  "donorAlreadyLinks": {
+    "message": "Verlinkt bereits auf $1"
+  },
+  "donorFilterDofollow": {
+    "message": "dofollow"
+  },
+  "donorFilterContent": {
+    "message": "im Text"
+  },
+  "donorFilterMine": {
+    "message": "nur meine Websites"
+  },
+  "donorHighlightTop": {
+    "message": "Links über dem Inhalt hervorheben"
+  },
+  "serpYourSite": {
+    "message": "Deine Website: $1"
+  },
+  "serpYourUrlStats": {
+    "message": "deine URL: $1 Klicks, $2 Impr., Pos. $3 (GSC, 28 T.)"
+  },
+  "serpOtherUrlRanks": {
+    "message": "Für diese Suchanfrage rankt bei dir eine andere URL: $1"
+  },
+  "serpDrUnknown": {
+    "message": "Noch nicht in der Datenbank — wird automatisch geholt, oder per Schaltfläche in der OpenGSC-Karte"
+  },
+  "serpAgeYears": {
+    "message": "$1 J."
+  },
+  "serpAgeMonths": {
+    "message": "$1 M."
+  },
+  "serpMonitorChip": {
+    "message": "SERP Monitor: $1 KW, Top 10: $2, seit $3"
+  },
+  "serpTag_new": {
+    "message": "neu"
+  },
+  "serpTag_young": {
+    "message": "jung"
+  },
+  "serpTag_rising": {
+    "message": "steigend"
+  },
+  "serpTag_falling": {
+    "message": "fallend"
+  },
+  "serpTag_bounced": {
+    "message": "abgesprungen"
+  },
+  "serpTag_platform": {
+    "message": "Plattform"
+  },
+  "serpTag_own": {
+    "message": "deine"
+  },
+  "serpLinksToYou": {
+    "message": "verlinkt auf dich: $1"
+  },
+  "serpOutreachStage": {
+    "message": "Outreach: $1"
+  },
+  "serpDropWatched": {
+    "message": "Drop: beobachtet"
+  },
+  "serpDropStage": {
+    "message": "Drop: $1"
+  },
+  "serpPbn": {
+    "message": "PBN"
+  },
+  "serpMenuOutreach": {
+    "message": "Zu Outreach hinzufügen"
+  },
+  "serpMenuWatch": {
+    "message": "Als Drop beobachten"
+  },
+  "serpMenuCloak": {
+    "message": "Auf Cloaking prüfen"
+  },
+  "serpMenuOpenDomain": {
+    "message": "Domain im SERP Monitor öffnen"
+  },
+  "serpCloakSame": {
+    "message": "Für Googlebot und Browser gleich"
+  },
+  "serpCloakDiffers": {
+    "message": "Googlebot und Browser sehen Unterschiedliches"
+  },
+  "serpCloakBlocked": {
+    "message": "Website blockiert den Bot"
+  },
+  "serpCloakError": {
+    "message": "Prüfung fehlgeschlagen"
+  },
+  "serpCloakSnippet": {
+    "message": "Snippet gefunden — Googlebot: $1, Browser: $2"
+  },
+  "serpYes": {
+    "message": "ja"
+  },
+  "serpNo": {
+    "message": "nein"
+  },
+  "serpWaitMinute": {
+    "message": "Zu viele Prüfungen — eine Minute warten"
+  },
+  "serpRegionUnknown": {
+    "message": "Region nicht erkannt"
+  },
+  "serpYourPositions": {
+    "message": "Deine Positionen"
+  },
+  "serpTracked": {
+    "message": "Rank Tracker: Pos. $1 ($2)"
+  },
+  "serpMonitored": {
+    "message": "Im SERP-Monitor-Projekt $1 verfolgt"
+  },
+  "serpStorm": {
+    "message": "Sturm im letzten Lauf"
+  },
+  "serpNoStorm": {
+    "message": "kein Sturm im letzten Lauf"
+  },
+  "serpQueryMetrics": {
+    "message": "Volumen $1 · KD $2 · Daten vom $3"
+  },
+  "serpToRank": {
+    "message": "In Rank Tracker aufnehmen"
+  },
+  "serpToMonitor": {
+    "message": "Zu SERP Monitor hinzufügen"
+  },
+  "serpCapture": {
+    "message": "Diese Ergebnisse speichern"
+  },
+  "serpCaptured": {
+    "message": "Gespeichert · öffnen"
+  },
+  "serpEnrich": {
+    "message": "Alter und DR für $1 Hosts abrufen (kostenlos)"
+  },
+  "serpPickSite": {
+    "message": "Website wählen"
+  },
+  "serpPickProject": {
+    "message": "Projekt wählen"
+  },
+  "serpAdded": {
+    "message": "Hinzugefügt"
+  },
+  "serpAlready": {
+    "message": "Bereits vorhanden"
+  },
+  "serpNotConfigured": {
+    "message": "OpenGSC: Erweiterung in den Einstellungen verbinden"
+  },
+  "serpCollapse": {
+    "message": "Einklappen"
+  },
+  "serpExpand": {
+    "message": "OpenGSC"
+  },
+  "err_invalid_url": {
+    "message": "Ungültige URL"
+  },
+  "err_too_many_hosts": {
+    "message": "Zu viele Hosts"
+  },
+  "err_private_host": {
+    "message": "Private Adresse — nicht geprüft"
+  },
+  "err_confirm_required": {
+    "message": "Bestätigung nötig"
+  },
+  "err_project_not_found": {
+    "message": "SERP-Monitor-Projekt nicht gefunden"
+  },
+  "err_site_not_found": {
+    "message": "Website nicht gefunden"
+  },
+  "err_rate_limited": {
+    "message": "Zu viele Anfragen — eine Minute warten"
+  },
+  "err_forbidden": {
+    "message": "Deine Rolle erlaubt das nicht"
+  },
+  "err_not_migrated": {
+    "message": "Auf dem Server `npx prisma db push` ausführen"
+  },
+  "serpApproxUrl": {
+    "message": "Genaue URL unbekannt (verschlüsselte Links in den Ergebnissen) — nur Host"
+  },
+  "optLangSection": {
+    "message": "Sprache"
+  },
+  "optLangAuto": {
+    "message": "Automatisch (Browsersprache)"
+  },
+  "optSerpPositions": {
+    "message": "Positionsnummer neben jedem Ergebnis anzeigen"
+  },
+  "optSerpAutoEnrich": {
+    "message": "Fehlenden DR und Domain-Alter automatisch abrufen (kostenlos)"
+  },
+  "optSerpHideAds": {
+    "message": "Anzeigen ausblenden"
+  },
+  "serpEnriching": {
+    "message": "DR und Alter werden geholt…"
+  },
+  "serpRelated": {
+    "message": "Ähnliche Suchanfragen"
+  },
+  "serpPaa": {
+    "message": "Nutzer fragen auch"
+  },
+  "serpCopy": {
+    "message": "Kopieren"
+  },
+  "pageRedirects": {
+    "message": "Weiterleitungen"
+  },
+  "pageRedirectsNone": {
+    "message": "Für diesen Tab wurde noch keine Weiterleitungskette aufgezeichnet."
+  },
+  "pageRedirectsHint": {
+    "message": "Die Kette wird beim Laden der Seite aufgezeichnet, und nur auf Websites, auf die die Erweiterung zugreifen darf. Alle Websites erlauben und die Seite neu laden."
+  },
+  "pageRedirectsCopy": {
+    "message": "Kette kopieren (Tabelle)"
+  },
+  "pageReload": {
+    "message": "Seite neu laden"
+  }
+}

@@ -12,6 +12,7 @@ var ExtProtocol = {
   MSG_SETTINGS_CHANGED: "ext:settings-changed",  // broadcast after ExtSettings.set
   MSG_SERP_HOSTS: "ext:serp-hosts",           // overlay → bg/serp.js: { type, body: HostsRequest } → { status, data } (cached 10 min)
   MSG_SERP_INVALIDATE: "ext:serp-invalidate", // overlay → bg/serp.js: { type, query } — drop cached answers of this query
+  MSG_REDIRECTS: "ext:redirects",             // panel → bg/redirects.js: { type, tabId } → { start, hops[], at } | null
   API_WHITELIST: [                  // the only paths ext:api will proxy; anything else → { status: 0, data: { error: "path_not_allowed" } }
     "/api/ext/hosts", "/api/ext/hosts/enrich", "/api/ext/serp/capture", "/api/ext/serp/action",
     "/api/ext/cloak", "/api/ext/outreach", "/api/ext/page", "/api/ext/lists"

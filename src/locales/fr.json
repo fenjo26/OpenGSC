@@ -5109,7 +5109,7 @@
   "repBrandLogoBadType": "PNG, SVG ou JPEG uniquement",
   "repBrandSaved": "Enregistré",
   "extIdsHint": "Un ID d'extension par ligne — trouvez-le sur chrome://extensions. Seuls ces ID peuvent utiliser le jeton.",
-  "extHowToSteps": "1. Ouvrez chrome://extensions et activez le mode développeur.\n2. Chargez le dossier extension/ non compressé du dépôt.\n3. Créez un jeton ici et collez-le dans la fenêtre de l'extension.",
+  "extHowToSteps": "1. Téléchargez le .zip ci-dessus et décompressez-le dans un dossier que vous garderez (l’extension s’exécute depuis ce dossier).\n2. Ouvrez chrome://extensions et activez le mode développeur (en haut à droite).\n3. Cliquez sur « Charger l’extension non empaquetée » et choisissez le dossier décompressé opengsc-extension.\n4. Copiez l’ID de l’extension depuis sa carte, collez-le ci-dessous dans « ID d’extension autorisés », puis enregistrez.\n5. Créez un jeton ci-dessous. Dans les paramètres de l’extension, saisissez l’adresse de cet OpenGSC et le jeton, puis cliquez sur « Tester la connexion ».",
   "locHint": "Fiche d'établissement, cohérence NAP, annuaires, balisage LocalBusiness, Google Business Profile.",
   "locSiteSearch": "Rechercher un site…",
   "partnersOrbitra": "Traqueur self-hosted gratuit, relié aux leads OpenGSC",
@@ -5764,5 +5764,9 @@
   "serpmonCaptureCompare": "Comparer avec le snapshot automatisé le plus proche",
   "serpmonCaptureNoSnapshot": "Aucun snapshot automatisé de cette requête à comparer",
   "serpmonCaptureDelete": "Supprimer",
-  "serpmonCaptureDeleteConfirm": "Supprimer cette capture ?"
+  "serpmonCaptureDeleteConfirm": "Supprimer cette capture ?",
+  "extDownload": "Télécharger l’extension (.zip)",
+  "extGithub": "Code source sur GitHub",
+  "extUpdateTitle": "Comment mettre à jour",
+  "extUpdateSteps": "Téléchargez à nouveau le .zip, décompressez-le dans le même dossier (en remplaçant les fichiers), puis cliquez sur la flèche de rechargement de la carte de l’extension dans chrome://extensions. Tant que le chemin du dossier ne change pas, l’ID reste le même — inutile de toucher à la liste ou au jeton."
 }

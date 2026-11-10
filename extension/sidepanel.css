@@ -346,3 +346,33 @@ body {
   border-radius: 8px;
   padding: 8px;
 }
+
+/* ── heading levels: one calm colour each (no red/orange — those read as errors) ── */
+.htag { font-weight: 700; padding: 0 6px; border-radius: 5px; min-width: 22px; text-align: center; }
+.htag.l1 { color: #1a5fb4; background: rgba(26, 95, 180, 0.12); }
+.htag.l2 { color: #0f7f8a; background: rgba(15, 127, 138, 0.12); }
+.htag.l3 { color: #6a4cc2; background: rgba(106, 76, 194, 0.12); }
+.htag.l4 { color: #3f6f99; background: rgba(63, 111, 153, 0.12); }
+.htag.l5 { color: #5f7034; background: rgba(95, 112, 52, 0.13); }
+.htag.l6 { color: #6b7280; background: rgba(107, 114, 128, 0.14); }
+.hrow.h1 { border-left: 3px solid rgba(26, 95, 180, 0.55); }
+.hrow.h2 { border-left: 3px solid rgba(15, 127, 138, 0.45); }
+.hrow.h3 { border-left: 3px solid rgba(106, 76, 194, 0.4); }
+.hrow.h4 { border-left: 3px solid rgba(63, 111, 153, 0.35); }
+.hrow.h5 { border-left: 3px solid rgba(95, 112, 52, 0.35); }
+.hrow.h6 { border-left: 3px solid rgba(107, 114, 128, 0.35); }
+@media (prefers-color-scheme: dark) {
+  .htag.l1 { color: #8ab4f8; } .htag.l2 { color: #5ec8d0; } .htag.l3 { color: #b39dfa; }
+  .htag.l4 { color: #9ec0e0; } .htag.l5 { color: #b5c77a; } .htag.l6 { color: #a5abb5; }
+}
+
+/* ── links to robots / sitemaps / hops ── */
+.extlink { color: var(--color-accent, #1a73e8); text-decoration: none; word-break: break-all; }
+.extlink:hover { text-decoration: underline; }
+
+/* ── redirect chain ── */
+.hop { padding: 8px 10px; border: 1px solid var(--color-border, #e3e5e8); border-radius: 8px; margin: 6px 0; }
+.hop-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.hop-arrow { text-align: center; color: var(--color-text-tertiary, #9aa0a6); line-height: 1; }
+.st { font-weight: 800; font-size: 13px; padding: 1px 8px; border-radius: 6px; color: #fff; }
+.st-ok { background: #188038; } .st-redir { background: #e37400; } .st-bad { background: #d93025; } .st-err { background: #80868b; }

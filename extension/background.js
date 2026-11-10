@@ -17,13 +17,15 @@
 var CR = globalThis.chrome || globalThis.browser;
 
 importScripts(
+  "lib/i18n.js",
   "lib/api.js",
   "lib/protocol.js",
   "lib/settings.js",
   "lib/googleDomains.js",
   "bg/menus.js",
   "bg/panel.js",
-  "bg/serp.js"
+  "bg/serp.js",
+  "bg/redirects.js"
 );
 
 

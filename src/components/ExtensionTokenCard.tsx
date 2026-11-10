@@ -7,7 +7,7 @@
 // The token APIs live at /api/ext/token (session-guarded, manageSecrets).
 
 import { useEffect, useState } from "react";
-import { Check, Copy, Loader2, Puzzle, RefreshCw, Trash2 } from "lucide-react";
+import { Check, Copy, Download, ExternalLink, Loader2, Puzzle, RefreshCw, Trash2 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 
 const label: React.CSSProperties = { fontSize: "13px", color: "var(--color-text-primary)", fontWeight: 500 };
@@ -25,6 +25,10 @@ const btn: React.CSSProperties = {
 const btnPrimary: React.CSSProperties = {
   ...btn, border: "none", background: "var(--color-accent-blue)", color: "#fff",
 };
+
+// Where the extension's source lives on GitHub (also the fallback when a trimmed deployment
+// has no extension/ folder for /api/ext/download to zip).
+const EXT_GITHUB_URL = "https://github.com/fenjo26/OpenGSC/tree/main/extension";
 
 export default function ExtensionTokenCard() {
   const { t } = useLanguage();
@@ -130,6 +134,19 @@ export default function ExtensionTokenCard() {
       </div>
       <div style={hint}>{t("extHint")}</div>
 
+      {/* ── install: download this instance's own build + the steps ──────────── */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px", padding: "10px 12px", borderRadius: "10px", background: "var(--color-bg-secondary)" }}>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+          <a href="/api/ext/download" download style={{ ...btnPrimary, textDecoration: "none" }}>
+            <Download size={14} /> {t("extDownload")}
+          </a>
+          <a href={EXT_GITHUB_URL} target="_blank" rel="noopener noreferrer" style={{ ...btn, textDecoration: "none" }}>
+            <ExternalLink size={13} /> {t("extGithub")}
+          </a>
+        </div>
+        <div style={{ ...hint, whiteSpace: "pre-line", lineHeight: 1.6 }}>{t("extHowToSteps")}</div>
+      </div>
+
       {/* ── token ─────────────────────────────────────────────────────────────── */}
       <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
         <span style={label}>{t("extToken")}</span>
@@ -190,14 +207,13 @@ export default function ExtensionTokenCard() {
         </div>
         {/* Additional i18n key (extIdsHint, listed in the N11 report): shows the key itself
             until R's locale pass — same convention as notifyChErr_invalid_value in T3. */}
-        <div style={hint}>{t("extIdsHint" as never)}</div>
+        <div style={hint}>{t("extIdsHint")}</div>
       </div>
 
-      {/* ── install instructions ──────────────────────────────────────────────── */}
+      {/* ── updating ──────────────────────────────────────────────────────────── */}
       <details style={{ fontSize: "13px" }}>
-        <summary style={{ ...label, cursor: "pointer" }}>{t("extHowTo")}</summary>
-        {/* Additional i18n key (extHowToSteps, listed in the N11 report). */}
-        <div style={{ ...hint, marginTop: "6px", whiteSpace: "pre-line" }}>{t("extHowToSteps" as never)}</div>
+        <summary style={{ ...label, cursor: "pointer" }}>{t("extUpdateTitle")}</summary>
+        <div style={{ ...hint, marginTop: "6px", whiteSpace: "pre-line" }}>{t("extUpdateSteps")}</div>
       </details>
 
       {error && <div style={{ ...hint, color: "var(--color-danger)" }}>{error}</div>}

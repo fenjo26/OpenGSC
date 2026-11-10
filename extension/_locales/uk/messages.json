@@ -1,0 +1,971 @@
+{
+  "extDescription": {
+    "message": "Зведення сторінки, швидкий аудит і «Надіслати в OpenGSC» для сторінки, на якій ви зараз."
+  },
+  "optionsLink": {
+    "message": "Налаштування"
+  },
+  "loading": {
+    "message": "Читаю сторінку…"
+  },
+  "needConfigure": {
+    "message": "Спочатку вкажіть адресу вашого OpenGSC і токен."
+  },
+  "openOptionsBtn": {
+    "message": "Відкрити налаштування"
+  },
+  "unsupportedPage": {
+    "message": "Цю сторінку не можна перевірити (службова сторінка браузера або не http)."
+  },
+  "specialNote": {
+    "message": "Це сторінка інструменту Google — OpenGSC її не розбирає. Дані з неї вже є в OpenGSC через API."
+  },
+  "openApp": {
+    "message": "Відкрити цей URL в OpenGSC"
+  },
+  "send": {
+    "message": "Надіслати в OpenGSC"
+  },
+  "sendOwn": {
+    "message": "Надіслати в чергу перевірки індексації"
+  },
+  "sendForeign": {
+    "message": "Зберегти в Outreach"
+  },
+  "sendWaiting": {
+    "message": "Зведення ще не відповіло — спробуйте за мить."
+  },
+  "sendKeywords": {
+    "message": "Виділення → ключові слова"
+  },
+  "downloadCsv": {
+    "message": "Таблиця → CSV"
+  },
+  "downloadCsvStaged": {
+    "message": "Завантажити CSV виділеної таблиці"
+  },
+  "csvSaved": {
+    "message": "CSV завантажено"
+  },
+  "inOpengsc": {
+    "message": "Ця сторінка в OpenGSC"
+  },
+  "miniAudit": {
+    "message": "Швидкий аудит (локально)"
+  },
+  "notInPortfolio": {
+    "message": "Цей URL не належить жодному сайту з портфеля."
+  },
+  "noMetrics": {
+    "message": "Немає кліків і показів за останні {n} днів."
+  },
+  "openInApp": {
+    "message": "Відкрити в OpenGSC →"
+  },
+  "metricClicks": {
+    "message": "кліки"
+  },
+  "metricImpressions": {
+    "message": "покази"
+  },
+  "metricPosition": {
+    "message": "сер. позиція"
+  },
+  "posShort": {
+    "message": "поз."
+  },
+  "localPackShort": {
+    "message": "карта"
+  },
+  "indexStatus": {
+    "message": "Стан індексації"
+  },
+  "indexIndexed": {
+    "message": "У індексі"
+  },
+  "indexNotIndexed": {
+    "message": "Не в індексі"
+  },
+  "indexUnknown": {
+    "message": "Індекс: невідомо"
+  },
+  "indexUnknownTitle": {
+    "message": "Ще не перевірялось, або Google повернув стан, який ця версія не розпізнає"
+  },
+  "serverAudit": {
+    "message": "Останній аудит сайту"
+  },
+  "yourSite": {
+    "message": "ваш сайт"
+  },
+  "auditPill": {
+    "message": "Аудит: $1 пом. · $2 попер."
+  },
+  "auditUnavailable": {
+    "message": "Швидкий аудит не вдалося запустити на цій сторінці."
+  },
+  "auditAllOk": {
+    "message": "Проблем не знайдено"
+  },
+  "notMigrated": {
+    "message": "На сервері потрібно виконати `npx prisma db push` — зверніться до власника."
+  },
+  "audit_title_missing": {
+    "message": "Немає <title>"
+  },
+  "audit_title_short": {
+    "message": "Title закороткий (менше 50)"
+  },
+  "audit_title_long": {
+    "message": "Title задовгий (понад 65)"
+  },
+  "audit_description_missing": {
+    "message": "Немає meta description"
+  },
+  "audit_description_short": {
+    "message": "Meta description закороткий (менше 150)"
+  },
+  "audit_description_long": {
+    "message": "Meta description задовгий (понад 165)"
+  },
+  "audit_h1_missing": {
+    "message": "Немає H1"
+  },
+  "audit_h1_multiple": {
+    "message": "Більше одного H1"
+  },
+  "audit_canonical_missing": {
+    "message": "Немає canonical"
+  },
+  "audit_robots_noindex": {
+    "message": "Сторінка в noindex"
+  },
+  "audit_jsonld_missing": {
+    "message": "Немає мікророзмітки JSON-LD"
+  },
+  "audit_jsonld_invalid": {
+    "message": "Некоректний блок JSON-LD"
+  },
+  "audit_og_missing": {
+    "message": "Немає тегів Open Graph"
+  },
+  "audit_og_incomplete": {
+    "message": "Open Graph неповний (og:title / og:image)"
+  },
+  "audit_images_no_alt": {
+    "message": "Зображення без alt"
+  },
+  "factWords": {
+    "message": "Слів"
+  },
+  "factLinks": {
+    "message": "Посилання (внутр./зовн.)"
+  },
+  "factHreflang": {
+    "message": "hreflang"
+  },
+  "factJsonLd": {
+    "message": "JSON-LD ок/зламано"
+  },
+  "sentQueued": {
+    "message": "У черзі — перевірка індексації Google виконається на наступному кроці."
+  },
+  "sentProspect": {
+    "message": "Збережено в Outreach як новий кандидат."
+  },
+  "sentProspectExisting": {
+    "message": "Вже є в Outreach — повернуто наявного кандидата."
+  },
+  "sendFailed": {
+    "message": "Не вдалося"
+  },
+  "sendReason_not_in_portfolio": {
+    "message": "Цей URL не є сторінкою з портфеля."
+  },
+  "sendReason_auto_check_off": {
+    "message": "Автоперевірка індексації вимкнена для цього сайту — увімкніть її на вкладці «Індексація»."
+  },
+  "sendReason_not_in_inventory": {
+    "message": "Цього URL немає в інвентарі sitemap."
+  },
+  "sendReason_own_site": {
+    "message": "Це ваш сайт — він іде в чергу індексації, а не в Outreach."
+  },
+  "errAuth": {
+    "message": "Токен відхилено (401). Створіть або перевипустіть його в «Налаштування → Браузерне розширення»."
+  },
+  "errOrigin": {
+    "message": "ID цього розширення не дозволено (403). Додайте його в «Налаштування → Браузерне розширення → Дозволені ID»."
+  },
+  "errNetwork": {
+    "message": "Немає зв’язку з {url} — перевірте адресу в налаштуваннях."
+  },
+  "menuSendPage": {
+    "message": "Надіслати в OpenGSC"
+  },
+  "menuSelection": {
+    "message": "OpenGSC: виділення як ключове слово"
+  },
+  "menuTableCsv": {
+    "message": "OpenGSC: виділена таблиця → CSV"
+  },
+  "optionsIntro": {
+    "message": "Підключіть розширення до вашого OpenGSC."
+  },
+  "optionsConnection": {
+    "message": "Підключення"
+  },
+  "optionsInstanceUrl": {
+    "message": "Адреса OpenGSC"
+  },
+  "optionsToken": {
+    "message": "Токен розширення (Налаштування → Браузерне розширення)"
+  },
+  "optionsReveal": {
+    "message": "Показати"
+  },
+  "optionsSave": {
+    "message": "Зберегти"
+  },
+  "optionsTest": {
+    "message": "Перевірити зв’язок"
+  },
+  "optionsTestHint": {
+    "message": "Перевірка робить один безкоштовний запит: вона перевіряє адресу, токен і білий список ID одночасно."
+  },
+  "optionsCORS": {
+    "message": "ID розширення для білого списку"
+  },
+  "optionsCorsHint": {
+    "message": "Скопіюйте цей ID в OpenGSC → Налаштування → Браузерне розширення → Дозволені ID. Доки його немає в списку, запити відхиляються з кодом 403."
+  },
+  "optionsCopy": {
+    "message": "Копіювати"
+  },
+  "optionsPrivacy": {
+    "message": "Що надсилає розширення"
+  },
+  "optionsPrivacyText": {
+    "message": "Лише те, на що ви натискаєте: URL сторінки для зведення й «Надіслати в OpenGSC», а також токен. Швидкий аудит рахується в браузері й нікуди не надсилається."
+  },
+  "optionsErrUrl": {
+    "message": "Вкажіть адресу OpenGSC (https://…)."
+  },
+  "optionsErrToken": {
+    "message": "Токен починається з ogscext_ — скопіюйте його в «Налаштування → Браузерне розширення»."
+  },
+  "optionsSaved": {
+    "message": "Збережено (доступ до сайту надано)"
+  },
+  "optionsSavedNoHost": {
+    "message": "Збережено (доступ до сайту не надано — запити покладаються на CORS-заголовки сервера)"
+  },
+  "optionsTesting": {
+    "message": "Перевіряю…"
+  },
+  "optionsErrFillFirst": {
+    "message": "Спочатку збережіть адресу й токен."
+  },
+  "optionsTestOk": {
+    "message": "Усе працює: зв’язок, токен і білий список."
+  },
+  "optionsTest401": {
+    "message": "401: токена немає, його відкликано або він невірний."
+  },
+  "optionsTest403": {
+    "message": "403: цього ID розширення немає в білому списку."
+  },
+  "optionsTestNetwork": {
+    "message": "Немає відповіді — невірна адреса або сервер недоступний."
+  },
+  "optionsTestFail": {
+    "message": "Не вдалося"
+  },
+  "optionsCopied": {
+    "message": "Скопійовано"
+  },
+  "optPanelSection": {
+    "message": "Бічна панель"
+  },
+  "optPanelAllSites": {
+    "message": "Аналізувати будь-яку сторінку без кліку по іконці"
+  },
+  "optPermissionGranted": {
+    "message": "Дозвіл надано"
+  },
+  "optPermissionMissing": {
+    "message": "Дозвіл не надано"
+  },
+  "optSerpSection": {
+    "message": "Оверлей видачі (Google, Bing, Яндекс)"
+  },
+  "optSerpEnable": {
+    "message": "Показувати дані OpenGSC у видачі"
+  },
+  "optSerpDomains": {
+    "message": "Домени пошукових систем"
+  },
+  "optSerpDomainsSearch": {
+    "message": "Знайти домен…"
+  },
+  "optSerpCompact": {
+    "message": "Компактний режим (один рядок на результат)"
+  },
+  "optDefaultSite": {
+    "message": "ID сайту для «У Rank Tracker»"
+  },
+  "optDefaultProject": {
+    "message": "ID проєкту SERP Monitor"
+  },
+  "optIdHint": {
+    "message": "ID видно в адресному рядку OpenGSC: /site/<id>, /serp-monitor/<id>"
+  },
+  "optSaved": {
+    "message": "Збережено"
+  },
+  "panelSoon": {
+    "message": "Незабаром"
+  },
+  "panelRefresh": {
+    "message": "Оновити"
+  },
+  "panelUpdating": {
+    "message": "Оновлюється…"
+  },
+  "panelRestricted": {
+    "message": "Цю сторінку не можна проаналізувати (службова сторінка браузера або магазину)."
+  },
+  "panelNoPermission": {
+    "message": "Поки немає доступу до цієї сторінки."
+  },
+  "panelClickIcon": {
+    "message": "Натисніть на іконку OpenGSC, щоб проаналізувати сторінку"
+  },
+  "panelAllowAll": {
+    "message": "Дозволити для всіх сайтів"
+  },
+  "panelInjectFailed": {
+    "message": "Не вдалося прочитати сторінку: $1"
+  },
+  "panelConnectHint": {
+    "message": "Підключіть OpenGSC у налаштуваннях, щоб бачити тут свої дані"
+  },
+  "panelOpen": {
+    "message": "Відкрити бічну панель"
+  },
+  "panelHighlight": {
+    "message": "Підсвітити"
+  },
+  "panelExport": {
+    "message": "Експорт"
+  },
+  "panelTruncated": {
+    "message": "Показано перші $1"
+  },
+  "panelScore": {
+    "message": "Оцінка сторінки"
+  },
+  "panelScoreFormula": {
+    "message": "100 − 10 за помилку − 4 за попередження − 1 за зауваження"
+  },
+  "tabPage": {
+    "message": "Сторінка"
+  },
+  "pageOverview": {
+    "message": "Огляд"
+  },
+  "pageHeadings": {
+    "message": "Заголовки"
+  },
+  "pageLinks": {
+    "message": "Посилання"
+  },
+  "pageImages": {
+    "message": "Зображення"
+  },
+  "pageSchema": {
+    "message": "Schema"
+  },
+  "pageSocial": {
+    "message": "Соцмережі"
+  },
+  "pageRobots": {
+    "message": "robots і sitemap"
+  },
+  "pageSpeed": {
+    "message": "Швидкість"
+  },
+  "pageLenOk": {
+    "message": "Норма"
+  },
+  "pageLenShort": {
+    "message": "Закоротко"
+  },
+  "pageLenLong": {
+    "message": "Задовго"
+  },
+  "pageCanonicalOther": {
+    "message": "Canonical веде на інший URL"
+  },
+  "pageGroupMeta": {
+    "message": "Мета"
+  },
+  "pageGroupContent": {
+    "message": "Контент"
+  },
+  "pageGroupTechnical": {
+    "message": "Техніка"
+  },
+  "pageGroupPerformance": {
+    "message": "Швидкість"
+  },
+  "pageGroupAccessibility": {
+    "message": "Доступність"
+  },
+  "pageHidden": {
+    "message": "прихований"
+  },
+  "pageSkip": {
+    "message": "пропущено рівень"
+  },
+  "pageLinksInternal": {
+    "message": "Внутрішні"
+  },
+  "pageLinksExternal": {
+    "message": "Зовнішні"
+  },
+  "pageLinksUnique": {
+    "message": "Унікальні"
+  },
+  "pageAreaContent": {
+    "message": "у тексті"
+  },
+  "pageAreaNav": {
+    "message": "меню"
+  },
+  "pageAreaHeader": {
+    "message": "шапка"
+  },
+  "pageAreaFooter": {
+    "message": "підвал"
+  },
+  "pageAreaAside": {
+    "message": "сайдбар"
+  },
+  "pageAreaTop": {
+    "message": "вгорі body"
+  },
+  "pageAreaOther": {
+    "message": "інше"
+  },
+  "pageNoAlt": {
+    "message": "Без alt"
+  },
+  "pageEmptyAlt": {
+    "message": "Порожній alt"
+  },
+  "pageNoDims": {
+    "message": "Без розмірів"
+  },
+  "pageRichTest": {
+    "message": "Перевірка розширених результатів"
+  },
+  "pageRobotsBlocked": {
+    "message": "Закрито для Googlebot правилом: $1"
+  },
+  "pageRobotsAllowed": {
+    "message": "Відкрито для Googlebot"
+  },
+  "pageRobotsMissing": {
+    "message": "robots.txt немає"
+  },
+  "pageSitemapFind": {
+    "message": "Знайти цей URL у sitemap"
+  },
+  "pageSitemapFound": {
+    "message": "Знайдено в $1"
+  },
+  "pageSitemapNotFound": {
+    "message": "Не знайдено в $1 файлах"
+  },
+  "pageLabNote": {
+    "message": "Виміряно у вашому браузері — лабораторні дані, не CrUX"
+  },
+  "pageInpNote": {
+    "message": "Потрібна взаємодія — не вимірюється"
+  },
+  "pagePsi": {
+    "message": "PageSpeed Insights"
+  },
+  "exportLinks": {
+    "message": "Посилання (CSV)"
+  },
+  "exportImages": {
+    "message": "Зображення (CSV)"
+  },
+  "exportHeadings": {
+    "message": "Заголовки (CSV)"
+  },
+  "exportJson": {
+    "message": "Усе (JSON)"
+  },
+  "hlImagesNoAlt": {
+    "message": "Зображення без alt"
+  },
+  "hlH1": {
+    "message": "Заголовки H1"
+  },
+  "hlNofollow": {
+    "message": "nofollow-посилання"
+  },
+  "hlExternal": {
+    "message": "Зовнішні посилання"
+  },
+  "hlEmptyLinks": {
+    "message": "Посилання без тексту"
+  },
+  "audit_heading_skip": {
+    "message": "Пропущено рівень заголовка"
+  },
+  "audit_heading_empty": {
+    "message": "Порожній заголовок"
+  },
+  "audit_images_no_dims": {
+    "message": "Зображення без width/height"
+  },
+  "audit_html_lang_missing": {
+    "message": "Немає <html lang>"
+  },
+  "audit_viewport_missing": {
+    "message": "Немає meta viewport"
+  },
+  "audit_link_empty_text": {
+    "message": "Посилання без тексту"
+  },
+  "audit_canonical_other": {
+    "message": "Canonical веде на інший URL"
+  },
+  "audit_mixed_content": {
+    "message": "HTTP-ресурси на HTTPS-сторінці"
+  },
+  "audit_lcp_poor": {
+    "message": "Повільний LCP"
+  },
+  "audit_cls_poor": {
+    "message": "Високий CLS"
+  },
+  "tabOpengsc": {
+    "message": "OpenGSC"
+  },
+  "ogOpenInApp": {
+    "message": "Відкрити в OpenGSC"
+  },
+  "ogGsc28": {
+    "message": "Google Search Console, 28 днів"
+  },
+  "ogMainQuery": {
+    "message": "Головний запит"
+  },
+  "ogMatchOk": {
+    "message": "Title/H1 містять головний запит"
+  },
+  "ogMatchBad": {
+    "message": "Ні title, ні H1 не містять головний запит"
+  },
+  "ogNoMainQuery": {
+    "message": "За 28 днів за цим URL немає запитів"
+  },
+  "ogInSitemap": {
+    "message": "У sitemap"
+  },
+  "ogSitemapYes": {
+    "message": "так"
+  },
+  "ogSitemapNo": {
+    "message": "ні"
+  },
+  "ogSitemapUnknown": {
+    "message": "sitemap не завантажено в OpenGSC"
+  },
+  "ogCheckIndex": {
+    "message": "Перевірити індексацію"
+  },
+  "ogMeta": {
+    "message": "Мета-теги"
+  },
+  "ogSuggestion": {
+    "message": "Пропозиція ($1 симв.)"
+  },
+  "ogCopy": {
+    "message": "Копіювати"
+  },
+  "ogCopied": {
+    "message": "Скопійовано"
+  },
+  "ogFitAi": {
+    "message": "Підібрати з ШІ"
+  },
+  "ogFitAiConfirm": {
+    "message": "До 2 запитів до вашої моделі ШІ. Продовжити?"
+  },
+  "ogNoSpendRight": {
+    "message": "Ваша роль не може витрачати кредити"
+  },
+  "ogNoMainQueryFit": {
+    "message": "Без головного запиту підбирати не можна"
+  },
+  "ogFootprint": {
+    "message": "Футпринт по мережі"
+  },
+  "ogFootprintClean": {
+    "message": "Шаблон title/description/H1 не повторюється на інших сайтах мережі"
+  },
+  "ogFootprintKindTitle": {
+    "message": "Шаблон title"
+  },
+  "ogFootprintKindDescription": {
+    "message": "Шаблон description"
+  },
+  "ogFootprintKindH1": {
+    "message": "Шаблон H1"
+  },
+  "ogFootprintAll": {
+    "message": "Усі шаблони мережі"
+  },
+  "ogSimilarity": {
+    "message": "схожість $1%"
+  },
+  "ogRanks": {
+    "message": "Rank Tracker"
+  },
+  "ogServerAudit": {
+    "message": "Останній аудит сайту"
+  },
+  "tabDonor": {
+    "message": "Донор"
+  },
+  "donorLinksToUs": {
+    "message": "Посилається на ваші сайти"
+  },
+  "donorLinksToUsRow": {
+    "message": "$1: посилань $2, живих $3"
+  },
+  "donorNotInDb": {
+    "message": "поки немає в базі OpenGSC"
+  },
+  "donorDr": {
+    "message": "DR"
+  },
+  "donorAge": {
+    "message": "Вік"
+  },
+  "donorAgeValue": {
+    "message": "$1 р. $2 міс."
+  },
+  "donorRefdomains": {
+    "message": "Рефдомени"
+  },
+  "donorInOutreach": {
+    "message": "В Outreach: $1"
+  },
+  "donorInDrops": {
+    "message": "У дропах: $1"
+  },
+  "donorWatched": {
+    "message": "під наглядом"
+  },
+  "donorAsset": {
+    "message": "Куплений дроп"
+  },
+  "donorOwnPbn": {
+    "message": "Ваш сайт PBN"
+  },
+  "donorToOutreach": {
+    "message": "В Outreach"
+  },
+  "donorWatchDrop": {
+    "message": "Стежити як за дропом"
+  },
+  "donorEnrich": {
+    "message": "Дізнатися вік і DR (безкоштовно, публічні джерела)"
+  },
+  "donorSignals": {
+    "message": "Сигнали"
+  },
+  "donorVerdictRestored": {
+    "message": "Схоже на відновлений дроп"
+  },
+  "donorVerdictSuspicious": {
+    "message": "Виглядає підозріло"
+  },
+  "donorVerdictClean": {
+    "message": "Ознак не знайдено"
+  },
+  "donorVerdictUnknown": {
+    "message": "Перевірити не вдалося"
+  },
+  "donorSig_wayforge_marker": {
+    "message": "Знайдено розмітку WayForge"
+  },
+  "donorSig_wayback_toolbar": {
+    "message": "Залишки Wayback Machine"
+  },
+  "donorSig_archive_refs": {
+    "message": "Посилання на web.archive.org"
+  },
+  "donorSig_link_above_content": {
+    "message": "Зовнішнє посилання вище за весь текст"
+  },
+  "donorSig_many_outbound_hosts": {
+    "message": "Багато зовнішніх хостів у тексті"
+  },
+  "donorSig_sitewide_footer_links": {
+    "message": "Наскрізні посилання в підвалі"
+  },
+  "donorSig_generator_restore_tool": {
+    "message": "Зроблено інструментом відновлення сайтів"
+  },
+  "donorOutbound": {
+    "message": "Вихідні посилання"
+  },
+  "donorOutboundSummary": {
+    "message": "$1 посилань на $2 хостів, dofollow $3"
+  },
+  "donorAlreadyLinks": {
+    "message": "Вже посилається на $1"
+  },
+  "donorFilterDofollow": {
+    "message": "dofollow"
+  },
+  "donorFilterContent": {
+    "message": "у тексті"
+  },
+  "donorFilterMine": {
+    "message": "лише мої сайти"
+  },
+  "donorHighlightTop": {
+    "message": "Підсвітити посилання над контентом"
+  },
+  "serpYourSite": {
+    "message": "Ваш сайт: $1"
+  },
+  "serpYourUrlStats": {
+    "message": "ваш URL: кліки $1, покази $2, поз. $3 (GSC, 28 дн.)"
+  },
+  "serpOtherUrlRanks": {
+    "message": "За цим запитом у вас ранжується інший URL: $1"
+  },
+  "serpDrUnknown": {
+    "message": "Поки немає в базі — підтягнеться автоматично або кнопкою в картці OpenGSC"
+  },
+  "serpAgeYears": {
+    "message": "$1 р."
+  },
+  "serpAgeMonths": {
+    "message": "$1 міс."
+  },
+  "serpMonitorChip": {
+    "message": "SERP Monitor: $1 запит., топ-10: $2, з $3"
+  },
+  "serpTag_new": {
+    "message": "новий"
+  },
+  "serpTag_young": {
+    "message": "молодий"
+  },
+  "serpTag_rising": {
+    "message": "росте"
+  },
+  "serpTag_falling": {
+    "message": "падає"
+  },
+  "serpTag_bounced": {
+    "message": "відскок"
+  },
+  "serpTag_platform": {
+    "message": "платформа"
+  },
+  "serpTag_own": {
+    "message": "ваш"
+  },
+  "serpLinksToYou": {
+    "message": "посилається на вас: $1"
+  },
+  "serpOutreachStage": {
+    "message": "Outreach: $1"
+  },
+  "serpDropWatched": {
+    "message": "Дроп: під наглядом"
+  },
+  "serpDropStage": {
+    "message": "Дроп: $1"
+  },
+  "serpPbn": {
+    "message": "PBN"
+  },
+  "serpMenuOutreach": {
+    "message": "В Outreach"
+  },
+  "serpMenuWatch": {
+    "message": "Стежити як за дропом"
+  },
+  "serpMenuCloak": {
+    "message": "Перевірити клоакінг"
+  },
+  "serpMenuOpenDomain": {
+    "message": "Відкрити домен у SERP Monitor"
+  },
+  "serpCloakSame": {
+    "message": "Однаково для Googlebot і браузера"
+  },
+  "serpCloakDiffers": {
+    "message": "Googlebot і браузер бачать різне"
+  },
+  "serpCloakBlocked": {
+    "message": "Сайт блокує бота"
+  },
+  "serpCloakError": {
+    "message": "Перевірка не вдалася"
+  },
+  "serpCloakSnippet": {
+    "message": "Сніпет знайдено — у Googlebot: $1, у браузера: $2"
+  },
+  "serpYes": {
+    "message": "так"
+  },
+  "serpNo": {
+    "message": "ні"
+  },
+  "serpWaitMinute": {
+    "message": "Забагато перевірок — зачекайте хвилину"
+  },
+  "serpRegionUnknown": {
+    "message": "регіон не визначено"
+  },
+  "serpYourPositions": {
+    "message": "Ваші позиції"
+  },
+  "serpTracked": {
+    "message": "Rank Tracker: поз. $1 ($2)"
+  },
+  "serpMonitored": {
+    "message": "Відстежується в проєкті SERP Monitor $1"
+  },
+  "serpStorm": {
+    "message": "шторм в останньому прогоні"
+  },
+  "serpNoStorm": {
+    "message": "останній прогін без шторму"
+  },
+  "serpQueryMetrics": {
+    "message": "обсяг $1 · KD $2 · дані від $3"
+  },
+  "serpToRank": {
+    "message": "У Rank Tracker"
+  },
+  "serpToMonitor": {
+    "message": "У SERP Monitor"
+  },
+  "serpCapture": {
+    "message": "Зберегти видачу"
+  },
+  "serpCaptured": {
+    "message": "Збережено · відкрити"
+  },
+  "serpEnrich": {
+    "message": "Дізнатися вік і DR для $1 хостів (безкоштовно)"
+  },
+  "serpPickSite": {
+    "message": "Виберіть сайт"
+  },
+  "serpPickProject": {
+    "message": "Виберіть проєкт"
+  },
+  "serpAdded": {
+    "message": "Додано"
+  },
+  "serpAlready": {
+    "message": "Вже є"
+  },
+  "serpNotConfigured": {
+    "message": "OpenGSC: підключіть розширення в налаштуваннях"
+  },
+  "serpCollapse": {
+    "message": "Згорнути"
+  },
+  "serpExpand": {
+    "message": "OpenGSC"
+  },
+  "err_invalid_url": {
+    "message": "Невірний URL"
+  },
+  "err_too_many_hosts": {
+    "message": "Забагато хостів"
+  },
+  "err_private_host": {
+    "message": "Приватна адреса — не перевіряється"
+  },
+  "err_confirm_required": {
+    "message": "Потрібне підтвердження"
+  },
+  "err_project_not_found": {
+    "message": "Проєкт SERP Monitor не знайдено"
+  },
+  "err_site_not_found": {
+    "message": "Сайт не знайдено"
+  },
+  "err_rate_limited": {
+    "message": "Забагато запитів — зачекайте хвилину"
+  },
+  "err_forbidden": {
+    "message": "Ваша роль цього не дозволяє"
+  },
+  "err_not_migrated": {
+    "message": "Виконайте на сервері `npx prisma db push`"
+  },
+  "serpApproxUrl": {
+    "message": "Точний URL невідомий (зашифровані посилання у видачі) — лише хост"
+  },
+  "optLangSection": {
+    "message": "Мова"
+  },
+  "optLangAuto": {
+    "message": "Автоматично (мова браузера)"
+  },
+  "optSerpPositions": {
+    "message": "Показувати номер позиції біля кожного результату"
+  },
+  "optSerpAutoEnrich": {
+    "message": "Автоматично підтягувати DR і вік домену (безкоштовно)"
+  },
+  "optSerpHideAds": {
+    "message": "Приховувати рекламу"
+  },
+  "serpEnriching": {
+    "message": "Підтягую DR і вік…"
+  },
+  "serpRelated": {
+    "message": "Схожі запити"
+  },
+  "serpPaa": {
+    "message": "Люди також питають"
+  },
+  "serpCopy": {
+    "message": "Копіювати"
+  },
+  "pageRedirects": {
+    "message": "Редиректи"
+  },
+  "pageRedirectsNone": {
+    "message": "Для цієї вкладки ланцюжок ще не записано."
+  },
+  "pageRedirectsHint": {
+    "message": "Ланцюжок записується під час завантаження сторінки і лише на сайтах, до яких розширення має доступ. Дозвольте доступ до всіх сайтів і перезавантажте сторінку."
+  },
+  "pageRedirectsCopy": {
+    "message": "Копіювати ланцюжок (таблицею)"
+  },
+  "pageReload": {
+    "message": "Перезавантажити сторінку"
+  }
+}

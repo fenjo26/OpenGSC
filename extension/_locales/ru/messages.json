@@ -298,13 +298,13 @@
     "message": "Разрешение не выдано"
   },
   "optSerpSection": {
-    "message": "Оверлей выдачи Google"
+    "message": "Оверлей выдачи (Google, Bing, Яндекс)"
   },
   "optSerpEnable": {
-    "message": "Показывать данные OpenGSC в выдаче Google"
+    "message": "Показывать данные OpenGSC в выдаче"
   },
   "optSerpDomains": {
-    "message": "Домены Google"
+    "message": "Домены поисковиков"
   },
   "optSerpDomainsSearch": {
     "message": "Найти домен…"
@@ -757,7 +757,7 @@
     "message": "По этому запросу у вас ранжируется другой URL: $1"
   },
   "serpDrUnknown": {
-    "message": "Нет в базе. Узнать бесплатно — в шапке"
+    "message": "Пока нет в базе — подтянется автоматически или по кнопке в карточке OpenGSC"
   },
   "serpAgeYears": {
     "message": "$1 г."
@@ -926,5 +926,47 @@
   },
   "serpApproxUrl": {
     "message": "Точный URL неизвестен (зашифрованные ссылки выдачи) — известен только хост"
+  },
+  "optLangSection": {
+    "message": "Язык"
+  },
+  "optLangAuto": {
+    "message": "Автоматически (язык браузера)"
+  },
+  "optSerpPositions": {
+    "message": "Показывать номер позиции у каждого результата"
+  },
+  "optSerpAutoEnrich": {
+    "message": "Автоматически подтягивать DR и возраст домена (бесплатно)"
+  },
+  "optSerpHideAds": {
+    "message": "Скрывать рекламу"
+  },
+  "serpEnriching": {
+    "message": "Подтягиваю DR и возраст…"
+  },
+  "serpRelated": {
+    "message": "Похожие запросы"
+  },
+  "serpPaa": {
+    "message": "Люди также спрашивают"
+  },
+  "serpCopy": {
+    "message": "Копировать"
+  },
+  "pageRedirects": {
+    "message": "Редиректы"
+  },
+  "pageRedirectsNone": {
+    "message": "Для этой вкладки цепочка ещё не записана."
+  },
+  "pageRedirectsHint": {
+    "message": "Цепочка записывается во время загрузки страницы и только на сайтах, к которым у расширения есть доступ. Разрешите доступ ко всем сайтам и перезагрузите страницу."
+  },
+  "pageRedirectsCopy": {
+    "message": "Копировать цепочку (таблицей)"
+  },
+  "pageReload": {
+    "message": "Перезагрузить страницу"
   }
 }

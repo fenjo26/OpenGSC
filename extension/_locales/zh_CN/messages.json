@@ -1,0 +1,971 @@
+{
+  "extDescription": {
+    "message": "当前页面的概览、快速页面审计，以及“发送到 OpenGSC”。"
+  },
+  "optionsLink": {
+    "message": "设置"
+  },
+  "loading": {
+    "message": "正在读取页面…"
+  },
+  "needConfigure": {
+    "message": "请先填写你的 OpenGSC 实例地址和令牌。"
+  },
+  "openOptionsBtn": {
+    "message": "打开设置"
+  },
+  "unsupportedPage": {
+    "message": "无法审计此页面（浏览器内部页面或非 HTTP 页面）。"
+  },
+  "specialNote": {
+    "message": "这是 Google 工具页面 — OpenGSC 不解析它。其背后的数据已通过 API 进入 OpenGSC。"
+  },
+  "openApp": {
+    "message": "在 OpenGSC 中打开此 URL"
+  },
+  "send": {
+    "message": "发送到 OpenGSC"
+  },
+  "sendOwn": {
+    "message": "加入收录检查队列"
+  },
+  "sendForeign": {
+    "message": "保存为外联（Outreach）候选"
+  },
+  "sendWaiting": {
+    "message": "概览尚未返回 — 请稍后再试。"
+  },
+  "sendKeywords": {
+    "message": "选中文本 → 关键词"
+  },
+  "downloadCsv": {
+    "message": "表格 → CSV"
+  },
+  "downloadCsvStaged": {
+    "message": "下载所选表格的 CSV"
+  },
+  "csvSaved": {
+    "message": "CSV 已下载"
+  },
+  "inOpengsc": {
+    "message": "此页面在 OpenGSC 中"
+  },
+  "miniAudit": {
+    "message": "快速审计（本地）"
+  },
+  "notInPortfolio": {
+    "message": "此 URL 不属于资产组合中的任何网站。"
+  },
+  "noMetrics": {
+    "message": "最近 {n} 天没有点击或展示。"
+  },
+  "openInApp": {
+    "message": "在 OpenGSC 中打开 →"
+  },
+  "metricClicks": {
+    "message": "点击"
+  },
+  "metricImpressions": {
+    "message": "展示"
+  },
+  "metricPosition": {
+    "message": "平均排名"
+  },
+  "posShort": {
+    "message": "排名"
+  },
+  "localPackShort": {
+    "message": "地图"
+  },
+  "indexStatus": {
+    "message": "收录状态"
+  },
+  "indexIndexed": {
+    "message": "已收录"
+  },
+  "indexNotIndexed": {
+    "message": "未收录"
+  },
+  "indexUnknown": {
+    "message": "收录：未知"
+  },
+  "indexUnknownTitle": {
+    "message": "尚未检查，或 Google 返回了此版本无法识别的状态"
+  },
+  "serverAudit": {
+    "message": "最近一次网站审计"
+  },
+  "yourSite": {
+    "message": "你的网站"
+  },
+  "auditPill": {
+    "message": "审计：$1 错误 · $2 警告"
+  },
+  "auditUnavailable": {
+    "message": "无法在此页面运行快速审计。"
+  },
+  "auditAllOk": {
+    "message": "未发现问题"
+  },
+  "notMigrated": {
+    "message": "服务器需要执行 `npx prisma db push` — 请联系实例所有者。"
+  },
+  "audit_title_missing": {
+    "message": "没有 <title>"
+  },
+  "audit_title_short": {
+    "message": "Title 过短（少于 50）"
+  },
+  "audit_title_long": {
+    "message": "Title 过长（超过 65）"
+  },
+  "audit_description_missing": {
+    "message": "没有 meta description"
+  },
+  "audit_description_short": {
+    "message": "Meta description 过短（少于 150）"
+  },
+  "audit_description_long": {
+    "message": "Meta description 过长（超过 165）"
+  },
+  "audit_h1_missing": {
+    "message": "没有 H1"
+  },
+  "audit_h1_multiple": {
+    "message": "不止一个 H1"
+  },
+  "audit_canonical_missing": {
+    "message": "没有 canonical 链接"
+  },
+  "audit_robots_noindex": {
+    "message": "页面为 noindex"
+  },
+  "audit_jsonld_missing": {
+    "message": "没有 JSON-LD 结构化数据"
+  },
+  "audit_jsonld_invalid": {
+    "message": "JSON-LD 块无效"
+  },
+  "audit_og_missing": {
+    "message": "没有 Open Graph 标签"
+  },
+  "audit_og_incomplete": {
+    "message": "Open Graph 不完整（og:title / og:image）"
+  },
+  "audit_images_no_alt": {
+    "message": "图片缺少 alt"
+  },
+  "factWords": {
+    "message": "字数"
+  },
+  "factLinks": {
+    "message": "链接（内/外）"
+  },
+  "factHreflang": {
+    "message": "hreflang"
+  },
+  "factJsonLd": {
+    "message": "JSON-LD 正常/损坏"
+  },
+  "sentQueued": {
+    "message": "已加入队列 — Google 收录检查将在下一轮执行。"
+  },
+  "sentProspect": {
+    "message": "已作为新候选保存到 Outreach。"
+  },
+  "sentProspectExisting": {
+    "message": "已在 Outreach 中 — 返回现有候选。"
+  },
+  "sendFailed": {
+    "message": "失败"
+  },
+  "sendReason_not_in_portfolio": {
+    "message": "此 URL 不是资产组合中的页面。"
+  },
+  "sendReason_auto_check_off": {
+    "message": "此网站已关闭自动收录检查 — 请在“收录”选项卡中开启。"
+  },
+  "sendReason_not_in_inventory": {
+    "message": "此 URL 不在 sitemap 清单中。"
+  },
+  "sendReason_own_site": {
+    "message": "这是你自己的网站 — 它会进入收录队列，而不是 Outreach。"
+  },
+  "errAuth": {
+    "message": "令牌被拒绝（401）。请在 设置 → 浏览器扩展 中创建或重新生成。"
+  },
+  "errOrigin": {
+    "message": "此扩展的 ID 不在允许范围内（403）。请在 设置 → 浏览器扩展 → 允许的扩展 ID 中添加。"
+  },
+  "errNetwork": {
+    "message": "无法连接 {url} — 请在设置中检查实例地址。"
+  },
+  "menuSendPage": {
+    "message": "发送到 OpenGSC"
+  },
+  "menuSelection": {
+    "message": "OpenGSC：将选中内容用作关键词"
+  },
+  "menuTableCsv": {
+    "message": "OpenGSC：所选表格 → CSV"
+  },
+  "optionsIntro": {
+    "message": "将扩展连接到你自托管的 OpenGSC 实例。"
+  },
+  "optionsConnection": {
+    "message": "连接"
+  },
+  "optionsInstanceUrl": {
+    "message": "实例地址"
+  },
+  "optionsToken": {
+    "message": "扩展令牌（设置 → 浏览器扩展）"
+  },
+  "optionsReveal": {
+    "message": "显示"
+  },
+  "optionsSave": {
+    "message": "保存"
+  },
+  "optionsTest": {
+    "message": "测试连接"
+  },
+  "optionsTestHint": {
+    "message": "测试会发送一次免费请求：同时验证地址、令牌和扩展 ID 白名单。"
+  },
+  "optionsCORS": {
+    "message": "用于白名单的扩展 ID"
+  },
+  "optionsCorsHint": {
+    "message": "将此 ID 复制到 OpenGSC → 设置 → 浏览器扩展 → 允许的扩展 ID。在加入之前，请求会以 403 被拒绝。"
+  },
+  "optionsCopy": {
+    "message": "复制"
+  },
+  "optionsPrivacy": {
+    "message": "扩展会发送什么"
+  },
+  "optionsPrivacyText": {
+    "message": "只发送你点击的内容：用于概览和“发送到 OpenGSC”的页面 URL，以及令牌。快速审计在浏览器内计算，不会离开浏览器。"
+  },
+  "optionsErrUrl": {
+    "message": "请输入实例地址（https://…）。"
+  },
+  "optionsErrToken": {
+    "message": "令牌以 ogscext_ 开头 — 请从 设置 → 浏览器扩展 中复制。"
+  },
+  "optionsSaved": {
+    "message": "已保存（已授予网站访问权限）"
+  },
+  "optionsSavedNoHost": {
+    "message": "已保存（网站访问被拒绝 — 请求依赖服务器的 CORS 头）"
+  },
+  "optionsTesting": {
+    "message": "正在测试…"
+  },
+  "optionsErrFillFirst": {
+    "message": "请先保存地址和令牌。"
+  },
+  "optionsTestOk": {
+    "message": "正常 — 连接、令牌和白名单都可用。"
+  },
+  "optionsTest401": {
+    "message": "401：令牌缺失、已撤销或错误。"
+  },
+  "optionsTest403": {
+    "message": "403：此扩展 ID 不在白名单中。"
+  },
+  "optionsTestNetwork": {
+    "message": "无响应 — 地址错误或服务器不可用。"
+  },
+  "optionsTestFail": {
+    "message": "失败"
+  },
+  "optionsCopied": {
+    "message": "已复制"
+  },
+  "optPanelSection": {
+    "message": "侧边栏"
+  },
+  "optPanelAllSites": {
+    "message": "无需点击图标即可分析任意页面"
+  },
+  "optPermissionGranted": {
+    "message": "已授予权限"
+  },
+  "optPermissionMissing": {
+    "message": "未授予权限"
+  },
+  "optSerpSection": {
+    "message": "搜索结果叠加层（Google、Bing、Yandex）"
+  },
+  "optSerpEnable": {
+    "message": "在搜索结果中显示 OpenGSC 数据"
+  },
+  "optSerpDomains": {
+    "message": "搜索引擎域名"
+  },
+  "optSerpDomainsSearch": {
+    "message": "筛选域名…"
+  },
+  "optSerpCompact": {
+    "message": "紧凑模式（每个结果一行）"
+  },
+  "optDefaultSite": {
+    "message": "“加入 Rank Tracker”使用的网站 ID"
+  },
+  "optDefaultProject": {
+    "message": "SERP Monitor 项目 ID"
+  },
+  "optIdHint": {
+    "message": "ID 显示在 OpenGSC 的地址栏中：/site/<id>、/serp-monitor/<id>"
+  },
+  "optSaved": {
+    "message": "已保存"
+  },
+  "panelSoon": {
+    "message": "即将推出"
+  },
+  "panelRefresh": {
+    "message": "刷新"
+  },
+  "panelUpdating": {
+    "message": "正在更新…"
+  },
+  "panelRestricted": {
+    "message": "无法分析此页面（浏览器或应用商店页面）。"
+  },
+  "panelNoPermission": {
+    "message": "暂无此页面的访问权限。"
+  },
+  "panelClickIcon": {
+    "message": "点击 OpenGSC 图标以分析此页面"
+  },
+  "panelAllowAll": {
+    "message": "允许访问所有网站"
+  },
+  "panelInjectFailed": {
+    "message": "无法读取页面：$1"
+  },
+  "panelConnectHint": {
+    "message": "在设置中连接 OpenGSC，即可在这里看到你的数据"
+  },
+  "panelOpen": {
+    "message": "打开侧边栏"
+  },
+  "panelHighlight": {
+    "message": "高亮"
+  },
+  "panelExport": {
+    "message": "导出"
+  },
+  "panelTruncated": {
+    "message": "仅显示前 $1 个"
+  },
+  "panelScore": {
+    "message": "页面评分"
+  },
+  "panelScoreFormula": {
+    "message": "100 − 每个错误 10 − 每个警告 4 − 每个提示 1"
+  },
+  "tabPage": {
+    "message": "页面"
+  },
+  "pageOverview": {
+    "message": "概览"
+  },
+  "pageHeadings": {
+    "message": "标题"
+  },
+  "pageLinks": {
+    "message": "链接"
+  },
+  "pageImages": {
+    "message": "图片"
+  },
+  "pageSchema": {
+    "message": "Schema"
+  },
+  "pageSocial": {
+    "message": "社交"
+  },
+  "pageRobots": {
+    "message": "robots 与 sitemap"
+  },
+  "pageSpeed": {
+    "message": "速度"
+  },
+  "pageLenOk": {
+    "message": "正常"
+  },
+  "pageLenShort": {
+    "message": "过短"
+  },
+  "pageLenLong": {
+    "message": "过长"
+  },
+  "pageCanonicalOther": {
+    "message": "Canonical 指向另一个 URL"
+  },
+  "pageGroupMeta": {
+    "message": "元信息"
+  },
+  "pageGroupContent": {
+    "message": "内容"
+  },
+  "pageGroupTechnical": {
+    "message": "技术"
+  },
+  "pageGroupPerformance": {
+    "message": "速度"
+  },
+  "pageGroupAccessibility": {
+    "message": "无障碍"
+  },
+  "pageHidden": {
+    "message": "隐藏"
+  },
+  "pageSkip": {
+    "message": "跳过了层级"
+  },
+  "pageLinksInternal": {
+    "message": "内部"
+  },
+  "pageLinksExternal": {
+    "message": "外部"
+  },
+  "pageLinksUnique": {
+    "message": "去重"
+  },
+  "pageAreaContent": {
+    "message": "正文中"
+  },
+  "pageAreaNav": {
+    "message": "菜单"
+  },
+  "pageAreaHeader": {
+    "message": "页头"
+  },
+  "pageAreaFooter": {
+    "message": "页脚"
+  },
+  "pageAreaAside": {
+    "message": "侧栏"
+  },
+  "pageAreaTop": {
+    "message": "body 顶部"
+  },
+  "pageAreaOther": {
+    "message": "其他"
+  },
+  "pageNoAlt": {
+    "message": "无 alt"
+  },
+  "pageEmptyAlt": {
+    "message": "空 alt"
+  },
+  "pageNoDims": {
+    "message": "无尺寸"
+  },
+  "pageRichTest": {
+    "message": "富媒体搜索结果测试"
+  },
+  "pageRobotsBlocked": {
+    "message": "已对 Googlebot 屏蔽，规则：$1"
+  },
+  "pageRobotsAllowed": {
+    "message": "允许 Googlebot 抓取"
+  },
+  "pageRobotsMissing": {
+    "message": "没有 robots.txt"
+  },
+  "pageSitemapFind": {
+    "message": "在 sitemap 中查找此 URL"
+  },
+  "pageSitemapFound": {
+    "message": "在 $1 中找到"
+  },
+  "pageSitemapNotFound": {
+    "message": "在 $1 个文件中未找到"
+  },
+  "pageLabNote": {
+    "message": "在你的浏览器中测得 — 实验室数据，不是 CrUX"
+  },
+  "pageInpNote": {
+    "message": "需要用户交互 — 未测量"
+  },
+  "pagePsi": {
+    "message": "PageSpeed Insights"
+  },
+  "exportLinks": {
+    "message": "链接（CSV）"
+  },
+  "exportImages": {
+    "message": "图片（CSV）"
+  },
+  "exportHeadings": {
+    "message": "标题（CSV）"
+  },
+  "exportJson": {
+    "message": "全部（JSON）"
+  },
+  "hlImagesNoAlt": {
+    "message": "缺少 alt 的图片"
+  },
+  "hlH1": {
+    "message": "H1 标题"
+  },
+  "hlNofollow": {
+    "message": "nofollow 链接"
+  },
+  "hlExternal": {
+    "message": "外部链接"
+  },
+  "hlEmptyLinks": {
+    "message": "无文本链接"
+  },
+  "audit_heading_skip": {
+    "message": "跳过了标题层级"
+  },
+  "audit_heading_empty": {
+    "message": "空标题"
+  },
+  "audit_images_no_dims": {
+    "message": "图片缺少 width/height"
+  },
+  "audit_html_lang_missing": {
+    "message": "没有 <html lang>"
+  },
+  "audit_viewport_missing": {
+    "message": "没有 meta viewport"
+  },
+  "audit_link_empty_text": {
+    "message": "无文本链接"
+  },
+  "audit_canonical_other": {
+    "message": "Canonical 指向另一个 URL"
+  },
+  "audit_mixed_content": {
+    "message": "HTTPS 页面上有 HTTP 资源"
+  },
+  "audit_lcp_poor": {
+    "message": "LCP 慢"
+  },
+  "audit_cls_poor": {
+    "message": "CLS 高"
+  },
+  "tabOpengsc": {
+    "message": "OpenGSC"
+  },
+  "ogOpenInApp": {
+    "message": "在 OpenGSC 中打开"
+  },
+  "ogGsc28": {
+    "message": "Google Search Console，28 天"
+  },
+  "ogMainQuery": {
+    "message": "主要查询"
+  },
+  "ogMatchOk": {
+    "message": "Title/H1 包含主要查询"
+  },
+  "ogMatchBad": {
+    "message": "Title 和 H1 都不包含主要查询"
+  },
+  "ogNoMainQuery": {
+    "message": "最近 28 天此 URL 没有查询"
+  },
+  "ogInSitemap": {
+    "message": "在 sitemap 中"
+  },
+  "ogSitemapYes": {
+    "message": "是"
+  },
+  "ogSitemapNo": {
+    "message": "否"
+  },
+  "ogSitemapUnknown": {
+    "message": "sitemap 未加载到 OpenGSC"
+  },
+  "ogCheckIndex": {
+    "message": "检查收录"
+  },
+  "ogMeta": {
+    "message": "Meta 标签"
+  },
+  "ogSuggestion": {
+    "message": "建议（$1 个字符）"
+  },
+  "ogCopy": {
+    "message": "复制"
+  },
+  "ogCopied": {
+    "message": "已复制"
+  },
+  "ogFitAi": {
+    "message": "用 AI 调整"
+  },
+  "ogFitAiConfirm": {
+    "message": "最多向你的 AI 模型发送 2 次请求。继续吗？"
+  },
+  "ogNoSpendRight": {
+    "message": "你的角色不能消耗额度"
+  },
+  "ogNoMainQueryFit": {
+    "message": "没有主要查询就无法调整"
+  },
+  "ogFootprint": {
+    "message": "站群足迹"
+  },
+  "ogFootprintClean": {
+    "message": "这个 title/description/H1 模板没有在你的其他网站上重复"
+  },
+  "ogFootprintKindTitle": {
+    "message": "Title 模板"
+  },
+  "ogFootprintKindDescription": {
+    "message": "Description 模板"
+  },
+  "ogFootprintKindH1": {
+    "message": "H1 模板"
+  },
+  "ogFootprintAll": {
+    "message": "全部模板"
+  },
+  "ogSimilarity": {
+    "message": "相似度 $1%"
+  },
+  "ogRanks": {
+    "message": "Rank Tracker"
+  },
+  "ogServerAudit": {
+    "message": "最近一次网站审计"
+  },
+  "tabDonor": {
+    "message": "外链源"
+  },
+  "donorLinksToUs": {
+    "message": "链接到你的网站"
+  },
+  "donorLinksToUsRow": {
+    "message": "$1：$2 条链接，$3 条有效"
+  },
+  "donorNotInDb": {
+    "message": "尚未收入 OpenGSC"
+  },
+  "donorDr": {
+    "message": "DR"
+  },
+  "donorAge": {
+    "message": "年龄"
+  },
+  "donorAgeValue": {
+    "message": "$1 年 $2 个月"
+  },
+  "donorRefdomains": {
+    "message": "引用域名"
+  },
+  "donorInOutreach": {
+    "message": "在 Outreach 中：$1"
+  },
+  "donorInDrops": {
+    "message": "在过期域名中：$1"
+  },
+  "donorWatched": {
+    "message": "关注中"
+  },
+  "donorAsset": {
+    "message": "已购过期域名"
+  },
+  "donorOwnPbn": {
+    "message": "你的 PBN 网站"
+  },
+  "donorToOutreach": {
+    "message": "加入 Outreach"
+  },
+  "donorWatchDrop": {
+    "message": "作为过期域名关注"
+  },
+  "donorEnrich": {
+    "message": "获取年龄和 DR（免费，公开来源）"
+  },
+  "donorSignals": {
+    "message": "信号"
+  },
+  "donorVerdictRestored": {
+    "message": "看起来是恢复的过期域名"
+  },
+  "donorVerdictSuspicious": {
+    "message": "看起来可疑"
+  },
+  "donorVerdictClean": {
+    "message": "未发现迹象"
+  },
+  "donorVerdictUnknown": {
+    "message": "无法检查"
+  },
+  "donorSig_wayforge_marker": {
+    "message": "发现 WayForge 标记"
+  },
+  "donorSig_wayback_toolbar": {
+    "message": "Wayback Machine 残留"
+  },
+  "donorSig_archive_refs": {
+    "message": "指向 web.archive.org 的链接"
+  },
+  "donorSig_link_above_content": {
+    "message": "外链位于全部内容之上"
+  },
+  "donorSig_many_outbound_hosts": {
+    "message": "正文中外链主机过多"
+  },
+  "donorSig_sitewide_footer_links": {
+    "message": "全站页脚链接"
+  },
+  "donorSig_generator_restore_tool": {
+    "message": "由网站恢复工具生成"
+  },
+  "donorOutbound": {
+    "message": "出站链接"
+  },
+  "donorOutboundSummary": {
+    "message": "$1 条链接，指向 $2 个主机，$3 条 dofollow"
+  },
+  "donorAlreadyLinks": {
+    "message": "已链接到 $1"
+  },
+  "donorFilterDofollow": {
+    "message": "dofollow"
+  },
+  "donorFilterContent": {
+    "message": "正文中"
+  },
+  "donorFilterMine": {
+    "message": "仅我的网站"
+  },
+  "donorHighlightTop": {
+    "message": "高亮内容上方的链接"
+  },
+  "serpYourSite": {
+    "message": "你的网站：$1"
+  },
+  "serpYourUrlStats": {
+    "message": "你的 URL：$1 次点击，$2 次展示，排名 $3（GSC，28 天）"
+  },
+  "serpOtherUrlRanks": {
+    "message": "此查询下你排名的是另一个 URL：$1"
+  },
+  "serpDrUnknown": {
+    "message": "数据库中暂无 — 会自动获取，或使用 OpenGSC 卡片中的按钮"
+  },
+  "serpAgeYears": {
+    "message": "$1 年"
+  },
+  "serpAgeMonths": {
+    "message": "$1 个月"
+  },
+  "serpMonitorChip": {
+    "message": "SERP Monitor：$1 个词，前 10：$2，自 $3"
+  },
+  "serpTag_new": {
+    "message": "新"
+  },
+  "serpTag_young": {
+    "message": "年轻"
+  },
+  "serpTag_rising": {
+    "message": "上升"
+  },
+  "serpTag_falling": {
+    "message": "下降"
+  },
+  "serpTag_bounced": {
+    "message": "回落"
+  },
+  "serpTag_platform": {
+    "message": "平台"
+  },
+  "serpTag_own": {
+    "message": "你的"
+  },
+  "serpLinksToYou": {
+    "message": "链接到你：$1"
+  },
+  "serpOutreachStage": {
+    "message": "Outreach：$1"
+  },
+  "serpDropWatched": {
+    "message": "过期域名：关注中"
+  },
+  "serpDropStage": {
+    "message": "过期域名：$1"
+  },
+  "serpPbn": {
+    "message": "PBN"
+  },
+  "serpMenuOutreach": {
+    "message": "加入 Outreach"
+  },
+  "serpMenuWatch": {
+    "message": "作为过期域名关注"
+  },
+  "serpMenuCloak": {
+    "message": "检查伪装（cloaking）"
+  },
+  "serpMenuOpenDomain": {
+    "message": "在 SERP Monitor 中打开域名"
+  },
+  "serpCloakSame": {
+    "message": "Googlebot 和浏览器看到的相同"
+  },
+  "serpCloakDiffers": {
+    "message": "Googlebot 和浏览器看到的不同"
+  },
+  "serpCloakBlocked": {
+    "message": "网站屏蔽了爬虫"
+  },
+  "serpCloakError": {
+    "message": "检查失败"
+  },
+  "serpCloakSnippet": {
+    "message": "找到摘要 — Googlebot：$1，浏览器：$2"
+  },
+  "serpYes": {
+    "message": "是"
+  },
+  "serpNo": {
+    "message": "否"
+  },
+  "serpWaitMinute": {
+    "message": "检查过多 — 请等待一分钟"
+  },
+  "serpRegionUnknown": {
+    "message": "未识别地区"
+  },
+  "serpYourPositions": {
+    "message": "你的排名"
+  },
+  "serpTracked": {
+    "message": "Rank Tracker：排名 $1（$2）"
+  },
+  "serpMonitored": {
+    "message": "在 SERP Monitor 项目 $1 中跟踪"
+  },
+  "serpStorm": {
+    "message": "上次运行有波动"
+  },
+  "serpNoStorm": {
+    "message": "上次运行无波动"
+  },
+  "serpQueryMetrics": {
+    "message": "搜索量 $1 · KD $2 · 数据日期 $3"
+  },
+  "serpToRank": {
+    "message": "加入 Rank Tracker"
+  },
+  "serpToMonitor": {
+    "message": "加入 SERP Monitor"
+  },
+  "serpCapture": {
+    "message": "保存这些结果"
+  },
+  "serpCaptured": {
+    "message": "已保存 · 打开"
+  },
+  "serpEnrich": {
+    "message": "获取 $1 个主机的年龄和 DR（免费）"
+  },
+  "serpPickSite": {
+    "message": "选择网站"
+  },
+  "serpPickProject": {
+    "message": "选择项目"
+  },
+  "serpAdded": {
+    "message": "已添加"
+  },
+  "serpAlready": {
+    "message": "已存在"
+  },
+  "serpNotConfigured": {
+    "message": "OpenGSC：请在设置中连接扩展"
+  },
+  "serpCollapse": {
+    "message": "收起"
+  },
+  "serpExpand": {
+    "message": "OpenGSC"
+  },
+  "err_invalid_url": {
+    "message": "URL 无效"
+  },
+  "err_too_many_hosts": {
+    "message": "主机过多"
+  },
+  "err_private_host": {
+    "message": "私有地址 — 不检查"
+  },
+  "err_confirm_required": {
+    "message": "需要确认"
+  },
+  "err_project_not_found": {
+    "message": "未找到 SERP Monitor 项目"
+  },
+  "err_site_not_found": {
+    "message": "未找到网站"
+  },
+  "err_rate_limited": {
+    "message": "请求过多 — 请等待一分钟"
+  },
+  "err_forbidden": {
+    "message": "你的角色不允许此操作"
+  },
+  "err_not_migrated": {
+    "message": "请在服务器上执行 `npx prisma db push`"
+  },
+  "serpApproxUrl": {
+    "message": "确切 URL 未知（搜索结果链接已加密）— 仅主机"
+  },
+  "optLangSection": {
+    "message": "语言"
+  },
+  "optLangAuto": {
+    "message": "自动（浏览器语言）"
+  },
+  "optSerpPositions": {
+    "message": "在每个结果旁显示排名序号"
+  },
+  "optSerpAutoEnrich": {
+    "message": "自动获取缺失的 DR 和域名年龄（免费）"
+  },
+  "optSerpHideAds": {
+    "message": "隐藏广告"
+  },
+  "serpEnriching": {
+    "message": "正在获取 DR 和年龄…"
+  },
+  "serpRelated": {
+    "message": "相关搜索"
+  },
+  "serpPaa": {
+    "message": "相关问题"
+  },
+  "serpCopy": {
+    "message": "复制"
+  },
+  "pageRedirects": {
+    "message": "重定向"
+  },
+  "pageRedirectsNone": {
+    "message": "此标签页尚未记录重定向链。"
+  },
+  "pageRedirectsHint": {
+    "message": "重定向链在页面加载时记录，且仅限扩展有权访问的网站。请允许访问所有网站，然后重新加载页面。"
+  },
+  "pageRedirectsCopy": {
+    "message": "复制重定向链（表格）"
+  },
+  "pageReload": {
+    "message": "重新加载页面"
+  }
+}

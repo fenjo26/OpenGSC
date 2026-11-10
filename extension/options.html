@@ -12,6 +12,13 @@
     <p class="sub" data-i18n="optionsIntro"></p>
 
     <section class="card">
+      <h2 data-i18n="optLangSection"></h2>
+      <label class="field">
+        <select id="uiLang"></select>
+      </label>
+    </section>
+
+    <section class="card">
       <h2 data-i18n="optionsConnection"></h2>
 
       <label class="field">
@@ -57,6 +64,18 @@
       </div>
 
       <label class="toggle">
+        <input id="serpPositions" type="checkbox" />
+        <span data-i18n="optSerpPositions"></span>
+      </label>
+      <label class="toggle">
+        <input id="serpAutoEnrich" type="checkbox" />
+        <span data-i18n="optSerpAutoEnrich"></span>
+      </label>
+      <label class="toggle">
+        <input id="serpHideAds" type="checkbox" />
+        <span data-i18n="optSerpHideAds"></span>
+      </label>
+      <label class="toggle">
         <input id="serpCompact" type="checkbox" />
         <span data-i18n="optSerpCompact"></span>
       </label>
@@ -95,6 +114,7 @@
       <p class="hint" data-i18n="optionsPrivacyText"></p>
     </section>
   </main>
+  <script src="lib/i18n.js"></script>
   <script src="lib/api.js"></script>
   <script src="lib/protocol.js"></script>
   <script src="lib/settings.js"></script>

@@ -17,7 +17,7 @@ var MENU_SELECTION = "opengsc-selection";
 var MENU_TABLE_CSV = "opengsc-table-csv";
 
 function msg(key, substitutions) {
-  return CR.i18n.getMessage(key, substitutions) || key;
+  return ExtI18n.msg(key, substitutions);
 }
 
 /** Short-lived badge: the only feedback channel a service worker has. */
@@ -53,8 +53,8 @@ function sendUrl(url) {
 
 // ─── context menu ────────────────────────────────────────────────────────────────
 
-CR.runtime.onInstalled.addListener(function () {
-  CR.contextMenus.removeAll(function () {
+function buildMenus() {
+  ExtI18n.ready().then(function () { CR.contextMenus.removeAll(function () {
     CR.contextMenus.create({
       id: MENU_SEND_PAGE,
       title: msg("menuSendPage"),
@@ -70,8 +70,12 @@ CR.runtime.onInstalled.addListener(function () {
       title: msg("menuTableCsv"),
       contexts: ["selection"],
     });
-  });
-});
+  }); });
+}
+
+CR.runtime.onInstalled.addListener(buildMenus);
+// menu titles follow the extension language picked in the options page
+CR.storage.onChanged.addListener(function (changes, area) { if (area === "local" && changes.uiLang) buildMenus(); });
 
 CR.contextMenus.onClicked.addListener(function (info, tab) {
   if (info.menuItemId === MENU_SEND_PAGE && info.pageUrl) {

@@ -1,0 +1,971 @@
+{
+  "extDescription": {
+    "message": "Paginaoverzicht, snelle on-page-audit en „Naar OpenGSC sturen” voor de pagina waarop je bent."
+  },
+  "optionsLink": {
+    "message": "Instellingen"
+  },
+  "loading": {
+    "message": "Pagina wordt gelezen…"
+  },
+  "needConfigure": {
+    "message": "Vul eerst de URL van je OpenGSC-instantie en het token in."
+  },
+  "openOptionsBtn": {
+    "message": "Instellingen openen"
+  },
+  "unsupportedPage": {
+    "message": "Deze pagina kan niet worden gecontroleerd (interne browserpagina of geen HTTP)."
+  },
+  "specialNote": {
+    "message": "Dit is een pagina van een Google-tool — OpenGSC leest die niet uit. De gegevens erachter staan via de API al in OpenGSC."
+  },
+  "openApp": {
+    "message": "Deze URL in OpenGSC openen"
+  },
+  "send": {
+    "message": "Naar OpenGSC sturen"
+  },
+  "sendOwn": {
+    "message": "In de wachtrij voor indexcontrole zetten"
+  },
+  "sendForeign": {
+    "message": "Opslaan als Outreach-prospect"
+  },
+  "sendWaiting": {
+    "message": "Het overzicht heeft nog niet geantwoord — probeer het zo opnieuw."
+  },
+  "sendKeywords": {
+    "message": "Selectie → zoekwoorden"
+  },
+  "downloadCsv": {
+    "message": "Tabel → CSV"
+  },
+  "downloadCsvStaged": {
+    "message": "CSV van de geselecteerde tabel downloaden"
+  },
+  "csvSaved": {
+    "message": "CSV gedownload"
+  },
+  "inOpengsc": {
+    "message": "Deze pagina in OpenGSC"
+  },
+  "miniAudit": {
+    "message": "Snelle audit (lokaal)"
+  },
+  "notInPortfolio": {
+    "message": "Deze URL hoort bij geen enkele site in het portfolio."
+  },
+  "noMetrics": {
+    "message": "Geen klikken of vertoningen in de afgelopen {n} dagen."
+  },
+  "openInApp": {
+    "message": "Openen in OpenGSC →"
+  },
+  "metricClicks": {
+    "message": "klikken"
+  },
+  "metricImpressions": {
+    "message": "vertoningen"
+  },
+  "metricPosition": {
+    "message": "gem. positie"
+  },
+  "posShort": {
+    "message": "pos."
+  },
+  "localPackShort": {
+    "message": "kaart"
+  },
+  "indexStatus": {
+    "message": "Indexstatus"
+  },
+  "indexIndexed": {
+    "message": "Geïndexeerd"
+  },
+  "indexNotIndexed": {
+    "message": "Niet geïndexeerd"
+  },
+  "indexUnknown": {
+    "message": "Index: onbekend"
+  },
+  "indexUnknownTitle": {
+    "message": "Nooit gecontroleerd, of Google gaf een status die deze versie niet herkent"
+  },
+  "serverAudit": {
+    "message": "Laatste site-audit"
+  },
+  "yourSite": {
+    "message": "jouw site"
+  },
+  "auditPill": {
+    "message": "Audit: $1 fout · $2 waarsch."
+  },
+  "auditUnavailable": {
+    "message": "De snelle audit kon op deze pagina niet draaien."
+  },
+  "auditAllOk": {
+    "message": "Geen problemen gevonden"
+  },
+  "notMigrated": {
+    "message": "De server heeft `npx prisma db push` nodig — vraag het de eigenaar van de instantie."
+  },
+  "audit_title_missing": {
+    "message": "Geen <title>"
+  },
+  "audit_title_short": {
+    "message": "Title te kort (onder 50)"
+  },
+  "audit_title_long": {
+    "message": "Title te lang (boven 65)"
+  },
+  "audit_description_missing": {
+    "message": "Geen meta description"
+  },
+  "audit_description_short": {
+    "message": "Meta description te kort (onder 150)"
+  },
+  "audit_description_long": {
+    "message": "Meta description te lang (boven 165)"
+  },
+  "audit_h1_missing": {
+    "message": "Geen H1"
+  },
+  "audit_h1_multiple": {
+    "message": "Meer dan één H1"
+  },
+  "audit_canonical_missing": {
+    "message": "Geen canonical-link"
+  },
+  "audit_robots_noindex": {
+    "message": "Pagina staat op noindex"
+  },
+  "audit_jsonld_missing": {
+    "message": "Geen gestructureerde data (JSON-LD)"
+  },
+  "audit_jsonld_invalid": {
+    "message": "Ongeldig JSON-LD-blok"
+  },
+  "audit_og_missing": {
+    "message": "Geen Open Graph-tags"
+  },
+  "audit_og_incomplete": {
+    "message": "Open Graph onvolledig (og:title / og:image)"
+  },
+  "audit_images_no_alt": {
+    "message": "Afbeeldingen zonder alt"
+  },
+  "factWords": {
+    "message": "Woorden"
+  },
+  "factLinks": {
+    "message": "Links (int./ext.)"
+  },
+  "factHreflang": {
+    "message": "hreflang"
+  },
+  "factJsonLd": {
+    "message": "JSON-LD ok/kapot"
+  },
+  "sentQueued": {
+    "message": "In de wachtrij — de Google-indexcontrole draait bij de volgende ronde."
+  },
+  "sentProspect": {
+    "message": "Opgeslagen in Outreach als nieuwe prospect."
+  },
+  "sentProspectExisting": {
+    "message": "Staat al in Outreach — bestaande prospect teruggegeven."
+  },
+  "sendFailed": {
+    "message": "Mislukt"
+  },
+  "sendReason_not_in_portfolio": {
+    "message": "Deze URL is geen portfoliopagina."
+  },
+  "sendReason_auto_check_off": {
+    "message": "Automatische indexcontrole staat uit voor deze site — zet die aan op het tabblad Indexering."
+  },
+  "sendReason_not_in_inventory": {
+    "message": "Deze URL staat niet in de sitemap-inventaris."
+  },
+  "sendReason_own_site": {
+    "message": "Dit is je eigen site — die gaat naar de indexwachtrij, niet naar Outreach."
+  },
+  "errAuth": {
+    "message": "Token geweigerd (401). Maak of vernieuw het in Instellingen → Browserextensie."
+  },
+  "errOrigin": {
+    "message": "De ID van deze extensie is niet toegestaan (403). Voeg die toe in Instellingen → Browserextensie → Toegestane extensie-ID’s."
+  },
+  "errNetwork": {
+    "message": "{url} is niet bereikbaar — controleer de instantie-URL in de instellingen."
+  },
+  "menuSendPage": {
+    "message": "Naar OpenGSC sturen"
+  },
+  "menuSelection": {
+    "message": "OpenGSC: selectie als zoekwoord gebruiken"
+  },
+  "menuTableCsv": {
+    "message": "OpenGSC: tabelselectie → CSV"
+  },
+  "optionsIntro": {
+    "message": "Koppel de extensie aan je zelf gehoste OpenGSC-instantie."
+  },
+  "optionsConnection": {
+    "message": "Verbinding"
+  },
+  "optionsInstanceUrl": {
+    "message": "Instantie-URL"
+  },
+  "optionsToken": {
+    "message": "Extensietoken (Instellingen → Browserextensie)"
+  },
+  "optionsReveal": {
+    "message": "Tonen"
+  },
+  "optionsSave": {
+    "message": "Opslaan"
+  },
+  "optionsTest": {
+    "message": "Verbinding testen"
+  },
+  "optionsTestHint": {
+    "message": "De test stuurt één gratis verzoek: die controleert URL, token en de lijst met toegestane ID’s tegelijk."
+  },
+  "optionsCORS": {
+    "message": "Extensie-ID voor de toegestane lijst"
+  },
+  "optionsCorsHint": {
+    "message": "Kopieer deze ID naar OpenGSC → Instellingen → Browserextensie → Toegestane extensie-ID’s. Tot die erin staat, worden verzoeken met 403 geweigerd."
+  },
+  "optionsCopy": {
+    "message": "Kopiëren"
+  },
+  "optionsPrivacy": {
+    "message": "Wat de extensie verstuurt"
+  },
+  "optionsPrivacyText": {
+    "message": "Alleen wat je aanklikt: de pagina-URL voor het overzicht en voor „Naar OpenGSC sturen”, en het token. De snelle audit wordt in de browser berekend en verlaat die nooit."
+  },
+  "optionsErrUrl": {
+    "message": "Vul de instantie-URL in (https://…)."
+  },
+  "optionsErrToken": {
+    "message": "Het token begint met ogscext_ — kopieer het uit Instellingen → Browserextensie."
+  },
+  "optionsSaved": {
+    "message": "Opgeslagen (sitetoegang verleend)"
+  },
+  "optionsSavedNoHost": {
+    "message": "Opgeslagen (sitetoegang geweigerd — verzoeken zijn afhankelijk van de CORS-headers van de server)"
+  },
+  "optionsTesting": {
+    "message": "Bezig met testen…"
+  },
+  "optionsErrFillFirst": {
+    "message": "Sla eerst de URL en het token op."
+  },
+  "optionsTestOk": {
+    "message": "OK — verbinding, token en toegestane lijst werken."
+  },
+  "optionsTest401": {
+    "message": "401: token ontbreekt, is ingetrokken of klopt niet."
+  },
+  "optionsTest403": {
+    "message": "403: deze extensie-ID staat niet op de toegestane lijst."
+  },
+  "optionsTestNetwork": {
+    "message": "Geen antwoord — verkeerde URL of server onbereikbaar."
+  },
+  "optionsTestFail": {
+    "message": "Mislukt"
+  },
+  "optionsCopied": {
+    "message": "Gekopieerd"
+  },
+  "optPanelSection": {
+    "message": "Zijpaneel"
+  },
+  "optPanelAllSites": {
+    "message": "Elke pagina analyseren zonder op het pictogram te klikken"
+  },
+  "optPermissionGranted": {
+    "message": "Toestemming verleend"
+  },
+  "optPermissionMissing": {
+    "message": "Toestemming niet verleend"
+  },
+  "optSerpSection": {
+    "message": "Overlay op zoekresultaten (Google, Bing, Yandex)"
+  },
+  "optSerpEnable": {
+    "message": "OpenGSC-gegevens in de zoekresultaten tonen"
+  },
+  "optSerpDomains": {
+    "message": "Domeinen van zoekmachines"
+  },
+  "optSerpDomainsSearch": {
+    "message": "Domeinen filteren…"
+  },
+  "optSerpCompact": {
+    "message": "Compacte modus (één regel per resultaat)"
+  },
+  "optDefaultSite": {
+    "message": "Site-ID voor „Volgen in Rank Tracker”"
+  },
+  "optDefaultProject": {
+    "message": "SERP Monitor-project-ID"
+  },
+  "optIdHint": {
+    "message": "De ID staat in de adresbalk van OpenGSC: /site/<id>, /serp-monitor/<id>"
+  },
+  "optSaved": {
+    "message": "Opgeslagen"
+  },
+  "panelSoon": {
+    "message": "Binnenkort"
+  },
+  "panelRefresh": {
+    "message": "Vernieuwen"
+  },
+  "panelUpdating": {
+    "message": "Bijwerken…"
+  },
+  "panelRestricted": {
+    "message": "Deze pagina kan niet worden geanalyseerd (browser- of storepagina)."
+  },
+  "panelNoPermission": {
+    "message": "Nog geen toegang tot deze pagina."
+  },
+  "panelClickIcon": {
+    "message": "Klik op het OpenGSC-pictogram om deze pagina te analyseren"
+  },
+  "panelAllowAll": {
+    "message": "Op alle sites toestaan"
+  },
+  "panelInjectFailed": {
+    "message": "Pagina kon niet worden gelezen: $1"
+  },
+  "panelConnectHint": {
+    "message": "Koppel OpenGSC in de instellingen om hier je gegevens te zien"
+  },
+  "panelOpen": {
+    "message": "Zijpaneel openen"
+  },
+  "panelHighlight": {
+    "message": "Markeren"
+  },
+  "panelExport": {
+    "message": "Exporteren"
+  },
+  "panelTruncated": {
+    "message": "De eerste $1 worden getoond"
+  },
+  "panelScore": {
+    "message": "Paginascore"
+  },
+  "panelScoreFormula": {
+    "message": "100 − 10 per fout − 4 per waarschuwing − 1 per opmerking"
+  },
+  "tabPage": {
+    "message": "Pagina"
+  },
+  "pageOverview": {
+    "message": "Overzicht"
+  },
+  "pageHeadings": {
+    "message": "Koppen"
+  },
+  "pageLinks": {
+    "message": "Links"
+  },
+  "pageImages": {
+    "message": "Afbeeldingen"
+  },
+  "pageSchema": {
+    "message": "Schema"
+  },
+  "pageSocial": {
+    "message": "Social"
+  },
+  "pageRobots": {
+    "message": "robots & sitemap"
+  },
+  "pageSpeed": {
+    "message": "Snelheid"
+  },
+  "pageLenOk": {
+    "message": "OK"
+  },
+  "pageLenShort": {
+    "message": "Te kort"
+  },
+  "pageLenLong": {
+    "message": "Te lang"
+  },
+  "pageCanonicalOther": {
+    "message": "Canonical verwijst naar een andere URL"
+  },
+  "pageGroupMeta": {
+    "message": "Meta"
+  },
+  "pageGroupContent": {
+    "message": "Inhoud"
+  },
+  "pageGroupTechnical": {
+    "message": "Techniek"
+  },
+  "pageGroupPerformance": {
+    "message": "Snelheid"
+  },
+  "pageGroupAccessibility": {
+    "message": "Toegankelijkheid"
+  },
+  "pageHidden": {
+    "message": "verborgen"
+  },
+  "pageSkip": {
+    "message": "niveau overgeslagen"
+  },
+  "pageLinksInternal": {
+    "message": "Intern"
+  },
+  "pageLinksExternal": {
+    "message": "Extern"
+  },
+  "pageLinksUnique": {
+    "message": "Uniek"
+  },
+  "pageAreaContent": {
+    "message": "in de tekst"
+  },
+  "pageAreaNav": {
+    "message": "menu"
+  },
+  "pageAreaHeader": {
+    "message": "koptekst"
+  },
+  "pageAreaFooter": {
+    "message": "footer"
+  },
+  "pageAreaAside": {
+    "message": "zijbalk"
+  },
+  "pageAreaTop": {
+    "message": "bovenaan body"
+  },
+  "pageAreaOther": {
+    "message": "overig"
+  },
+  "pageNoAlt": {
+    "message": "Zonder alt"
+  },
+  "pageEmptyAlt": {
+    "message": "Lege alt"
+  },
+  "pageNoDims": {
+    "message": "Zonder afmetingen"
+  },
+  "pageRichTest": {
+    "message": "Test voor uitgebreide resultaten"
+  },
+  "pageRobotsBlocked": {
+    "message": "Geblokkeerd voor Googlebot door: $1"
+  },
+  "pageRobotsAllowed": {
+    "message": "Toegestaan voor Googlebot"
+  },
+  "pageRobotsMissing": {
+    "message": "Geen robots.txt"
+  },
+  "pageSitemapFind": {
+    "message": "Deze URL in de sitemap zoeken"
+  },
+  "pageSitemapFound": {
+    "message": "Gevonden in $1"
+  },
+  "pageSitemapNotFound": {
+    "message": "Niet gevonden in $1 bestanden"
+  },
+  "pageLabNote": {
+    "message": "Gemeten in je browser — labgegevens, geen CrUX"
+  },
+  "pageInpNote": {
+    "message": "Vereist een interactie — niet gemeten"
+  },
+  "pagePsi": {
+    "message": "PageSpeed Insights"
+  },
+  "exportLinks": {
+    "message": "Links (CSV)"
+  },
+  "exportImages": {
+    "message": "Afbeeldingen (CSV)"
+  },
+  "exportHeadings": {
+    "message": "Koppen (CSV)"
+  },
+  "exportJson": {
+    "message": "Alles (JSON)"
+  },
+  "hlImagesNoAlt": {
+    "message": "Afbeeldingen zonder alt"
+  },
+  "hlH1": {
+    "message": "H1-koppen"
+  },
+  "hlNofollow": {
+    "message": "nofollow-links"
+  },
+  "hlExternal": {
+    "message": "Externe links"
+  },
+  "hlEmptyLinks": {
+    "message": "Links zonder tekst"
+  },
+  "audit_heading_skip": {
+    "message": "Kopniveau overgeslagen"
+  },
+  "audit_heading_empty": {
+    "message": "Lege kop"
+  },
+  "audit_images_no_dims": {
+    "message": "Afbeeldingen zonder width/height"
+  },
+  "audit_html_lang_missing": {
+    "message": "Geen <html lang>"
+  },
+  "audit_viewport_missing": {
+    "message": "Geen meta viewport"
+  },
+  "audit_link_empty_text": {
+    "message": "Links zonder tekst"
+  },
+  "audit_canonical_other": {
+    "message": "Canonical verwijst naar een andere URL"
+  },
+  "audit_mixed_content": {
+    "message": "HTTP-bronnen op een HTTPS-pagina"
+  },
+  "audit_lcp_poor": {
+    "message": "Trage LCP"
+  },
+  "audit_cls_poor": {
+    "message": "Hoge CLS"
+  },
+  "tabOpengsc": {
+    "message": "OpenGSC"
+  },
+  "ogOpenInApp": {
+    "message": "Openen in OpenGSC"
+  },
+  "ogGsc28": {
+    "message": "Google Search Console, 28 dagen"
+  },
+  "ogMainQuery": {
+    "message": "Hoofdzoekopdracht"
+  },
+  "ogMatchOk": {
+    "message": "Title/H1 bevatten de hoofdzoekopdracht"
+  },
+  "ogMatchBad": {
+    "message": "Title noch H1 bevat de hoofdzoekopdracht"
+  },
+  "ogNoMainQuery": {
+    "message": "Geen zoekopdrachten voor deze URL in de afgelopen 28 dagen"
+  },
+  "ogInSitemap": {
+    "message": "In de sitemap"
+  },
+  "ogSitemapYes": {
+    "message": "ja"
+  },
+  "ogSitemapNo": {
+    "message": "nee"
+  },
+  "ogSitemapUnknown": {
+    "message": "sitemap niet geladen in OpenGSC"
+  },
+  "ogCheckIndex": {
+    "message": "Indexering controleren"
+  },
+  "ogMeta": {
+    "message": "Metatags"
+  },
+  "ogSuggestion": {
+    "message": "Voorstel ($1 tekens)"
+  },
+  "ogCopy": {
+    "message": "Kopiëren"
+  },
+  "ogCopied": {
+    "message": "Gekopieerd"
+  },
+  "ogFitAi": {
+    "message": "Aanpassen met AI"
+  },
+  "ogFitAiConfirm": {
+    "message": "Maximaal 2 verzoeken aan je AI-model. Doorgaan?"
+  },
+  "ogNoSpendRight": {
+    "message": "Je rol mag geen credits uitgeven"
+  },
+  "ogNoMainQueryFit": {
+    "message": "Aanpassen kan niet zonder hoofdzoekopdracht"
+  },
+  "ogFootprint": {
+    "message": "Footprint over je sites"
+  },
+  "ogFootprintClean": {
+    "message": "Dit title/description/H1-patroon komt op je andere sites niet terug"
+  },
+  "ogFootprintKindTitle": {
+    "message": "Title-patroon"
+  },
+  "ogFootprintKindDescription": {
+    "message": "Description-patroon"
+  },
+  "ogFootprintKindH1": {
+    "message": "H1-patroon"
+  },
+  "ogFootprintAll": {
+    "message": "Alle patronen"
+  },
+  "ogSimilarity": {
+    "message": "$1% gelijk"
+  },
+  "ogRanks": {
+    "message": "Rank Tracker"
+  },
+  "ogServerAudit": {
+    "message": "Laatste site-audit"
+  },
+  "tabDonor": {
+    "message": "Donor"
+  },
+  "donorLinksToUs": {
+    "message": "Linkt naar je sites"
+  },
+  "donorLinksToUsRow": {
+    "message": "$1: $2 links, $3 actief"
+  },
+  "donorNotInDb": {
+    "message": "nog niet in OpenGSC"
+  },
+  "donorDr": {
+    "message": "DR"
+  },
+  "donorAge": {
+    "message": "Leeftijd"
+  },
+  "donorAgeValue": {
+    "message": "$1 j $2 m"
+  },
+  "donorRefdomains": {
+    "message": "Ref. domeinen"
+  },
+  "donorInOutreach": {
+    "message": "In Outreach: $1"
+  },
+  "donorInDrops": {
+    "message": "In drops: $1"
+  },
+  "donorWatched": {
+    "message": "gevolgd"
+  },
+  "donorAsset": {
+    "message": "Gekochte drop"
+  },
+  "donorOwnPbn": {
+    "message": "Je PBN-site"
+  },
+  "donorToOutreach": {
+    "message": "Toevoegen aan Outreach"
+  },
+  "donorWatchDrop": {
+    "message": "Volgen als drop"
+  },
+  "donorEnrich": {
+    "message": "Leeftijd en DR ophalen (gratis, openbare bronnen)"
+  },
+  "donorSignals": {
+    "message": "Signalen"
+  },
+  "donorVerdictRestored": {
+    "message": "Lijkt een herstelde drop"
+  },
+  "donorVerdictSuspicious": {
+    "message": "Lijkt verdacht"
+  },
+  "donorVerdictClean": {
+    "message": "Geen signalen gevonden"
+  },
+  "donorVerdictUnknown": {
+    "message": "Controle niet mogelijk"
+  },
+  "donorSig_wayforge_marker": {
+    "message": "WayForge-opmaak gevonden"
+  },
+  "donorSig_wayback_toolbar": {
+    "message": "Restanten van de Wayback Machine"
+  },
+  "donorSig_archive_refs": {
+    "message": "Links naar web.archive.org"
+  },
+  "donorSig_link_above_content": {
+    "message": "Externe link boven alle inhoud"
+  },
+  "donorSig_many_outbound_hosts": {
+    "message": "Veel uitgaande hosts in de tekst"
+  },
+  "donorSig_sitewide_footer_links": {
+    "message": "Sitebrede footerlinks"
+  },
+  "donorSig_generator_restore_tool": {
+    "message": "Gemaakt met een tool voor siteherstel"
+  },
+  "donorOutbound": {
+    "message": "Uitgaande links"
+  },
+  "donorOutboundSummary": {
+    "message": "$1 links naar $2 hosts, $3 dofollow"
+  },
+  "donorAlreadyLinks": {
+    "message": "Linkt al naar $1"
+  },
+  "donorFilterDofollow": {
+    "message": "dofollow"
+  },
+  "donorFilterContent": {
+    "message": "in de tekst"
+  },
+  "donorFilterMine": {
+    "message": "alleen mijn sites"
+  },
+  "donorHighlightTop": {
+    "message": "Links boven de inhoud markeren"
+  },
+  "serpYourSite": {
+    "message": "Je site: $1"
+  },
+  "serpYourUrlStats": {
+    "message": "je URL: $1 klikken, $2 vert., pos. $3 (GSC, 28 d)"
+  },
+  "serpOtherUrlRanks": {
+    "message": "Op deze zoekopdracht rankt een andere URL van je: $1"
+  },
+  "serpDrUnknown": {
+    "message": "Nog niet in de database — wordt automatisch opgehaald, of via de knop in de OpenGSC-kaart"
+  },
+  "serpAgeYears": {
+    "message": "$1 j"
+  },
+  "serpAgeMonths": {
+    "message": "$1 mnd"
+  },
+  "serpMonitorChip": {
+    "message": "SERP Monitor: $1 zoekw., top 10: $2, sinds $3"
+  },
+  "serpTag_new": {
+    "message": "nieuw"
+  },
+  "serpTag_young": {
+    "message": "jong"
+  },
+  "serpTag_rising": {
+    "message": "stijgend"
+  },
+  "serpTag_falling": {
+    "message": "dalend"
+  },
+  "serpTag_bounced": {
+    "message": "teruggevallen"
+  },
+  "serpTag_platform": {
+    "message": "platform"
+  },
+  "serpTag_own": {
+    "message": "van jou"
+  },
+  "serpLinksToYou": {
+    "message": "linkt naar jou: $1"
+  },
+  "serpOutreachStage": {
+    "message": "Outreach: $1"
+  },
+  "serpDropWatched": {
+    "message": "Drop: gevolgd"
+  },
+  "serpDropStage": {
+    "message": "Drop: $1"
+  },
+  "serpPbn": {
+    "message": "PBN"
+  },
+  "serpMenuOutreach": {
+    "message": "Toevoegen aan Outreach"
+  },
+  "serpMenuWatch": {
+    "message": "Volgen als drop"
+  },
+  "serpMenuCloak": {
+    "message": "Op cloaking controleren"
+  },
+  "serpMenuOpenDomain": {
+    "message": "Domein openen in SERP Monitor"
+  },
+  "serpCloakSame": {
+    "message": "Gelijk voor Googlebot en browser"
+  },
+  "serpCloakDiffers": {
+    "message": "Googlebot en browser zien iets anders"
+  },
+  "serpCloakBlocked": {
+    "message": "Site blokkeert de bot"
+  },
+  "serpCloakError": {
+    "message": "Controle mislukt"
+  },
+  "serpCloakSnippet": {
+    "message": "Snippet gevonden — Googlebot: $1, browser: $2"
+  },
+  "serpYes": {
+    "message": "ja"
+  },
+  "serpNo": {
+    "message": "nee"
+  },
+  "serpWaitMinute": {
+    "message": "Te veel controles — wacht een minuut"
+  },
+  "serpRegionUnknown": {
+    "message": "regio niet herkend"
+  },
+  "serpYourPositions": {
+    "message": "Je posities"
+  },
+  "serpTracked": {
+    "message": "Rank Tracker: pos. $1 ($2)"
+  },
+  "serpMonitored": {
+    "message": "Gevolgd in SERP Monitor-project $1"
+  },
+  "serpStorm": {
+    "message": "storm in de laatste run"
+  },
+  "serpNoStorm": {
+    "message": "geen storm in de laatste run"
+  },
+  "serpQueryMetrics": {
+    "message": "volume $1 · KD $2 · gegevens van $3"
+  },
+  "serpToRank": {
+    "message": "Volgen in Rank Tracker"
+  },
+  "serpToMonitor": {
+    "message": "Toevoegen aan SERP Monitor"
+  },
+  "serpCapture": {
+    "message": "Deze resultaten opslaan"
+  },
+  "serpCaptured": {
+    "message": "Opgeslagen · openen"
+  },
+  "serpEnrich": {
+    "message": "Leeftijd en DR ophalen voor $1 hosts (gratis)"
+  },
+  "serpPickSite": {
+    "message": "Kies een site"
+  },
+  "serpPickProject": {
+    "message": "Kies een project"
+  },
+  "serpAdded": {
+    "message": "Toegevoegd"
+  },
+  "serpAlready": {
+    "message": "Bestaat al"
+  },
+  "serpNotConfigured": {
+    "message": "OpenGSC: koppel de extensie in de instellingen"
+  },
+  "serpCollapse": {
+    "message": "Inklappen"
+  },
+  "serpExpand": {
+    "message": "OpenGSC"
+  },
+  "err_invalid_url": {
+    "message": "Ongeldige URL"
+  },
+  "err_too_many_hosts": {
+    "message": "Te veel hosts"
+  },
+  "err_private_host": {
+    "message": "Privéadres — niet gecontroleerd"
+  },
+  "err_confirm_required": {
+    "message": "Bevestiging nodig"
+  },
+  "err_project_not_found": {
+    "message": "SERP Monitor-project niet gevonden"
+  },
+  "err_site_not_found": {
+    "message": "Site niet gevonden"
+  },
+  "err_rate_limited": {
+    "message": "Te veel verzoeken — wacht een minuut"
+  },
+  "err_forbidden": {
+    "message": "Je rol staat dit niet toe"
+  },
+  "err_not_migrated": {
+    "message": "Voer `npx prisma db push` uit op de server"
+  },
+  "serpApproxUrl": {
+    "message": "Exacte URL onbekend (versleutelde links in de resultaten) — alleen host"
+  },
+  "optLangSection": {
+    "message": "Taal"
+  },
+  "optLangAuto": {
+    "message": "Automatisch (browsertaal)"
+  },
+  "optSerpPositions": {
+    "message": "Positienummer naast elk resultaat tonen"
+  },
+  "optSerpAutoEnrich": {
+    "message": "Ontbrekende DR en domeinleeftijd automatisch ophalen (gratis)"
+  },
+  "optSerpHideAds": {
+    "message": "Advertenties verbergen"
+  },
+  "serpEnriching": {
+    "message": "DR en leeftijd ophalen…"
+  },
+  "serpRelated": {
+    "message": "Gerelateerde zoekopdrachten"
+  },
+  "serpPaa": {
+    "message": "Mensen vragen ook"
+  },
+  "serpCopy": {
+    "message": "Kopiëren"
+  },
+  "pageRedirects": {
+    "message": "Doorverwijzingen"
+  },
+  "pageRedirectsNone": {
+    "message": "Voor dit tabblad is nog geen doorverwijzingsketen vastgelegd."
+  },
+  "pageRedirectsHint": {
+    "message": "De keten wordt vastgelegd tijdens het laden van de pagina, en alleen op sites waartoe de extensie toegang heeft. Sta alle sites toe en laad de pagina opnieuw."
+  },
+  "pageRedirectsCopy": {
+    "message": "Keten kopiëren (tabel)"
+  },
+  "pageReload": {
+    "message": "Pagina opnieuw laden"
+  }
+}

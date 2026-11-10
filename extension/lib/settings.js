@@ -22,6 +22,9 @@ var ExtSettings = (function () {
     serpOverlay: false,          // on/off
     serpDomains: ["www.google.com"], // subset of GOOGLE_SEARCH_HOSTS the user enabled AND granted
     serpCompact: false,          // one-line chips only
+    serpPositions: true,         // a position number left of every organic result
+    serpAutoEnrich: true,        // fetch missing age + DR automatically (free sources, ≤ 40 hosts a page)
+    serpHideAds: false,          // hide paid results (top/bottom ads, sponsored places)
     defaultSiteId: "",           // Site.id for "Track in Rank Tracker" when no own site is on the SERP
     defaultProjectId: ""         // SerpProject.id for "Add to SERP Monitor"
   };
@@ -122,7 +125,7 @@ var ExtSettings = (function () {
         var spec = {
           id: OVERLAY_SCRIPT_ID,
           matches: valid.map(function (h) { return "https://" + h + "/search*"; }),
-          js: ["lib/protocol.js", "lib/serpParse.js", "serp/overlay.js"],
+          js: ["lib/i18n.js", "lib/protocol.js", "lib/serpParse.js", "serp/overlay.js"],
           runAt: "document_idle",
           allFrames: false,
         };

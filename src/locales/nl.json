@@ -5109,7 +5109,7 @@
   "repBrandLogoBadType": "Alleen PNG, SVG of JPEG",
   "repBrandSaved": "Opgeslagen",
   "extIdsHint": "Één extensie-ID per regel — vind het op chrome://extensions. Alleen deze ID's mogen de token gebruiken.",
-  "extHowToSteps": "1. Open chrome://extensions en schakel de ontwikkelaarsmodus in.\n2. Laad de uitgepakte map extension/ van deze repository.\n3. Maak hier een token aan en plak deze in de popup van de extensie.",
+  "extHowToSteps": "1. Download de .zip hierboven en pak die uit in een map die je bewaart (de extensie draait vanuit die map).\n2. Open chrome://extensions en zet de ontwikkelaarsmodus aan (rechtsboven).\n3. Klik op „Uitgepakte extensie laden” en kies de uitgepakte map opengsc-extension.\n4. Kopieer de extensie-ID van de kaart, plak die hieronder bij „Toegestane extensie-ID’s” en sla op.\n5. Maak hieronder een token. Vul in de instellingen van de extensie het adres van deze OpenGSC en het token in en klik op „Verbinding testen”.",
   "locHint": "Bedrijfsprofiel, NAP-consistentie, directories, LocalBusiness-schema, Google Bedrijfsprofiel.",
   "locSiteSearch": "Websites zoeken…",
   "partnersOrbitra": "Gratis zelf gehoste affiliatetracker, gekoppeld aan OpenGSC-leads",
@@ -5764,5 +5764,9 @@
   "serpmonCaptureCompare": "Vergelijk met de dichtstbijzijnde automatische snapshot",
   "serpmonCaptureNoSnapshot": "Geen automatische snapshot van deze zoekopdracht om mee te vergelijken",
   "serpmonCaptureDelete": "Verwijderen",
-  "serpmonCaptureDeleteConfirm": "Deze opname verwijderen?"
+  "serpmonCaptureDeleteConfirm": "Deze opname verwijderen?",
+  "extDownload": "Extensie downloaden (.zip)",
+  "extGithub": "Broncode op GitHub",
+  "extUpdateTitle": "Zo werk je bij",
+  "extUpdateSteps": "Download de .zip opnieuw, pak die uit in dezelfde map (bestanden vervangen) en klik op de herlaadpijl op de kaart van de extensie in chrome://extensions. Zolang het mappad gelijk blijft, verandert de ID niet — de toegestane lijst en het token blijven zoals ze zijn."
 }

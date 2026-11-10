@@ -5109,7 +5109,7 @@
   "repBrandLogoBadType": "仅支持 PNG、SVG 或 JPEG",
   "repBrandSaved": "已保存",
   "extIdsHint": "每行一个扩展 ID（见 chrome://extensions）— 只有这些 ID 可以使用令牌。",
-  "extHowToSteps": "1. 打开 chrome://extensions 并启用开发者模式。\n2. 加载本仓库中解压的 extension/ 文件夹。\n3. 在此处创建令牌并粘贴到扩展弹窗中。",
+  "extHowToSteps": "1. 下载上方的 .zip，并解压到一个会长期保留的文件夹（扩展从该文件夹运行）。\n2. 打开 chrome://extensions，开启右上角的“开发者模式”。\n3. 点击“加载已解压的扩展程序”，选择解压后的 opengsc-extension 文件夹。\n4. 复制扩展卡片上的 ID，粘贴到下方“允许的扩展 ID”中并保存。\n5. 在下方创建令牌。在扩展设置中填写此 OpenGSC 的地址和令牌，然后点击“测试连接”。",
   "locHint": "商家资料、NAP 一致性、目录、LocalBusiness 结构化数据、Google Business Profile。",
   "locSiteSearch": "搜索网站…",
   "partnersOrbitra": "免费自托管联盟追踪器 — 与 OpenGSC 线索打通",
@@ -5764,5 +5764,9 @@
   "serpmonCaptureCompare": "与最近的自动快照比较",
   "serpmonCaptureNoSnapshot": "没有该查询的自动快照可供比较",
   "serpmonCaptureDelete": "删除",
-  "serpmonCaptureDeleteConfirm": "删除此快照？"
+  "serpmonCaptureDeleteConfirm": "删除此快照？",
+  "extDownload": "下载扩展（.zip）",
+  "extGithub": "GitHub 上的源码",
+  "extUpdateTitle": "如何更新",
+  "extUpdateSteps": "重新下载 .zip，解压到同一个文件夹（替换文件），然后在 chrome://extensions 中点击扩展卡片上的刷新箭头。只要文件夹路径不变，ID 就不会变 — 无需修改白名单或令牌。"
 }

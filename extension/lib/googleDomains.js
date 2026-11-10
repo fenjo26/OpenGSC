@@ -60,9 +60,19 @@ function suggestedHosts(uiLang) {
   return out;
 }
 
+/** Other engines the overlay understands (lib/serpParse.js: BING, YANDEX). */
+var OTHER_SEARCH_HOSTS = [
+  "www.bing.com",
+  "yandex.ru", "ya.ru", "yandex.com", "yandex.by", "yandex.kz", "yandex.uz", "yandex.com.tr",
+];
+/** Everything the options list offers: other engines first, then every Google domain. */
+var ALL_SEARCH_HOSTS = OTHER_SEARCH_HOSTS.concat(GOOGLE_SEARCH_HOSTS);
+
 // Node/test interop (classic script everywhere else).
 var GoogleDomains = {
   GOOGLE_SEARCH_HOSTS: GOOGLE_SEARCH_HOSTS,
+  OTHER_SEARCH_HOSTS: OTHER_SEARCH_HOSTS,
+  ALL_SEARCH_HOSTS: ALL_SEARCH_HOSTS,
   suggestedHosts: suggestedHosts,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = GoogleDomains;

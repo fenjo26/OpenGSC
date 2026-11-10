@@ -1,0 +1,971 @@
+{
+  "extDescription": {
+    "message": "Résumé de la page, audit on-page rapide et « Envoyer à OpenGSC » pour la page affichée."
+  },
+  "optionsLink": {
+    "message": "Paramètres"
+  },
+  "loading": {
+    "message": "Lecture de la page…"
+  },
+  "needConfigure": {
+    "message": "Indiquez d’abord l’URL de votre instance OpenGSC et le jeton."
+  },
+  "openOptionsBtn": {
+    "message": "Ouvrir les paramètres"
+  },
+  "unsupportedPage": {
+    "message": "Cette page ne peut pas être auditée (page interne du navigateur ou non HTTP)."
+  },
+  "specialNote": {
+    "message": "Ceci est une page d’outil Google — OpenGSC ne l’analyse pas. Ses données sont déjà dans OpenGSC via l’API."
+  },
+  "openApp": {
+    "message": "Ouvrir cette URL dans OpenGSC"
+  },
+  "send": {
+    "message": "Envoyer à OpenGSC"
+  },
+  "sendOwn": {
+    "message": "Mettre en file de vérification d’indexation"
+  },
+  "sendForeign": {
+    "message": "Enregistrer comme prospect Outreach"
+  },
+  "sendWaiting": {
+    "message": "Le résumé n’a pas encore répondu — réessayez dans un instant."
+  },
+  "sendKeywords": {
+    "message": "Sélection → mots-clés"
+  },
+  "downloadCsv": {
+    "message": "Tableau → CSV"
+  },
+  "downloadCsvStaged": {
+    "message": "Télécharger le CSV du tableau sélectionné"
+  },
+  "csvSaved": {
+    "message": "CSV téléchargé"
+  },
+  "inOpengsc": {
+    "message": "Cette page dans OpenGSC"
+  },
+  "miniAudit": {
+    "message": "Audit rapide (local)"
+  },
+  "notInPortfolio": {
+    "message": "Cette URL n’appartient à aucun site du portefeuille."
+  },
+  "noMetrics": {
+    "message": "Aucun clic ni impression ces {n} derniers jours."
+  },
+  "openInApp": {
+    "message": "Ouvrir dans OpenGSC →"
+  },
+  "metricClicks": {
+    "message": "clics"
+  },
+  "metricImpressions": {
+    "message": "impressions"
+  },
+  "metricPosition": {
+    "message": "position moy."
+  },
+  "posShort": {
+    "message": "pos."
+  },
+  "localPackShort": {
+    "message": "carte"
+  },
+  "indexStatus": {
+    "message": "État d’indexation"
+  },
+  "indexIndexed": {
+    "message": "Indexée"
+  },
+  "indexNotIndexed": {
+    "message": "Non indexée"
+  },
+  "indexUnknown": {
+    "message": "Index : inconnu"
+  },
+  "indexUnknownTitle": {
+    "message": "Jamais vérifiée, ou Google a renvoyé un état que cette version ne reconnaît pas"
+  },
+  "serverAudit": {
+    "message": "Dernier audit du site"
+  },
+  "yourSite": {
+    "message": "votre site"
+  },
+  "auditPill": {
+    "message": "Audit : $1 err. · $2 avert."
+  },
+  "auditUnavailable": {
+    "message": "L’audit rapide n’a pas pu s’exécuter sur cette page."
+  },
+  "auditAllOk": {
+    "message": "Aucun problème trouvé"
+  },
+  "notMigrated": {
+    "message": "Le serveur doit exécuter `npx prisma db push` — demandez au propriétaire de l’instance."
+  },
+  "audit_title_missing": {
+    "message": "Pas de <title>"
+  },
+  "audit_title_short": {
+    "message": "Title trop court (moins de 50)"
+  },
+  "audit_title_long": {
+    "message": "Title trop long (plus de 65)"
+  },
+  "audit_description_missing": {
+    "message": "Pas de meta description"
+  },
+  "audit_description_short": {
+    "message": "Meta description trop courte (moins de 150)"
+  },
+  "audit_description_long": {
+    "message": "Meta description trop longue (plus de 165)"
+  },
+  "audit_h1_missing": {
+    "message": "Pas de H1"
+  },
+  "audit_h1_multiple": {
+    "message": "Plus d’un H1"
+  },
+  "audit_canonical_missing": {
+    "message": "Pas de lien canonical"
+  },
+  "audit_robots_noindex": {
+    "message": "La page est en noindex"
+  },
+  "audit_jsonld_missing": {
+    "message": "Pas de données structurées JSON-LD"
+  },
+  "audit_jsonld_invalid": {
+    "message": "Bloc JSON-LD invalide"
+  },
+  "audit_og_missing": {
+    "message": "Pas de balises Open Graph"
+  },
+  "audit_og_incomplete": {
+    "message": "Open Graph incomplet (og:title / og:image)"
+  },
+  "audit_images_no_alt": {
+    "message": "Images sans alt"
+  },
+  "factWords": {
+    "message": "Mots"
+  },
+  "factLinks": {
+    "message": "Liens (int./ext.)"
+  },
+  "factHreflang": {
+    "message": "hreflang"
+  },
+  "factJsonLd": {
+    "message": "JSON-LD ok/cassé"
+  },
+  "sentQueued": {
+    "message": "En file — la vérification d’indexation Google s’exécutera au prochain passage."
+  },
+  "sentProspect": {
+    "message": "Enregistré dans Outreach comme nouveau prospect."
+  },
+  "sentProspectExisting": {
+    "message": "Déjà dans Outreach — prospect existant renvoyé."
+  },
+  "sendFailed": {
+    "message": "Échec"
+  },
+  "sendReason_not_in_portfolio": {
+    "message": "Cette URL n’est pas une page du portefeuille."
+  },
+  "sendReason_auto_check_off": {
+    "message": "La vérification automatique d’indexation est désactivée pour ce site — activez-la dans l’onglet Indexation."
+  },
+  "sendReason_not_in_inventory": {
+    "message": "Cette URL n’est pas dans l’inventaire du sitemap."
+  },
+  "sendReason_own_site": {
+    "message": "C’est votre propre site — il va dans la file d’indexation, pas dans Outreach."
+  },
+  "errAuth": {
+    "message": "Jeton refusé (401). Créez-le ou renouvelez-le dans Paramètres → Extension de navigateur."
+  },
+  "errOrigin": {
+    "message": "L’ID de cette extension n’est pas autorisé (403). Ajoutez-le dans Paramètres → Extension de navigateur → ID d’extension autorisés."
+  },
+  "errNetwork": {
+    "message": "Impossible de joindre {url} — vérifiez l’URL de l’instance dans les paramètres."
+  },
+  "menuSendPage": {
+    "message": "Envoyer à OpenGSC"
+  },
+  "menuSelection": {
+    "message": "OpenGSC : utiliser la sélection comme mot-clé"
+  },
+  "menuTableCsv": {
+    "message": "OpenGSC : sélection du tableau → CSV"
+  },
+  "optionsIntro": {
+    "message": "Reliez l’extension à votre instance OpenGSC auto-hébergée."
+  },
+  "optionsConnection": {
+    "message": "Connexion"
+  },
+  "optionsInstanceUrl": {
+    "message": "URL de l’instance"
+  },
+  "optionsToken": {
+    "message": "Jeton de l’extension (Paramètres → Extension de navigateur)"
+  },
+  "optionsReveal": {
+    "message": "Afficher"
+  },
+  "optionsSave": {
+    "message": "Enregistrer"
+  },
+  "optionsTest": {
+    "message": "Tester la connexion"
+  },
+  "optionsTestHint": {
+    "message": "Le test envoie une requête gratuite : il vérifie à la fois l’URL, le jeton et la liste des ID autorisés."
+  },
+  "optionsCORS": {
+    "message": "ID de l’extension pour la liste d’autorisation"
+  },
+  "optionsCorsHint": {
+    "message": "Copiez cet ID dans OpenGSC → Paramètres → Extension de navigateur → ID d’extension autorisés. Les requêtes sont refusées avec 403 tant qu’il n’y figure pas."
+  },
+  "optionsCopy": {
+    "message": "Copier"
+  },
+  "optionsPrivacy": {
+    "message": "Ce que l’extension envoie"
+  },
+  "optionsPrivacyText": {
+    "message": "Uniquement ce que vous cliquez : l’URL de la page pour le résumé et pour « Envoyer à OpenGSC », et le jeton. L’audit rapide est calculé dans le navigateur et n’en sort jamais."
+  },
+  "optionsErrUrl": {
+    "message": "Saisissez l’URL de l’instance (https://…)."
+  },
+  "optionsErrToken": {
+    "message": "Le jeton commence par ogscext_ — copiez-le depuis Paramètres → Extension de navigateur."
+  },
+  "optionsSaved": {
+    "message": "Enregistré (accès au site accordé)"
+  },
+  "optionsSavedNoHost": {
+    "message": "Enregistré (accès au site refusé — les requêtes dépendent des en-têtes CORS du serveur)"
+  },
+  "optionsTesting": {
+    "message": "Test en cours…"
+  },
+  "optionsErrFillFirst": {
+    "message": "Enregistrez d’abord l’URL et le jeton."
+  },
+  "optionsTestOk": {
+    "message": "OK — connexion, jeton et liste d’autorisation fonctionnent."
+  },
+  "optionsTest401": {
+    "message": "401 : jeton absent, révoqué ou incorrect."
+  },
+  "optionsTest403": {
+    "message": "403 : cet ID d’extension n’est pas dans la liste d’autorisation."
+  },
+  "optionsTestNetwork": {
+    "message": "Pas de réponse — mauvaise URL ou serveur indisponible."
+  },
+  "optionsTestFail": {
+    "message": "Échec"
+  },
+  "optionsCopied": {
+    "message": "Copié"
+  },
+  "optPanelSection": {
+    "message": "Panneau latéral"
+  },
+  "optPanelAllSites": {
+    "message": "Analyser n’importe quelle page sans cliquer sur l’icône"
+  },
+  "optPermissionGranted": {
+    "message": "Autorisation accordée"
+  },
+  "optPermissionMissing": {
+    "message": "Autorisation non accordée"
+  },
+  "optSerpSection": {
+    "message": "Superposition des résultats (Google, Bing, Yandex)"
+  },
+  "optSerpEnable": {
+    "message": "Afficher les données OpenGSC dans les résultats de recherche"
+  },
+  "optSerpDomains": {
+    "message": "Domaines des moteurs de recherche"
+  },
+  "optSerpDomainsSearch": {
+    "message": "Filtrer les domaines…"
+  },
+  "optSerpCompact": {
+    "message": "Mode compact (une ligne par résultat)"
+  },
+  "optDefaultSite": {
+    "message": "ID du site pour « Suivre dans Rank Tracker »"
+  },
+  "optDefaultProject": {
+    "message": "ID du projet SERP Monitor"
+  },
+  "optIdHint": {
+    "message": "L’ID figure dans la barre d’adresse d’OpenGSC : /site/<id>, /serp-monitor/<id>"
+  },
+  "optSaved": {
+    "message": "Enregistré"
+  },
+  "panelSoon": {
+    "message": "Bientôt"
+  },
+  "panelRefresh": {
+    "message": "Actualiser"
+  },
+  "panelUpdating": {
+    "message": "Mise à jour…"
+  },
+  "panelRestricted": {
+    "message": "Cette page ne peut pas être analysée (page du navigateur ou du store)."
+  },
+  "panelNoPermission": {
+    "message": "Pas encore d’accès à cette page."
+  },
+  "panelClickIcon": {
+    "message": "Cliquez sur l’icône OpenGSC pour analyser cette page"
+  },
+  "panelAllowAll": {
+    "message": "Autoriser sur tous les sites"
+  },
+  "panelInjectFailed": {
+    "message": "Impossible de lire la page : $1"
+  },
+  "panelConnectHint": {
+    "message": "Connectez OpenGSC dans les paramètres pour voir vos données ici"
+  },
+  "panelOpen": {
+    "message": "Ouvrir le panneau latéral"
+  },
+  "panelHighlight": {
+    "message": "Surligner"
+  },
+  "panelExport": {
+    "message": "Exporter"
+  },
+  "panelTruncated": {
+    "message": "Affichage des $1 premiers"
+  },
+  "panelScore": {
+    "message": "Score de la page"
+  },
+  "panelScoreFormula": {
+    "message": "100 − 10 par erreur − 4 par avertissement − 1 par remarque"
+  },
+  "tabPage": {
+    "message": "Page"
+  },
+  "pageOverview": {
+    "message": "Vue d’ensemble"
+  },
+  "pageHeadings": {
+    "message": "Titres"
+  },
+  "pageLinks": {
+    "message": "Liens"
+  },
+  "pageImages": {
+    "message": "Images"
+  },
+  "pageSchema": {
+    "message": "Schema"
+  },
+  "pageSocial": {
+    "message": "Réseaux sociaux"
+  },
+  "pageRobots": {
+    "message": "robots & sitemap"
+  },
+  "pageSpeed": {
+    "message": "Vitesse"
+  },
+  "pageLenOk": {
+    "message": "OK"
+  },
+  "pageLenShort": {
+    "message": "Trop court"
+  },
+  "pageLenLong": {
+    "message": "Trop long"
+  },
+  "pageCanonicalOther": {
+    "message": "Le canonical pointe vers une autre URL"
+  },
+  "pageGroupMeta": {
+    "message": "Méta"
+  },
+  "pageGroupContent": {
+    "message": "Contenu"
+  },
+  "pageGroupTechnical": {
+    "message": "Technique"
+  },
+  "pageGroupPerformance": {
+    "message": "Vitesse"
+  },
+  "pageGroupAccessibility": {
+    "message": "Accessibilité"
+  },
+  "pageHidden": {
+    "message": "masqué"
+  },
+  "pageSkip": {
+    "message": "niveau sauté"
+  },
+  "pageLinksInternal": {
+    "message": "Internes"
+  },
+  "pageLinksExternal": {
+    "message": "Externes"
+  },
+  "pageLinksUnique": {
+    "message": "Uniques"
+  },
+  "pageAreaContent": {
+    "message": "dans le texte"
+  },
+  "pageAreaNav": {
+    "message": "menu"
+  },
+  "pageAreaHeader": {
+    "message": "en-tête"
+  },
+  "pageAreaFooter": {
+    "message": "pied de page"
+  },
+  "pageAreaAside": {
+    "message": "barre latérale"
+  },
+  "pageAreaTop": {
+    "message": "haut du body"
+  },
+  "pageAreaOther": {
+    "message": "autre"
+  },
+  "pageNoAlt": {
+    "message": "Sans alt"
+  },
+  "pageEmptyAlt": {
+    "message": "Alt vide"
+  },
+  "pageNoDims": {
+    "message": "Sans dimensions"
+  },
+  "pageRichTest": {
+    "message": "Test des résultats enrichis"
+  },
+  "pageRobotsBlocked": {
+    "message": "Bloquée pour Googlebot par : $1"
+  },
+  "pageRobotsAllowed": {
+    "message": "Autorisée pour Googlebot"
+  },
+  "pageRobotsMissing": {
+    "message": "Pas de robots.txt"
+  },
+  "pageSitemapFind": {
+    "message": "Chercher cette URL dans le sitemap"
+  },
+  "pageSitemapFound": {
+    "message": "Trouvée dans $1"
+  },
+  "pageSitemapNotFound": {
+    "message": "Introuvable dans $1 fichiers"
+  },
+  "pageLabNote": {
+    "message": "Mesuré dans votre navigateur — données de laboratoire, pas CrUX"
+  },
+  "pageInpNote": {
+    "message": "Nécessite une interaction — non mesuré"
+  },
+  "pagePsi": {
+    "message": "PageSpeed Insights"
+  },
+  "exportLinks": {
+    "message": "Liens (CSV)"
+  },
+  "exportImages": {
+    "message": "Images (CSV)"
+  },
+  "exportHeadings": {
+    "message": "Titres (CSV)"
+  },
+  "exportJson": {
+    "message": "Tout (JSON)"
+  },
+  "hlImagesNoAlt": {
+    "message": "Images sans alt"
+  },
+  "hlH1": {
+    "message": "Titres H1"
+  },
+  "hlNofollow": {
+    "message": "Liens nofollow"
+  },
+  "hlExternal": {
+    "message": "Liens externes"
+  },
+  "hlEmptyLinks": {
+    "message": "Liens sans texte"
+  },
+  "audit_heading_skip": {
+    "message": "Niveau de titre sauté"
+  },
+  "audit_heading_empty": {
+    "message": "Titre vide"
+  },
+  "audit_images_no_dims": {
+    "message": "Images sans width/height"
+  },
+  "audit_html_lang_missing": {
+    "message": "Pas de <html lang>"
+  },
+  "audit_viewport_missing": {
+    "message": "Pas de meta viewport"
+  },
+  "audit_link_empty_text": {
+    "message": "Liens sans texte"
+  },
+  "audit_canonical_other": {
+    "message": "Le canonical pointe vers une autre URL"
+  },
+  "audit_mixed_content": {
+    "message": "Ressources HTTP sur une page HTTPS"
+  },
+  "audit_lcp_poor": {
+    "message": "LCP lent"
+  },
+  "audit_cls_poor": {
+    "message": "CLS élevé"
+  },
+  "tabOpengsc": {
+    "message": "OpenGSC"
+  },
+  "ogOpenInApp": {
+    "message": "Ouvrir dans OpenGSC"
+  },
+  "ogGsc28": {
+    "message": "Google Search Console, 28 jours"
+  },
+  "ogMainQuery": {
+    "message": "Requête principale"
+  },
+  "ogMatchOk": {
+    "message": "Le title/H1 contient la requête principale"
+  },
+  "ogMatchBad": {
+    "message": "Ni le title ni le H1 ne contiennent la requête principale"
+  },
+  "ogNoMainQuery": {
+    "message": "Aucune requête pour cette URL ces 28 derniers jours"
+  },
+  "ogInSitemap": {
+    "message": "Dans le sitemap"
+  },
+  "ogSitemapYes": {
+    "message": "oui"
+  },
+  "ogSitemapNo": {
+    "message": "non"
+  },
+  "ogSitemapUnknown": {
+    "message": "sitemap non chargé dans OpenGSC"
+  },
+  "ogCheckIndex": {
+    "message": "Vérifier l’indexation"
+  },
+  "ogMeta": {
+    "message": "Balises meta"
+  },
+  "ogSuggestion": {
+    "message": "Suggestion ($1 caract.)"
+  },
+  "ogCopy": {
+    "message": "Copier"
+  },
+  "ogCopied": {
+    "message": "Copié"
+  },
+  "ogFitAi": {
+    "message": "Ajuster avec l’IA"
+  },
+  "ogFitAiConfirm": {
+    "message": "Jusqu’à 2 requêtes à votre modèle d’IA. Continuer ?"
+  },
+  "ogNoSpendRight": {
+    "message": "Votre rôle ne peut pas dépenser de crédits"
+  },
+  "ogNoMainQueryFit": {
+    "message": "Impossible d’ajuster sans requête principale"
+  },
+  "ogFootprint": {
+    "message": "Empreinte sur vos sites"
+  },
+  "ogFootprintClean": {
+    "message": "Ce modèle de title/description/H1 ne se répète pas sur vos autres sites"
+  },
+  "ogFootprintKindTitle": {
+    "message": "Modèle de title"
+  },
+  "ogFootprintKindDescription": {
+    "message": "Modèle de description"
+  },
+  "ogFootprintKindH1": {
+    "message": "Modèle de H1"
+  },
+  "ogFootprintAll": {
+    "message": "Tous les modèles"
+  },
+  "ogSimilarity": {
+    "message": "$1 % de similarité"
+  },
+  "ogRanks": {
+    "message": "Rank Tracker"
+  },
+  "ogServerAudit": {
+    "message": "Dernier audit du site"
+  },
+  "tabDonor": {
+    "message": "Donneur"
+  },
+  "donorLinksToUs": {
+    "message": "Lie vers vos sites"
+  },
+  "donorLinksToUsRow": {
+    "message": "$1 : $2 liens, $3 actifs"
+  },
+  "donorNotInDb": {
+    "message": "pas encore dans OpenGSC"
+  },
+  "donorDr": {
+    "message": "DR"
+  },
+  "donorAge": {
+    "message": "Âge"
+  },
+  "donorAgeValue": {
+    "message": "$1 a $2 m"
+  },
+  "donorRefdomains": {
+    "message": "Domaines référents"
+  },
+  "donorInOutreach": {
+    "message": "Dans Outreach : $1"
+  },
+  "donorInDrops": {
+    "message": "Dans les drops : $1"
+  },
+  "donorWatched": {
+    "message": "surveillé"
+  },
+  "donorAsset": {
+    "message": "Drop acheté"
+  },
+  "donorOwnPbn": {
+    "message": "Votre site PBN"
+  },
+  "donorToOutreach": {
+    "message": "Ajouter à Outreach"
+  },
+  "donorWatchDrop": {
+    "message": "Surveiller comme drop"
+  },
+  "donorEnrich": {
+    "message": "Obtenir l’âge et le DR (gratuit, sources publiques)"
+  },
+  "donorSignals": {
+    "message": "Signaux"
+  },
+  "donorVerdictRestored": {
+    "message": "Ressemble à un drop restauré"
+  },
+  "donorVerdictSuspicious": {
+    "message": "Semble suspect"
+  },
+  "donorVerdictClean": {
+    "message": "Aucun signe trouvé"
+  },
+  "donorVerdictUnknown": {
+    "message": "Vérification impossible"
+  },
+  "donorSig_wayforge_marker": {
+    "message": "Balisage WayForge trouvé"
+  },
+  "donorSig_wayback_toolbar": {
+    "message": "Restes de la Wayback Machine"
+  },
+  "donorSig_archive_refs": {
+    "message": "Liens vers web.archive.org"
+  },
+  "donorSig_link_above_content": {
+    "message": "Lien externe au-dessus de tout le contenu"
+  },
+  "donorSig_many_outbound_hosts": {
+    "message": "Beaucoup d’hôtes sortants dans le texte"
+  },
+  "donorSig_sitewide_footer_links": {
+    "message": "Liens de pied de page sur tout le site"
+  },
+  "donorSig_generator_restore_tool": {
+    "message": "Créé avec un outil de restauration de sites"
+  },
+  "donorOutbound": {
+    "message": "Liens sortants"
+  },
+  "donorOutboundSummary": {
+    "message": "$1 liens vers $2 hôtes, $3 dofollow"
+  },
+  "donorAlreadyLinks": {
+    "message": "Lie déjà vers $1"
+  },
+  "donorFilterDofollow": {
+    "message": "dofollow"
+  },
+  "donorFilterContent": {
+    "message": "dans le texte"
+  },
+  "donorFilterMine": {
+    "message": "mes sites seulement"
+  },
+  "donorHighlightTop": {
+    "message": "Surligner les liens au-dessus du contenu"
+  },
+  "serpYourSite": {
+    "message": "Votre site : $1"
+  },
+  "serpYourUrlStats": {
+    "message": "votre URL : $1 clics, $2 impr., pos. $3 (GSC, 28 j)"
+  },
+  "serpOtherUrlRanks": {
+    "message": "Sur cette requête, une autre de vos URL se positionne : $1"
+  },
+  "serpDrUnknown": {
+    "message": "Pas encore dans la base — récupéré automatiquement, ou via le bouton de la carte OpenGSC"
+  },
+  "serpAgeYears": {
+    "message": "$1 a"
+  },
+  "serpAgeMonths": {
+    "message": "$1 m"
+  },
+  "serpMonitorChip": {
+    "message": "SERP Monitor : $1 req., top 10 : $2, depuis $3"
+  },
+  "serpTag_new": {
+    "message": "nouveau"
+  },
+  "serpTag_young": {
+    "message": "jeune"
+  },
+  "serpTag_rising": {
+    "message": "en hausse"
+  },
+  "serpTag_falling": {
+    "message": "en baisse"
+  },
+  "serpTag_bounced": {
+    "message": "rebond"
+  },
+  "serpTag_platform": {
+    "message": "plateforme"
+  },
+  "serpTag_own": {
+    "message": "le vôtre"
+  },
+  "serpLinksToYou": {
+    "message": "lie vers vous : $1"
+  },
+  "serpOutreachStage": {
+    "message": "Outreach : $1"
+  },
+  "serpDropWatched": {
+    "message": "Drop : surveillé"
+  },
+  "serpDropStage": {
+    "message": "Drop : $1"
+  },
+  "serpPbn": {
+    "message": "PBN"
+  },
+  "serpMenuOutreach": {
+    "message": "Ajouter à Outreach"
+  },
+  "serpMenuWatch": {
+    "message": "Surveiller comme drop"
+  },
+  "serpMenuCloak": {
+    "message": "Vérifier le cloaking"
+  },
+  "serpMenuOpenDomain": {
+    "message": "Ouvrir le domaine dans SERP Monitor"
+  },
+  "serpCloakSame": {
+    "message": "Identique pour Googlebot et le navigateur"
+  },
+  "serpCloakDiffers": {
+    "message": "Googlebot et le navigateur voient des choses différentes"
+  },
+  "serpCloakBlocked": {
+    "message": "Le site bloque le bot"
+  },
+  "serpCloakError": {
+    "message": "Échec de la vérification"
+  },
+  "serpCloakSnippet": {
+    "message": "Extrait trouvé — Googlebot : $1, navigateur : $2"
+  },
+  "serpYes": {
+    "message": "oui"
+  },
+  "serpNo": {
+    "message": "non"
+  },
+  "serpWaitMinute": {
+    "message": "Trop de vérifications — attendez une minute"
+  },
+  "serpRegionUnknown": {
+    "message": "région non détectée"
+  },
+  "serpYourPositions": {
+    "message": "Vos positions"
+  },
+  "serpTracked": {
+    "message": "Rank Tracker : pos. $1 ($2)"
+  },
+  "serpMonitored": {
+    "message": "Suivie dans le projet SERP Monitor $1"
+  },
+  "serpStorm": {
+    "message": "tempête lors du dernier passage"
+  },
+  "serpNoStorm": {
+    "message": "pas de tempête lors du dernier passage"
+  },
+  "serpQueryMetrics": {
+    "message": "volume $1 · KD $2 · données du $3"
+  },
+  "serpToRank": {
+    "message": "Suivre dans Rank Tracker"
+  },
+  "serpToMonitor": {
+    "message": "Ajouter à SERP Monitor"
+  },
+  "serpCapture": {
+    "message": "Enregistrer ces résultats"
+  },
+  "serpCaptured": {
+    "message": "Enregistré · ouvrir"
+  },
+  "serpEnrich": {
+    "message": "Obtenir l’âge et le DR pour $1 hôtes (gratuit)"
+  },
+  "serpPickSite": {
+    "message": "Choisissez un site"
+  },
+  "serpPickProject": {
+    "message": "Choisissez un projet"
+  },
+  "serpAdded": {
+    "message": "Ajouté"
+  },
+  "serpAlready": {
+    "message": "Déjà présent"
+  },
+  "serpNotConfigured": {
+    "message": "OpenGSC : connectez l’extension dans les paramètres"
+  },
+  "serpCollapse": {
+    "message": "Réduire"
+  },
+  "serpExpand": {
+    "message": "OpenGSC"
+  },
+  "err_invalid_url": {
+    "message": "URL invalide"
+  },
+  "err_too_many_hosts": {
+    "message": "Trop d’hôtes"
+  },
+  "err_private_host": {
+    "message": "Adresse privée — non vérifiée"
+  },
+  "err_confirm_required": {
+    "message": "Confirmation requise"
+  },
+  "err_project_not_found": {
+    "message": "Projet SERP Monitor introuvable"
+  },
+  "err_site_not_found": {
+    "message": "Site introuvable"
+  },
+  "err_rate_limited": {
+    "message": "Trop de requêtes — attendez une minute"
+  },
+  "err_forbidden": {
+    "message": "Votre rôle ne le permet pas"
+  },
+  "err_not_migrated": {
+    "message": "Exécutez `npx prisma db push` sur le serveur"
+  },
+  "serpApproxUrl": {
+    "message": "URL exacte inconnue (liens chiffrés dans les résultats) — hôte uniquement"
+  },
+  "optLangSection": {
+    "message": "Langue"
+  },
+  "optLangAuto": {
+    "message": "Automatique (langue du navigateur)"
+  },
+  "optSerpPositions": {
+    "message": "Afficher le numéro de position à côté de chaque résultat"
+  },
+  "optSerpAutoEnrich": {
+    "message": "Récupérer automatiquement le DR et l’âge du domaine manquants (gratuit)"
+  },
+  "optSerpHideAds": {
+    "message": "Masquer les annonces"
+  },
+  "serpEnriching": {
+    "message": "Récupération du DR et de l’âge…"
+  },
+  "serpRelated": {
+    "message": "Recherches associées"
+  },
+  "serpPaa": {
+    "message": "Autres questions posées"
+  },
+  "serpCopy": {
+    "message": "Copier"
+  },
+  "pageRedirects": {
+    "message": "Redirections"
+  },
+  "pageRedirectsNone": {
+    "message": "Aucune chaîne de redirection enregistrée pour cet onglet."
+  },
+  "pageRedirectsHint": {
+    "message": "La chaîne est enregistrée pendant le chargement de la page, et seulement sur les sites auxquels l’extension a accès. Autorisez tous les sites puis rechargez la page."
+  },
+  "pageRedirectsCopy": {
+    "message": "Copier la chaîne (tableau)"
+  },
+  "pageReload": {
+    "message": "Recharger la page"
+  }
+}

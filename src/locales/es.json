@@ -5109,7 +5109,7 @@
   "repBrandLogoBadType": "Solo PNG, SVG o JPEG",
   "repBrandSaved": "Guardado",
   "extIdsHint": "Un ID de extensión por línea — búscalo en chrome://extensions. Solo estos ID pueden usar el token.",
-  "extHowToSteps": "1. Abre chrome://extensions y activa el modo de desarrollador.\n2. Carga la carpeta extension/ descomprimida del repositorio.\n3. Crea un token aquí y pégalo en el popup de la extensión.",
+  "extHowToSteps": "1. Descarga el .zip de arriba y descomprímelo en una carpeta que vayas a conservar (la extensión se ejecuta desde ella).\n2. Abre chrome://extensions y activa el modo de desarrollador (arriba a la derecha).\n3. Pulsa «Cargar descomprimida» y elige la carpeta descomprimida opengsc-extension.\n4. Copia el ID de la extensión de su tarjeta, pégalo abajo en «ID de extensión permitidos» y guarda.\n5. Crea un token abajo. En los ajustes de la extensión introduce la dirección de este OpenGSC y el token, y pulsa «Probar conexión».",
   "locHint": "Ficha de negocio, coherencia NAP, directorios, marcado LocalBusiness, Google Business Profile.",
   "locSiteSearch": "Buscar sitios…",
   "partnersOrbitra": "Tracker self-hosted gratuito, conectado a los leads de OpenGSC",
@@ -5764,5 +5764,9 @@
   "serpmonCaptureCompare": "Comparar con la instantánea automatizada más cercana",
   "serpmonCaptureNoSnapshot": "No hay instantánea automatizada de esta consulta para comparar",
   "serpmonCaptureDelete": "Eliminar",
-  "serpmonCaptureDeleteConfirm": "¿Eliminar esta captura?"
+  "serpmonCaptureDeleteConfirm": "¿Eliminar esta captura?",
+  "extDownload": "Descargar la extensión (.zip)",
+  "extGithub": "Código fuente en GitHub",
+  "extUpdateTitle": "Cómo actualizar",
+  "extUpdateSteps": "Descarga el .zip de nuevo, descomprímelo en la misma carpeta (reemplazando los archivos) y pulsa la flecha de recarga en la tarjeta de la extensión en chrome://extensions. Mientras la ruta de la carpeta no cambie, el ID sigue siendo el mismo: no hace falta tocar la lista ni el token."
 }

@@ -43,7 +43,7 @@ var Panel = (function () {
   var scanSeq = 0;             // staleness guard: only the newest scan may render
 
   function msg(key, subs) {
-    return CR.i18n.getMessage(key, subs) || key;
+    return ExtI18n.msg(key, subs);
   }
 
   // ─── chrome.storage.session cache with a TTL — ctx.cache ───────────────────────
@@ -444,6 +444,18 @@ var Panel = (function () {
   }
 
   function start() {
+    // a language switch in the options page reloads the panel in the new language
+    CR.storage.onChanged.addListener(function (changes, area) {
+      if (area === "local" && changes.uiLang) window.location.reload();
+    });
+    ExtI18n.ready().then(function () {
+      document.documentElement.lang = ExtI18n.current();
+      ExtI18n.applyTo(document);
+      startTabs();
+    });
+  }
+
+  function startTabs() {
     ExtSettings.get().then(function (s) {
       state.settings = s;
       activeTab().then(applyTabInfo);

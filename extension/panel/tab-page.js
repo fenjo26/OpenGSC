@@ -15,6 +15,7 @@
     { id: "schema", key: "pageSchema" },
     { id: "social", key: "pageSocial" },
     { id: "robots", key: "pageRobots" },
+    { id: "redirects", key: "pageRedirects" },
     { id: "speed", key: "pageSpeed" },
   ];
 
@@ -85,6 +86,15 @@
 
   function openUrl(url) {
     window.open(url, "_blank", "noopener");
+  }
+
+  /** An outbound link that opens in a new tab (robots.txt, sitemaps, redirect hops). */
+  function extLink(url, text, className) {
+    var a = tag("a", className || "extlink", text || url);
+    a.href = url;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    return a;
   }
 
   // ─── overview ──────────────────────────────────────────────────────────────────
@@ -186,7 +196,7 @@
     list.forEach(function (h, i) {
       var row = tag("div", "hrow h" + h.level);
       row.style.paddingLeft = (h.level - 1) * 12 + "px";
-      row.appendChild(tag("span", "htag", "H" + h.level));
+      row.appendChild(tag("span", "htag l" + h.level, "H" + h.level));
       var text = tag("span", h.hidden ? "muted" : null, h.text || "—");
       row.appendChild(text);
       if (h.hidden) row.appendChild(tag("span", "note", ctxMsg("pageHidden")));
@@ -535,6 +545,10 @@
     var paintRobots = function () {
       box.textContent = "";
       findBox.textContent = "";
+      var robotsRow = tag("div", "row-line");
+      robotsRow.appendChild(tag("span", "k mono small", "robots.txt"));
+      robotsRow.appendChild(extLink(origin + "/robots.txt", origin.replace(/^https?:\/\//, "") + "/robots.txt", "extlink small"));
+      box.appendChild(robotsRow);
       if (robotsCache.failed || robotsCache.text == null) {
         // could not read it (no access to this site, network, 5xx) — say so and offer the fix
         box.appendChild(tag("div", "muted", ctx.msg("panelNoPermission") + (robotsCache.status ? " (HTTP " + robotsCache.status + ")" : "")));
@@ -572,6 +586,14 @@
         if (m) sitemaps.push(m[1]);
       });
       if (sitemaps.indexOf(origin + "/sitemap.xml") === -1) sitemaps.push(origin + "/sitemap.xml");
+
+      var smHead = tag("div", "group-head", "Sitemap");
+      findBox.appendChild(smHead);
+      sitemaps.slice(0, 20).forEach(function (sm) {
+        var line = tag("div", "row-line");
+        line.appendChild(extLink(sm, sm.replace(/^https?:\/\//, ""), "extlink small mono"));
+        findBox.appendChild(line);
+      });
 
       var findBtn = tag("button", "btn", ctxMsg("pageSitemapFind"));
       findBtn.type = "button";
@@ -617,6 +639,68 @@
         .catch(function () { checkOne(index + 1); });
     };
     checkOne(0);
+  }
+
+  // ─── redirects (Redirect Path–style) ────────────────────────────────────────────
+
+  var TSV_HEAD = ["Status Code", "URL", "IP", "Page Type", "Redirect Type", "Redirect URL"];
+
+  function statusClass(code) {
+    if (!code) return "st-err";
+    if (code < 300) return "st-ok";
+    if (code < 400) return "st-redir";
+    return "st-bad";
+  }
+
+  function renderRedirects(root, ctx) {
+    var box = tag("div");
+    root.appendChild(box);
+    box.appendChild(tag("div", "muted small", "…"));
+    chrome.runtime.sendMessage({ type: ExtProtocol.MSG_REDIRECTS, tabId: ctx.tabId }, function (chain) {
+      void chrome.runtime.lastError;
+      box.textContent = "";
+      if (!chain || !chain.hops || !chain.hops.length) {
+        box.appendChild(tag("div", "block-msg", ctxMsg("pageRedirectsNone")));
+        var hint = tag("div", "muted small", ctxMsg("pageRedirectsHint"));
+        box.appendChild(hint);
+        var row = tag("div", "row-line");
+        var allow = tag("button", "btn", ctxMsg("panelAllowAll"));
+        allow.type = "button";
+        allow.addEventListener("click", function () {
+          ExtSettings.requestAllSites().then(function (granted) { if (granted) chrome.tabs.reload(ctx.tabId); });
+        });
+        row.appendChild(allow);
+        var reload = tag("button", "btn", ctxMsg("pageReload"));
+        reload.type = "button";
+        reload.addEventListener("click", function () { chrome.tabs.reload(ctx.tabId); });
+        row.appendChild(reload);
+        box.appendChild(row);
+        return;
+      }
+
+      chain.hops.forEach(function (h, i) {
+        var hop = tag("div", "hop");
+        var line = tag("div", "hop-head");
+        line.appendChild(tag("span", "st " + statusClass(h.status), h.status ? String(h.status) : "ERR"));
+        line.appendChild(tag("span", "mono small", h.statusLine || (h.status ? "HTTP " + h.status : "")));
+        if (h.type === "client_redirect") line.appendChild(tag("span", "pill", "JS / meta"));
+        hop.appendChild(line);
+        hop.appendChild(extLink(h.url, h.url, "extlink small mono"));
+        if (h.ip) hop.appendChild(tag("div", "muted small", "IP " + h.ip));
+        box.appendChild(hop);
+        if (i < chain.hops.length - 1) box.appendChild(tag("div", "hop-arrow", "↓"));
+      });
+
+      var copy = tag("button", "btn", ctxMsg("pageRedirectsCopy"));
+      copy.type = "button";
+      copy.addEventListener("click", function () {
+        var lines = [TSV_HEAD.join("\t")].concat(chain.hops.map(function (h) {
+          return [h.status || "ERR", h.url, h.ip || "", h.type, h.redirectType || "none", h.redirectUrl || "none"].join("\t");
+        }));
+        navigator.clipboard.writeText(lines.join("\n")).then(function () { copy.textContent = ctxMsg("ogCopied"); });
+      });
+      box.appendChild(copy);
+    });
   }
 
   // ─── speed ─────────────────────────────────────────────────────────────────────
@@ -666,6 +750,7 @@
     schema: renderSchema,
     social: renderSocial,
     robots: renderRobots,
+    redirects: renderRedirects,
     speed: renderSpeed,
   };
 

@@ -39,7 +39,20 @@ var SerpParse = (function () {
 
   /** ccTLD of a google search host: www.google.gr → "gr", www.google.co.uk → "gb",
    *  www.google.com → "" (global, no country signal — never guessed). */
+  /** Which engine a search host belongs to: "google" | "bing" | "yandex" | null. */
+  function engineOf(engineHost) {
+    var h = String(engineHost || "").toLowerCase().replace(/^www\./, "");
+    if (/^google\.[a-z.]+$/.test(h)) return "google";
+    if (h === "bing.com" || /^(cn\.)?bing\.com$/.test(h)) return "bing";
+    if (/^(yandex\.[a-z.]+|ya\.ru)$/.test(h)) return "yandex";
+    return null;
+  }
+
   function hostCountry(engineHost) {
+    var y = String(engineHost || "").toLowerCase().replace(/^www\./, "");
+    if (y === "ya.ru") return "ru";
+    var ym = y.match(/^yandex\.(.+)$/);
+    if (ym) return ym[1] === "com" ? "" : ym[1].split(".").pop();
     var m = String(engineHost || "").toLowerCase().match(/^(?:www\.)?google\.(.+)$/);
     if (!m) return "";
     var tld = m[1];
@@ -54,14 +67,22 @@ var SerpParse = (function () {
     try {
       var u = new URL(String(pageUrl || ""), "https://www.google.com/");
       out.engineHost = u.host.toLowerCase();
-      out.query = String(u.searchParams.get("q") || "").trim().replace(/\s+/g, " ").toLowerCase();
+      out.query = String(u.searchParams.get("q") || u.searchParams.get("text") || "").trim().replace(/\s+/g, " ").toLowerCase();
       out.lang = String(u.searchParams.get("hl") || "").toLowerCase().slice(0, 2) || String(htmlLang || "").toLowerCase().slice(0, 2);
-      var gl = String(u.searchParams.get("gl") || "").toLowerCase();
+      var gl = String(u.searchParams.get("gl") || u.searchParams.get("cc") || "").toLowerCase();
       out.country = /^[a-z]{2}$/.test(gl) ? gl : hostCountry(out.engineHost);
       var start = parseInt(String(u.searchParams.get("start") || ""), 10);
       if (Number.isFinite(start) && start > 0) {
         out.page = Math.floor(start / 10) + 1;
         out.startPos = start + 1;
+      }
+      var engine = engineOf(out.engineHost);
+      if (engine === "bing") {
+        var first = parseInt(String(u.searchParams.get("first") || ""), 10); // 1-based: 11 = page 2
+        if (Number.isFinite(first) && first > 1) { out.page = Math.floor((first - 1) / 10) + 1; out.startPos = first; }
+      } else if (engine === "yandex") {
+        var yp = parseInt(String(u.searchParams.get("p") || ""), 10); // 0-based page
+        if (Number.isFinite(yp) && yp > 0) { out.page = yp + 1; out.startPos = yp * 10 + 1; }
       }
     } catch {
       /* keep the defaults — the server then narrows nothing */
@@ -84,8 +105,25 @@ var SerpParse = (function () {
     u.hash = "";
     if (/^(javascript|mailto|tel):/i.test(u.protocol)) return null;
 
-    // Google wrappers: /url?q=, /url?url=, /redirect?q=
     var host = u.host.toLowerCase();
+    // Bing wrapper: bing.com/ck/a?…&u=a1<base64url of the real URL>
+    if (/(^|\.)bing\.com$/.test(host)) {
+      var bu = String(u.searchParams.get("u") || "");
+      if (u.pathname.indexOf("/ck/") !== 0 || bu.indexOf("a1") !== 0) return null;
+      try {
+        var b64 = bu.slice(2).replace(/-/g, "+").replace(/_/g, "/");
+        while (b64.length % 4) b64 += "=";
+        var decoded = typeof atob === "function" ? atob(b64) : globalThis.Buffer.from(b64, "base64").toString("binary");
+        if (!/^https?:\/\//i.test(decoded)) return null;
+        return stripGoogleJunk(new URL(decoded));
+      } catch {
+        return null;
+      }
+    }
+    // Yandex internal links (clck, search, images…) are navigation, not results
+    if (/(^|\.)(yandex\.[a-z.]+|ya\.ru)$/.test(host)) return null;
+
+    // Google wrappers: /url?q=, /url?url=, /redirect?q=
     if (/(^|\.)google\.[a-z.]+$/.test(host) || /(^|\.)googleusercontent\.com$/.test(host)) {
       if (u.pathname === "/url" || u.pathname === "/redirect") {
         var inner = u.searchParams.get("q") || u.searchParams.get("url") || u.searchParams.get("urlq");
@@ -117,6 +155,8 @@ var SerpParse = (function () {
     if (/^google\./.test(h) || /\.google\.[a-z.]+$/.test(h)) return false;
     if (/googleusercontent\.com$/.test(h)) return false;
     if (/^(accounts|support|policies|play)\.google\./.test(h)) return false;
+    if (/(^|\.)bing\.com$/.test(h)) return false;
+    if (/^(yandex\.[a-z.]+|ya\.ru)$/.test(h) || /\.yandex\.[a-z.]+$/.test(h)) return false;
     return true;
   }
 
@@ -173,6 +213,135 @@ var SerpParse = (function () {
 
   function parse(doc) {
     doc = doc || document;
+    var engine = engineOf(doc.location ? doc.location.host : "");
+    if (engine === "bing") return parseGeneric(doc, BING);
+    if (engine === "yandex") return parseGeneric(doc, YANDEX);
+    return parseGoogle(doc);
+  }
+
+  // ─── Bing / Yandex: one result = one list item with a title link ───────────────
+  var BING = {
+    engine: "bing",
+    containers: ["#b_results"],
+    items: ["#b_results > li.b_algo"],
+    link: ["h2 a[href]", ".b_title a[href]"],
+    ads: ["li.b_ad", ".b_adTop", ".b_adBottom", ".b_adLastChild"],
+    snippet: [".b_caption p", ".b_lineclamp2", ".b_lineclamp3", ".b_lineclamp4", ".b_algoSlug", ".b_caption"],
+    cite: ["cite"],
+  };
+  var YANDEX = {
+    engine: "yandex",
+    containers: ["#search-result", ".content__left", "main"],
+    items: ["#search-result > li.serp-item", "li.serp-item"],
+    link: ["a.OrganicTitle-Link[href]", "h2 a[href]", "a.organic__url[href]", "a.Link[href] h2"],
+    ads: ['[data-fast-name="direct"]', '[data-fast-name^="adv"]', ".serp-adv__item", ".serp-adv-item", '[data-fast-subtype*="direct"]'],
+    snippet: [".OrganicTextContentSpan", ".TextContainer", ".organic__content-wrapper", ".Organic-ContentWrapper"],
+    cite: [".Path", ".organic__path", ".OrganicHost", ".Organic-Path"],
+  };
+  var AD_LABEL_RE = /^(реклама|ad|ads|sponsored|рекламa|διαφήμιση|χορηγούμενο|anzeige|annuncio|anuncio|publicité|gesponsord|reklam|реклама\s*·?)$/i;
+
+  function firstMatch(root, selectors) {
+    for (var i = 0; i < selectors.length; i++) {
+      try {
+        var n = root.querySelector(selectors[i]);
+        if (n) return n;
+      } catch { /* a selector this browser rejects — try the next */ }
+    }
+    return null;
+  }
+
+  function looksLikeAd(item) {
+    var labels = item.querySelectorAll('.label, .Label, [class*="Label"], [class*="label"], .b_adSlug');
+    for (var i = 0; i < labels.length && i < 20; i++) {
+      if (AD_LABEL_RE.test(String(labels[i].textContent || "").trim())) return true;
+    }
+    return false;
+  }
+
+  function parseGeneric(doc, cfg) {
+    var container = firstMatch(doc, cfg.containers);
+    if (!container) return null;
+    var items = [];
+    for (var s = 0; s < cfg.items.length && !items.length; s++) {
+      try { items = Array.prototype.slice.call(doc.querySelectorAll(cfg.items[s])); } catch { items = []; }
+    }
+    var meta = locale(doc.location ? doc.location.href : "", doc.documentElement ? doc.documentElement.getAttribute("lang") : "");
+    var rows = [];
+    var pos = meta.startPos;
+    items.forEach(function (item) {
+      var isAd = cfg.ads.some(function (sel) { try { return item.matches(sel) || !!item.querySelector(sel); } catch { return false; } }) || looksLikeAd(item);
+      if (isAd) return;
+      var a = firstMatch(item, cfg.link);
+      if (a && a.tagName !== "A") a = a.closest("a");
+      if (!a) return;
+      var title = String(a.textContent || "").trim().replace(/\s+/g, " ").slice(0, 200);
+      var url = resultUrl(a.href, doc.location ? doc.location.origin : "");
+      var approx = false;
+      var cite = "";
+      if (!url) {
+        var c = firstMatch(item, cfg.cite);
+        var cand = c ? citeUrl(String(c.textContent || "").replace(/\s*›\s*/g, " › ")) : null;
+        if (cand) {
+          try { var cu = new URL(cand); if (isOrganicHost(cu.host)) { url = cu.origin + "/"; approx = true; cite = String(c.textContent || "").trim().slice(0, 120); } } catch { /* */ }
+        }
+      }
+      if (!url) return;
+      var host = "";
+      try { host = new URL(url).host.toLowerCase(); } catch { return; }
+      if (!isOrganicHost(host)) return;
+      var snipNode = firstMatch(item, cfg.snippet);
+      var snippet = snipNode ? String(snipNode.textContent || "").trim().slice(0, 300) : "";
+      rows.push({ position: pos++, url: url, host: host, title: title, snippet: snippet, approx: approx, cite: cite, node: item, titleNode: a });
+    });
+    rows = dedupe(rows);
+    if (!rows.length) return null;
+    meta.engine = cfg.engine;
+    return { meta: meta, results: rows, features: [], engine: cfg.engine };
+  }
+
+  /**
+   * "People also ask" questions and related searches from the page, for the side card.
+   * Pure DOM reading, every engine; empty arrays when the page has none.
+   */
+  function extras(doc) {
+    doc = doc || document;
+    var engine = engineOf(doc.location ? doc.location.host : "") || "google";
+    var current = locale(doc.location ? doc.location.href : "", "").query;
+    var paa = [];
+    var related = [];
+    var seen = {};
+    var push = function (list, text, max) {
+      var t = String(text || "").trim().replace(/\s+/g, " ");
+      var k = t.toLowerCase();
+      if (!t || t.length > 200 || seen[k] || k === current) return;
+      seen[k] = 1;
+      if (list.length < max) list.push(t);
+    };
+    try {
+      if (engine === "google") {
+        doc.querySelectorAll("[data-q]").forEach(function (n) { push(paa, n.getAttribute("data-q"), 12); });
+        if (!paa.length) doc.querySelectorAll(".related-question-pair [role='button'] span, div[jsname] [role='heading'] span").forEach(function (n) {
+          var t = String(n.textContent || "").trim(); if (/\?$/.test(t)) push(paa, t, 12);
+        });
+        doc.querySelectorAll("#bres a[href*='/search?'], #botstuff a[href*='/search?']").forEach(function (a) {
+          try { var q = new URL(a.href).searchParams.get("q"); if (q) push(related, q, 20); } catch { /* */ }
+        });
+      } else if (engine === "bing") {
+        doc.querySelectorAll(".df_qntext, [data-tag='RelatedQnA.Item'] .b_1linetrunc").forEach(function (n) { push(paa, n.textContent, 12); });
+        // Bing wraps these in its click tracker too; the anchor text IS the query
+        doc.querySelectorAll(".b_rs a, #brsv3 a, .b_rrsr a").forEach(function (a) {
+          push(related, a.textContent, 20);
+        });
+      } else if (engine === "yandex") {
+        doc.querySelectorAll(".RelatedBottom a, .related__item a, [class*='Related'] a[href*='text=']").forEach(function (a) {
+          try { var q = new URL(a.href).searchParams.get("text"); if (q) push(related, q, 20); } catch { /* */ }
+        });
+      }
+    } catch { /* best effort */ }
+    return { paa: paa, related: related };
+  }
+
+  function parseGoogle(doc) {
     var container = null;
     for (var c = 0; c < SELECTORS.containers.length && !container; c++) {
       container = doc.querySelector(SELECTORS.containers[c]);
@@ -262,11 +431,13 @@ var SerpParse = (function () {
         approx: approx,
         cite: cite,
         node: block,
+        titleNode: heading,
       });
     }
 
     rows = dedupe(rows);
     if (!rows.length) return null;
+    meta.engine = "google";
 
     var features = [];
     Object.keys(SELECTORS.features).forEach(function (f) {
@@ -282,13 +453,15 @@ var SerpParse = (function () {
     // sitelinks also show as extra links under the first result
     if (features.indexOf("sitelinks") === -1 && container.querySelector('.OSrXXb, [role="list"] table')) features.push("sitelinks");
 
-    return { meta: meta, results: rows, features: features };
+    return { meta: meta, results: rows, features: features, engine: "google" };
   }
 
   return {
     FEATURES: FEATURES,
     SELECTORS: SELECTORS,
     locale: locale,
+    engineOf: engineOf,
+    extras: extras,
     resultUrl: resultUrl,
     citeUrl: citeUrl,
     isOrganicHost: isOrganicHost,

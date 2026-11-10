@@ -5109,7 +5109,7 @@
   "repBrandLogoBadType": "PNG, SVG or JPEG only",
   "repBrandSaved": "Saved",
   "extIdsHint": "One extension ID per line — find it on chrome://extensions. Only these IDs may use the token.",
-  "extHowToSteps": "1. Open chrome://extensions and enable Developer mode.\n2. Load the unpacked extension/ folder of this repository.\n3. Create a token here and paste it into the extension popup.",
+  "extHowToSteps": "1. Download the .zip above and unpack it into a folder you will keep (the extension runs from that folder).\n2. Open chrome://extensions and turn on Developer mode (top right).\n3. Click “Load unpacked” and choose the unpacked opengsc-extension folder.\n4. Copy the extension ID from its card and paste it into “Allowed extension IDs” below, then Save.\n5. Create a token below. In the extension's options enter this OpenGSC address and the token, then press “Test connection”.",
   "locHint": "Business profile, NAP consistency, directories, LocalBusiness schema, Google Business Profile.",
   "locSiteSearch": "Search sites…",
   "partnersOrbitra": "Free self-hosted affiliate tracker linked to OpenGSC leads",
@@ -5764,5 +5764,9 @@
   "serpmonCaptureCompare": "Compare with the nearest automated snapshot",
   "serpmonCaptureNoSnapshot": "No automated snapshot of this keyword to compare with",
   "serpmonCaptureDelete": "Delete",
-  "serpmonCaptureDeleteConfirm": "Delete this capture?"
+  "serpmonCaptureDeleteConfirm": "Delete this capture?",
+  "extDownload": "Download the extension (.zip)",
+  "extGithub": "Source on GitHub",
+  "extUpdateTitle": "How to update",
+  "extUpdateSteps": "Download the .zip again, unpack it over the same folder (replace the files), then press the reload arrow on the extension's card in chrome://extensions. The ID stays the same as long as the folder path does not change — no need to touch the allowlist or the token."
 }

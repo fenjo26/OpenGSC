@@ -12,22 +12,40 @@
 
 var CR = globalThis.chrome || globalThis.browser;
 
-function msg(key) {
-  return CR.i18n.getMessage(key) || key;
+function msg(key, subs) {
+  return ExtI18n.msg(key, subs);
 }
 
 function el(id) { return document.getElementById(id); }
 
 function i18nPage() {
-  var nodes = document.querySelectorAll("[data-i18n]");
-  for (var i = 0; i < nodes.length; i++) {
-    nodes[i].textContent = msg(nodes[i].getAttribute("data-i18n"));
-  }
-  var holders = document.querySelectorAll("[data-i18n-placeholder]");
-  for (var j = 0; j < holders.length; j++) {
-    holders[j].placeholder = msg(holders[j].getAttribute("data-i18n-placeholder"));
-  }
-  document.documentElement.lang = CR.i18n.getUILanguage().slice(0, 2) || "en";
+  ExtI18n.applyTo(document);
+  document.documentElement.lang = ExtI18n.current();
+}
+
+// ─── language ───────────────────────────────────────────────────────────────────
+
+function initLanguage() {
+  var sel = el("uiLang");
+  if (!sel) return;
+  var auto = document.createElement("option");
+  auto.value = "";
+  auto.textContent = msg("optLangAuto");
+  sel.appendChild(auto);
+  ExtI18n.LANGS.forEach(function (l) {
+    var o = document.createElement("option");
+    o.value = l.code;
+    o.textContent = l.name;
+    sel.appendChild(o);
+  });
+  CR.storage.local.get(["uiLang"], function (stored) { sel.value = (stored && stored.uiLang) || ""; });
+  sel.addEventListener("change", function () {
+    ExtI18n.setLanguage(sel.value).then(function () {
+      // every open surface re-reads the language on its next render; this page reloads now
+      CR.runtime.sendMessage({ type: ExtProtocol.MSG_SETTINGS_CHANGED }, function () { void CR.runtime.lastError; });
+      window.location.reload();
+    });
+  });
 }
 
 function setStatus(text, kind) {
@@ -130,7 +148,7 @@ function renderDomains(filter) {
   var box = el("domainList");
   box.textContent = "";
   var needle = String(filter || "").toLowerCase();
-  GOOGLE_SEARCH_HOSTS
+  ALL_SEARCH_HOSTS
     .filter(function (h) { return !needle || h.indexOf(needle) !== -1; })
     .slice(0, 400)
     .forEach(function (host) {
@@ -202,6 +220,9 @@ function saveSerp() {
       serpOverlay: el("serpOverlay").checked,
       serpDomains: granted,
       serpCompact: el("serpCompact").checked,
+      serpPositions: el("serpPositions").checked,
+      serpAutoEnrich: el("serpAutoEnrich").checked,
+      serpHideAds: el("serpHideAds").checked,
       defaultSiteId: !el("defaultSite").classList.contains("hidden") ? el("defaultSite").value : el("defaultSiteText").value.trim(),
       defaultProjectId: !el("defaultProject").classList.contains("hidden") ? el("defaultProject").value : el("defaultProjectText").value.trim(),
     }).then(function (saved) {
@@ -219,7 +240,12 @@ function saveSerp() {
 // ─── boot ───────────────────────────────────────────────────────────────────────
 
 document.addEventListener("DOMContentLoaded", function () {
+  ExtI18n.ready().then(boot);
+});
+
+function boot() {
   i18nPage();
+  initLanguage();
 
   el("extId").textContent = CR.runtime.id || "";
 
@@ -249,9 +275,12 @@ document.addEventListener("DOMContentLoaded", function () {
   ExtSettings.get().then(function (s) {
     var suggested = GoogleDomains.suggestedHosts(CR.i18n.getUILanguage());
     var enabled = (s.serpDomains && s.serpDomains.length) ? s.serpDomains : suggested;
-    GOOGLE_SEARCH_HOSTS.forEach(function (h) { domainChecked[h] = enabled.indexOf(h) !== -1; });
+    ALL_SEARCH_HOSTS.forEach(function (h) { domainChecked[h] = enabled.indexOf(h) !== -1; });
     el("serpOverlay").checked = !!s.serpOverlay;
     el("serpCompact").checked = !!s.serpCompact;
+    el("serpPositions").checked = s.serpPositions !== false;
+    el("serpAutoEnrich").checked = s.serpAutoEnrich !== false;
+    el("serpHideAds").checked = !!s.serpHideAds;
     currentDefaults = { siteId: s.defaultSiteId || "", projectId: s.defaultProjectId || "" };
     el("defaultSiteText").value = s.defaultSiteId || "";
     el("defaultProjectText").value = s.defaultProjectId || "";
@@ -265,4 +294,4 @@ document.addEventListener("DOMContentLoaded", function () {
   el("serpSave").addEventListener("click", saveSerp);
 
   loadLists();
-});
+}

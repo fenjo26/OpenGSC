@@ -13,7 +13,7 @@
 var CR = globalThis.chrome || globalThis.browser;
 
 function msg(key, substitutions) {
-  return CR.i18n.getMessage(key, substitutions) || key;
+  return ExtI18n.msg(key, substitutions);
 }
 
 function el(id) { return document.getElementById(id); }
@@ -218,6 +218,10 @@ function isSpecialHost(url) {
 }
 
 document.addEventListener("DOMContentLoaded", function () {
+  ExtI18n.ready().then(bootPopup);
+});
+
+function bootPopup() {
   applyI18n(document);
   el("openOptions").addEventListener("click", function (e) { e.preventDefault(); CR.runtime.openOptionsPage(); });
 
@@ -402,4 +406,4 @@ document.addEventListener("DOMContentLoaded", function () {
       });
     });
   });
-});
+}

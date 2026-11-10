@@ -298,13 +298,13 @@
     "message": "Permission not granted"
   },
   "optSerpSection": {
-    "message": "Google results overlay"
+    "message": "Search results overlay (Google, Bing, Yandex)"
   },
   "optSerpEnable": {
-    "message": "Show OpenGSC data on Google results"
+    "message": "Show OpenGSC data on search results"
   },
   "optSerpDomains": {
-    "message": "Google domains"
+    "message": "Search engine domains"
   },
   "optSerpDomainsSearch": {
     "message": "Filter domains…"
@@ -757,7 +757,7 @@
     "message": "For this query you rank with another URL: $1"
   },
   "serpDrUnknown": {
-    "message": "Not in the database yet. Get it for free from the header"
+    "message": "Not in the database yet — fetched automatically, or use the button in the OpenGSC card"
   },
   "serpAgeYears": {
     "message": "$1 y"
@@ -926,5 +926,47 @@
   },
   "serpApproxUrl": {
     "message": "Exact URL unknown (encrypted SERP links) — host only"
+  },
+  "optLangSection": {
+    "message": "Language"
+  },
+  "optLangAuto": {
+    "message": "Automatic (browser language)"
+  },
+  "optSerpPositions": {
+    "message": "Show the position number next to each result"
+  },
+  "optSerpAutoEnrich": {
+    "message": "Fetch missing DR and domain age automatically (free)"
+  },
+  "optSerpHideAds": {
+    "message": "Hide ads"
+  },
+  "serpEnriching": {
+    "message": "Getting DR and age…"
+  },
+  "serpRelated": {
+    "message": "Related searches"
+  },
+  "serpPaa": {
+    "message": "People also ask"
+  },
+  "serpCopy": {
+    "message": "Copy"
+  },
+  "pageRedirects": {
+    "message": "Redirects"
+  },
+  "pageRedirectsNone": {
+    "message": "No redirect chain recorded for this tab yet."
+  },
+  "pageRedirectsHint": {
+    "message": "The chain is recorded while the page loads, and only on sites the extension may access. Allow all sites, then reload the page."
+  },
+  "pageRedirectsCopy": {
+    "message": "Copy the chain (table)"
+  },
+  "pageReload": {
+    "message": "Reload page"
   }
 }
