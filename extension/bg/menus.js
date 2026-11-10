@@ -9,6 +9,9 @@
 // activeTab is granted when the user clicks the action OR invokes a context-menu item, which
 // is exactly when content.js / csv handling needs the tab — no standing host permissions.
 
+// Own declaration (duplicate `var` is harmless): this file must not depend on load order.
+var CR = globalThis.chrome || globalThis.browser;
+
 var MENU_SEND_PAGE = "opengsc-send-page";
 var MENU_SELECTION = "opengsc-selection";
 var MENU_TABLE_CSV = "opengsc-table-csv";

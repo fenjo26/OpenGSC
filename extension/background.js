@@ -11,6 +11,11 @@
 // MV3 rule honoured throughout: every listener is registered synchronously at worker load, or
 // events are lost after the worker sleeps.
 
+// Declared BEFORE importScripts: bg/menus.js uses CR at its top level, and a hoisted-but-unassigned
+// `var` here made the whole worker throw on evaluation ("Service worker registration failed.
+// Status code: 15").
+var CR = globalThis.chrome || globalThis.browser;
+
 importScripts(
   "lib/api.js",
   "lib/protocol.js",
@@ -21,7 +26,6 @@ importScripts(
   "bg/serp.js"
 );
 
-var CR = globalThis.chrome || globalThis.browser;
 
 // ─── ext:api proxy — content scripts' only path to the OpenGSC server ──────────
 
