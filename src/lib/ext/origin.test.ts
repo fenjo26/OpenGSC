@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  corsDecision, corsHeaders, extensionIdFromOrigin, normalizeAllowedIdsInput, parseAllowedIds,
+  corsDecision, corsHeaders, effectiveOrigin, extensionIdFromOrigin, normalizeAllowedIdsInput, parseAllowedIds,
 } from "./origin";
 
 // N11 — CORS decisions for /api/ext/** (docs/tasks/wave-nov/N11-browser-extension.md):
@@ -66,4 +66,16 @@ test("normalizeAllowedIdsInput collapses duplicates", () => {
   const result = normalizeAllowedIdsInput(`${ID_A} ${ID_A}`);
   assert.deepEqual(result.kept, [ID_A]);
   assert.equal(result.value, ID_A);
+});
+
+test("effectiveOrigin prefers the real Origin and falls back to the extension-id header", () => {
+  // Chrome sends no Origin on a GET once the extension holds a host permission for the instance.
+  assert.equal(effectiveOrigin(`chrome-extension://${ID_A}`, ID_B), `chrome-extension://${ID_A}`);
+  assert.equal(effectiveOrigin(null, ID_A), `chrome-extension://${ID_A}`);
+  assert.equal(effectiveOrigin("", ID_A.toUpperCase()), `chrome-extension://${ID_A}`);
+  assert.equal(effectiveOrigin(null, "not-an-id"), null);
+  assert.equal(effectiveOrigin(null, null), null);
+  // the header never overrides a present Origin — a web page cannot borrow an extension id
+  assert.equal(corsDecision(effectiveOrigin("https://evil.example", ID_A), ID_A).allow, false);
+  assert.equal(corsDecision(effectiveOrigin(null, ID_A), ID_A).allow, true);
 });

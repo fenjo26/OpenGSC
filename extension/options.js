@@ -90,7 +90,8 @@ function test() {
       // Any 200 (even { inPortfolio: false }) proves URL + token + CORS together.
       if (res.status === 200 && res.data && !res.data.error) setStatus(msg("optionsTestOk"), "ok");
       else if (res.status === 401) setStatus(msg("optionsTest401"), "err");
-      else if (res.status === 403) setStatus(msg("optionsTest403"), "err");
+      // 403 has two causes — say which (origin_not_allowed = id not on the list; forbidden = role).
+      else if (res.status === 403) setStatus(res.data && res.data.error === "forbidden" ? "403: forbidden (role)" : msg("optionsTest403"), "err");
       else if (res.status === 0) setStatus(msg("optionsTestNetwork"), "err");
       else setStatus(msg("optionsTestFail") + " (" + res.status + ")", "err");
     });

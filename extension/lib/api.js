@@ -59,6 +59,9 @@ var ExtApi = (function () {
         method: method,
         headers: {
           "Authorization": "Bearer " + s.token,
+          // Chrome drops Origin on GETs once the instance origin is a granted host permission;
+          // the server falls back to this id (src/lib/ext/origin.ts EXT_ID_HEADER).
+          "X-OpenGSC-Extension": CR.runtime.id,
         },
       };
       if (body !== undefined) {

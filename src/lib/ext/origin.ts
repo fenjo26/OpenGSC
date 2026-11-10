@@ -43,6 +43,27 @@ export function corsDecision(origin: string | null | undefined, allowedIdsRaw: s
   return { allow: true, id, reason: null };
 }
 
+/**
+ * The header the extension sends its own id in, on every request (extension/lib/api.js).
+ *
+ * Why it exists: Chrome does NOT send `Origin` on GET requests from an extension that holds a
+ * host permission for the target — and the options page asks for exactly that permission for
+ * the instance origin. POSTs still carry Origin; GETs (the options "Test connection", the
+ * panel's page summary, /lists) arrived with none and were refused as `origin_not_allowed`
+ * although the id was on the allowlist. Same trust level as Origin: a non-browser client can
+ * forge either, the token is the real credential; the allowlist still has to match.
+ */
+export const EXT_ID_HEADER = "x-opengsc-extension";
+
+/** The origin to judge: the real `Origin` header when present, otherwise the extension origin
+ *  rebuilt from EXT_ID_HEADER (only a syntactically valid id); null when neither is usable. */
+export function effectiveOrigin(origin: string | null | undefined, headerId: string | null | undefined): string | null {
+  const value = String(origin ?? "").trim();
+  if (value) return value;
+  const id = String(headerId ?? "").trim().toLowerCase();
+  return EXT_ID_RE.test(id) ? `chrome-extension://${id}` : null;
+}
+
 /** The CORS headers an allowed response carries. `*` is never used: the value names the one
  *  extension origin that was checked. Vary: Origin keeps any proxy from caching one
  *  extension's allowance for another's. */
@@ -50,7 +71,7 @@ export function corsHeaders(origin: string): Record<string, string> {
   return {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Authorization, Content-Type",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type, X-OpenGSC-Extension",
     "Access-Control-Max-Age": "86400",
     Vary: "Origin",
   };

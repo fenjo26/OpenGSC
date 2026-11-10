@@ -21,7 +21,7 @@ import { isHashedForm, lookupForms } from "@/lib/security/apiTokens";
 import { workspaceOwner } from "@/lib/team/owner";
 import { can, effectiveCapabilities, statusGrantsAccess, type Capability, type WorkspaceRole } from "@/lib/team/roles";
 import { checkExtToken, EXT_TOKEN_PREFIX, isExtTokenFormat, tokenKey } from "./token";
-import { corsDecision, corsHeaders } from "./origin";
+import { corsDecision, corsHeaders, effectiveOrigin, EXT_ID_HEADER } from "./origin";
 import { EXT_RATE_LIMIT_PER_MIN, SlidingWindowRateLimiter } from "./rateLimit";
 
 export { EXT_TOKEN_PREFIX, isExtTokenFormat };
@@ -130,7 +130,8 @@ export type ExtAuthResult =
  * answers don't leak which routes exist to an unauthenticated caller.
  */
 export async function extAuth(req: Request, capability: Capability): Promise<ExtAuthResult> {
-  const origin = req.headers.get("origin");
+  // GETs from an extension with a host permission carry no Origin (see EXT_ID_HEADER).
+  const origin = effectiveOrigin(req.headers.get("origin"), req.headers.get(EXT_ID_HEADER));
 
   const bearer = (req.headers.get("authorization") ?? "").match(/^Bearer\s+(.+)$/i)?.[1] ?? null;
   if (!bearer) {
