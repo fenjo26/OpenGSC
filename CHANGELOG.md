@@ -3,7 +3,7 @@
 All notable changes to OpenGSC. Dates are release dates; the version shown in
 **Settings → System** comes from `package.json`.
 
-## [Unreleased]
+## [1.14.0] — 2026-11-10
 
 ### Security — webhook input, SQL tool scope, client-IP trust, hashed tokens, connector links
 
