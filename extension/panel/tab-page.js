@@ -103,7 +103,6 @@
     root.appendChild(scoreRow);
 
     root.appendChild(lenBar2("Title", f.titleLength, ExtensionAudit.META_LIMITS.title));
-    root.appendChild(titleBar);
     root.appendChild(lenBar2("Description", f.descriptionLength, ExtensionAudit.META_LIMITS.description));
 
     var urlRow = kv("URL", f.url || ctx.url);
