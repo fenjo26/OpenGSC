@@ -2962,3 +2962,23 @@ model SeoBatchItem {
   @@index([userId, status, nextAttemptAt])
   @@index([dependsOnItemId])
 }
+
+/// A connector link: a separate MCP token made for one client (typically Claude Desktop, whose
+/// connector dialog only takes a URL). Read + free actions by default; the owner turns publishing
+/// and spending on per link. Only the hashed form of the token is stored (src/lib/security/apiTokens.ts).
+model McpLink {
+  id         String    @id @default(cuid())
+  userId     String
+  label      String    @default("")
+  /// "<first 12 chars>:sha256:<hex>" — the lookup key; the token itself is never stored.
+  tokenHash  String    @unique
+  allowWrite Boolean   @default(false)
+  allowSpend Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  lastIp     String?
+  /// JSON: string[] — addresses this link was used from, most recent first, max 20
+  knownIps   String    @default("[]")
+
+  @@index([userId])
+}

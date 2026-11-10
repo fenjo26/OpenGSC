@@ -277,9 +277,17 @@ if [[ "${INSTALL_NGINX^^}" == "Y" ]]; then
   NGINX_CONF="/etc/nginx/sites-available/opengsc"
 
   cat > "$NGINX_CONF" <<EOF
+# Access log without query strings: credentials travel there (?token= for Claude Desktop connector
+# links, ?shareToken= for guest dashboards) and must not be written to disk. Referer is left out
+# for the same reason — it repeats the previous page's full URL.
+log_format opengsc_noquery '\$remote_addr - \$remote_user [\$time_local] "\$request_method \$uri \$server_protocol" '
+                           '\$status \$body_bytes_sent "\$http_user_agent"';
+
 server {
     listen 80;
     server_name ${DOMAIN};
+
+    access_log /var/log/nginx/access.log opengsc_noquery;
 
     client_max_body_size 10M;
 

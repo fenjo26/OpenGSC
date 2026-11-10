@@ -28,7 +28,10 @@ const btnPrimary: React.CSSProperties = {
 
 export default function ExtensionTokenCard() {
   const { t } = useLanguage();
-  const [token, setToken] = useState<string | null>(null);
+  // Only the hashed form is stored, so the server returns a display prefix; the full token exists
+  // in this component only right after it was minted, and is gone on the next page load.
+  const [display, setDisplay] = useState<string | null>(null);
+  const [fresh, setFresh] = useState<string | null>(null);
   const [allowedIds, setAllowedIds] = useState("");
   const [notMigrated, setNotMigrated] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -44,7 +47,7 @@ export default function ExtensionTokenCard() {
       .then(d => {
         if (d.notMigrated) setNotMigrated(true);
         else {
-          setToken(d.token ?? null);
+          setDisplay(d.display ?? null);
           setAllowedIds(String(d.allowedIds ?? ""));
         }
       })
@@ -66,7 +69,8 @@ export default function ExtensionTokenCard() {
       const res = await fetch("/api/ext/token", { method: "POST" });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "server_error");
-      setToken(d.token);
+      setFresh(d.token ?? null);
+      setDisplay(d.display ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "network");
     } finally {
@@ -78,7 +82,8 @@ export default function ExtensionTokenCard() {
     setBusy(true); setError(null);
     try {
       await fetch("/api/ext/token", { method: "DELETE" });
-      setToken(null);
+      setFresh(null);
+      setDisplay(null);
     } catch {
       setError("network");
     } finally {
@@ -108,9 +113,9 @@ export default function ExtensionTokenCard() {
   };
 
   const copyToken = async () => {
-    if (!token) return;
+    if (!fresh) return;
     try {
-      await navigator.clipboard.writeText(token);
+      await navigator.clipboard.writeText(fresh);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch { /* clipboard denied — the token is selectable text anyway */ }
@@ -130,18 +135,23 @@ export default function ExtensionTokenCard() {
         <span style={label}>{t("extToken")}</span>
         {loading ? (
           <div style={{ ...hint, display: "flex", alignItems: "center", gap: "6px" }}><Loader2 size={12} className="spin" /> …</div>
-        ) : token ? (
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <code style={{ ...input, flex: 1, overflowX: "auto", whiteSpace: "nowrap" }}>{token}</code>
-            <button style={btn} onClick={copyToken} title={t("mcpCopy")} aria-label={t("mcpCopy")}>
-              {copied ? <Check size={13} color="var(--color-success)" /> : <Copy size={13} />}
-            </button>
-          </div>
+        ) : fresh || display ? (
+          <>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <code style={{ ...input, flex: 1, overflowX: "auto", whiteSpace: "nowrap" }}>{fresh ?? display}</code>
+              {fresh && (
+                <button style={btn} onClick={copyToken} title={t("mcpCopy")} aria-label={t("mcpCopy")}>
+                  {copied ? <Check size={13} color="var(--color-success)" /> : <Copy size={13} />}
+                </button>
+              )}
+            </div>
+            <div style={{ ...hint, color: fresh ? "var(--color-warning)" : undefined }}>{fresh ? t("tokenShownOnce") : t("tokenHiddenHint")}</div>
+          </>
         ) : (
           <div style={hint}>{t("apiKeyNotConfigured")}</div>
         )}
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-          {token ? (
+          {fresh || display ? (
             <>
               <button style={btn} onClick={rotate} disabled={busy}>
                 <RefreshCw size={13} /> {t("extTokenRegen")}

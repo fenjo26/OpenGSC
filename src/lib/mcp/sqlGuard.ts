@@ -20,7 +20,7 @@
 export const SECRET_TABLES: readonly string[] = [
   "User", "Account", "Session", "VerificationToken",
   "Membership", "InstanceSetting", "BlogConnection", "DropProxy",
-  "PushSubscription", "ContentRepository",
+  "PushSubscription", "ContentRepository", "McpLink",
 ];
 
 /**

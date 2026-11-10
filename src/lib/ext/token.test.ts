@@ -55,3 +55,10 @@ test("tokenKey is stable, salt-free and never the raw token", () => {
   assert.notEqual(tokenKey(token), token);
   assert.equal(tokenKey(token).length, 64); // sha256 hex
 });
+
+test("checkExtToken accepts the hashed stored form", async () => {
+  const { storedFormOf } = await import("@/lib/security/apiTokens");
+  const token = mint();
+  assert.deepEqual(checkExtToken(token, storedFormOf(token)), { ok: true, reason: null });
+  assert.deepEqual(checkExtToken(mint(), storedFormOf(token)), { ok: false, reason: "mismatch" });
+});

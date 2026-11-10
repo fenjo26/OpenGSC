@@ -503,13 +503,29 @@ function AccountsSection({ user, accounts, loadingAccounts, removing, onAdd, onR
 }
 
 // ─── Section: API & MCP Keys ──────────────────────────────────────────────────
+type McpUsage = { lastUsedAt: string | null; lastIp: string | null } | null;
+type McpLinkRow = {
+  id: string; label: string; display: string | null; allowWrite: boolean; allowSpend: boolean;
+  createdAt: string; lastUsedAt: string | null; lastIp: string | null;
+};
+
 function ApiSection() {
   const { t } = useLanguage();
-  const [token, setToken] = useState<string | null>(null);
+  // Tokens are stored hashed: the server only ever returns a display prefix. The full value lives
+  // in `fresh` / `freshLink` right after it is minted and is gone on the next page load.
+  const [display, setDisplay] = useState<string | null>(null);
+  const [usage, setUsage] = useState<McpUsage>(null);
+  const [fresh, setFresh] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [visible, setVisible] = useState(false);
   const [copied, setCopied] = useState<string>("");
+  const [links, setLinks] = useState<McpLinkRow[]>([]);
+  const [linksNotMigrated, setLinksNotMigrated] = useState(false);
+  const [linkLabel, setLinkLabel] = useState("");
+  const [linkWrite, setLinkWrite] = useState(false);
+  const [linkSpend, setLinkSpend] = useState(false);
+  const [freshLink, setFreshLink] = useState<string | null>(null);
+  const [linkError, setLinkError] = useState<string>("");
   const [client, setClient] = useState<"claude-code" | "claude-desktop" | "cursor" | "codex">("claude-code");
   // Read from the server rather than hand-maintained here: a second copy of the registry
   // in the UI is a copy that silently goes stale, which is exactly what happened before.
@@ -517,10 +533,22 @@ function ApiSection() {
 
   const appUrl = typeof window !== "undefined" ? window.location.origin : "https://your-domain.com";
   const endpoint = `${appUrl}/api/mcp`;
-  const shownToken = token ?? "<TOKEN>";
+  const shownToken = fresh ?? "<TOKEN>";
+  const desktopUrl = freshLink ?? `${endpoint}?token=<CONNECTOR_LINK_TOKEN>`;
+
+  const loadLinks = () =>
+    fetch("/api/settings/mcp-links").then(r => r.json()).then(d => {
+      setLinksNotMigrated(!!d.notMigrated);
+      setLinks(Array.isArray(d.links) ? d.links : []);
+    }).catch(() => setLinks([]));
 
   useEffect(() => {
-    fetch("/api/settings/mcp-token").then(r => r.json()).then(d => { setToken(d.token ?? null); setLoading(false); }).catch(() => setLoading(false));
+    fetch("/api/settings/mcp-token").then(r => r.json()).then(d => {
+      setDisplay(d.display ?? null);
+      setUsage(d.usage ?? null);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+    loadLinks();
     // Same-origin, so the session cookie authenticates it — no MCP token needed to look.
     fetch("/api/mcp/tools").then(r => r.json()).then(d => setTools(Array.isArray(d.tools) ? d.tools : [])).catch(() => setTools([]));
   }, []);
@@ -529,15 +557,44 @@ function ApiSection() {
     setBusy(true);
     try {
       const d = await fetch("/api/settings/mcp-token", { method: "POST" }).then(r => r.json());
-      if (d.token) { setToken(d.token); setVisible(true); }
+      if (d.token) { setFresh(d.token); setDisplay(d.display ?? null); setUsage(null); }
     } catch {}
     setBusy(false);
   };
   const revoke = async () => {
     setBusy(true);
-    try { await fetch("/api/settings/mcp-token", { method: "DELETE" }); setToken(null); } catch {}
+    try { await fetch("/api/settings/mcp-token", { method: "DELETE" }); setFresh(null); setDisplay(null); setUsage(null); } catch {}
     setBusy(false);
   };
+  const createLink = async () => {
+    setBusy(true); setLinkError("");
+    try {
+      const res = await fetch("/api/settings/mcp-links", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: linkLabel, allowWrite: linkWrite, allowSpend: linkSpend }),
+      });
+      const d = await res.json();
+      if (!res.ok || !d.token) {
+        setLinkError(d.error === "too_many_links" ? t("mcpLinkTooMany") : t("mcpLinksNotMigrated"));
+      } else {
+        setFreshLink(`${endpoint}?token=${d.token}`);
+        setLinkLabel(""); setLinkWrite(false); setLinkSpend(false);
+        setClient("claude-desktop");
+        await loadLinks();
+      }
+    } catch { setLinkError(t("mcpLinksNotMigrated")); }
+    setBusy(false);
+  };
+  const revokeLink = async (id: string) => {
+    setBusy(true);
+    try { await fetch(`/api/settings/mcp-links?id=${encodeURIComponent(id)}`, { method: "DELETE" }); await loadLinks(); } catch {}
+    setBusy(false);
+  };
+  const usageLine = (lastUsedAt: string | null, lastIp: string | null) =>
+    lastUsedAt
+      ? t("mcpLastUsed").replace("{when}", new Date(lastUsedAt).toLocaleString()).replace("{ip}", lastIp || "—")
+      : t("mcpNeverUsed");
   const copy = (what: string, text: string) => {
     navigator.clipboard.writeText(text);
     setCopied(what);
@@ -550,16 +607,16 @@ function ApiSection() {
       cmd: `claude mcp add --transport http opengsc ${endpoint} --header "Authorization: Bearer ${shownToken}"`,
     },
     // Claude Desktop's "Add custom connector" dialog has a URL field and, behind Advanced
-    // settings, OAuth Client ID / Client Secret — and nothing else. There is no header
-    // field, so the Bearer line this panel used to print had nowhere to go; pasting the
-    // token into OAuth Client ID (the obvious guess) silently does nothing. Hence the URL
-    // carries the token instead, with the header-based alternative underneath for anyone
-    // who would rather keep it out of a URL.
+    // settings, OAuth Client ID / Client Secret — and nothing else. There is no header field,
+    // so the token has to travel in the URL. That URL is a connector link (McpLink), not the
+    // main token: a URL ends up in logs and screenshots, so a link reads and runs free actions
+    // unless the owner allowed more when creating it, and it can be revoked on its own.
+    // The header-based mcp-remote bridge underneath keeps the main token out of any URL.
     "claude-desktop": {
       label: "Claude Desktop",
       cmd: `${t("mcpDesktopHint")}
 
-URL: ${endpoint}?token=${shownToken}
+URL: ${desktopUrl}
 
 ${t("mcpDesktopNoHeader")}
 
@@ -617,24 +674,86 @@ http_headers = { "Authorization" = "Bearer ${shownToken}" }`,
           <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--color-text-primary)", marginBottom: "8px" }}>{t("mcpTokenTitle")}</div>
           {loading ? (
             <div style={{ fontSize: "13px", color: "var(--color-text-secondary)" }}>…</div>
-          ) : token ? (
-            <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-              <code style={{ flex: 1, minWidth: "220px", padding: "10px 14px", fontSize: "12px", fontFamily: "monospace", color: "var(--color-text-primary)", background: "rgba(255,255,255,0.04)", border: "1px solid var(--color-border)", borderRadius: "8px", wordBreak: "break-all" }}>
-                {visible ? token : token.slice(0, 10) + "•".repeat(24)}
-              </code>
-              <button onClick={() => setVisible(v => !v)} style={{ padding: "9px 10px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "transparent", color: "var(--color-text-secondary)", cursor: "pointer" }}><Eye size={14} /></button>
-              <button onClick={() => copy("token", token)} style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "transparent", color: copied === "token" ? "#10B981" : "var(--color-text-secondary)", fontSize: "12px", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "5px" }}>
-                {copied === "token" ? <CheckCircle size={13} /> : <Copy size={13} />} {copied === "token" ? t("mcpCopied") : t("mcpCopy")}
-              </button>
-              <button onClick={generate} disabled={busy} style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "transparent", color: "var(--color-text-secondary)", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>{t("mcpRotate")}</button>
-              <button onClick={revoke} disabled={busy} style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid rgba(239,68,68,0.25)", background: "rgba(239,68,68,0.08)", color: "#f87171", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>{t("mcpRevoke")}</button>
+          ) : fresh || display ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                <code style={{ flex: 1, minWidth: "220px", padding: "10px 14px", fontSize: "12px", fontFamily: "monospace", color: "var(--color-text-primary)", background: "rgba(255,255,255,0.04)", border: "1px solid var(--color-border)", borderRadius: "8px", wordBreak: "break-all" }}>
+                  {fresh ?? display}
+                </code>
+                {fresh && (
+                  <button onClick={() => copy("token", fresh)} style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "transparent", color: copied === "token" ? "#10B981" : "var(--color-text-secondary)", fontSize: "12px", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "5px" }}>
+                    {copied === "token" ? <CheckCircle size={13} /> : <Copy size={13} />} {copied === "token" ? t("mcpCopied") : t("mcpCopy")}
+                  </button>
+                )}
+                <button onClick={generate} disabled={busy} style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "transparent", color: "var(--color-text-secondary)", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>{t("mcpRotate")}</button>
+                <button onClick={revoke} disabled={busy} style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid rgba(239,68,68,0.25)", background: "rgba(239,68,68,0.08)", color: "#f87171", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>{t("mcpRevoke")}</button>
+              </div>
+              <div style={{ fontSize: "12px", color: fresh ? "#FCD34D" : "var(--color-text-secondary)" }}>{fresh ? t("tokenShownOnce") : t("tokenHiddenHint")}</div>
+              {!fresh && <div style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>{usageLine(usage?.lastUsedAt ?? null, usage?.lastIp ?? null)}</div>}
             </div>
           ) : (
             <button onClick={generate} disabled={busy} style={{ padding: "10px 18px", borderRadius: "8px", border: "none", background: "var(--color-accent-blue)", color: "#fff", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>
               {busy ? "…" : t("mcpGenerate")}
             </button>
           )}
-          <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginTop: "8px", lineHeight: 1.6 }}>{t("mcpTokenNote")}</div>
+          <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginTop: "8px", lineHeight: 1.6 }}>{t("mcpTokenNote")} {t("mcpUrlTokenNote")}</div>
+        </div>
+
+        {/* Connector links: separate, scoped tokens for clients that only take a URL */}
+        <div style={{ marginBottom: "20px" }}>
+          <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--color-text-primary)", marginBottom: "4px" }}>{t("mcpLinksTitle")}</div>
+          <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginBottom: "10px", lineHeight: 1.6 }}>{t("mcpLinksSub")}</div>
+          {linksNotMigrated ? (
+            <div style={{ fontSize: "12px", color: "#FCD34D" }}>{t("mcpLinksNotMigrated")}</div>
+          ) : (
+            <>
+              {freshLink && (
+                <div style={{ marginBottom: "10px", display: "flex", flexDirection: "column", gap: "6px" }}>
+                  <div style={{ fontSize: "12px", color: "#FCD34D" }}>{t("mcpLinkNew")}</div>
+                  <div style={codeBox}>
+                    <code style={{ flex: 1, padding: "10px 14px", fontSize: "12px", fontFamily: "monospace", color: "var(--color-text-primary)", wordBreak: "break-all" }}>{freshLink}</code>
+                    <button onClick={() => copy("link", freshLink)} style={{ padding: "0 14px", background: "transparent", border: "none", borderLeft: "1px solid var(--color-border)", color: copied === "link" ? "#10B981" : "var(--color-text-secondary)", cursor: "pointer" }}>
+                      {copied === "link" ? <CheckCircle size={15} /> : <Copy size={15} />}
+                    </button>
+                  </div>
+                </div>
+              )}
+              {links.length === 0 ? (
+                <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginBottom: "10px" }}>{t("mcpLinksEmpty")}</div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "10px" }}>
+                  {links.map(l => (
+                    <div key={l.id} style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap", padding: "8px 12px", border: "1px solid var(--color-border)", borderRadius: "8px" }}>
+                      <div style={{ flex: 1, minWidth: "200px", display: "flex", flexDirection: "column", gap: "2px" }}>
+                        <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--color-text-primary)" }}>
+                          {l.label || "—"} <code style={{ fontSize: "11px", color: "var(--color-text-secondary)", fontWeight: 400 }}>{l.display}</code>
+                        </div>
+                        <div style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>
+                          {[t("mcpLinkRead"), l.allowWrite ? t("mcpLinkScopeWrite") : null, l.allowSpend ? t("mcpLinkScopeSpend") : null].filter(Boolean).join(" · ")}
+                          {" — "}{usageLine(l.lastUsedAt, l.lastIp)}
+                        </div>
+                      </div>
+                      <button onClick={() => revokeLink(l.id)} disabled={busy} style={{ padding: "6px 10px", borderRadius: "8px", border: "1px solid rgba(239,68,68,0.25)", background: "rgba(239,68,68,0.08)", color: "#f87171", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>{t("mcpLinkRevoke")}</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px", padding: "12px", border: "1px dashed var(--color-border)", borderRadius: "8px" }}>
+                <input value={linkLabel} onChange={e => setLinkLabel(e.target.value)} maxLength={80} placeholder={t("mcpLinkLabel")}
+                  style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "transparent", color: "var(--color-text-primary)", fontSize: "13px" }} />
+                <label style={{ display: "flex", gap: "8px", alignItems: "center", fontSize: "12px", color: "var(--color-text-secondary)", cursor: "pointer" }}>
+                  <input type="checkbox" checked={linkWrite} onChange={e => setLinkWrite(e.target.checked)} /> {t("mcpLinkAllowWrite")}
+                </label>
+                <label style={{ display: "flex", gap: "8px", alignItems: "center", fontSize: "12px", color: "var(--color-text-secondary)", cursor: "pointer" }}>
+                  <input type="checkbox" checked={linkSpend} onChange={e => setLinkSpend(e.target.checked)} /> {t("mcpLinkAllowSpend")}
+                </label>
+                <div>
+                  <button onClick={createLink} disabled={busy} style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "var(--color-accent-blue)", color: "#fff", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>{t("mcpLinkCreate")}</button>
+                </div>
+                {linkError && <div style={{ fontSize: "12px", color: "#f87171" }}>{linkError}</div>}
+              </div>
+            </>
+          )}
         </div>
 
         {/* Endpoint */}
@@ -658,7 +777,7 @@ http_headers = { "Authorization" = "Bearer ${shownToken}" }`,
               </button>
             ))}
           </div>
-          {!token && <div style={{ fontSize: "12px", color: "#FCD34D" }}>{t("mcpNoTokenYet")}</div>}
+          {!fresh && <div style={{ fontSize: "12px", color: "#FCD34D" }}>{display ? t("mcpPasteToken") : t("mcpNoTokenYet")}</div>}
           <div style={codeBox}>
             <pre style={{ flex: 1, padding: "12px 16px", fontSize: "12px", fontFamily: "monospace", color: "var(--color-text-secondary)", whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0 }}>{commands[client].cmd}</pre>
             <button onClick={() => copy("cmd", commands[client].cmd)} style={{ padding: "0 14px", background: "transparent", border: "none", borderLeft: "1px solid var(--color-border)", color: copied === "cmd" ? "#10B981" : "var(--color-text-secondary)", cursor: "pointer", flexShrink: 0 }}>

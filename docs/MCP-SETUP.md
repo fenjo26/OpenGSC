@@ -30,8 +30,16 @@ web UI both read it for free.
 
 ## 1. Generate a token
 
-**Settings → Integrations → Generate token.** The token (`ogsc_…`) grants read access to all
-your OpenGSC data — treat it like a password; you can rotate or revoke it on the same page.
+**Settings → Integrations → Generate token.** The token (`ogsc_…`) grants access to all your
+OpenGSC data — treat it like a password; you can rotate or revoke it on the same page.
+
+It is shown **once**, when you create it: the server keeps only a hash, and the page afterwards
+shows just its beginning (`ogsc_1a2b3c4…`) with when and from which address it was last used.
+Lost it? Rotate it. You get a notification (Telegram, Slack, e-mail… whatever channels are on)
+when a token is used from an address it has never been used from before.
+
+Sent in an `Authorization: Bearer` header the token can do everything your role allows. Sent in
+a URL (`?token=`) it only reads and runs free actions — see Claude Desktop below.
 
 ## 2. Connect your client
 
@@ -44,11 +52,15 @@ claude mcp add --transport http opengsc https://your-domain.com/api/mcp \
   --header "Authorization: Bearer ogsc_YOUR_TOKEN"
 ```
 
-**Claude Desktop** — Settings → Connectors → *Add custom connector*, and paste the token into
-the **URL**:
+**Claude Desktop** — its connector dialog only takes a URL, so the token has to travel in it.
+Do not use your main token for that: create a **connector link** in Settings → API & MCP →
+*Connector links*. A link is a separate token made for one client: it reads and runs free
+actions, and you tick *Allow changes* and/or *Allow publishing and spending* only if this client
+needs them. Each link can be revoked on its own. Then Settings → Connectors → *Add custom
+connector*, and paste the link as the **URL**:
 
 ```text
-https://your-domain.com/api/mcp?token=ogsc_YOUR_TOKEN
+https://your-domain.com/api/mcp?token=ogsc_link_…
 ```
 
 Leave **Advanced settings** empty. Those two fields are *OAuth Client ID* and *OAuth Client
@@ -57,10 +69,11 @@ token pasted there is read as an OAuth client id, does nothing, and the connecto
 without explaining why. That is the single most common reason this does not connect. Claude
 Code, Cursor and Codex all send headers properly; only the Desktop dialog is limited.
 
-The trade-off of a token in a URL is that it appears in your nginx access log and in whatever
-stores the connector config, where a header would not. Over HTTPS it is encrypted in transit
-like any other part of the request, and you can rotate it from Settings at any time. If you
-would rather keep it out of the URL, use the `mcp-remote` bridge instead — Settings →
+Why the limits: a URL is the credential that ends up in access logs, browser history,
+connector configs, screenshots and support chats. A leaked read-only link exposes data; a
+leaked unrestricted one could publish to your WordPress sites and spend your AI credits. The
+main token still works in a URL — but only for reading and free actions; a tool that needs more
+answers with an error that says so. If you would rather keep any token out of the URL, use the `mcp-remote` bridge instead — Settings →
 Developer → *Edit Config*, then restart Claude Desktop (needs Node.js installed):
 
 ```json

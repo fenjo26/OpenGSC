@@ -2,7 +2,8 @@
 // No Prisma here: the DB half lives in auth.ts; these are the decisions a test can make
 // without a database (wave-oct README §5).
 
-import { createHash, timingSafeEqual } from "crypto";
+import { createHash } from "crypto";
+import { tokenMatches } from "@/lib/security/apiTokens";
 
 /** Prefix shared with /api/ext/token — keeps extension tokens visually distinct from MCP ones.
  *  The route generates `"ogscext_" + randomBytes(24).toString("hex")` (same shape as the MCP
@@ -28,19 +29,16 @@ export interface TokenCheck {
 /**
  * Verify a presented token against the stored one in constant time.
  *
- * The database narrows the candidate by equality on a unique column before this runs, so the
- * timing channel this closes is narrow — but the brief asks for constant-time comparison and
- * the cost is two sha256s. Hashing both sides first also sidesteps timingSafeEqual's
- * length-equality requirement without leaking the stored length through an early return.
+ * The stored value is either the hashed form (`<prefix>:sha256:<hex>`, every token minted or used
+ * since tokens are hashed at rest) or a legacy plaintext row; tokenMatches handles both, and the
+ * auth guard rewrites a legacy row on its first successful use.
  */
 export function checkExtToken(presented: string | null, stored: string | null): TokenCheck {
   if (presented == null || !presented.trim()) return { ok: false, reason: "missing" };
   const candidate = presented.trim();
   if (!candidate.startsWith(EXT_TOKEN_PREFIX)) return { ok: false, reason: "format" };
   if (stored == null || !stored.trim()) return { ok: false, reason: "revoked" };
-  const a = createHash("sha256").update(candidate).digest();
-  const b = createHash("sha256").update(stored.trim()).digest();
-  const ok = timingSafeEqual(a, b);
+  const ok = tokenMatches(candidate, stored);
   return { ok, reason: ok ? null : "mismatch" };
 }
 

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
+import { resolveMcpCredential } from "@/lib/mcp/tokenAuth";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { MCP_TOOLS } from "@/lib/mcp/tools";
-import { rawQuery } from "@/lib/db/raw";
 
 // GET /api/mcp/tools — the tool registry as plain JSON.
 //
@@ -21,25 +21,10 @@ import { rawQuery } from "@/lib/db/raw";
 // see which tools exist.
 
 async function authUserId(req: Request): Promise<string | null> {
-  const header = req.headers.get("authorization") ?? "";
-  const bearer = header.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
-  let token = bearer || req.headers.get("x-api-key")?.trim() || "";
-  // Same query-parameter fallback as /api/mcp, so a connection can be checked with the
-  // exact URL the client was given — see the note there on why it exists.
-  if (!token) {
-    try {
-      const qs = new URL(req.url).searchParams;
-      token = (qs.get("token") || qs.get("key") || qs.get("api_key") || "").trim();
-    } catch { /* unparseable URL */ }
-  }
-  if (token.startsWith("ogsc_")) {
-    try {
-      const rows = await rawQuery<{ id: string }[]>(`SELECT id FROM "User" WHERE mcpToken = ?`, token);
-      if (rows?.[0]?.id) return rows[0].id;
-    } catch {
-      // mcpToken column missing (prisma db push not run yet) — fall through to the session.
-    }
-  }
+  // Same resolution as /api/mcp (hashed storage, connector links, query fallback). Listing tools
+  // needs no capability beyond reading, so any valid credential will do.
+  const credential = await resolveMcpCredential(req);
+  if (credential) return credential.actorId;
   // No token, or a token that matched nothing: accept the owner's own browser session.
   // Wrapped because this is the fallback branch — if the session lookup fails for any
   // reason, the honest answer is "not authorized", not a 500 on a diagnostic endpoint

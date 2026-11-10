@@ -6,6 +6,8 @@ OpenGSC has a built-in **Model Context Protocol** server at `/api/mcp` with **95
 
 **Settings → Integrations → Generate token.** The token (`ogsc_…`) grants access to your workspace data, so treat it like a password. Rotate or revoke it on the same page; rotating invalidates the old one immediately.
 
+The token is shown **once**: only its hash is stored, and the page then shows its beginning plus when and from where it was last used. You are notified when a token is used from a new address. In a header it can do everything your role allows; in a URL (`?token=`) it only reads and runs free actions.
+
 A token belongs to a person and inherits their **role**: a viewer's token can't call tools that write, and only Admin/Owner tokens can call paid tools. A suspended member's token stops working on the next call.
 
 ## 2. Connect your client
@@ -19,10 +21,10 @@ claude mcp add --transport http opengsc https://your-domain.com/api/mcp \
   --header "Authorization: Bearer ogsc_YOUR_TOKEN"
 ```
 
-**Claude Desktop**: Settings → Connectors → *Add custom connector*. Put the token **in the URL**:
+**Claude Desktop**: the connector dialog only takes a URL. Create a **connector link** (Settings → API & MCP → *Connector links*): a separate token that reads and runs free actions, with *changes* and *publishing & spending* ticked per link only if needed, revocable on its own. Then Settings → Connectors → *Add custom connector* and paste the link as the URL:
 
 ```text
-https://your-domain.com/api/mcp?token=ogsc_YOUR_TOKEN
+https://your-domain.com/api/mcp?token=ogsc_link_…
 ```
 
 **Leave "Advanced settings" empty.** Those fields are OAuth Client ID / Secret. A token pasted there does nothing, and the connector fails without saying why. This is the most common reason Desktop doesn't connect.
@@ -114,6 +116,7 @@ The repo ships ready-made workflows in [`.agents/skills/`](https://github.com/fe
 | HTML login page or `307` to `/api/auth/signin` | Your instance is too old; update it |
 | Claude Desktop "connector failed", no detail | Token was put in *Advanced settings*. Clear them and put `?token=…` on the URL |
 | `401` | Wrong or rotated token |
+| Tool answers "a token sent in the URL only reads…" / "this connector link does not allow…" | Create a connector link with *changes* or *publishing & spending* allowed, or use the header form |
 | Header form works, `?token=` form doesn't | Your reverse proxy strips query strings |
 | "Table not available" from a tool | The instance hasn't run `npx prisma db push` since that module was added; update |
 

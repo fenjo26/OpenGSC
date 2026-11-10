@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { rawExec, rawQuery } from "@/lib/db/raw";
 import { newExtToken } from "@/lib/ext/auth";
+import { displayOf, storedFormOf } from "@/lib/security/apiTokens";
 import { normalizeAllowedIdsInput } from "@/lib/ext/origin";
 
 // /api/ext/token — browser-extension token management for the Settings card
@@ -10,8 +11,8 @@ import { normalizeAllowedIdsInput } from "@/lib/ext/origin";
 // then uses. Same shape and convention as /api/settings/mcp-token, raw SQL so an instance that
 // hasn't run `prisma db push` degrades to a message instead of a 500.
 //
-// GET    → { token: string | null, allowedIds: string }   (extAllowedIds, newline-joined)
-// POST   → generate or rotate the token; returns { token }
+// GET    → { exists, display, allowedIds }   — never the token: only its hash is stored
+// POST   → generate or rotate the token; returns { token } — the one time it is shown
 // DELETE → revoke the token (extension gets 401 everywhere immediately)
 // PUT    → save extAllowedIds { allowedIds: string }; invalid lines are dropped and reported
 
@@ -28,9 +29,10 @@ export async function GET() {
     const rows: { extToken?: string | null; extAllowedIds?: string | null }[] = await rawQuery(
       `SELECT extToken, extAllowedIds FROM "User" WHERE id = ?`, userId,
     );
-    return NextResponse.json({ token: rows?.[0]?.extToken ?? null, allowedIds: rows?.[0]?.extAllowedIds ?? "" });
+    const display = displayOf(rows?.[0]?.extToken);
+    return NextResponse.json({ exists: !!display, display, allowedIds: rows?.[0]?.extAllowedIds ?? "" });
   } catch {
-    return NextResponse.json({ token: null, allowedIds: "", notMigrated: true });
+    return NextResponse.json({ exists: false, display: null, allowedIds: "", notMigrated: true });
   }
 }
 
@@ -39,8 +41,8 @@ export async function POST() {
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const token = newExtToken();
   try {
-    await rawExec(`UPDATE "User" SET extToken = ? WHERE id = ?`, token, userId);
-    return NextResponse.json({ token });
+    await rawExec(`UPDATE "User" SET extToken = ? WHERE id = ?`, storedFormOf(token), userId);
+    return NextResponse.json({ token, display: displayOf(storedFormOf(token)) });
   } catch {
     return NextResponse.json({ error: "not_migrated" }, { status: 500 });
   }

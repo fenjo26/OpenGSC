@@ -106,12 +106,20 @@ export default withAuth(
   }
 );
 
-// Protect all routes except /login, /api/auth and the anonymously fetchable assets.
+// Protect all routes except /login, /api/auth/* and the anonymously fetchable assets.
 // robots.txt is one of those assets on purpose: a redirect to the login page instead of
 // the file reads to a crawler as a broken/garbage robots.txt, and the noindex pair
 // (layout.tsx + next.config.ts) needs crawlers fetching pages, not being bounced.
+//
+// Every exclusion is anchored. The image exclusion used to be `.*\.png$`, which skipped this
+// gate for ANY path ending in .png — `/site/<anything>.png` included, because a dynamic segment
+// accepts the suffix. Nothing leaked only because those pages happen to be client shells and the
+// API checks its own session; the first server-rendered dynamic page would have served its data
+// without a login. Now only a file in the site root (`/logo.svg`, `/favicon.ico`) is exempt; the
+// nested public assets either need no exemption (`/partners/*` is only shown after login) or are
+// let through by name in `authorized` above (`/icons/`, the manifest, the service worker).
 export const config = {
   matcher: [
-    "/((?!login|api/auth|robots.txt|_next/static|_next/image|favicon.ico|favicon.svg|logo.svg|.*\\.svg$|.*\\.png$|.*\\.ico$).*)",
+    "/((?!login(?:/|$)|api/auth/|robots\\.txt$|_next/static/|_next/image|[^/]+\\.svg$|[^/]+\\.png$|[^/]+\\.ico$).*)",
   ],
 };

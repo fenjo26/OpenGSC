@@ -16,7 +16,8 @@
 
 import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
-import { rawQuery } from "@/lib/db/raw";
+import { rawExec, rawQuery } from "@/lib/db/raw";
+import { isHashedForm, lookupForms } from "@/lib/security/apiTokens";
 import { workspaceOwner } from "@/lib/team/owner";
 import { can, effectiveCapabilities, statusGrantsAccess, type Capability, type WorkspaceRole } from "@/lib/team/roles";
 import { checkExtToken, EXT_TOKEN_PREFIX, isExtTokenFormat, tokenKey } from "./token";
@@ -49,11 +50,18 @@ interface ExtUserRow {
 }
 
 async function userByToken(token: string): Promise<ExtUserRow | null | "not_migrated"> {
+  // Hashed at rest (src/lib/security/apiTokens.ts): look up by the hashed form, or by the
+  // plaintext a row minted before hashing still holds — and rewrite that row on first use.
+  const [hashed, plain] = lookupForms(token);
   try {
     const rows: ExtUserRow[] = await rawQuery(
-      `SELECT id, extToken, extAllowedIds FROM "User" WHERE extToken = ? LIMIT 1`, token.trim(),
+      `SELECT id, extToken, extAllowedIds FROM "User" WHERE extToken = ? OR extToken = ? LIMIT 1`, hashed, plain,
     );
-    return rows?.[0] ?? null;
+    const row = rows?.[0] ?? null;
+    if (row && row.extToken && !isHashedForm(row.extToken) && checkExtToken(token, row.extToken).ok) {
+      await rawExec(`UPDATE "User" SET extToken = ? WHERE id = ? AND extToken = ?`, hashed, row.id, plain).catch(() => {});
+    }
+    return row;
   } catch {
     return "not_migrated"; // extToken column missing — prisma db push not run yet
   }
