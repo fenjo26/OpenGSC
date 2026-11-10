@@ -12,6 +12,9 @@
 
   var CR = globalThis.chrome || globalThis.browser;
   if (!CR || !CR.runtime || !CR.runtime.id) return; // not our content script context
+  // once per page: an extension reload or a leftover dynamic registration must not double it
+  if (globalThis.__opengscSerpOverlay) return;
+  globalThis.__opengscSerpOverlay = true;
 
   var state = {
     settings: null,
@@ -64,6 +67,7 @@
       CR.storage.local.get(["extSettings"], function (stored) {
         var s = (stored && stored.extSettings) || {};
         resolve({
+          serpOverlay: s.serpOverlay !== false,
           serpCompact: !!s.serpCompact,
           serpPositions: s.serpPositions !== false,
           serpAutoEnrich: s.serpAutoEnrich !== false,
@@ -105,7 +109,7 @@
     ".head button:hover{background:#f8f9fa;}",
     ".head select{padding:2px 6px;border-radius:6px;border:1px solid #dadce0;font-size:11.5px;}",
     // position number in the left gutter (host is a zero-size block right before the result)
-    ".pos{position:absolute;right:14px;width:34px;text-align:right;font:600 15px/1.25 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:#70757a;}",
+    ".pos{position:absolute;right:16px;width:34px;text-align:right;display:block;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;font-weight:600;font-size:16px;line-height:26px;color:#70757a;font-variant-numeric:tabular-nums;}",
     ".dr b{color:#202124;}",
     // side card
     ".card{box-sizing:border-box;border:1px solid #dadce0;border-radius:12px;padding:12px 14px;background:#fff;color:#3c4043;margin:0 0 18px;font-size:12.5px;}",
@@ -352,8 +356,20 @@
     var title = result.titleNode;
     var offset = 0;
     try {
-      if (title) offset = Math.max(0, Math.round(title.getBoundingClientRect().top - block.getBoundingClientRect().top));
-    } catch { /* offset 0 */ }
+      if (title) {
+        // the host sits right before the block, so block-top is our zero; centre the number on
+        // the title's FIRST line (titles wrap) using the title's own line box
+        var cs = getComputedStyle(title);
+        var fontPx = parseFloat(cs.fontSize) || 20;
+        var linePx = parseFloat(cs.lineHeight);
+        if (!linePx || isNaN(linePx)) linePx = Math.round(fontPx * 1.3);
+        var rect = title.getClientRects()[0] || title.getBoundingClientRect();
+        offset = Math.max(0, Math.round(rect.top - block.getBoundingClientRect().top));
+        badge.style.height = linePx + "px";
+        badge.style.lineHeight = linePx + "px";
+        badge.style.fontSize = Math.round(Math.max(13, fontPx * 0.8)) + "px";
+      }
+    } catch { /* default size, offset 0 */ }
     badge.style.top = offset + "px";
     host.layer.appendChild(badge);
     block.parentNode.insertBefore(host.el, block);
@@ -803,6 +819,7 @@
 
     getSettings().then(function (s) {
       state.settings = s;
+      if (!s.serpOverlay) return; // switched off in the options
       if (s.serpHideAds) applyAdHiding(true);
       CR.storage.local.get(["baseUrl"], function (stored) {
         state.instanceBase = String((stored && stored.baseUrl) || "").replace(/\/+$/, "");

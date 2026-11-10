@@ -18,8 +18,8 @@ var ExtSettings = (function () {
   var OVERLAY_SCRIPT_ID = "opengsc-serp";
 
   var DEFAULTS = {
-    panelAllSites: false,        // true only after chrome.permissions.request({origins:["http://*/*","https://*/*"]}) succeeded
-    serpOverlay: false,          // on/off
+    panelAllSites: true,        // true only after chrome.permissions.request({origins:["http://*/*","https://*/*"]}) succeeded
+    serpOverlay: true,           // on by default — manifest content_scripts cover every supported engine
     serpDomains: ["www.google.com"], // subset of GOOGLE_SEARCH_HOSTS the user enabled AND granted
     serpCompact: false,          // one-line chips only
     serpPositions: true,         // a position number left of every organic result
@@ -110,36 +110,17 @@ var ExtSettings = (function () {
    * unregisters; otherwise it registers or updates in place. Domains whose permission was
    * revoked in chrome://extensions are dropped from serpDomains.
    */
+  /**
+   * Since 1.2.1 the overlay is a static content script in the manifest (all Google domains,
+   * Bing, Yandex) with host access granted at install, so it works without any setup. The
+   * dynamic "opengsc-serp" registration older versions made is removed here — otherwise the
+   * overlay would be injected twice on the domains a user had ticked.
+   */
   function syncOverlayRegistration() {
-    if (!CR || !CR.scripting || !CR.scripting.registerContentScripts) return;
-    get().then(function (s) {
-      if (!s.serpOverlay) { unregisterOverlay(); return; }
-      var hosts = (s.serpDomains || []).filter(Boolean);
-      if (!hosts.length) { unregisterOverlay(); return; }
-      Promise.all(hosts.map(function (h) {
-        return hasOrigin("https://" + h + "/*").then(function (ok) { return ok ? h : null; });
-      })).then(function (checked) {
-        var valid = checked.filter(Boolean);
-        if (valid.length !== hosts.length) set({ serpDomains: valid }); // permission revoked → drop
-        if (!valid.length) { unregisterOverlay(); return; }
-        var spec = {
-          id: OVERLAY_SCRIPT_ID,
-          matches: valid.map(function (h) { return "https://" + h + "/search*"; }),
-          js: ["lib/i18n.js", "lib/protocol.js", "lib/serpParse.js", "serp/overlay.js"],
-          runAt: "document_idle",
-          allFrames: false,
-        };
-        try {
-          CR.scripting.getRegisteredContentScripts(function (regs) {
-            var exists = (regs || []).some(function (r) { return r.id === OVERLAY_SCRIPT_ID; });
-            var done = function () { void CR.runtime.lastError; };
-            if (exists) CR.scripting.updateContentScripts([spec], done);
-            else CR.scripting.registerContentScripts([spec], done);
-          });
-        } catch { /* unregister/reregister races are healed on the next sync */ }
-      });
-    });
+    if (!CR || !CR.scripting || !CR.scripting.unregisterContentScripts) return;
+    unregisterOverlay();
   }
+
 
   return {
     DEFAULTS: DEFAULTS,

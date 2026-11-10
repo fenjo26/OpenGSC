@@ -396,6 +396,9 @@ export async function enrichHosts(userId: string, hosts: string[]): Promise<Enri
   const captureBodies = await resolveCaptureBodies(userId);
   await withCallContext({ userId, feature: "serpmon-cron", captureBodies }, () =>
     enrichPendingHosts({
+      // userId is required for the DR half: without it enrichPendingHosts silently fetched
+      // age only, and every overlay row stayed at "DR —".
+      userId,
       hostIds,
       limit: EXT_ENRICH_MAX,
       deadline: Date.now() + EXT_ENRICH_DEADLINE_MS,

@@ -207,33 +207,24 @@ function loadLists() {
   });
 }
 
+function serpPatch() {
+  return {
+    serpOverlay: el("serpOverlay").checked,
+    serpCompact: el("serpCompact").checked,
+    serpPositions: el("serpPositions").checked,
+    serpAutoEnrich: el("serpAutoEnrich").checked,
+    serpHideAds: el("serpHideAds").checked,
+    defaultSiteId: !el("defaultSite").classList.contains("hidden") ? el("defaultSite").value : el("defaultSiteText").value.trim(),
+    defaultProjectId: !el("defaultProject").classList.contains("hidden") ? el("defaultProject").value : el("defaultProjectText").value.trim(),
+  };
+}
+
+/** The overlay runs on every supported search engine out of the box (manifest
+ *  content_scripts + host access granted at install); these switches only tune it. */
 function saveSerp() {
-  var hosts = Object.keys(domainChecked).filter(function (h) { return domainChecked[h]; });
-  if (el("serpOverlay").checked && !hosts.length) {
-    setSerpStatus(msg("optSerpDomains"), "warn");
-    return;
-  }
-  ExtSettings.requestSerpDomains(hosts).then(function (grantedHosts) {
-    // Chrome grants or refuses the whole prompt; still, only keep what it actually granted.
-    var granted = (grantedHosts || []).filter(function (h) { return hosts.indexOf(h) !== -1; });
-    ExtSettings.set({
-      serpOverlay: el("serpOverlay").checked,
-      serpDomains: granted,
-      serpCompact: el("serpCompact").checked,
-      serpPositions: el("serpPositions").checked,
-      serpAutoEnrich: el("serpAutoEnrich").checked,
-      serpHideAds: el("serpHideAds").checked,
-      defaultSiteId: !el("defaultSite").classList.contains("hidden") ? el("defaultSite").value : el("defaultSiteText").value.trim(),
-      defaultProjectId: !el("defaultProject").classList.contains("hidden") ? el("defaultProject").value : el("defaultProjectText").value.trim(),
-    }).then(function (saved) {
-      ExtSettings.syncOverlayRegistration();
-      currentDefaults = { siteId: saved.defaultSiteId || "", projectId: saved.defaultProjectId || "" };
-      Object.keys(domainChecked).forEach(function (h) {
-        domainChecked[h] = granted.indexOf(h) !== -1;
-      });
-      renderDomains(el("domainSearch").value);
-      setSerpStatus(msg("optSaved"), "ok");
-    });
+  ExtSettings.set(serpPatch()).then(function (saved) {
+    currentDefaults = { siteId: saved.defaultSiteId || "", projectId: saved.defaultProjectId || "" };
+    setSerpStatus(msg("optSaved"), "ok");
   });
 }
 
@@ -273,10 +264,7 @@ function boot() {
 
   // Panel + overlay state (the defaults propose the UI language's country domain).
   ExtSettings.get().then(function (s) {
-    var suggested = GoogleDomains.suggestedHosts(CR.i18n.getUILanguage());
-    var enabled = (s.serpDomains && s.serpDomains.length) ? s.serpDomains : suggested;
-    ALL_SEARCH_HOSTS.forEach(function (h) { domainChecked[h] = enabled.indexOf(h) !== -1; });
-    el("serpOverlay").checked = !!s.serpOverlay;
+    el("serpOverlay").checked = s.serpOverlay !== false;
     el("serpCompact").checked = !!s.serpCompact;
     el("serpPositions").checked = s.serpPositions !== false;
     el("serpAutoEnrich").checked = s.serpAutoEnrich !== false;
@@ -284,13 +272,14 @@ function boot() {
     currentDefaults = { siteId: s.defaultSiteId || "", projectId: s.defaultProjectId || "" };
     el("defaultSiteText").value = s.defaultSiteId || "";
     el("defaultProjectText").value = s.defaultProjectId || "";
-    renderDomains("");
   });
 
   refreshPanelPerm();
   el("panelAllSites").addEventListener("change", togglePanelAllSites);
 
-  el("domainSearch").addEventListener("input", function () { renderDomains(el("domainSearch").value); });
+  ["serpOverlay", "serpPositions", "serpAutoEnrich", "serpHideAds", "serpCompact"].forEach(function (id) {
+    el(id).addEventListener("change", saveSerp); // switches apply at once — no Save needed
+  });
   el("serpSave").addEventListener("click", saveSerp);
 
   loadLists();
