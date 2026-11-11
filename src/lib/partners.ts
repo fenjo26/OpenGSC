@@ -177,6 +177,14 @@ const PARTNERS = [
     tileBg: "#ffffff",
     imgStyle: { maxHeight: "32px" } as CSSProperties,
   },
+  {
+    id: "Rolaproxy",
+    name: "Rolaproxy",
+    href: "https://www.rolaproxy.com?lj=03&pt=opengsc&rop=wangym",
+    logo: "/partners/rolaproxy-logo.png",
+    tileBg: "#ffffff",
+    imgStyle: { maxHeight: "32px" } as CSSProperties,
+  },
 ] as const satisfies readonly PartnerEntry[];
 
 export type PartnerId = (typeof PARTNERS)[number]["id"];
