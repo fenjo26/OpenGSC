@@ -3275,6 +3275,31 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
     if (!urls.length) return;
     setXrChecking(true); setXrCheckMsg("");
 
+    // XMLRiver: the route checks at most 50 URLs per call (sequential, ~0.3–10 s each), and the
+    // whole-site list used to go out in one request — so "check all" silently stopped at 50.
+    // Sent in batches of 50 with running totals instead.
+    if (via === "xr") {
+      let ok = 0, err = 0, charged = 0, hasCharge = false;
+      try {
+        for (let i = 0; i < urls.length; i += 50) {
+          setXrCheckMsg(`${t("idxChecked")} ${Math.min(i, urls.length)}/${urls.length}…`);
+          const res = await fetch("/api/indexing/xmlriver", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ siteDbId, urls: urls.slice(i, i + 50) }),
+          });
+          const d = await res.json().catch(() => ({}));
+          if (!res.ok) { setXrCheckMsg(`✗ ${d.error ?? t("errGeneric")}${ok ? ` · ${t("idxChecked")} ${ok}` : ""}`); setXrChecking(false); await loadUrls(page, statusFilter, search); return; }
+          ok += d.checked ?? 0; err += d.errors ?? 0;
+          if (d.charged != null) { charged += Number(d.charged); hasCharge = true; }
+        }
+        setXrCheckMsg(`✓ ${t("idxChecked")} ${ok} URLs${err ? ` · ${err} ${t("idxErrors")}` : ""}${hasCharge ? ` · $${charged.toFixed(4)}` : ""}`);
+        await loadUrls(page, statusFilter, search);
+      } catch (e) { setXrCheckMsg(`✗ ${(e as Error).message}`); }
+      setXrChecking(false);
+      return;
+    }
+
     try {
       const endpoint = via === "neural" ? "/api/indexing/neural/check" : "/api/indexing/xmlriver";
       const res = await fetch(endpoint, {

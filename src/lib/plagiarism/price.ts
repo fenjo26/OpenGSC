@@ -10,13 +10,15 @@
 /**
  * USD per single SERP query (num: 10). `null` = no per-request cost (self-hosted) or unknown.
  *
- *   serper        $0.30 / 1 000 queries — their published as-you-go rate for a plain search.
+ *   serper        $1.00 / 1 000 queries — the $50 starter pack; $0.30 only on the $3,750 pack.
  *   dataforseo    Live Advanced Google organic ≈ $0.002 per task at depth 10.
  *   scrapingrobot ≈ $0.0009 — $45 / 50 000 credits as-you-go.
  *   aparser       the user's own machine and proxies; nothing is billed per request.
  */
 export const SERP_QUERY_COST_USD: Readonly<Record<string, number | null>> = {
-  serper: 0.0003,
+  // $1.00 per 1,000 on the $50 starter pack, falling to $0.30 only on the $3,750 one (12.5M
+  // credits). The estimate shows the price most users actually pay; 0.0003 under-quoted ~3×.
+  serper: 0.001,
   dataforseo: 0.002,
   scrapingrobot: 0.0009,
   aparser: null,
