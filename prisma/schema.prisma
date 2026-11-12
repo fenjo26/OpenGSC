@@ -1461,6 +1461,13 @@ model Annotation {
   description String?
   scope       String   @default("all") // "all" | "pages"
   urls        String?  // newline-separated URL filters, used when scope = "pages"
+  // What kind of event this is — src/lib/annotations/events.ts EVENT_TYPES. Drives marker colour,
+  // the tab filter and how the row is scored.
+  eventType   String   @default("note")
+  // folder_move / subdomain_move only: canonical URL prefixes (absolute, trailing "/"). Scored by
+  // prefix match against per-page DailyMetric rows, inside this site's own property.
+  fromPrefix  String?
+  toPrefix    String?
   createdAt   DateTime @default(now())
 
   site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)

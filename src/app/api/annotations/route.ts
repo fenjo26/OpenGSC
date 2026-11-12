@@ -4,6 +4,10 @@ import { prisma } from "@/lib/prisma";
 import { getAlgoUpdates } from "@/lib/algoUpdatesServer";
 import { rawQuery, rawExec, dayExpr } from "@/lib/db/raw";
 import { purchaseOrderEvents, providerName } from "@/lib/magiclinks/purchases";
+import {
+  normalizeEventType, isPrefixMove, normalizePrefix, likePrefix, checkPrefixInProperty,
+  type EventType,
+} from "@/lib/annotations/events";
 
 // Annotations — dated notes about site changes, scored against real Search Console data.
 //
@@ -105,6 +109,75 @@ async function dailySeries(siteId: string, from: Date, to: Date, urls: string[])
   }));
 }
 
+/** Per-page rows under a URL prefix — a folder or a subdomain inside this site's property. Same
+ *  `query = ''` guard as page-scoped notes, for the same double-counting reason. "!" is the LIKE
+ *  escape (see likePrefix). */
+async function prefixSeries(siteId: string, from: Date, to: Date, prefix: string): Promise<DayRow[]> {
+  const rows = await rawQuery<{ day: string; clicks: bigint | number; impressions: bigint | number; posw: number | null }[]>(
+    `SELECT ${DAY_EXPR} AS day,
+            SUM("clicks") AS clicks,
+            SUM("impressions") AS impressions,
+            SUM("position" * "impressions") AS posw
+     FROM "DailyMetric"
+     WHERE "siteId" = ? AND "date" >= ? AND "date" < ? AND "url" LIKE ? ESCAPE '!' AND "query" = ''
+     GROUP BY day
+     ORDER BY day ASC`,
+    siteId, from, to, likePrefix(prefix),
+  );
+  return rows.map(r => ({
+    day: r.day,
+    clicks: Number(r.clicks ?? 0),
+    impressions: Number(r.impressions ?? 0),
+    posw: Number(r.posw ?? 0),
+  }));
+}
+
+/** Day-wise sum of two series (union of days) — the "old + new" side of a move. */
+function sumSeries(a: DayRow[], b: DayRow[]): DayRow[] {
+  const m = new Map<string, DayRow>();
+  for (const r of [...a, ...b]) {
+    const x = m.get(r.day);
+    if (x) { x.clicks += r.clicks; x.impressions += r.impressions; x.posw += r.posw; }
+    else m.set(r.day, { ...r });
+  }
+  return [...m.values()].sort((p, q) => p.day.localeCompare(q.day));
+}
+
+/** The eventType/fromPrefix/toPrefix columns arrive with `prisma db push`; until then a read falls
+ *  back to the old column set and a write that needs them says so instead of dropping them. */
+function missingColumn(e: unknown): boolean {
+  return /no such column|unknown column|does not exist/i.test(String((e as { message?: string })?.message ?? e));
+}
+
+type NoteRow = {
+  id: string; date: Date | string | number; title: string; description: string | null;
+  scope: string; urls: string | null;
+  eventType: string | null; fromPrefix: string | null; toPrefix: string | null;
+};
+
+async function readNoteRows(siteId: string, since: string): Promise<{ rows: NoteRow[]; legacy: boolean }> {
+  try {
+    const rows = await rawQuery<NoteRow[]>(
+      // `date` is compared through the same normalizer the day bucketing uses, because the column
+      // holds either milliseconds or an ISO string depending on how the row was written.
+      `SELECT "id", "date", "title", "description", "scope", "urls", "eventType", "fromPrefix", "toPrefix"
+       FROM "Annotation" WHERE "siteId" = ? AND ${DAY_EXPR} >= ?
+       ORDER BY "date" DESC LIMIT 200`,
+      siteId, since,
+    );
+    return { rows, legacy: false };
+  } catch (e) {
+    if (!missingColumn(e)) throw e;
+    const rows = await rawQuery<Omit<NoteRow, "eventType" | "fromPrefix" | "toPrefix">[]>(
+      `SELECT "id", "date", "title", "description", "scope", "urls"
+       FROM "Annotation" WHERE "siteId" = ? AND ${DAY_EXPR} >= ?
+       ORDER BY "date" DESC LIMIT 200`,
+      siteId, since,
+    );
+    return { rows: rows.map(r => ({ ...r, eventType: null, fromPrefix: null, toPrefix: null })), legacy: true };
+  }
+}
+
 function totals(rows: DayRow[]) {
   const clicks = rows.reduce((a, r) => a + r.clicks, 0);
   const impressions = rows.reduce((a, r) => a + r.impressions, 0);
@@ -185,7 +258,33 @@ function fillPositionGaps(series: SeriesPoint[]): SeriesPoint[] {
 }
 
 async function ownedSite(userId: string, siteId: string) {
-  return prisma.site.findFirst({ where: { id: siteId, userId }, select: { id: true } });
+  return prisma.site.findFirst({ where: { id: siteId, userId }, select: { id: true, siteId: true } });
+}
+
+type EventFields =
+  | { ok: true; eventType: EventType; fromPrefix: string | null; toPrefix: string | null; urls: string; scope: "all" | "pages" }
+  | { ok: false; error: string };
+
+/**
+ * Body → stored event fields. A prefix move needs both prefixes, they must differ, and both must
+ * sit inside this site's GSC property — otherwise the data is not in this site's DailyMetric and
+ * the move is a cross-site one (link two sites instead). A move has no page list: its prefixes are
+ * its scope.
+ */
+function parseEventFields(b: Record<string, unknown>, gscProperty: string): EventFields {
+  const eventType = normalizeEventType(b.eventType);
+  if (isPrefixMove(eventType)) {
+    const fromPrefix = normalizePrefix(b.fromPrefix);
+    const toPrefix = normalizePrefix(b.toPrefix);
+    if (!fromPrefix || !toPrefix) return { ok: false, error: "bad_prefix" };
+    if (fromPrefix === toPrefix) return { ok: false, error: "same_prefix" };
+    if (checkPrefixInProperty(fromPrefix, gscProperty) !== "ok" || checkPrefixInProperty(toPrefix, gscProperty) !== "ok") {
+      return { ok: false, error: "outside_property" };
+    }
+    return { ok: true, eventType, fromPrefix, toPrefix, urls: "", scope: "pages" };
+  }
+  const urls = Array.isArray(b.urls) ? b.urls.map(String).map(x => x.trim()).filter(Boolean).join("\n") : String(b.urls || "").trim();
+  return { ok: true, eventType, fromPrefix: null, toPrefix: null, urls, scope: urls ? "pages" : "all" };
 }
 
 export async function GET(req: Request) {
@@ -210,24 +309,14 @@ export async function GET(req: Request) {
     // between two screens and holding one of them in your head. Both are dated events scored the
     // same way against the same traffic, so they belong on one timeline — `kind` is all the
     // distinction the UI needs.
-    const noteRows = await rawQuery<{
-      id: string; date: Date | string | number; title: string; description: string | null;
-      scope: string; urls: string | null;
-    }[]>(
-      // `date` is compared through the same normalizer the day bucketing uses, because the column
-      // holds either milliseconds or an ISO string depending on how the row was written.
-      `SELECT "id", "date", "title", "description", "scope", "urls"
-       FROM "Annotation" WHERE "siteId" = ? AND ${DAY_EXPR} >= ?
-       ORDER BY "date" DESC LIMIT 200`,
-      siteId, iso(addDays(new Date(), -lookback)),
-    );
+    const { rows: noteRows, legacy } = await readNoteRows(siteId, iso(addDays(new Date(), -lookback)));
 
     // `markers=1` — the dashboard chart only needs where the operator's own notes sit, not their
     // before/after figures. Skipping the scoring keeps the dashboard off the DailyMetric queries
     // the tab runs per page-scoped note.
     if (searchParams.get("markers") === "1") {
       return NextResponse.json({
-        markers: noteRows.map(r => ({ id: r.id, date: dayOf(r.date), title: r.title, scope: r.scope })),
+        markers: noteRows.map(r => ({ id: r.id, date: dayOf(r.date), title: r.title, scope: r.scope, eventType: normalizeEventType(r.eventType) })),
       });
     }
 
@@ -271,7 +360,7 @@ export async function GET(req: Request) {
       }));
 
     const rows = [
-      ...noteRows.map(r => ({ ...r, kind: "note" as const, updateType: null, endDate: null })),
+      ...noteRows.map(r => ({ ...r, eventType: normalizeEventType(r.eventType), kind: "note" as const, updateType: null, endDate: null })),
       ...purchaseEventRows,
       ...updateRows,
     ].sort((a, b) => +new Date(b.date) - +new Date(a.date));
@@ -294,9 +383,24 @@ export async function GET(req: Request) {
       const afterTo = addDays(d, days);
       const urls = (r.urls || "").split(/[\n,]/).map(s => s.trim()).filter(Boolean);
 
-      const series = urls.length
-        ? await dailySeries(siteId, beforeFrom, afterTo, urls)
-        : shared.filter(x => x.day >= iso(beforeFrom) && x.day < iso(afterTo));
+      // A folder/subdomain move is scored as "old prefix before" against "old + new after": the
+      // question is how much of the traffic made it across, and the old URLs alone would only
+      // ever show the fall. The breakdown below says which side the after-traffic sits on.
+      const ev = (r as { eventType?: EventType }).eventType ?? "note";
+      const mv = isPrefixMove(ev) && (r as NoteRow).fromPrefix && (r as NoteRow).toPrefix
+        ? { from: (r as NoteRow).fromPrefix!, to: (r as NoteRow).toPrefix! } : null;
+      let moveOld: DayRow[] = [], moveNew: DayRow[] = [];
+      if (mv) {
+        [moveOld, moveNew] = await Promise.all([
+          prefixSeries(siteId, beforeFrom, afterTo, mv.from),
+          prefixSeries(siteId, beforeFrom, afterTo, mv.to),
+        ]);
+      }
+      const series = mv
+        ? [...moveOld.filter(x => x.day < dayStr), ...sumSeries(moveOld.filter(x => x.day >= dayStr), moveNew.filter(x => x.day >= dayStr))]
+        : urls.length
+          ? await dailySeries(siteId, beforeFrom, afterTo, urls)
+          : shared.filter(x => x.day >= iso(beforeFrom) && x.day < iso(afterTo));
 
       const beforeAll = series.filter(x => x.day < dayStr);
       const afterAll = series.filter(x => x.day >= dayStr);
@@ -310,9 +414,31 @@ export async function GET(req: Request) {
       const after = afterAll;
       const b = totals(before), a = totals(after);
 
+      // Move breakdown: clicks per day on each side after the move, and the share already on the
+      // new prefix. Same after-window as the totals, so the two always add up.
+      const move = mv ? (() => {
+        const oA = totals(moveOld.filter(x => x.day >= dayStr));
+        const nA = totals(moveNew.filter(x => x.day >= dayStr));
+        const byOld = new Map(moveOld.map(x => [x.day, x.clicks]));
+        const byNew = new Map(moveNew.map(x => [x.day, x.clicks]));
+        return {
+          from: mv.from, to: mv.to,
+          oldAfterClicks: oA.clicks, newAfterClicks: nA.clicks,
+          newShare: oA.clicks + nA.clicks > 0 ? Math.round((nA.clicks / (oA.clicks + nA.clicks)) * 100) : null,
+          series: Array.from({ length: days * 2 }, (_, i) => {
+            const day = iso(addDays(beforeFrom, i));
+            return { date: day, old: byOld.get(day) ?? 0, new: byNew.get(day) ?? 0 };
+          }),
+        };
+      })() : null;
+
       return {
         id: r.id,
         kind: r.kind,
+        eventType: ev,
+        fromPrefix: (r as NoteRow).fromPrefix ?? null,
+        toPrefix: (r as NoteRow).toPrefix ?? null,
+        move,
         // Only set on updates: the chart colours a rollout band by type and shades from start to
         // end, and a note has neither.
         updateType: r.updateType,
@@ -346,7 +472,7 @@ export async function GET(req: Request) {
       };
     }));
 
-    return NextResponse.json({ notes, days });
+    return NextResponse.json({ notes, days, needsDbPush: legacy });
   } catch (e) {
     // Table not created yet (no `prisma db push`) — an empty list, not a 500.
     console.error("[Annotations] read failed", e);
@@ -366,20 +492,35 @@ export async function POST(req: Request) {
   const dayMs = parseDayMs(b.date ? String(b.date) : iso(new Date()));
   if (!siteId || !title) return NextResponse.json({ error: "missing_fields" }, { status: 400 });
   if (dayMs == null) return NextResponse.json({ error: "bad_date" }, { status: 400 });
-  if (!(await ownedSite(userId, siteId))) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  const site = await ownedSite(userId, siteId);
+  if (!site) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
-  const urls = Array.isArray(b.urls) ? b.urls.map(String).filter(Boolean).join("\n") : String(b.urls || "");
-  const scope = urls.trim() ? "pages" : "all";
+  const f = parseEventFields(b, site.siteId);
+  if (!f.ok) return NextResponse.json({ error: f.error }, { status: 400 });
 
+  const id = `ann_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
   try {
-    const id = `ann_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
     await rawExec(
-      `INSERT INTO "Annotation" ("id","siteId","date","title","description","scope","urls","createdAt")
-       VALUES (?,?,?,?,?,?,?,?)`,
-      id, siteId, new Date(dayMs), title, String(b.description || ""), scope, urls || null, new Date(),
+      `INSERT INTO "Annotation" ("id","siteId","date","title","description","scope","urls","eventType","fromPrefix","toPrefix","createdAt")
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      id, siteId, new Date(dayMs), title, String(b.description || ""), f.scope, f.urls || null,
+      f.eventType, f.fromPrefix, f.toPrefix, new Date(),
     );
     return NextResponse.json({ ok: true, id });
   } catch (e) {
+    // Before `db push` the new columns are missing. A plain note still fits the old shape; a typed
+    // event or a move would lose exactly what makes it one, so it is refused with a reason.
+    if (missingColumn(e)) {
+      if (f.eventType !== "note") return NextResponse.json({ error: "needs_db_push" }, { status: 503 });
+      try {
+        await rawExec(
+          `INSERT INTO "Annotation" ("id","siteId","date","title","description","scope","urls","createdAt")
+           VALUES (?,?,?,?,?,?,?,?)`,
+          id, siteId, new Date(dayMs), title, String(b.description || ""), f.scope, f.urls || null, new Date(),
+        );
+        return NextResponse.json({ ok: true, id });
+      } catch (e2) { e = e2; }
+    }
     console.error("[Annotations] create failed", e);
     return NextResponse.json({ error: "table_missing" }, { status: 503 });
   }
@@ -418,6 +559,35 @@ export async function PUT(req: Request) {
 
   const date = b.date ? parseDayMs(String(b.date)) : null;
   if (b.date && date == null) return NextResponse.json({ error: "bad_date" }, { status: 400 });
+
+  // The note's site decides which prefixes are in-property, so it is looked up through the same
+  // ownership join the UPDATE uses.
+  const owner = await rawQuery<{ gsc: string }[]>(
+    `SELECT s."siteId" AS gsc FROM "Annotation" a JOIN "Site" s ON s."id" = a."siteId"
+     WHERE a."id" = ? AND s."userId" = ?`,
+    id, userId,
+  ).catch(() => []);
+  if (!owner.length) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  // Only a body that names the event fields rewrites them — an older client sending title/date
+  // alone must not reset a move to a plain note.
+  const touchesEvent = "eventType" in b || "fromPrefix" in b || "toPrefix" in b || "urls" in b;
+  const f = touchesEvent ? parseEventFields(b, owner[0].gsc) : null;
+  if (f && !f.ok) return NextResponse.json({ error: f.error }, { status: 400 });
+
+  if (f && f.ok) {
+    try {
+      await rawExec(
+        `UPDATE "Annotation" SET "eventType" = ?, "fromPrefix" = ?, "toPrefix" = ?, "scope" = ?, "urls" = ?
+         WHERE "id" = ? AND "siteId" IN (SELECT "id" FROM "Site" WHERE "userId" = ?)`,
+        f.eventType, f.fromPrefix, f.toPrefix, f.scope, f.urls || null, id, userId,
+      );
+    } catch (e) {
+      if (!missingColumn(e) || f.eventType !== "note") {
+        console.error("[Annotations] update event fields failed", e);
+        return NextResponse.json({ error: missingColumn(e) ? "needs_db_push" : "update_failed" }, { status: missingColumn(e) ? 503 : 500 });
+      }
+    }
+  }
 
   try {
     // Same ownership guard as DELETE: the row can only be touched through a site the caller owns.

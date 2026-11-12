@@ -34,6 +34,7 @@ import TrafficChip from "@/components/TrafficChip";
 import { drSeriesText, type DrPoint } from "@/components/DrSparkline";
 import BacklinkProfile from "@/components/BacklinkProfile";
 import BacklinkImportDialog from "@/components/BacklinkImportDialog";
+import { EVENT_TYPES, EVENT_COLORS, isPrefixMove, type EventType } from "@/lib/annotations/events";
 import BacklinkSyncButton from "@/components/backlinks/BacklinkSyncButton";
 import type { BacklinkRow, BacklinkListStats } from "@/lib/seo/backlinkTypes";
 import { providerLabel, type BacklinkProviderId } from "@/lib/seo/backlinkProvider";
@@ -4086,13 +4087,13 @@ function renderAlgoMarkers(updates: AlgoMarker[], t: (k: never) => string, label
  * to shade. Deliberately one flat colour rather than the per-type palette updates use, because
  * the first thing to read off the chart is whose event it was, and only then which one.
  */
-function renderNoteMarkers(notes: { id: string; title: string; x: string; kind?: "note" | "purchase"; label?: string }[]) {
+function renderNoteMarkers(notes: { id: string; title: string; x: string; kind?: "note" | "purchase"; label?: string; color?: string }[]) {
   return notes.map(n => {
     // Purchases keep the notes' solid-line language but claim their own colour: the first
     // thing to read off the chart is whose event it was, and "money left here" is a third
     // voice next to the operator's notes and Google's rollouts.
     const purchase = n.kind === "purchase";
-    const color = purchase ? "#7C3AED" : "var(--color-text-secondary)";
+    const color = purchase ? "#7C3AED" : n.color ?? "var(--color-text-secondary)";
     // Operator notes on the dashboard are bare: a dashed line and a dot carrying the title on
     // hover. Text labels need headroom above the plot, and a chart that grows that headroom only
     // when a site happens to have notes shifts the card geometry from site to site. The list
@@ -4101,21 +4102,21 @@ function renderNoteMarkers(notes: { id: string; title: string; x: string; kind?:
       return (
         <ReferenceLine key={n.id} x={n.x} yAxisId="left"
           stroke={color} strokeWidth={1} strokeOpacity={0.5} strokeDasharray="3 3"
-          label={<NoteMarkerDot title={n.title} />} />
+          label={<NoteMarkerDot title={n.title} color={n.color} />} />
       );
     }
     return (
       <ReferenceLine key={n.id} x={n.x} yAxisId="left"
         stroke={color} strokeWidth={purchase ? 1.5 : 1.2} strokeOpacity={0.65}
-        label={<NoteMarkerLabel title={n.title} text={n.label} color={purchase ? "#7C3AED" : undefined} />} />
+        label={<NoteMarkerLabel title={n.title} text={n.label} color={purchase ? "#7C3AED" : n.color} />} />
     );
   });
 }
 
-function NoteMarkerDot({ viewBox, title }: { viewBox?: { x?: number; y?: number }; title?: string }) {
+function NoteMarkerDot({ viewBox, title, color }: { viewBox?: { x?: number; y?: number }; title?: string; color?: string }) {
   return (
     <circle cx={viewBox?.x ?? 0} cy={(viewBox?.y ?? 0) + 4} r={3.5}
-      fill="var(--color-card)" stroke="var(--color-text-secondary)" strokeWidth={1.2} style={{ cursor: "help" }}>
+      fill="var(--color-card)" stroke={color ?? "var(--color-text-secondary)"} strokeWidth={1.4} style={{ cursor: "help" }}>
       <title>{title}</title>
     </circle>
   );
@@ -4124,7 +4125,7 @@ function NoteMarkerDot({ viewBox, title }: { viewBox?: { x?: number; y?: number 
 // ─── Notes button (dashboard toolbar) ────────────────────────────────────────
 // Always rendered, with or without notes, so the toolbar is the same width on every site; the
 // list opens as an overlay and takes no room in the layout.
-function NotesButton({ notes, onOpenTab }: { notes: { id: string; date: string; title: string }[]; onOpenTab: () => void }) {
+function NotesButton({ notes, onOpenTab }: { notes: { id: string; date: string; title: string; eventType?: EventType }[]; onOpenTab: () => void }) {
   const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -4145,7 +4146,8 @@ function NotesButton({ notes, onOpenTab }: { notes: { id: string; date: string; 
       {open && (
         <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 50, width: "300px", maxHeight: "360px", overflowY: "auto", background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: "10px", boxShadow: "0 8px 24px rgba(0,0,0,0.12)", padding: "8px" }}>
           {has ? sorted.map(n => (
-            <div key={n.id} style={{ display: "flex", gap: "10px", padding: "6px 6px", borderRadius: "6px", fontSize: "12px", lineHeight: 1.35 }}>
+            <div key={n.id} title={t(`evt_${n.eventType ?? "note"}` as never)} style={{ display: "flex", alignItems: "baseline", gap: "8px", padding: "6px 6px", borderRadius: "6px", fontSize: "12px", lineHeight: 1.35 }}>
+              <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: EVENT_COLORS[n.eventType ?? "note"], flexShrink: 0, alignSelf: "center" }} />
               <span style={{ color: "var(--color-text-secondary)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{n.date}</span>
               <span style={{ color: "var(--color-text-primary)", wordBreak: "break-word" }}>{n.title}</span>
             </div>
@@ -4256,13 +4258,30 @@ function AnnotationsFilterDd({ onSetupBranded }: { onSetupBranded?: () => void }
 }
 
 // ─── Add Note Modal ───────────────────────────────────────────────────────────
+/** What the modal hands back. `urls` is the page list for a page-scoped event; a prefix move
+ *  carries its two prefixes instead and no page list. */
+type NoteDraft = {
+  id?: string; date: string; title: string; desc: string;
+  eventType: EventType; urls: string[]; fromPrefix: string; toPrefix: string;
+};
+type NoteEdit = { id: string; title: string; desc: string; date: string; eventType?: EventType; urls?: string[]; fromPrefix?: string | null; toPrefix?: string | null };
+
+/** Server error codes → i18n keys, so a refused save says why instead of a generic failure. */
+const ANN_SAVE_ERRORS: Record<string, string> = {
+  bad_prefix: "annErrBadPrefix",
+  same_prefix: "annErrSamePrefix",
+  outside_property: "annErrOutsideProperty",
+  needs_db_push: "annErrNeedsDbPush",
+};
+
 function AddNoteModal({ onClose, onSave, editNote }: {
   onClose: () => void;
-  /** Persists the note. Resolves false when the write failed — the modal then stays open with the
-   *  draft intact and an error shown, instead of closing and silently discarding what was typed. */
-  onSave: (note: { id?: string; date: string; title: string; desc: string; scope: string }) => Promise<boolean>;
+  /** Persists the note. Resolves true when it landed, or an error code when it did not — the modal
+   *  then stays open with the draft intact and the reason shown, instead of closing and silently
+   *  discarding what was typed. */
+  onSave: (note: NoteDraft) => Promise<true | string>;
   /** When set, the modal opens in edit mode: fields are pre-filled and the label/button reflect editing. */
-  editNote?: { id: string; title: string; desc: string; date: string } | null;
+  editNote?: NoteEdit | null;
 }) {
   const { t } = useLanguage();
   // The wire format is a strict ISO day (YYYY-MM-DD) — the API stores that day's UTC midnight, so
@@ -4273,9 +4292,15 @@ function AddNoteModal({ onClose, onSave, editNote }: {
   const [dateVal, setDateVal] = useState(editNote?.date ?? todayIso);
   const [title, setTitle] = useState(editNote?.title ?? "");
   const [desc, setDesc]   = useState(editNote?.desc ?? "");
-  const [scope, setScope] = useState<"all" | "specific" | "group">("all");
+  const [eventType, setEventType] = useState<EventType>(editNote?.eventType ?? "note");
+  // "group" used to be offered here and did nothing; the two scopes below are the ones the API scores.
+  const [scope, setScope] = useState<"all" | "specific">(editNote?.urls?.length ? "specific" : "all");
+  const [urlsText, setUrlsText] = useState((editNote?.urls ?? []).join("\n"));
+  const [fromPrefix, setFromPrefix] = useState(editNote?.fromPrefix ?? "");
+  const [toPrefix, setToPrefix] = useState(editNote?.toPrefix ?? "");
   const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const prefixMove = isPrefixMove(eventType);
 
   // A stray click on the backdrop or the X used to throw a long draft away instantly. Those two are
   // "clicked somewhere to dismiss" gestures, so with text on screen they ask first; Cancel is an
@@ -4285,28 +4310,24 @@ function AddNoteModal({ onClose, onSave, editNote }: {
     onClose();
   };
 
-  // l holds an i18n KEY. Both render (3238) and onSave (3246) translate it via t(), so the stored
-  // note scope is the localized label — same as the old hardcoded English, but in the active language.
-  const scopeOptions = [
-    { v: "all",      l: "scopeAllPages" },
-    { v: "specific", l: "scopeSpecificPages" },
-    { v: "group",    l: "scopeContentGroup" },
-  ] as const;
+  const canSave = !!title.trim() && (!prefixMove || (!!fromPrefix.trim() && !!toPrefix.trim()));
+  const inputStyle: React.CSSProperties = { width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #d1d5db", fontSize: "13px", color: "#111", outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
+  const labelStyle: React.CSSProperties = { display: "block", fontSize: "14px", fontWeight: 600, color: "#111", marginBottom: "8px" };
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center" }}
       onClick={guardedClose}>
-      <div style={{ background: "#fff", borderRadius: "16px", padding: "32px", width: "90%", maxWidth: "640px", color: "#111", boxShadow: "0 20px 60px rgba(0,0,0,0.4)", position: "relative" }}
+      <div style={{ background: "#fff", borderRadius: "16px", padding: "28px 32px", width: "90%", maxWidth: "640px", maxHeight: "92vh", overflowY: "auto", color: "#111", boxShadow: "0 20px 60px rgba(0,0,0,0.4)", position: "relative" }}
         onClick={e => e.stopPropagation()}>
         {/* Close */}
         <button onClick={guardedClose} style={{ position: "absolute", top: "16px", right: "16px", background: "none", border: "none", cursor: "pointer", color: "#9ca3af" }}><X size={20} /></button>
 
         {/* Label */}
-        <p style={{ fontSize: "12px", color: "#9ca3af", fontWeight: 500, marginBottom: "4px" }}>{editNote ? t("annEditNote") : "Note"}</p>
+        <p style={{ fontSize: "12px", color: "#9ca3af", fontWeight: 500, marginBottom: "4px" }}>{editNote ? t("annEditNote") : t("tabAnnotations")}</p>
 
         {/* Date — a real input: it used to be a decorative span, so a note could only ever be dated
             "today" (and the day it meant still drifted with the server's timezone). */}
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "24px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "20px" }}>
           <input
             type="date"
             value={dateVal}
@@ -4317,8 +4338,23 @@ function AddNoteModal({ onClose, onSave, editNote }: {
           <Calendar size={18} color="#9ca3af" />
         </div>
 
+        {/* Event type — colour on the chart, filter in the tab, and for moves how the row is scored. */}
+        <label style={labelStyle}>{t("annEventType")}</label>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "20px" }}>
+          {EVENT_TYPES.map(et => {
+            const on = eventType === et;
+            return (
+              <button key={et} type="button" onClick={() => setEventType(et)}
+                style={{ display: "flex", alignItems: "center", gap: "6px", padding: "5px 10px", borderRadius: "999px", border: `1px solid ${on ? EVENT_COLORS[et] : "#e5e7eb"}`, background: on ? `${EVENT_COLORS[et]}1A` : "#fff", color: on ? EVENT_COLORS[et] : "#374151", fontSize: "12px", fontWeight: on ? 600 : 500, cursor: "pointer" }}>
+                <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: EVENT_COLORS[et] }} />
+                {t(`evt_${et}` as never)}
+              </button>
+            );
+          })}
+        </div>
+
         {/* Title */}
-        <label style={{ display: "block", fontSize: "14px", fontWeight: 600, color: "#111", marginBottom: "8px" }}>Title</label>
+        <label style={labelStyle}>{t("annTitleLabel")}</label>
         <input
           autoFocus
           value={title}
@@ -4328,50 +4364,105 @@ function AddNoteModal({ onClose, onSave, editNote }: {
         />
 
         {/* Description */}
-        <label style={{ display: "block", fontSize: "14px", fontWeight: 600, color: "#111", marginBottom: "8px" }}>Description</label>
+        <label style={labelStyle}>{t("annDescLabel")}</label>
         <textarea
           value={desc}
           onChange={e => setDesc(e.target.value)}
-          rows={5}
+          rows={3}
           style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #d1d5db", fontSize: "14px", color: "#111", outline: "none", resize: "vertical", boxSizing: "border-box", marginBottom: "20px", fontFamily: "inherit" }}
         />
 
-        {/* Scope */}
-        <p style={{ fontSize: "14px", fontWeight: 600, color: "#111", marginBottom: "12px" }}>Which pages have been impacted?</p>
-        <div style={{ display: "flex", gap: "20px", marginBottom: "28px" }}>
-          {scopeOptions.map(({ v, l }) => (
-            <label key={v} style={{ display: "flex", alignItems: "center", gap: "7px", cursor: "pointer", fontSize: "14px", color: "#374151" }}>
-              <div onClick={() => setScope(v)} style={{ width: "18px", height: "18px", borderRadius: "50%", border: `2px solid ${scope === v ? "#3B82F6" : "#d1d5db"}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer" }}>
-                {scope === v && <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#3B82F6" }} />}
-              </div>
-              {t(l as never)}
-            </label>
-          ))}
-        </div>
+        {prefixMove ? (
+          /* A folder or subdomain move is scoped by its two prefixes — no page list. */
+          <div style={{ marginBottom: "24px" }}>
+            <p style={{ fontSize: "12px", color: "#6b7280", lineHeight: 1.45, margin: "0 0 12px" }}>{t("annMoveHint")}</p>
+            <label style={{ ...labelStyle, fontSize: "13px" }}>{t("annMoveFrom")}</label>
+            <input value={fromPrefix} onChange={e => setFromPrefix(e.target.value)} placeholder="https://site.com/old/" style={{ ...inputStyle, marginBottom: "12px" }} />
+            <label style={{ ...labelStyle, fontSize: "13px" }}>{t("annMoveTo")}</label>
+            <input value={toPrefix} onChange={e => setToPrefix(e.target.value)} placeholder={eventType === "subdomain_move" ? "https://new.site.com/" : "https://site.com/new/"} style={inputStyle} />
+          </div>
+        ) : (
+          <>
+            {eventType === "domain_move" && (
+              <p style={{ fontSize: "12px", color: "#6b7280", lineHeight: 1.45, margin: "0 0 16px" }}>{t("annDomainMoveHint")}</p>
+            )}
+            {/* Scope */}
+            <p style={{ fontSize: "14px", fontWeight: 600, color: "#111", marginBottom: "12px" }}>{t("annScopeQuestion")}</p>
+            <div style={{ display: "flex", gap: "20px", marginBottom: scope === "specific" ? "12px" : "24px" }}>
+              {([["all", "scopeAllPages"], ["specific", "scopeSpecificPages"]] as const).map(([v, l]) => (
+                <label key={v} onClick={() => setScope(v)} style={{ display: "flex", alignItems: "center", gap: "7px", cursor: "pointer", fontSize: "14px", color: "#374151" }}>
+                  <div style={{ width: "18px", height: "18px", borderRadius: "50%", border: `2px solid ${scope === v ? "#3B82F6" : "#d1d5db"}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    {scope === v && <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#3B82F6" }} />}
+                  </div>
+                  {t(l as never)}
+                </label>
+              ))}
+            </div>
+            {scope === "specific" && (
+              <textarea value={urlsText} onChange={e => setUrlsText(e.target.value)} rows={4}
+                placeholder={t("annUrlsPlaceholder")}
+                style={{ ...inputStyle, resize: "vertical", marginBottom: "24px", fontFamily: "monospace", fontSize: "12px" }} />
+            )}
+          </>
+        )}
 
         {/* Buttons */}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", alignItems: "center" }}>
           {saveError && (
-            <span style={{ fontSize: "12px", color: "#EF4444", marginRight: "auto" }}>{t("annSaveFailed")}</span>
+            <span style={{ fontSize: "12px", color: "#EF4444", marginRight: "auto", lineHeight: 1.35 }}>{t((ANN_SAVE_ERRORS[saveError] ?? "annSaveFailed") as never)}</span>
           )}
           <button onClick={guardedClose} style={{ padding: "10px 22px", borderRadius: "8px", border: "none", background: "#f3f4f6", color: "#374151", fontSize: "14px", fontWeight: 500, cursor: "pointer" }}>{t("cancel")}</button>
           <button
             onClick={async () => {
-              if (!title.trim() || saving) return;
-              setSaving(true); setSaveError(false);
+              if (!canSave || saving) return;
+              setSaving(true); setSaveError(null);
               // The parent owns the write and reports whether it landed; closing is earned, not
-              // assumed — this used to fire onClose() unconditionally next to a fire-and-forget
-              // fetch, so a failed save (expired session, 503, a dropped request) looked exactly
-              // like a successful one, minus the note.
-              const ok = await onSave({ id: editNote?.id, date: dateVal || todayIso, title, desc, scope: t(scopeOptions.find(o => o.v === scope)!.l as never) });
+              // assumed — a failed save keeps the draft and says why.
+              const res = await onSave({
+                id: editNote?.id, date: dateVal || todayIso, title, desc, eventType,
+                urls: !prefixMove && scope === "specific" ? urlsText.split(/[\n,]/).map(s => s.trim()).filter(Boolean) : [],
+                fromPrefix: prefixMove ? fromPrefix.trim() : "",
+                toPrefix: prefixMove ? toPrefix.trim() : "",
+              });
               setSaving(false);
-              if (ok) onClose(); else setSaveError(true);
+              if (res === true) onClose(); else setSaveError(res);
             }}
-            disabled={saving}
-            style={{ padding: "10px 22px", borderRadius: "8px", border: "none", background: title.trim() ? "#374151" : "#9ca3af", color: "#fff", fontSize: "14px", fontWeight: 600, cursor: title.trim() && !saving ? "pointer" : "not-allowed", opacity: saving ? 0.7 : 1 }}>
-            {editNote ? t("annSave") : "Save"}
+            disabled={saving || !canSave}
+            style={{ padding: "10px 22px", borderRadius: "8px", border: "none", background: canSave ? "#374151" : "#9ca3af", color: "#fff", fontSize: "14px", fontWeight: 600, cursor: canSave && !saving ? "pointer" : "not-allowed", opacity: saving ? 0.7 : 1 }}>
+            {t("annSave")}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Under a folder/subdomain move row: the two prefixes, how much of the after-traffic already sits
+ * on the new one, and a small two-line chart (old falling, new rising) across the window.
+ */
+function MoveSummary({ move }: { move: NonNullable<AnnotationNote["move"]> }) {
+  const { t } = useLanguage();
+  const W = 220, H = 34;
+  const pts = move.series;
+  const max = Math.max(1, ...pts.map(p => Math.max(p.old, p.new)));
+  const line = (key: "old" | "new") => pts.map((p, i) =>
+    `${i === 0 ? "M" : "L"}${((i / Math.max(1, pts.length - 1)) * W).toFixed(1)},${(H - (p[key] / max) * (H - 2) - 1).toFixed(1)}`).join(" ");
+  const short = (u: string) => u.replace(/^https?:\/\//, "");
+  return (
+    <div style={{ marginTop: "6px" }}>
+      <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", fontFamily: "monospace", wordBreak: "break-all", lineHeight: 1.4 }}>
+        {short(move.from)} → {short(move.to)}
+      </div>
+      {pts.length > 1 && (
+        <svg width={W} height={H} style={{ display: "block", marginTop: "4px" }} aria-hidden>
+          <line x1={W / 2} x2={W / 2} y1={0} y2={H} stroke="var(--color-border)" strokeDasharray="2 2" />
+          <path d={line("old")} fill="none" stroke="#9CA3AF" strokeWidth={1.4} />
+          <path d={line("new")} fill="none" stroke="#10B981" strokeWidth={1.6} />
+        </svg>
+      )}
+      <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginTop: "2px" }}>
+        {move.newShare == null ? t("annAwaitingData") : t("annMoveNewShare").replace("{p}", String(move.newShare))}
       </div>
     </div>
   );
@@ -4398,6 +4489,14 @@ interface AnnotationNote {
    *  purchase derived from the magic-links ledger. The three live on one timeline and differ
    *  only in how they are drawn. */
   kind: "note" | "update" | "purchase";
+  /** Operator notes only: what kind of event (src/lib/annotations/events.ts). */
+  eventType?: EventType;
+  /** Page list for a page-scoped note (empty = whole site). */
+  urls?: string[];
+  fromPrefix?: string | null;
+  toPrefix?: string | null;
+  /** Folder/subdomain moves only: after-window split between the two prefixes. */
+  move?: { from: string; to: string; oldAfterClicks: number; newAfterClicks: number; newShare: number | null; series: { date: string; old: number; new: number }[] } | null;
   /** Update type, for the band colour. Null on notes. */
   updateType?: AlgoUpdateType | null;
   /** Last day of a rollout, for the band's closing edge. Null on notes. */
@@ -4429,6 +4528,8 @@ interface AnnotationNote {
 type ApiNote = {
   id: string; date: string; title: string; description?: string | null;
   kind: "note" | "update" | "purchase"; updateType?: AlgoUpdateType | null; endDate?: string | null;
+  eventType?: EventType; urls?: string[]; fromPrefix?: string | null; toPrefix?: string | null;
+  move?: AnnotationNote["move"];
   mlQuantity?: number | null; mlProvider?: string | null; orderId?: string | null;
   scope: string; dateRange: string; hasAfter: boolean;
   clicks: { before: number; after: number; pct: number | null };
@@ -4445,6 +4546,11 @@ function mapApiNote(n: ApiNote): AnnotationNote {
     date: n.date,
     title: n.title,
     kind: n.kind ?? "note",
+    eventType: n.eventType ?? "note",
+    urls: n.urls ?? [],
+    fromPrefix: n.fromPrefix ?? null,
+    toPrefix: n.toPrefix ?? null,
+    move: n.move ?? null,
     updateType: n.updateType ?? null,
     endDate: n.endDate ?? null,
     mlQuantity: n.mlQuantity ?? null,
@@ -4506,7 +4612,10 @@ function AnnotationsTab({ period, setPeriod, periodOptions, customDays, onSetupB
   const { t } = useLanguage();
   const [showAddNote, setShowAddNote] = useState(false);
   // When set, AddNoteModal opens in edit mode with this note's fields pre-filled.
-  const [editingNote, setEditingNote] = useState<{ id: string; title: string; desc: string; date: string } | null>(null);
+  const [editingNote, setEditingNote] = useState<NoteEdit | null>(null);
+  // Type filter for the list and the markers; "all" shows everything, Google updates included.
+  const [typeFilter, setTypeFilter] = useState<EventType | "all">("all");
+  const [needsDbPush, setNeedsDbPush] = useState(false);
   const [notes, setNotes] = useState<AnnotationNote[]>([]);
   const [loading, setLoading] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
@@ -4531,6 +4640,7 @@ function AnnotationsTab({ period, setPeriod, periodOptions, customDays, onSetupB
       const res = await fetch(`/api/annotations?${q}`, { cache: "no-store" });
       const d = await res.json();
       setUnavailable(!!d.unavailable);
+      setNeedsDbPush(!!d.needsDbPush);
       setNotes(Array.isArray(d.notes) ? d.notes.map(mapApiNote) : []);
     } catch { setNotes([]); }
     setLoading(false);
@@ -4538,16 +4648,20 @@ function AnnotationsTab({ period, setPeriod, periodOptions, customDays, onSetupB
 
   useEffect(() => { loadNotes(); }, [loadNotes]);
 
-  const ownNotes = useMemo(() => notes.filter(n => n.kind !== "update"), [notes]);
+  const ownNotes = useMemo(
+    () => notes.filter(n => n.kind !== "update" && (typeFilter === "all" || (n.kind === "note" && (n.eventType ?? "note") === typeFilter))),
+    [notes, typeFilter],
+  );
 
   // Notes snapped onto the axis, the same way updates are. Search Console has gaps, and a marker
   // pointing at a label no data point carries is dropped by Recharts without a word.
   const noteMarkers = useMemo(() => {
     if (!chartData?.length) return [];
     return ownNotes
-      .map((n, i): { id: string; title: string; x: string | null; kind?: "note" | "purchase"; label?: string } => ({
+      .map((n, i): { id: string; title: string; x: string | null; kind?: "note" | "purchase"; label?: string; color?: string } => ({
         id: n.id ?? `note-${i}`,
         title: n.title,
+        color: n.kind === "note" ? EVENT_COLORS[n.eventType ?? "note"] : undefined,
         x: snapToChartLabel(chartData, n.date),
         kind: n.kind === "purchase" ? ("purchase" as const) : undefined,
         // Purchases carry their own short label — quantity × provider — instead of the server's
@@ -4556,12 +4670,31 @@ function AnnotationsTab({ period, setPeriod, periodOptions, customDays, onSetupB
           ? t("mlMarker").replace("{n}", String(n.mlQuantity ?? "?")).replace("{p}", String(n.mlProvider ?? "").startsWith("magic369") ? "369" : "FL")
           : undefined,
       }))
-      .filter((n): n is { id: string; title: string; x: string; kind?: "note" | "purchase"; label?: string } => n.x !== null);
+      .filter((n): n is { id: string; title: string; x: string; kind?: "note" | "purchase"; label?: string; color?: string } => n.x !== null);
   }, [ownNotes, chartData, t]);
 
   const toggleMetric = (m: Metric) => setActiveMetrics(p => { const n = new Set(p); if (n.has(m)) n.delete(m); else n.add(m); return n; });
 
-  const displayNotes = notes;
+  const displayNotes = useMemo(
+    () => typeFilter === "all" ? notes : notes.filter(n => n.kind === "note" && (n.eventType ?? "note") === typeFilter),
+    [notes, typeFilter],
+  );
+
+  const noteBody = (note: NoteDraft) => ({
+    date: note.date, title: note.title, description: note.desc,
+    eventType: note.eventType, urls: note.urls, fromPrefix: note.fromPrefix, toPrefix: note.toPrefix,
+  });
+  const saveNote = async (method: "POST" | "PUT", body: Record<string, unknown>): Promise<true | string> => {
+    try {
+      const res = await fetch("/api/annotations", { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (!res.ok) {
+        const d = await res.json().catch(() => null);
+        return typeof d?.error === "string" ? d.error : "save_failed";
+      }
+    } catch { return "save_failed"; }
+    await loadNotes();
+    return true;
+  };
 
   const fK = (n: number) => n >= 1000 ? `${(n/1000).toFixed(1)}k` : String(n);
 
@@ -4570,6 +4703,22 @@ function AnnotationsTab({ period, setPeriod, periodOptions, customDays, onSetupB
       {/* ── Sub-header controls ── */}
       <div style={{ padding: "10px 32px", borderBottom: "1px solid var(--color-border)", display: "flex", alignItems: "center", gap: "8px", background: "var(--color-card)", flexWrap: "wrap" }}>
         <AnnotationsFilterDd onSetupBranded={onSetupBranded} />
+
+        {/* Event type filter — narrows the list and the markers to one kind of operator event. */}
+        <SimpleDropdown trigger={
+          <button style={{ display: "flex", alignItems: "center", gap: "6px", padding: "7px 12px", borderRadius: "8px", border: `1px solid ${typeFilter === "all" ? "var(--color-border)" : EVENT_COLORS[typeFilter]}`, background: "var(--color-card)", color: typeFilter === "all" ? "var(--color-text-secondary)" : EVENT_COLORS[typeFilter], fontSize: "13px", fontWeight: 500, cursor: "pointer" }}>
+            {typeFilter !== "all" && <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: EVENT_COLORS[typeFilter] }} />}
+            {typeFilter === "all" ? t("annAllTypes") : t(`evt_${typeFilter}` as never)} <ChevronDown size={13} />
+          </button>
+        }>
+          {(["all", ...EVENT_TYPES] as const).map(v => (
+            <button key={v} onClick={() => setTypeFilter(v)} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 14px", fontSize: "13px", cursor: "pointer", width: "100%", background: typeFilter === v ? "rgba(59,130,246,0.12)" : "transparent", color: "var(--color-text-primary)", border: "none", textAlign: "left" }}>
+              <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: v === "all" ? "transparent" : EVENT_COLORS[v] }} />
+              {v === "all" ? t("annAllTypes") : t(`evt_${v}` as never)}
+              {typeFilter === v && <Check size={12} style={{ marginLeft: "auto" }} />}
+            </button>
+          ))}
+        </SimpleDropdown>
 
         {/* Metric icons */}
         <div style={{ display: "flex", gap: "4px" }}>
@@ -4612,6 +4761,11 @@ function AnnotationsTab({ period, setPeriod, periodOptions, customDays, onSetupB
       {unavailable && (
         <div style={{ margin: "16px 32px", padding: "12px 14px", borderRadius: "10px", border: "1px solid rgba(245,158,11,0.35)", background: "rgba(245,158,11,0.08)", fontSize: "13px", color: "var(--color-text-secondary)" }}>
           {t("annUnavailable")}
+        </div>
+      )}
+      {!unavailable && needsDbPush && (
+        <div style={{ margin: "16px 32px", padding: "12px 14px", borderRadius: "10px", border: "1px solid rgba(245,158,11,0.35)", background: "rgba(245,158,11,0.08)", fontSize: "13px", color: "var(--color-text-secondary)" }}>
+          {t("annErrNeedsDbPush")}
         </div>
       )}
 
@@ -4679,6 +4833,12 @@ function AnnotationsTab({ period, setPeriod, periodOptions, customDays, onSetupB
             {/* Left: date + title + scope. Purchases render their localized label (quantity ×
                 provider) instead of the server's English fallback, and link to the order. */}
             <div style={{ padding: "18px 24px 18px 0" }}>
+              {note.kind === "note" && (note.eventType ?? "note") !== "note" && (
+                <div style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "11px", fontWeight: 600, color: EVENT_COLORS[note.eventType!], marginBottom: "4px" }}>
+                  <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: EVENT_COLORS[note.eventType!] }} />
+                  {t(`evt_${note.eventType}` as never)}
+                </div>
+              )}
               <div style={{ fontSize: "13px", fontWeight: 700, color: note.kind === "purchase" ? "#7C3AED" : "var(--color-text-primary)", marginBottom: "4px" }}>
                 {note.kind === "purchase"
                   ? t("mlPurchaseRow").replace("{n}", String(note.mlQuantity ?? "?")).replace("{p}", String(note.mlProvider ?? "").startsWith("magic369") ? "369 Links Market" : "FieldLink")
@@ -4687,8 +4847,9 @@ function AnnotationsTab({ period, setPeriod, periodOptions, customDays, onSetupB
               <div style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
                 {note.date} · {note.kind === "update" ? (note.description || t("annUpdates")) : note.kind === "purchase"
                   ? <span>{t("mlOrderLabel")} <a href="/magiclinks" style={{ color: "var(--color-accent-purple)", fontFamily: "monospace" }}>{note.orderId}</a></span>
-                  : note.scope}
+                  : note.move ? null : note.scope}
               </div>
+              {note.move && <MoveSummary move={note.move} />}
             </div>
 
             {/* Center: before/after chart + date range — notes only */}
@@ -4731,7 +4892,7 @@ function AnnotationsTab({ period, setPeriod, periodOptions, customDays, onSetupB
               <div style={{ display: "flex", gap: "4px", alignItems: "center", flexShrink: 0 }}>
                 <button
                   title={t("annEditNote")}
-                  onClick={() => setEditingNote({ id: note.id!, title: note.title, desc: note.description ?? "", date: note.date })}
+                  onClick={() => setEditingNote({ id: note.id!, title: note.title, desc: note.description ?? "", date: note.date, eventType: note.eventType, urls: note.urls, fromPrefix: note.fromPrefix, toPrefix: note.toPrefix })}
                   style={{ width: "30px", height: "30px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-secondary)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
                 >
                   <Pencil size={13} />
@@ -4769,20 +4930,9 @@ function AnnotationsTab({ period, setPeriod, periodOptions, customDays, onSetupB
           onClose={() => setShowAddNote(false)}
           // Persist, then re-read: the figures are computed server-side from DailyMetric, so the
           // row can only be filled in by the API. Writing a locally-invented placeholder is what
-          // produced the permanent 0 → 0 +0% this tab used to show. The boolean tells the modal
-          // whether its draft may be discarded.
-          onSave={async note => {
-            if (!siteDbId) return false;
-            try {
-              const res = await fetch("/api/annotations", {
-                method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ siteId: siteDbId, date: note.date, title: note.title, description: note.desc }),
-              });
-              if (!res.ok) return false;
-            } catch { return false; }
-            await loadNotes();
-            return true;
-          }}
+          // produced the permanent 0 → 0 +0% this tab used to show. The result tells the modal
+          // whether its draft may be discarded, and if not, why.
+          onSave={note => siteDbId ? saveNote("POST", { siteId: siteDbId, ...noteBody(note) }) : Promise.resolve("save_failed")}
         />
       )}
 
@@ -4791,18 +4941,7 @@ function AnnotationsTab({ period, setPeriod, periodOptions, customDays, onSetupB
         <AddNoteModal
           editNote={editingNote}
           onClose={() => setEditingNote(null)}
-          onSave={async note => {
-            if (!note.id) return false;
-            try {
-              const res = await fetch("/api/annotations", {
-                method: "PUT", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id: note.id, date: note.date, title: note.title, description: note.desc }),
-              });
-              if (!res.ok) return false;
-            } catch { return false; }
-            await loadNotes();
-            return true;
-          }}
+          onSave={note => note.id ? saveNote("PUT", { id: note.id, ...noteBody(note) }) : Promise.resolve("save_failed")}
         />
       )}
 
@@ -5601,7 +5740,7 @@ export default function SitePage({
   // Drawn on the dashboard chart next to Google's rollouts and the purchases, because that is the
   // chart people read; before this they were only visible inside the annotations tab. Refetched
   // whenever the dashboard comes back into view, so a note written in the tab appears at once.
-  const [ownNoteMarkers, setOwnNoteMarkers] = useState<{ id: string; date: string; title: string }[]>([]);
+  const [ownNoteMarkers, setOwnNoteMarkers] = useState<{ id: string; date: string; title: string; eventType?: EventType }[]>([]);
   useEffect(() => {
     if (readOnly || !siteDbId || activeTab !== "dashboard") return;
     fetch(`/api/annotations?siteId=${encodeURIComponent(siteDbId)}&markers=1&lookback=1200`, { cache: "no-store" })
@@ -5614,7 +5753,7 @@ export default function SitePage({
   const eventMarkersForMode = useMemo(() => {
     const chart = (candleMode ? candleData : siteData?.chartData) as unknown as { date: string; dateIso: string }[] | undefined;
     if (!chart?.length) return [];
-    const out: { id: string; title: string; x: string; kind: "purchase" | "note"; label: string }[] = [];
+    const out: { id: string; title: string; x: string; kind: "purchase" | "note"; label: string; color?: string }[] = [];
     for (const p of purchaseOrders) {
       const x = snapToChartLabel(chart, p.date);
       if (!x) continue;
@@ -5629,7 +5768,7 @@ export default function SitePage({
     for (const n of ownNoteMarkers) {
       const x = snapToChartLabel(chart, n.date);
       if (!x) continue;
-      out.push({ id: `note-${n.id}`, title: `${n.date} · ${n.title}`, x, kind: "note", label: n.title });
+      out.push({ id: `note-${n.id}`, title: `${n.date} · ${n.title}`, x, kind: "note", label: n.title, color: EVENT_COLORS[n.eventType ?? "note"] });
     }
     return out;
   }, [candleMode, candleData, siteData, purchaseOrders, ownNoteMarkers]);
