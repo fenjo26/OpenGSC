@@ -5536,11 +5536,24 @@ export default function SitePage({
       .catch(() => {});
   }, [siteDbId, readOnly, shareToken]);
 
+  // ── Operator notes: the user's own dated events (a move to a subfolder, a content refresh) ──
+  // Drawn on the dashboard chart next to Google's rollouts and the purchases, because that is the
+  // chart people read; before this they were only visible inside the annotations tab. Refetched
+  // whenever the dashboard comes back into view, so a note written in the tab appears at once.
+  const [ownNoteMarkers, setOwnNoteMarkers] = useState<{ id: string; date: string; title: string }[]>([]);
+  useEffect(() => {
+    if (readOnly || !siteDbId || activeTab !== "dashboard") return;
+    fetch(`/api/annotations?siteId=${encodeURIComponent(siteDbId)}&markers=1&lookback=1200`, { cache: "no-store" })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (Array.isArray(d?.markers)) setOwnNoteMarkers(d.markers); })
+      .catch(() => {});
+  }, [siteDbId, readOnly, activeTab]);
+
   // Snapped for whichever axis mode is active — same reason as the algo markers above.
-  const purchaseMarkersForMode = useMemo(() => {
+  const eventMarkersForMode = useMemo(() => {
     const chart = (candleMode ? candleData : siteData?.chartData) as unknown as { date: string; dateIso: string }[] | undefined;
     if (!chart?.length) return [];
-    const out: { id: string; title: string; x: string; kind: "purchase"; label: string }[] = [];
+    const out: { id: string; title: string; x: string; kind: "purchase" | "note"; label: string }[] = [];
     for (const p of purchaseOrders) {
       const x = snapToChartLabel(chart, p.date);
       if (!x) continue;
@@ -5552,10 +5565,15 @@ export default function SitePage({
         label: `${p.quantity}×${p.provider.startsWith("magic369") ? "369" : "FL"}`,
       });
     }
+    for (const n of ownNoteMarkers) {
+      const x = snapToChartLabel(chart, n.date);
+      if (!x) continue;
+      out.push({ id: `note-${n.id}`, title: `${n.date} · ${n.title}`, x, kind: "note", label: n.title });
+    }
     return out;
-  }, [candleMode, candleData, siteData, purchaseOrders]);
+  }, [candleMode, candleData, siteData, purchaseOrders, ownNoteMarkers]);
 
-  const hasChartMarkers = (googleUpdates && algoMarkersForMode.length > 0) || purchaseMarkersForMode.length > 0;
+  const hasChartMarkers = (googleUpdates && algoMarkersForMode.length > 0) || eventMarkersForMode.length > 0;
 
   // ── Rank tracker: which queries are already tracked (for Track buttons) ──────
   const [trackedKws, setTrackedKws] = useState<Set<string>>(new Set());
@@ -5907,7 +5925,7 @@ export default function SitePage({
               topMargin={hasChartMarkers ? 26 : 6}
               renderMarkers={top => [
                 ...(googleUpdates ? renderAlgoMarkers(algoMarkersForMode, t as never, top) : []),
-                ...renderNoteMarkers(purchaseMarkersForMode),
+                ...renderNoteMarkers(eventMarkersForMode),
               ]}
             />
           ) : (
@@ -5963,7 +5981,7 @@ export default function SitePage({
               {/* Google algorithm update markers (core / spam / discover) */}
               {googleUpdates && renderAlgoMarkers(algoMarkersForMode, t as never)}
               {/* Link purchase markers — one per order, purple, from the purchase ledger */}
-              {renderNoteMarkers(purchaseMarkersForMode)}
+              {renderNoteMarkers(eventMarkersForMode)}
             </ComposedChart>
           </ResponsiveContainer>
           )}

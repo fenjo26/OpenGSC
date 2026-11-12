@@ -222,6 +222,15 @@ export async function GET(req: Request) {
       siteId, iso(addDays(new Date(), -lookback)),
     );
 
+    // `markers=1` — the dashboard chart only needs where the operator's own notes sit, not their
+    // before/after figures. Skipping the scoring keeps the dashboard off the DailyMetric queries
+    // the tab runs per page-scoped note.
+    if (searchParams.get("markers") === "1") {
+      return NextResponse.json({
+        markers: noteRows.map(r => ({ id: r.id, date: dayOf(r.date), title: r.title, scope: r.scope })),
+      });
+    }
+
     const { updates } = await getAlgoUpdates();
     // Only updates the site could have lived through, and only as far back as the selected period.
     // Yesterday's update would report a confident nothing, so the newest day is excluded too.
