@@ -16,6 +16,7 @@ export async function GET() {
       neuralIndexerToken: true,
       xmlRiverUserId: true,
       xmlRiverApiKey: true,
+      xmlRiverPriceUsd: true,
       twoIndexToken: true,
     },
   });
@@ -44,6 +45,7 @@ export async function GET() {
       configured: !!(user?.xmlRiverUserId && user?.xmlRiverApiKey),
       userId: user?.xmlRiverUserId ?? null,
       apiKey: mask(user?.xmlRiverApiKey),
+      priceUsd: user?.xmlRiverPriceUsd ?? null, // not a secret — the /index-check estimate prices runs from it
     },
     twoIndex: {
       configured: !!user?.twoIndexToken,
@@ -58,12 +60,20 @@ export async function POST(req: Request) {
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await req.json();
-  const data: Record<string, string | null> = {};
+  const data: Record<string, string | number | null> = {};
 
   if ('neuralIndexerToken' in body) data.neuralIndexerToken = body.neuralIndexerToken || null;
   if ('xmlRiverUserId'     in body) data.xmlRiverUserId     = body.xmlRiverUserId     || null;
   if ('xmlRiverApiKey'     in body) data.xmlRiverApiKey     = body.xmlRiverApiKey     || null;
   if ('twoIndexToken'      in body) data.twoIndexToken      = body.twoIndexToken      || null;
+  // Optional per-check price from the operator's own tariff — parsed, never trusted raw: junk
+  // becomes null (unknown price), negatives are refused.
+  if ('xmlRiverPriceUsd' in body) {
+    const n = Number(body.xmlRiverPriceUsd);
+    data.xmlRiverPriceUsd = body.xmlRiverPriceUsd === "" || body.xmlRiverPriceUsd === null || !Number.isFinite(n)
+      ? null
+      : Math.max(0, n);
+  }
 
   await prisma.user.update({ where: { id: userId }, data });
 

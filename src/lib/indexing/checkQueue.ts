@@ -47,8 +47,14 @@ const inFlightByRun = new Map<string, string>();
 let pumping = false;
 let pumpTimer: NodeJS.Timeout | null = null;
 
+// Test isolation (checkQueue.test.ts): a unit test's createRun must not fire a real paid
+// provider call 250 ms after the assertion. The queue's drain path is exercised end-to-end on
+// a dev server (aparser = free) instead — same division as genQueue, which has no DB tests
+// for the same reason.
+const queueDisabled = () => process.env.OPENGSC_CHECK_QUEUE_OFF === "1";
+
 export function kickCheckQueue(delayMs = 250): void {
-  if (pumpTimer) return;
+  if (pumpTimer || queueDisabled()) return;
   pumpTimer = setTimeout(() => {
     pumpTimer = null;
     pumpCheckQueue().catch(err => console.error("[check-queue] pump failed:", err));
