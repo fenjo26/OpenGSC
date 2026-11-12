@@ -93,3 +93,21 @@ test("detector: a drop with no newcomer suggests nothing", () => {
   const C = flat(addDay(today, -200), 200, 50);
   assert.deepEqual(detectTrafficMoves(new Map([["A", A], ["C", C]]), today), []);
 });
+
+test("site host and root from both property forms", async () => {
+  const { siteHost, siteRootUrl } = await import("./chain");
+  assert.equal(siteHost("sc-domain:Example.com"), "example.com");
+  assert.equal(siteHost("https://www.example.com/"), "example.com");
+  assert.equal(siteRootUrl("sc-domain:example.com"), "https://example.com/");
+  assert.equal(siteRootUrl("https://example.com/blog/"), "https://example.com/blog/");
+});
+
+test("redirect target: another of the user's sites, never itself", async () => {
+  const { redirectTarget } = await import("./chain");
+  const sites = [{ id: "A", url: "sc-domain:old.com" }, { id: "B", url: "https://new.com/" }, { id: "S", url: "https://gr.old.com/" }];
+  assert.equal(redirectTarget("sc-domain:old.com", "https://new.com/", sites), "B");
+  assert.equal(redirectTarget("sc-domain:old.com", "https://www.new.com/path", sites), "B");
+  assert.equal(redirectTarget("sc-domain:old.com", "https://www.old.com/", sites), null);
+  assert.equal(redirectTarget("sc-domain:old.com", "https://gr.old.com/", sites), "S");
+  assert.equal(redirectTarget("sc-domain:old.com", "https://elsewhere.com/", sites), null);
+});

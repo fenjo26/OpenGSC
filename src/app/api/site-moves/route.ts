@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { dayExpr } from "@/lib/db/raw";
-import { buildChain, moveConflict, recovery, detectTrafficMoves, normalizeReason } from "@/lib/siteMoves/chain";
+import { buildChain, moveConflict, recovery, detectTrafficMoves, normalizeReason, redirectTarget, siteRootUrl, type MoveCandidate } from "@/lib/siteMoves/chain";
+import { safeFetch } from "@/lib/security/safeFetch";
 import { listUserMoves, insertMove, deleteMove, dailyClicks, tableMissing } from "@/lib/siteMoves/store";
 
 // Site moves — a whole site moving to another Search Console property (a new domain after a block,
@@ -16,6 +17,22 @@ import { listUserMoves, insertMove, deleteMove, dailyClicks, tableMissing } from
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const addDays = (s: string, n: number) => { const d = new Date(`${s}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return iso(d); };
+
+/**
+ * Where this site's homepage ends up after redirects, as one of the user's other sites. One GET,
+ * short timeout, small body cap — a probe, not a crawl. Any failure (timeout, TLS, a block page
+ * from this server's network) is "no evidence", never an error the modal has to show.
+ */
+async function probeRedirect(siteUrl: string, sites: { id: string; url: string }[]): Promise<string | null> {
+  const root = siteRootUrl(siteUrl);
+  if (!root) return null;
+  try {
+    const res = await safeFetch(root, { method: "GET", redirect: "follow", timeoutMs: 6000, maxBytes: 32768, maxRedirects: 5 });
+    return res.redirected ? redirectTarget(siteUrl, res.url, sites) : null;
+  } catch {
+    return null;
+  }
+}
 
 export async function GET(req: Request) {
   const userId = await workspaceUserId();
@@ -62,9 +79,23 @@ export async function GET(req: Request) {
     }
     for (const row of byDay.values()) for (const id of chain.sites) if (row[id] == null) row[id] = 0;
 
-    const suggestions = detectTrafficMoves(daily, today)
-      .filter(c => (c.fromSiteId === siteId || c.toSiteId === siteId) && !moveConflict(moves, c.fromSiteId, c.toSiteId))
-      .map(c => ({ ...c, fromUrl: urlOf.get(c.fromSiteId), toUrl: urlOf.get(c.toSiteId) }));
+    const traffic = detectTrafficMoves(daily, today)
+      .filter(c => (c.fromSiteId === siteId || c.toSiteId === siteId) && !moveConflict(moves, c.fromSiteId, c.toSiteId));
+    // A homepage that 301s to another of the user's sites is the strongest evidence there is. Only
+    // probed while this site has no move out yet — once linked there is nothing to suggest. The
+    // redirect says THAT it moved, not WHEN: the date comes from the traffic detector when it saw
+    // the same pair, otherwise it is left empty and the modal asks for it.
+    const candidates: (MoveCandidate | (Omit<MoveCandidate, "date"> & { date: string | null }))[] = [...traffic];
+    if (!moves.some(m => m.fromSiteId === siteId)) {
+      const target = await probeRedirect(urlOf.get(siteId)!, userSites);
+      if (target && !moveConflict(moves, siteId, target)) {
+        const seen = traffic.find(c => c.fromSiteId === siteId && c.toSiteId === target);
+        const rest = candidates.filter(c => !(c.fromSiteId === siteId && c.toSiteId === target));
+        candidates.length = 0;
+        candidates.push({ fromSiteId: siteId, toSiteId: target, date: seen?.date ?? null, evidence: "redirect" }, ...rest);
+      }
+    }
+    const suggestions = candidates.map(c => ({ ...c, fromUrl: urlOf.get(c.fromSiteId), toUrl: urlOf.get(c.toSiteId) }));
 
     return NextResponse.json({
       chain: chain.sites.map(id => ({ id, url: urlOf.get(id) ?? id })),

@@ -167,3 +167,36 @@ export function detectTrafficMoves(series: Map<string, DayClicks[]>, today: stri
   }
   return out;
 }
+
+const bareHost = (h: string) => h.toLowerCase().replace(/^www\./, "").replace(/\.$/, "");
+
+/** Host a stored Site.url stands for: "sc-domain:x.com" → x.com, "https://www.x.com/" → x.com. */
+export function siteHost(siteUrl: string): string | null {
+  const s = String(siteUrl || "").trim();
+  if (/^sc-domain:/i.test(s)) return bareHost(s.replace(/^sc-domain:/i, "")) || null;
+  try { return bareHost(new URL(s).hostname); } catch { return null; }
+}
+
+/** Homepage to probe for a redirect: the property's own URL, or https://<domain>/ for sc-domain:. */
+export function siteRootUrl(siteUrl: string): string | null {
+  const s = String(siteUrl || "").trim();
+  if (/^sc-domain:/i.test(s)) {
+    const h = s.replace(/^sc-domain:/i, "").replace(/\.$/, "");
+    return h ? `https://${h}/` : null;
+  }
+  try { const u = new URL(s); return `${u.protocol}//${u.host}${u.pathname}`; } catch { return null; }
+}
+
+/**
+ * Which of the user's other sites a homepage ended up on after its redirects, if any. Same host
+ * (www, a trailing dot, http→https) is not a move. A redirect to a subdomain of the same domain
+ * IS one when that subdomain is a separate site in OpenGSC — that is exactly the separate-property
+ * case E3 exists for.
+ */
+export function redirectTarget(fromSiteUrl: string, finalUrl: string, sites: { id: string; url: string }[]): string | null {
+  const from = siteHost(fromSiteUrl);
+  let to: string;
+  try { to = bareHost(new URL(finalUrl).hostname); } catch { return null; }
+  if (!from || to === from) return null;
+  return sites.find(s => siteHost(s.url) === to)?.id ?? null;
+}

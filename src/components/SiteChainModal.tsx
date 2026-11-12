@@ -17,7 +17,7 @@ type Move = {
   id: string; fromSiteId: string; toSiteId: string; date: string; reason: string; redirect301: boolean; note: string | null;
   fromUrl: string; toUrl: string; recovery: Recovery;
 };
-type Suggestion = { fromSiteId: string; toSiteId: string; date: string; evidence: string; fromUrl?: string; toUrl?: string };
+type Suggestion = { fromSiteId: string; toSiteId: string; date: string | null; evidence: string; fromUrl?: string; toUrl?: string };
 type Data = {
   needsDbPush?: boolean;
   chain?: { id: string; url: string }[];
@@ -175,8 +175,15 @@ export default function SiteChainModal({ siteId, onClose, onChanged }: { siteId:
             <div style={{ fontSize: "12px", fontWeight: 600, marginBottom: "6px" }}>{t("chainSuggestions")}</div>
             {data!.suggestions!.map(s => (
               <div key={`${s.fromSiteId}-${s.toSiteId}`} style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "12px", padding: "3px 0" }}>
-                <span>{host(s.fromUrl ?? "")} → {host(s.toUrl ?? "")} · {s.date} · {t(s.evidence === "redirect" ? "chainEvidenceRedirect" : "chainEvidenceTraffic")}</span>
-                <button disabled={saving} onClick={() => save({ fromSiteId: s.fromSiteId, toSiteId: s.toSiteId, date: s.date, reason: "other", redirect301: s.evidence === "redirect" })}
+                <span>{host(s.fromUrl ?? "")} → {host(s.toUrl ?? "")}{s.date ? ` · ${s.date}` : ""} · {t(s.evidence === "redirect" ? "chainEvidenceRedirect" : "chainEvidenceTraffic")}</span>
+                {/* With a date the suggestion links in one click; a redirect alone does not say when,
+                    so it fills the form below and leaves the date to the operator. */}
+                <button disabled={saving} onClick={() => {
+                  if (s.date) { save({ fromSiteId: s.fromSiteId, toSiteId: s.toSiteId, date: s.date, reason: "other", redirect301: s.evidence === "redirect" }); return; }
+                  setDirection(s.fromSiteId === siteId ? "to" : "from");
+                  setOther(s.fromSiteId === siteId ? s.toSiteId : s.fromSiteId);
+                  setR301(s.evidence === "redirect");
+                }}
                   style={{ marginLeft: "auto", padding: "4px 10px", borderRadius: "6px", border: "1px solid var(--color-accent-blue)", background: "transparent", color: "var(--color-accent-blue)", fontSize: "12px", cursor: "pointer" }}>
                   {t("chainLink")}
                 </button>
