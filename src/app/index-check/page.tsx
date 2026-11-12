@@ -302,7 +302,7 @@ function IndexCheckInner() {
             <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
               {([["serp", t("icProviderSerp"), t("icProviderSerpHint")], ["xmlriver", t("icProviderXr"), t("icProviderXrHint")]] as const).map(([id, name, hint]) => (
                 <button key={id} onClick={() => { setProvider(id as "serp" | "xmlriver"); setEstimate(null); }}
-                  style={{ ...btn, flex: 1, minWidth: "220px", flexDirection: "column", alignItems: "flex-start", gap: "2px", padding: "10px 12px", borderColor: provider === id ? "var(--color-accent, #3b82f6)" : "var(--color-border)" }}>
+                  style={btn({ flex: 1, minWidth: "220px", flexDirection: "column", alignItems: "flex-start", gap: "2px", padding: "10px 12px", borderColor: provider === id ? "var(--color-accent, #3b82f6)" : "var(--color-border)" })}>
                   <span style={{ fontWeight: 600 }}>{name}</span>
                   <span style={{ ...muted, fontSize: "11px", textAlign: "left" }}>{hint}</span>
                 </button>
@@ -316,7 +316,7 @@ function IndexCheckInner() {
             <div style={{ display: "flex", gap: "8px", marginBottom: "8px", flexWrap: "wrap" }}>
               {([["sites", t("icSourceSites")], ["urls", t("icSourceUrls")], ["donors", t("icSourceDonors")]] as const).map(([id, name]) => (
                 <button key={id} onClick={() => { setSourceKind(id as typeof sourceKind); setEstimate(null); }}
-                  style={{ ...btn, borderColor: sourceKind === id ? "var(--color-accent, #3b82f6)" : "var(--color-border)", background: sourceKind === id ? "var(--color-bg-primary)" : "transparent" }}>
+                  style={btn({ borderColor: sourceKind === id ? "var(--color-accent, #3b82f6)" : "var(--color-border)", background: sourceKind === id ? "var(--color-bg-primary)" : "transparent" })}>
                   {name}
                 </button>
               ))}
@@ -331,8 +331,8 @@ function IndexCheckInner() {
                     <option value="all">{t("icFilterAll")}</option>
                   </select>
                   <span style={muted}>{t("icSitesPicked").replace("{n}", String(picked.size))}</span>
-                  <button style={{ ...btn, padding: "4px 10px" }} onClick={() => { setPicked(new Set(sites.map(s => s.id))); setEstimate(null); }}>{t("icSelectAll")}</button>
-                  <button style={{ ...btn, padding: "4px 10px" }} onClick={() => { setPicked(new Set()); setEstimate(null); }}>{t("icSelectNone")}</button>
+                  <button style={btn({ padding: "4px 10px" })} onClick={() => { setPicked(new Set(sites.map(s => s.id))); setEstimate(null); }}>{t("icSelectAll")}</button>
+                  <button style={btn({ padding: "4px 10px" })} onClick={() => { setPicked(new Set()); setEstimate(null); }}>{t("icSelectNone")}</button>
                 </div>
                 <div style={{ maxHeight: "180px", overflowY: "auto", border: "1px solid var(--color-border)", borderRadius: "8px", padding: "6px" }}>
                   {sites.map(s => (
@@ -373,7 +373,7 @@ function IndexCheckInner() {
           {estimate && (
             <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap", padding: "10px 12px", border: "1px solid var(--color-border)", borderRadius: "8px", background: "var(--color-bg-primary)" }}>
               <span style={{ fontSize: "13px", fontWeight: 600 }}>{estLine(estimate.estimate)}</span>
-              <button onClick={doLaunch} disabled={launching} style={{ ...btn, borderColor: "var(--color-accent, #3b82f6)", color: "var(--color-accent, #3b82f6)" }}>
+              <button onClick={doLaunch} disabled={launching} style={btn({ borderColor: "var(--color-accent, #3b82f6)", color: "var(--color-accent, #3b82f6)" })}>
                 {launching ? <Loader2 size={14} className="spin" /> : <Play size={14} />} {t("icLaunchBtn")}
               </button>
             </div>
@@ -388,7 +388,7 @@ function IndexCheckInner() {
       {/* ── Runs ── */}
       <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
         <h2 style={{ fontSize: "15px", fontWeight: 700, margin: 0 }}>{t("icRunsTitle")}</h2>
-        <button onClick={() => { void load(); if (openId) void loadDetail(openId, verdictFilter, itemOffset); }} style={{ ...btn, padding: "4px 10px" }}>
+        <button onClick={() => { void load(); if (openId) void loadDetail(openId, verdictFilter, itemOffset); }} style={btn({ padding: "4px 10px" })}>
           <RefreshCw size={13} />
         </button>
       </div>
@@ -405,7 +405,7 @@ function IndexCheckInner() {
           <div key={r.run.id} style={{ ...card, marginBottom: "10px" }}>
             {/* header row */}
             <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", marginBottom: "8px" }}>
-              <button onClick={() => { setOpenId(open ? "" : r.run.id); setVerdictFilter("all"); setItemOffset(0); }} style={{ ...btn, border: "none", padding: "2px 4px" }}>
+              <button onClick={() => { setOpenId(open ? "" : r.run.id); setVerdictFilter("all"); setItemOffset(0); }} style={btn({ border: "none", padding: "2px 4px" })}>
                 {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
               </button>
               <span style={{ fontSize: "13px", fontWeight: 600 }}>
@@ -423,17 +423,17 @@ function IndexCheckInner() {
                 )}
               </span>
               {r.run.status === "active" && (
-                <button onClick={() => act(r.run.id, "pause")} disabled={!!actionBusy} style={{ ...btn, padding: "4px 10px" }}>
+                <button onClick={() => act(r.run.id, "pause")} disabled={!!actionBusy} style={btn({ padding: "4px 10px" })}>
                   <Pause size={13} /> {t("icPause")}
                 </button>
               )}
               {r.run.status === "paused" && (
-                <button onClick={() => act(r.run.id, "resume")} disabled={!!actionBusy} style={{ ...btn, padding: "4px 10px" }}>
+                <button onClick={() => act(r.run.id, "resume")} disabled={!!actionBusy} style={btn({ padding: "4px 10px" })}>
                   <Play size={13} /> {t("icResume")}
                 </button>
               )}
               {(r.run.status === "active" || r.run.status === "paused") && (
-                <button onClick={() => act(r.run.id, "cancel")} disabled={!!actionBusy} style={{ ...btn, padding: "4px 10px", color: "#F87171", borderColor: "#F8717155" }}>
+                <button onClick={() => act(r.run.id, "cancel")} disabled={!!actionBusy} style={btn({ padding: "4px 10px", color: "#F87171", borderColor: "#F8717155" })}>
                   <Square size={13} /> {t("icCancel")}
                 </button>
               )}
@@ -462,7 +462,7 @@ function IndexCheckInner() {
                             <td style={{ padding: "5px 6px", color: VERDICT_COLORS.not_indexed, fontWeight: 600 }}>{s.notIndexed} {t("idxSerp_not_indexed")}</td>
                             <td style={{ padding: "5px 6px", textAlign: "right" }}>
                               {s.notIndexed > 0 && (
-                                <button onClick={() => copyNotFound(r.run.id, s.siteId ?? undefined)} style={{ ...btn, padding: "2px 8px", fontSize: "11px" }}>
+                                <button onClick={() => copyNotFound(r.run.id, s.siteId ?? undefined)} style={btn({ padding: "2px 8px", fontSize: "11px" })}>
                                   {copied === r.run.id + (s.siteId ?? "") ? <Check size={12} /> : <Copy size={12} />}
                                 </button>
                               )}
@@ -479,7 +479,7 @@ function IndexCheckInner() {
                   <button onClick={() => copyNotFound(r.run.id)} style={btn()}>
                     {copied === r.run.id ? <Check size={14} /> : <Copy size={14} />} {t("icCopyNotFoundN").replace("{n}", String(notFound))}
                   </button>
-                  <a href={`/api/index-check/${r.run.id}/not-found?format=txt`} style={{ ...btn, textDecoration: "none" }} download>
+                  <a href={`/api/index-check/${r.run.id}/not-found?format=txt`} style={btn({ textDecoration: "none" })} download>
                     <Download size={14} /> {t("icDownloadTxt")}
                   </a>
                   <span style={{ ...muted, display: "inline-flex", alignItems: "center", gap: "4px", marginLeft: "6px" }}>
@@ -488,7 +488,7 @@ function IndexCheckInner() {
                   {(["neural", "2index", "farm"] as const).map(target => (
                     <button key={target} onClick={() => sendNotFound(r.run.id, target)} disabled={!!sending || notFound === 0}
                       title={target === "neural" ? "NeuralIndexer" : target === "2index" ? "2index.ninja" : t("icSendFarm")}
-                      style={{ ...btn, padding: "5px 10px" }}>
+                      style={btn({ padding: "5px 10px" })}>
                       {sending === target ? <Loader2 size={13} className="spin" /> : null}
                       {target === "neural" ? t("icSendNeural") : target === "2index" ? t("icSend2index") : t("icSendFarm")}
                     </button>
@@ -502,7 +502,7 @@ function IndexCheckInner() {
                     <span style={label}>{t("icItemsTitle")} · {detail.itemsTotal}</span>
                     {["all", "indexed", "not_indexed", "error"].map(v => (
                       <button key={v} onClick={() => { setVerdictFilter(v); setItemOffset(0); }}
-                        style={{ ...btn, padding: "3px 9px", fontSize: "11px", borderColor: verdictFilter === v ? "var(--color-accent, #3b82f6)" : "var(--color-border)" }}>
+                        style={btn({ padding: "3px 9px", fontSize: "11px", borderColor: verdictFilter === v ? "var(--color-accent, #3b82f6)" : "var(--color-border)" })}>
                         {v === "all" ? t("icVerdictAll") : t(`idxSerp_${v}` as never)}
                       </button>
                     ))}
@@ -525,8 +525,8 @@ function IndexCheckInner() {
                     </tbody>
                   </table>
                   <div style={{ display: "flex", gap: "8px", marginTop: "6px" }}>
-                    {itemOffset > 0 && <button style={{ ...btn, padding: "3px 9px", fontSize: "11px" }} onClick={() => setItemOffset(Math.max(0, itemOffset - 100))}>{t("icItemsPrev")}</button>}
-                    {detail.nextOffset != null && <button style={{ ...btn, padding: "3px 9px", fontSize: "11px" }} onClick={() => setItemOffset(detail.nextOffset!)}>{t("icItemsNext")}</button>}
+                    {itemOffset > 0 && <button style={btn({ padding: "3px 9px", fontSize: "11px" })} onClick={() => setItemOffset(Math.max(0, itemOffset - 100))}>{t("icItemsPrev")}</button>}
+                    {detail.nextOffset != null && <button style={btn({ padding: "3px 9px", fontSize: "11px" })} onClick={() => setItemOffset(detail.nextOffset!)}>{t("icItemsNext")}</button>}
                   </div>
                 </div>
               </div>

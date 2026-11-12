@@ -241,7 +241,7 @@ export const PLAGIARISM_TOOLS: McpTool[] = [
       "status, item/verdict counters, the per-site breakdown, and the not-found URL list (every " +
       "not_indexed verdict of the run — the same list the UI's copy button produces; capped at 500 in " +
       "the payload, `notFoundTotal` carries the true count).",
-    cost: "free",
+    cost: "local",
     inputSchema: {
       type: "object",
       properties: {
