@@ -365,7 +365,7 @@ function IndexCheckInner() {
               <span style={label}>{t("icBreakerAfter")}</span>
               <input value={pauseAfter} onChange={e => setPauseAfter(e.target.value)} inputMode="numeric" style={input} />
             </div>
-            <button onClick={doEstimate} disabled={estimating} style={btn}>
+            <button onClick={doEstimate} disabled={estimating} style={btn()}>
               {estimating ? <Loader2 size={14} className="spin" /> : <SearchCheck size={14} />} {t("icEstimateBtn")}
             </button>
           </div>
@@ -412,7 +412,7 @@ function IndexCheckInner() {
                 {r.run.name || r.run.id.slice(0, 8)}
               </span>
               <span style={chip(RUN_COLORS[r.run.status] ?? "#8e8e93")}>
-                {t(`icRun_${r.run.status}`)}{r.run.statusReason === "auto_paused_errors" ? ` · ${t("icAutoPaused")}` : ""}
+                {t(`icRun_${r.run.status}` as never)}{r.run.statusReason === "auto_paused_errors" ? ` · ${t("icAutoPaused")}` : ""}
               </span>
               <span style={muted}>{r.run.provider} · {r.run.createdAt.slice(0, 16).replace("T", " ")}</span>
               <span style={{ ...muted, marginLeft: "auto", display: "flex", gap: "10px" }}>
@@ -476,7 +476,7 @@ function IndexCheckInner() {
 
                 {/* export + indexer push */}
                 <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-                  <button onClick={() => copyNotFound(r.run.id)} style={btn}>
+                  <button onClick={() => copyNotFound(r.run.id)} style={btn()}>
                     {copied === r.run.id ? <Check size={14} /> : <Copy size={14} />} {t("icCopyNotFoundN").replace("{n}", String(notFound))}
                   </button>
                   <a href={`/api/index-check/${r.run.id}/not-found?format=txt`} style={{ ...btn, textDecoration: "none" }} download>
@@ -503,7 +503,7 @@ function IndexCheckInner() {
                     {["all", "indexed", "not_indexed", "error"].map(v => (
                       <button key={v} onClick={() => { setVerdictFilter(v); setItemOffset(0); }}
                         style={{ ...btn, padding: "3px 9px", fontSize: "11px", borderColor: verdictFilter === v ? "var(--color-accent, #3b82f6)" : "var(--color-border)" }}>
-                        {v === "all" ? t("icVerdictAll") : t(`idxSerp_${v}`)}
+                        {v === "all" ? t("icVerdictAll") : t(`idxSerp_${v}` as never)}
                       </button>
                     ))}
                   </div>
@@ -514,7 +514,7 @@ function IndexCheckInner() {
                           <td style={{ padding: "5px 6px", maxWidth: "380px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={it.url}>{it.url}</td>
                           <td style={{ padding: "5px 6px", width: "110px" }}>
                             {it.verdict
-                              ? <span style={{ color: VERDICT_COLORS[it.verdict] ?? "inherit", fontWeight: 600 }}>{t(`idxSerp_${it.verdict}`)}</span>
+                              ? <span style={{ color: VERDICT_COLORS[it.verdict] ?? "inherit", fontWeight: 600 }}>{t(`idxSerp_${it.verdict}` as never)}</span>
                               : <span style={{ color: "var(--color-text-secondary)" }}>{it.status}</span>}
                           </td>
                           <td style={{ padding: "5px 6px", color: "var(--color-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "220px" }} title={it.detail ?? ""}>
