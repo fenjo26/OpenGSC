@@ -44,7 +44,7 @@ import {
   SlidersHorizontal, ChevronDown, Smartphone, Monitor, Tablet,
   Users, Activity, Zap, DollarSign, Link2, Check, Star,
   FileText, Globe, Search, ArrowLeftRight, BookmarkCheck, Calendar, X, Download,
-  ChevronLeft, ChevronRight, ExternalLink, Pencil, Trash2, AlertTriangle, StickyNote,
+  ChevronLeft, ChevronRight, ExternalLink, Pencil, Trash2, AlertTriangle, StickyNote, SearchCheck,
 } from "lucide-react";
 import {
   ComposedChart, LineChart, Area, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -3005,6 +3005,28 @@ interface SubmitResultState {
   total?: number;
 }
 
+// Entry card into the mass index-check queue — the run itself is cross-site (multi-select,
+// pasted lists, donors), so it lives on /index-check; this card just carries the site over.
+function MassCheckCard({ siteDbId }: { siteDbId: string }) {
+  const { t } = useLanguage();
+  const router = useRouter();
+  return (
+    <div style={{ background: "var(--color-card)", borderRadius: "12px", border: "1px solid var(--color-border)", padding: "12px 16px", display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+      <SearchCheck size={16} />
+      <div style={{ flex: 1, minWidth: "220px" }}>
+        <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--color-text-primary)" }}>{t("icSiteCardTitle")}</div>
+        <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginTop: "2px" }}>{t("icSiteCardHint")}</div>
+      </div>
+      <button
+        onClick={() => router.push(`/index-check?site=${encodeURIComponent(siteDbId)}`)}
+        style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "7px 12px", fontSize: "13px", fontWeight: 500, borderRadius: "8px", cursor: "pointer", border: "1px solid var(--color-border)", background: "transparent", color: "var(--color-text-primary)" }}
+      >
+        <SearchCheck size={14} /> {t("icSiteCardGo")}
+      </button>
+    </div>
+  );
+}
+
 function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string }) {
   const { t } = useLanguage();
   // ── URL list state ──
@@ -3485,6 +3507,10 @@ function IndexingTab({ siteDbId, domain }: { siteDbId: string; domain: string })
   return (
     <div style={{ padding: "24px 32px", display: "flex", flexDirection: "column", gap: "20px" }}>
       <IndexAutoPanel siteDbId={siteDbId} domain={domain} />
+
+      {/* ── Mass index check: entry into the cross-site queue (/index-check) ── */}
+      <MassCheckCard siteDbId={siteDbId} />
+
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
 
       {/* ── Search engines: Bing / Yandex / IndexNow actions ── */}

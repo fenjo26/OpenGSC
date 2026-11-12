@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import PasswordChangeGate from "@/components/PasswordChangeGate";
 import { useSession, signOut } from "next-auth/react";
 import { useState, useEffect, useRef, Suspense } from "react";
-import { LogOut, Sparkles, Globe, Newspaper, LayoutDashboard, TrendingUp, Anchor, BarChart2, Radar, Server, ClipboardCheck, Menu, Boxes, Waves, FileText, Inbox, ChevronDown, Link2, Send, Network, Recycle } from "lucide-react";
+import { LogOut, Sparkles, Globe, Newspaper, LayoutDashboard, TrendingUp, Anchor, BarChart2, Radar, Server, ClipboardCheck, Menu, Boxes, Waves, FileText, Inbox, ChevronDown, Link2, Send, Network, Recycle, SearchCheck } from "lucide-react";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { useTheme } from "@/lib/ThemeContext";
 import { useLayout } from "@/lib/LayoutContext";
@@ -453,6 +453,10 @@ function useNavItems(): NavItem[] {
     // buttons lead here for the history. Always visible, like /serp-monitor:
     // the page explains what is missing instead of the feature looking absent.
     { href: "/magiclinks", label: t("mlNavTitle"), key: "magiclinks", icon: <Link2 size={14} />, group: "network" as const },
+    // Verify what the network produced: are the pages — own sites' URLs or the donors bought
+    // above — actually in Google's index? A paid queued run (site: SERP or XML River), and the
+    // not-found list pushes back into the indexers above in one click.
+    { href: "/index-check", label: t("icNavTitle"), key: "index-check", icon: <SearchCheck size={14} />, group: "network" as const },
     // The other side of the same coin as /magiclinks: there you pay somebody else to place
     // posts, here you publish your own (WordPress now, satellite platforms later) and the
     // loop files the result as a donor link the same way. Always visible: the page explains

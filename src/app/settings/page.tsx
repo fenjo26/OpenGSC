@@ -1603,6 +1603,7 @@ function IndexApiSection({ part }: { part: "indexing" | "xmlriver" }) {
   // XML River state
   const [xrUserId,  setXrUserId]  = useState("");
   const [xrApiKey,  setXrApiKey]  = useState("");
+  const [xrPrice,   setXrPrice]   = useState("");
   const [xrStatus,  setXrStatus]  = useState<"idle"|"checking"|"ok"|"error">("idle");
   const [xrMsg,     setXrMsg]     = useState("");
   const [xrSaving,  setXrSaving]  = useState(false);
@@ -1627,6 +1628,8 @@ function IndexApiSection({ part }: { part: "indexing" | "xmlriver" }) {
         if (d.xmlRiver?.userId)           setXrUserId(d.xmlRiver.userId);
         // xrApiKey is masked — don't put it in the input; just track configured state
         if (d.xmlRiver?.configured)       setXrStatus("ok");
+        // The price is not a secret — load it so the field shows the live value
+        if (d.xmlRiver?.priceUsd != null) setXrPrice(String(d.xmlRiver.priceUsd));
         if (d.twoIndex?.configured)       { setNiConfigured(true); setNiStatus("ok"); }
       })
       .catch(() => {});
@@ -1684,7 +1687,7 @@ function IndexApiSection({ part }: { part: "indexing" | "xmlriver" }) {
     await fetch("/api/settings/api-keys", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ xmlRiverUserId: xrUserId, xmlRiverApiKey: xrApiKey }),
+      body: JSON.stringify({ xmlRiverUserId: xrUserId, xmlRiverApiKey: xrApiKey, xmlRiverPriceUsd: xrPrice }),
     });
     setXrSaving(false); setXrSaved(true);
     setTimeout(() => setXrSaved(false), 2000);
@@ -1860,6 +1863,12 @@ function IndexApiSection({ part }: { part: "indexing" | "xmlriver" }) {
         <div style={rowStyle}>
           <input value={xrApiKey} onChange={e => setXrApiKey(e.target.value)} placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" type="password" style={inputStyle} />
         </div>
+
+        <label style={labelStyle}>{t("xrPriceLabel")}</label>
+        <div style={rowStyle}>
+          <input value={xrPrice} onChange={e => setXrPrice(e.target.value)} placeholder="0.002" inputMode="decimal" style={inputStyle} />
+        </div>
+        <p style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginTop: "-4px", marginBottom: "10px" }}>{t("xrPriceHint")}</p>
 
         {xrMsg && <p style={{ fontSize: "12px", color: statusColor(xrStatus), marginBottom: "10px" }}>{xrMsg}</p>}
 

@@ -15,9 +15,10 @@
 // Google's verdict, priced before it runs (CONTRACT.md §0.5).
 
 import { useEffect, useState } from "react";
-import { Loader2, Play, RefreshCw, Save, Search } from "lucide-react";
+import { Check, Copy, Loader2, Play, RefreshCw, Save, Search } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { formatUsd } from "@/lib/seo/metricsClient";
+import { copyText } from "@/components/UrlCell";
 import type { IndexAutoStatus, IndexInspectSettings } from "@/lib/indexing/types";
 
 type Status = IndexAutoStatus & { noGoogle?: boolean };
@@ -131,6 +132,10 @@ export default function IndexAutoPanel({ siteDbId, domain }: { siteDbId: string;
   const [serpEst, setSerpEst] = useState<SerpEstimate | null>(null);
   const [serpBusy, setSerpBusy] = useState(false);
   const [serpMsg, setSerpMsg] = useState("");
+  const [serpCopied, setSerpCopied] = useState(false);
+  // The loaded table's not_indexed cut (last 50 site: verdicts) — the copy button's scope is
+  // exactly these N URLs and the label says so, not "everything the site ever had".
+  const serpNotIndexed = serpRows.filter(r => r.serpIndexStatus === "not_indexed").map(r => r.url);
   const [serpNoKey, setSerpNoKey] = useState(false);
 
   const loadSerpRows = async () => {
@@ -336,6 +341,21 @@ export default function IndexAutoPanel({ siteDbId, domain }: { siteDbId: string;
             <span style={{ fontSize: "12px", color: serpMsg.startsWith("✓") ? "var(--color-accent-green)" : "var(--color-accent-red)", wordBreak: "break-word" }}>
               {serpMsg}
             </span>
+          )}
+          {serpNotIndexed.length > 0 && (
+            <button
+              onClick={() => {
+                void copyText(serpNotIndexed.join("\n")).then(ok => {
+                  setSerpCopied(ok);
+                  if (ok) setTimeout(() => setSerpCopied(false), 1500);
+                });
+              }}
+              style={{ ...btn, padding: "4px 10px" }}
+              title={t("idxSerpCopyHint")}
+            >
+              {serpCopied ? <Check size={12} /> : <Copy size={12} />}
+              {t("icCopyNotFoundN").replace("{n}", String(serpNotIndexed.length))}
+            </button>
           )}
         </div>
         {serpRows.length > 0 && (
