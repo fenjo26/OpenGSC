@@ -1475,6 +1475,26 @@ model Annotation {
   @@index([siteId, date])
 }
 
+// A move of a whole site to another Search Console property — a new domain after a block, or a
+// subdomain that is its own URL-prefix property (src/lib/siteMoves). Chains are linear: at most one
+// move out and one in per site. No relation to Site on purpose: read through raw SQL like
+// Annotation, joined to Site for ownership, and a deleted site simply drops out of its chain.
+model SiteMove {
+  id          String   @id @default(cuid())
+  userId      String
+  fromSiteId  String
+  toSiteId    String
+  date        DateTime // UTC midnight of the move day
+  reason      String   @default("other") // block_regulator | block_isp | google_penalty | rebrand | other
+  redirect301 Boolean  @default(false)
+  note        String?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([fromSiteId])
+  @@index([toSiteId])
+}
+
 // Magic-links purchase ledger (src/lib/magiclinks/purchases.ts) — one row per accepted brief
 // of a PAID order, written only after the provider accepted it. A created-but-unpaid task is
 // not a purchase. Chart markers and the annotations timeline derive from this table on read

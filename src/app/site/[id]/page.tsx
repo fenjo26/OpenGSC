@@ -34,6 +34,7 @@ import TrafficChip from "@/components/TrafficChip";
 import { drSeriesText, type DrPoint } from "@/components/DrSparkline";
 import BacklinkProfile from "@/components/BacklinkProfile";
 import BacklinkImportDialog from "@/components/BacklinkImportDialog";
+import SiteChainModal from "@/components/SiteChainModal";
 import { EVENT_TYPES, EVENT_COLORS, isPrefixMove, type EventType } from "@/lib/annotations/events";
 import BacklinkSyncButton from "@/components/backlinks/BacklinkSyncButton";
 import type { BacklinkRow, BacklinkListStats } from "@/lib/seo/backlinkTypes";
@@ -4888,7 +4889,8 @@ function AnnotationsTab({ period, setPeriod, periodOptions, customDays, onSetupB
             </div>
 
             {/* Actions — only for the operator's own notes, never for Google updates. */}
-            {note.kind === "note" && note.id && (
+            {/* Cross-site moves ("move:" ids) are edited in the chain view, not here. */}
+            {note.kind === "note" && note.id && !note.id.startsWith("move:") && (
               <div style={{ display: "flex", gap: "4px", alignItems: "center", flexShrink: 0 }}>
                 <button
                   title={t("annEditNote")}
@@ -5741,13 +5743,18 @@ export default function SitePage({
   // chart people read; before this they were only visible inside the annotations tab. Refetched
   // whenever the dashboard comes back into view, so a note written in the tab appears at once.
   const [ownNoteMarkers, setOwnNoteMarkers] = useState<{ id: string; date: string; title: string; eventType?: EventType }[]>([]);
+  // Cross-site move chain (another domain / separate-property subdomain) — an overlay, like the
+  // notes list, so it never changes the dashboard's layout. Bumping markersRev re-reads markers
+  // after a move is linked or removed there.
+  const [showChain, setShowChain] = useState(false);
+  const [markersRev, setMarkersRev] = useState(0);
   useEffect(() => {
     if (readOnly || !siteDbId || activeTab !== "dashboard") return;
     fetch(`/api/annotations?siteId=${encodeURIComponent(siteDbId)}&markers=1&lookback=1200`, { cache: "no-store" })
       .then(r => (r.ok ? r.json() : null))
       .then(d => { if (Array.isArray(d?.markers)) setOwnNoteMarkers(d.markers); })
       .catch(() => {});
-  }, [siteDbId, readOnly, activeTab]);
+  }, [siteDbId, readOnly, activeTab, markersRev]);
 
   // Snapped for whichever axis mode is active — same reason as the algo markers above.
   const eventMarkersForMode = useMemo(() => {
@@ -6060,6 +6067,15 @@ export default function SitePage({
             </button>
             <GoogleUpdatesToggle on={googleUpdates} onToggle={() => setGoogleUpdates(v => !v)} />
             {!readOnly && <NotesButton notes={ownNoteMarkers} onOpenTab={() => setActiveTab("annotations")} />}
+            {!readOnly && siteDbId && (
+              <button onClick={() => setShowChain(true)} title={t("chainBtnHint")}
+                style={{ display: "flex", alignItems: "center", gap: "4px", padding: "6px 10px", borderRadius: "8px", border: `1px solid ${showChain ? "var(--color-accent-blue)" : "var(--color-border)"}`, background: "var(--color-card)", color: ownNoteMarkers.some(m => m.id.startsWith("move:")) ? "#B91C1C" : "var(--color-text-secondary)", fontSize: "12px", cursor: "pointer" }}>
+                <ArrowLeftRight size={13} />
+              </button>
+            )}
+            {showChain && siteDbId && (
+              <SiteChainModal siteId={siteDbId} onClose={() => setShowChain(false)} onChanged={() => setMarkersRev(v => v + 1)} />
+            )}
             <FilterDd
               positionFilter={positionFilter}
               onPositionFilter={v => { setPositionFilter(v); if (v !== null) scrollToResults(); }}

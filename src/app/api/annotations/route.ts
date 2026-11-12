@@ -8,6 +8,7 @@ import {
   normalizeEventType, isPrefixMove, normalizePrefix, likePrefix, checkPrefixInProperty,
   type EventType,
 } from "@/lib/annotations/events";
+import { movesForSite } from "@/lib/siteMoves/store";
 
 // Annotations — dated notes about site changes, scored against real Search Console data.
 //
@@ -311,12 +312,42 @@ export async function GET(req: Request) {
     // distinction the UI needs.
     const { rows: noteRows, legacy } = await readNoteRows(siteId, iso(addDays(new Date(), -lookback)));
 
+    // Cross-site moves (src/lib/siteMoves) ride the same timeline on BOTH sites: the old one shows
+    // where its traffic left, the new one where it arrived. Read-only here — they are edited in the
+    // chain view, so their ids carry a "move:" prefix the UI uses to hide edit/delete.
+    const moves = await movesForSite(siteId).catch(() => []);
+    const otherIds = [...new Set(moves.map(m => (m.fromSiteId === siteId ? m.toSiteId : m.fromSiteId)))];
+    const others = otherIds.length
+      ? await prisma.site.findMany({ where: { id: { in: otherIds }, userId }, select: { id: true, url: true } })
+      : [];
+    const hostOf = new Map(others.map(o => [o.id, o.url.replace(/^sc-domain:/, "").replace(/^https?:\/\//, "").replace(/\/$/, "")]));
+    const moveRows = moves
+      .filter(m => hostOf.has(m.fromSiteId === siteId ? m.toSiteId : m.fromSiteId))
+      .map(m => {
+        const out = m.fromSiteId === siteId;
+        const other = hostOf.get(out ? m.toSiteId : m.fromSiteId)!;
+        return {
+          id: `move:${m.id}`,
+          date: new Date(`${m.date}T00:00:00Z`),
+          title: out ? `→ ${other}` : `← ${other}`,
+          description: m.note,
+          scope: "all",
+          urls: null as string | null,
+          eventType: "domain_move" as EventType,
+          fromPrefix: null as string | null,
+          toPrefix: null as string | null,
+        };
+      });
+
     // `markers=1` — the dashboard chart only needs where the operator's own notes sit, not their
     // before/after figures. Skipping the scoring keeps the dashboard off the DailyMetric queries
     // the tab runs per page-scoped note.
     if (searchParams.get("markers") === "1") {
       return NextResponse.json({
-        markers: noteRows.map(r => ({ id: r.id, date: dayOf(r.date), title: r.title, scope: r.scope, eventType: normalizeEventType(r.eventType) })),
+        markers: [
+          ...noteRows.map(r => ({ id: r.id, date: dayOf(r.date), title: r.title, scope: r.scope, eventType: normalizeEventType(r.eventType) })),
+          ...moveRows.map(r => ({ id: r.id, date: dayOf(r.date), title: r.title, scope: r.scope, eventType: r.eventType })),
+        ],
       });
     }
 
@@ -361,6 +392,7 @@ export async function GET(req: Request) {
 
     const rows = [
       ...noteRows.map(r => ({ ...r, eventType: normalizeEventType(r.eventType), kind: "note" as const, updateType: null, endDate: null })),
+      ...moveRows.map(r => ({ ...r, kind: "note" as const, updateType: null, endDate: null })),
       ...purchaseEventRows,
       ...updateRows,
     ].sort((a, b) => +new Date(b.date) - +new Date(a.date));
