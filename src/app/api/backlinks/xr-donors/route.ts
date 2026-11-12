@@ -3,6 +3,7 @@ import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from "@/lib/prisma";
 import { loggedFetch } from "@/lib/providerLog/log";
 import { backlinksNotMigrated } from "@/lib/backlinks/store";
+import { parseXmlRiverVerdict } from "@/lib/indexing/checkProvider";
 
 // POST — XML River index check for PURCHASED donor pages (меджики loop), across every site of
 // the workspace. Ported from the legacy /api/backlinks/check-xr (which still serves the old
@@ -54,8 +55,11 @@ export async function POST() {
       const apiUrl = `https://xmlriver.com/search_console/json/?user=${encodeURIComponent(user.xmlRiverUserId)}&key=${encodeURIComponent(user.xmlRiverApiKey)}&url=${encodeURIComponent(d.urlFrom)}`;
       const { res, call } = await loggedFetch(apiUrl, { signal: AbortSignal.timeout(8000) }, { provider: "xmlriver" });
       const data = await res.json().catch(() => ({}));
-      call.finish(data?.error ? { error: String(data.error).slice(0, 300), responseBody: data } : { responseBody: data });
-      const xrStatus = data?.error ? "error" : data?.indexed ? "indexed" : "not_indexed";
+      // Shared parser (checkProvider.ts) — the union of every XR answer shape we have seen, so
+      // this route and the /index-check queue can never disagree about what XR said.
+      const outcome = parseXmlRiverVerdict(data);
+      call.finish(outcome.status === "error" ? { error: outcome.detail ?? "error", responseBody: data } : { responseBody: data });
+      const xrStatus = outcome.status;
       await prisma.siteBacklink.update({
         where: { id: d.id },
         data: { xrStatus, xrCheckedAt: new Date() },
