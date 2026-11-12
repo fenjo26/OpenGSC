@@ -90,5 +90,9 @@ export async function register() {
     // process-wide provider-call semaphore in sync with the operators' settings.
     const { startGenQueueScheduler } = await import('@/lib/seo/genQueue/scheduler');
     startGenQueueScheduler();
+    // Index-check queue (/index-check): drains SerpCheckRun items — one paid provider call
+    // per item, sequential per run — settles restart orphans and closes drained runs.
+    const { startCheckQueueScheduler } = await import('@/lib/indexing/checkQueueScheduler');
+    startCheckQueueScheduler();
   }
 }

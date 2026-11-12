@@ -129,7 +129,7 @@ export async function estimateSerpIndexCheck(userId: string, urls: string[]): Pr
  * sites. A URL from someone else's domain (the whole point of this check) has no row to update,
  * and is returned as-is.
  */
-async function persistSerpIndexResults(userId: string, outcomes: SerpIndexOutcome[], provider: string): Promise<void> {
+export async function persistSerpIndexResults(userId: string, outcomes: SerpIndexOutcome[], provider: string): Promise<void> {
   const sites = await prisma.site.findMany({ where: { userId }, select: { id: true, url: true } });
   const siteByHost = new Map<string, string>();
   for (const s of sites) {
