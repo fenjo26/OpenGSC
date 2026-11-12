@@ -5825,5 +5825,6 @@
   "chainReason_block_isp": "Блок провайдера",
   "chainReason_google_penalty": "Санкции Google",
   "chainReason_rebrand": "Ребрендинг",
-  "chainReason_other": "Другое"
+  "chainReason_other": "Другое",
+  "annAutoBadge": "авто"
 }

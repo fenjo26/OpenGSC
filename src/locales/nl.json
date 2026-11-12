@@ -5825,5 +5825,6 @@
   "chainReason_block_isp": "Blokkade door provider",
   "chainReason_google_penalty": "Google-penalty",
   "chainReason_rebrand": "Rebranding",
-  "chainReason_other": "Overig"
+  "chainReason_other": "Overig",
+  "annAutoBadge": "auto"
 }

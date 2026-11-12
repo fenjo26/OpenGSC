@@ -9,6 +9,7 @@ import {
   type EventType,
 } from "@/lib/annotations/events";
 import { movesForSite } from "@/lib/siteMoves/store";
+import { autoEventsForSite } from "@/lib/annotations/autoEvents";
 
 // Annotations — dated notes about site changes, scored against real Search Console data.
 //
@@ -344,11 +345,31 @@ export async function GET(req: Request) {
     // `markers=1` — the dashboard chart only needs where the operator's own notes sit, not their
     // before/after figures. Skipping the scoring keeps the dashboard off the DailyMetric queries
     // the tab runs per page-scoped note.
+    // What OpenGSC itself did to the site — published posts, live content operations, PBN links,
+    // indexer submits. Derived, read-only ("auto:" ids). Indexer submits stay off the dashboard
+    // chart (listOnly) because they can happen daily.
+    const autoEvents = await autoEventsForSite(siteId, userId, iso(addDays(new Date(), -lookback))).catch(() => []);
+    // Newest 100: every page-scoped row costs its own DailyMetric query when scored, and a busy
+    // satellite network can publish hundreds of posts in the lookback.
+    const autoRows = autoEvents.sort((a, b) => b.day.localeCompare(a.day)).slice(0, 100).map(a => ({
+      id: a.id,
+      date: new Date(`${a.day}T00:00:00Z`),
+      title: a.title,
+      description: a.description,
+      scope: a.urls.length ? "pages" : "all",
+      urls: a.urls.length ? a.urls.join("\n") : null,
+      eventType: a.eventType,
+      fromPrefix: null as string | null,
+      toPrefix: null as string | null,
+      listOnly: a.listOnly,
+    }));
+
     if (searchParams.get("markers") === "1") {
       return NextResponse.json({
         markers: [
           ...noteRows.map(r => ({ id: r.id, date: dayOf(r.date), title: r.title, scope: r.scope, eventType: normalizeEventType(r.eventType) })),
           ...moveRows.map(r => ({ id: r.id, date: dayOf(r.date), title: r.title, scope: r.scope, eventType: r.eventType })),
+          ...autoRows.filter(r => !r.listOnly).map(r => ({ id: r.id, date: dayOf(r.date), title: r.title, scope: r.scope, eventType: r.eventType })),
         ],
       });
     }
@@ -395,6 +416,7 @@ export async function GET(req: Request) {
     const rows = [
       ...noteRows.map(r => ({ ...r, eventType: normalizeEventType(r.eventType), kind: "note" as const, updateType: null, endDate: null })),
       ...moveRows.map(r => ({ ...r, kind: "note" as const, updateType: null, endDate: null })),
+      ...autoRows.map(r => ({ ...r, kind: "note" as const, updateType: null, endDate: null })),
       ...purchaseEventRows,
       ...updateRows,
     ].sort((a, b) => +new Date(b.date) - +new Date(a.date));

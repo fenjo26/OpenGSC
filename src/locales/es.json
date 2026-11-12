@@ -5825,5 +5825,6 @@
   "chainReason_block_isp": "Bloqueo del ISP",
   "chainReason_google_penalty": "Penalización de Google",
   "chainReason_rebrand": "Cambio de marca",
-  "chainReason_other": "Otro"
+  "chainReason_other": "Otro",
+  "annAutoBadge": "auto"
 }

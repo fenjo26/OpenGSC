@@ -5825,5 +5825,6 @@
   "chainReason_block_isp": "Blocage FAI",
   "chainReason_google_penalty": "Pénalité Google",
   "chainReason_rebrand": "Changement de marque",
-  "chainReason_other": "Autre"
+  "chainReason_other": "Autre",
+  "annAutoBadge": "auto"
 }

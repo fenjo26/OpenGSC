@@ -4838,6 +4838,8 @@ function AnnotationsTab({ period, setPeriod, periodOptions, customDays, onSetupB
                 <div style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "11px", fontWeight: 600, color: EVENT_COLORS[note.eventType!], marginBottom: "4px" }}>
                   <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: EVENT_COLORS[note.eventType!] }} />
                   {t(`evt_${note.eventType}` as never)}
+                  {/* Derived from what OpenGSC did (posts, PBN links, indexer) — not editable here. */}
+                  {note.id?.startsWith("auto:") && <span style={{ fontWeight: 500, color: "var(--color-text-secondary)" }}>· {t("annAutoBadge")}</span>}
                 </div>
               )}
               <div style={{ fontSize: "13px", fontWeight: 700, color: note.kind === "purchase" ? "#7C3AED" : "var(--color-text-primary)", marginBottom: "4px" }}>
@@ -4890,7 +4892,7 @@ function AnnotationsTab({ period, setPeriod, periodOptions, customDays, onSetupB
 
             {/* Actions — only for the operator's own notes, never for Google updates. */}
             {/* Cross-site moves ("move:" ids) are edited in the chain view, not here. */}
-            {note.kind === "note" && note.id && !note.id.startsWith("move:") && (
+            {note.kind === "note" && note.id && !note.id.startsWith("move:") && !note.id.startsWith("auto:") && (
               <div style={{ display: "flex", gap: "4px", alignItems: "center", flexShrink: 0 }}>
                 <button
                   title={t("annEditNote")}

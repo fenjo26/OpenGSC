@@ -5825,5 +5825,6 @@
   "chainReason_block_isp": "Provider-Sperre",
   "chainReason_google_penalty": "Google-Abstrafung",
   "chainReason_rebrand": "Rebranding",
-  "chainReason_other": "Sonstiges"
+  "chainReason_other": "Sonstiges",
+  "annAutoBadge": "auto"
 }

@@ -5825,5 +5825,6 @@
   "chainReason_block_isp": "运营商封锁",
   "chainReason_google_penalty": "Google 惩罚",
   "chainReason_rebrand": "品牌重塑",
-  "chainReason_other": "其他"
+  "chainReason_other": "其他",
+  "annAutoBadge": "自动"
 }
