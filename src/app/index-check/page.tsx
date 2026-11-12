@@ -96,6 +96,7 @@ function IndexCheckInner() {
     const pre = sp.get("site");
     return pre ? new Set([pre]) : new Set<string>();
   });
+  const [siteQuery, setSiteQuery] = useState("");
   const [sitesFilter, setSitesFilter] = useState<"pending" | "all" | "google_not_indexed">("pending");
   const [urlsText, setUrlsText] = useState("");
   const [runName, setRunName] = useState("");
@@ -158,6 +159,14 @@ function IndexCheckInner() {
     const id = setInterval(() => { void loadDetail(openId, verdictFilter, itemOffset); }, 10_000);
     return () => clearInterval(id);
   }, [openId, detail?.active, verdictFilter, itemOffset, loadDetail]);
+
+  // Host search over the sites list — picked-first so an accidental empty of the query never
+  // hides what is already selected.
+  const filteredSites = useMemo(() => {
+    const q = siteQuery.trim().toLowerCase();
+    const match = q ? sites.filter(s => hostOf(s.url).includes(q)) : sites;
+    return [...match].sort((a, b) => Number(picked.has(b.id)) - Number(picked.has(a.id)) || hostOf(a.url).localeCompare(hostOf(b.url)));
+  }, [sites, siteQuery, picked]);
 
   const sourceBody = useMemo(() => {
     if (sourceKind === "urls") return { kind: "urls", urls: urlsText.split(/\n+/).map(s => s.trim()).filter(Boolean) };
@@ -334,13 +343,29 @@ function IndexCheckInner() {
                   <button style={btn({ padding: "4px 10px" })} onClick={() => { setPicked(new Set(sites.map(s => s.id))); setEstimate(null); }}>{t("icSelectAll")}</button>
                   <button style={btn({ padding: "4px 10px" })} onClick={() => { setPicked(new Set()); setEstimate(null); }}>{t("icSelectNone")}</button>
                 </div>
+                {/* Search over hosts — with hundreds of sites the scroll-list alone is not a
+                    picker. The buttons above stay whole-list; the found-set actions below act
+                    exactly on what the query matches, and their labels say so. */}
+                <input
+                  value={siteQuery}
+                  onChange={e => setSiteQuery(e.target.value)}
+                  placeholder={t("icSiteSearch")}
+                  style={input}
+                />
+                <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                  <span style={muted}>{t("icSitesFound").replace("{n}", String(filteredSites.length))}</span>
+                  <button style={btn({ padding: "4px 10px" })} disabled={!filteredSites.length} onClick={() => { setPicked(prev => { const next = new Set(prev); for (const s of filteredSites) next.add(s.id); return next; }); setEstimate(null); }}>
+                    {t("icSelectFound").replace("{n}", String(filteredSites.length))}
+                  </button>
+                </div>
                 <div style={{ maxHeight: "180px", overflowY: "auto", border: "1px solid var(--color-border)", borderRadius: "8px", padding: "6px" }}>
-                  {sites.map(s => (
+                  {filteredSites.map(s => (
                     <label key={s.id} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "4px 6px", fontSize: "13px", cursor: "pointer" }}>
                       <input type="checkbox" checked={picked.has(s.id)} onChange={() => toggleSite(s.id)} />
                       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hostOf(s.url)}</span>
                     </label>
                   ))}
+                  {!!sites.length && !filteredSites.length && <div style={muted}>{t("icNoMatches")}</div>}
                   {!sites.length && <div style={muted}>…</div>}
                 </div>
               </div>
