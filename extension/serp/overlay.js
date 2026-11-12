@@ -400,7 +400,7 @@
   // ─── ads ───────────────────────────────────────────────────────────────────────
 
   var AD_CSS = {
-    google: "#tads,#tadsb,#bottomads,[data-text-ad]{display:none!important}",
+    google: "#tads,#tadsb,#bottomads,[data-text-ad],#atvcap,.cu-container,.commercial-unit-desktop-rhs,.commercial-unit-desktop-top{display:none!important}",
     bing: "#b_results>li.b_ad,.b_adTop,.b_adBottom,#b_results>li.b_adLastChild{display:none!important}",
     yandex: "[data-fast-name=\"direct\"],li.serp-item[data-fast-name^=\"adv\"],.serp-adv__item,.serp-adv-item{display:none!important}",
   };
@@ -411,6 +411,12 @@
   /** Hide paid blocks: one stylesheet for the known containers, plus the sponsored-places
    *  carousels found by their heading. Turning it off restores everything. */
   function applyAdHiding(on) {
+    toggleAds(on);
+    // hidden ads free their space (and shown ones take it back) — the floating card follows
+    if (state.card && state.card.floating) placeCard(state.card);
+  }
+
+  function toggleAds(on) {
     var engine = (state.parsed && state.parsed.engine) || "google";
     if (!on) {
       if (adStyle) { adStyle.remove(); adStyle = null; }
