@@ -5769,5 +5769,8 @@
   "extDownload": "Erweiterung herunterladen (.zip)",
   "extGithub": "Quellcode auf GitHub",
   "extUpdateTitle": "So aktualisieren Sie",
-  "extUpdateSteps": "Laden Sie die .zip erneut herunter, entpacken Sie sie in denselben Ordner (Dateien ersetzen) und klicken Sie auf der Karte der Erweiterung in chrome://extensions auf den Aktualisieren-Pfeil. Solange der Ordnerpfad gleich bleibt, ändert sich die ID nicht — Freigabeliste und Token bleiben unverändert."
+  "extUpdateSteps": "Laden Sie die .zip erneut herunter, entpacken Sie sie in denselben Ordner (Dateien ersetzen) und klicken Sie auf der Karte der Erweiterung in chrome://extensions auf den Aktualisieren-Pfeil. Solange der Ordnerpfad gleich bleibt, ändert sich die ID nicht — Freigabeliste und Token bleiben unverändert.",
+  "notesBtnHint": "Notizen in diesem Diagramm",
+  "notesEmpty": "Noch keine Notizen. Markieren Sie einen Umzug, eine Weiterleitung oder ein Content-Update – es erscheint als Linie im Diagramm.",
+  "notesOpenTab": "Hinzufügen oder bearbeiten"
 }

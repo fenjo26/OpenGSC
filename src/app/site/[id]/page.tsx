@@ -42,7 +42,7 @@ import {
   SlidersHorizontal, ChevronDown, Smartphone, Monitor, Tablet,
   Users, Activity, Zap, DollarSign, Link2, Check, Star,
   FileText, Globe, Search, ArrowLeftRight, BookmarkCheck, Calendar, X, Download,
-  ChevronLeft, ChevronRight, ExternalLink, Pencil, Trash2, AlertTriangle,
+  ChevronLeft, ChevronRight, ExternalLink, Pencil, Trash2, AlertTriangle, StickyNote,
 } from "lucide-react";
 import {
   ComposedChart, LineChart, Area, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -4093,12 +4093,73 @@ function renderNoteMarkers(notes: { id: string; title: string; x: string; kind?:
     // voice next to the operator's notes and Google's rollouts.
     const purchase = n.kind === "purchase";
     const color = purchase ? "#7C3AED" : "var(--color-text-secondary)";
+    // Operator notes on the dashboard are bare: a dashed line and a dot carrying the title on
+    // hover. Text labels need headroom above the plot, and a chart that grows that headroom only
+    // when a site happens to have notes shifts the card geometry from site to site. The list
+    // itself lives behind the notes button in the toolbar.
+    if (n.kind === "note") {
+      return (
+        <ReferenceLine key={n.id} x={n.x} yAxisId="left"
+          stroke={color} strokeWidth={1} strokeOpacity={0.5} strokeDasharray="3 3"
+          label={<NoteMarkerDot title={n.title} />} />
+      );
+    }
     return (
       <ReferenceLine key={n.id} x={n.x} yAxisId="left"
         stroke={color} strokeWidth={purchase ? 1.5 : 1.2} strokeOpacity={0.65}
         label={<NoteMarkerLabel title={n.title} text={n.label} color={purchase ? "#7C3AED" : undefined} />} />
     );
   });
+}
+
+function NoteMarkerDot({ viewBox, title }: { viewBox?: { x?: number; y?: number }; title?: string }) {
+  return (
+    <circle cx={viewBox?.x ?? 0} cy={(viewBox?.y ?? 0) + 4} r={3.5}
+      fill="var(--color-card)" stroke="var(--color-text-secondary)" strokeWidth={1.2} style={{ cursor: "help" }}>
+      <title>{title}</title>
+    </circle>
+  );
+}
+
+// ─── Notes button (dashboard toolbar) ────────────────────────────────────────
+// Always rendered, with or without notes, so the toolbar is the same width on every site; the
+// list opens as an overlay and takes no room in the layout.
+function NotesButton({ notes, onOpenTab }: { notes: { id: string; date: string; title: string }[]; onOpenTab: () => void }) {
+  const { t } = useLanguage();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+  const sorted = [...notes].sort((a, b) => b.date.localeCompare(a.date));
+  const has = sorted.length > 0;
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button onClick={() => setOpen(v => !v)} title={t("notesBtnHint")}
+        style={{ display: "flex", alignItems: "center", gap: "4px", padding: "6px 10px", borderRadius: "8px", border: `1px solid ${open ? "var(--color-accent-blue)" : "var(--color-border)"}`, background: open ? "rgba(59,130,246,0.08)" : "var(--color-card)", color: has ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontSize: "12px", fontWeight: 500, cursor: "pointer" }}>
+        <StickyNote size={13} />
+        {has && <span style={{ fontSize: "11px", fontVariantNumeric: "tabular-nums" }}>{sorted.length}</span>}
+      </button>
+      {open && (
+        <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 50, width: "300px", maxHeight: "360px", overflowY: "auto", background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: "10px", boxShadow: "0 8px 24px rgba(0,0,0,0.12)", padding: "8px" }}>
+          {has ? sorted.map(n => (
+            <div key={n.id} style={{ display: "flex", gap: "10px", padding: "6px 6px", borderRadius: "6px", fontSize: "12px", lineHeight: 1.35 }}>
+              <span style={{ color: "var(--color-text-secondary)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{n.date}</span>
+              <span style={{ color: "var(--color-text-primary)", wordBreak: "break-word" }}>{n.title}</span>
+            </div>
+          )) : (
+            <div style={{ padding: "6px", fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.4 }}>{t("notesEmpty")}</div>
+          )}
+          <button onClick={() => { setOpen(false); onOpenTab(); }}
+            style={{ marginTop: "6px", width: "100%", padding: "6px", borderRadius: "6px", border: "1px solid var(--color-border)", background: "transparent", color: "var(--color-accent-blue)", fontSize: "12px", fontWeight: 500, cursor: "pointer" }}>
+            {t("notesOpenTab")}
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function NoteMarkerLabel({ viewBox, title, text, color }: { viewBox?: { x?: number; y?: number }; title?: string; text?: string; color?: string }) {
@@ -5573,7 +5634,9 @@ export default function SitePage({
     return out;
   }, [candleMode, candleData, siteData, purchaseOrders, ownNoteMarkers]);
 
-  const hasChartMarkers = (googleUpdates && algoMarkersForMode.length > 0) || eventMarkersForMode.length > 0;
+  // Notes are drawn bare (no label above the plot), so only Google updates and purchases reserve
+  // headroom — a site with notes keeps exactly the chart geometry of a site without.
+  const hasChartMarkers = (googleUpdates && algoMarkersForMode.length > 0) || eventMarkersForMode.some(m => m.kind === "purchase");
 
   // ── Rank tracker: which queries are already tracked (for Track buttons) ──────
   const [trackedKws, setTrackedKws] = useState<Set<string>>(new Set());
@@ -5857,6 +5920,7 @@ export default function SitePage({
               <Sparkles size={13} /> {t("aioImpact")}
             </button>
             <GoogleUpdatesToggle on={googleUpdates} onToggle={() => setGoogleUpdates(v => !v)} />
+            {!readOnly && <NotesButton notes={ownNoteMarkers} onOpenTab={() => setActiveTab("annotations")} />}
             <FilterDd
               positionFilter={positionFilter}
               onPositionFilter={v => { setPositionFilter(v); if (v !== null) scrollToResults(); }}

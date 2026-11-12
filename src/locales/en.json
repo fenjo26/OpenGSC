@@ -5769,5 +5769,8 @@
   "extDownload": "Download the extension (.zip)",
   "extGithub": "Source on GitHub",
   "extUpdateTitle": "How to update",
-  "extUpdateSteps": "Download the .zip again, unpack it over the same folder (replace the files), then press the reload arrow on the extension's card in chrome://extensions. The ID stays the same as long as the folder path does not change — no need to touch the allowlist or the token."
+  "extUpdateSteps": "Download the .zip again, unpack it over the same folder (replace the files), then press the reload arrow on the extension's card in chrome://extensions. The ID stays the same as long as the folder path does not change — no need to touch the allowlist or the token.",
+  "notesBtnHint": "Notes on this chart",
+  "notesEmpty": "No notes yet. Mark a move, a redirect or a content update — it will show up as a line on the chart.",
+  "notesOpenTab": "Add or edit notes"
 }

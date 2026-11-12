@@ -5769,5 +5769,8 @@
   "extDownload": "Descargar la extensión (.zip)",
   "extGithub": "Código fuente en GitHub",
   "extUpdateTitle": "Cómo actualizar",
-  "extUpdateSteps": "Descarga el .zip de nuevo, descomprímelo en la misma carpeta (reemplazando los archivos) y pulsa la flecha de recarga en la tarjeta de la extensión en chrome://extensions. Mientras la ruta de la carpeta no cambie, el ID sigue siendo el mismo: no hace falta tocar la lista ni el token."
+  "extUpdateSteps": "Descarga el .zip de nuevo, descomprímelo en la misma carpeta (reemplazando los archivos) y pulsa la flecha de recarga en la tarjeta de la extensión en chrome://extensions. Mientras la ruta de la carpeta no cambie, el ID sigue siendo el mismo: no hace falta tocar la lista ni el token.",
+  "notesBtnHint": "Notas en este gráfico",
+  "notesEmpty": "Aún no hay notas. Marca una migración, una redirección o una actualización de contenido: aparecerá una línea en el gráfico.",
+  "notesOpenTab": "Añadir o editar"
 }

@@ -5769,5 +5769,8 @@
   "extDownload": "下载扩展（.zip）",
   "extGithub": "GitHub 上的源码",
   "extUpdateTitle": "如何更新",
-  "extUpdateSteps": "重新下载 .zip，解压到同一个文件夹（替换文件），然后在 chrome://extensions 中点击扩展卡片上的刷新箭头。只要文件夹路径不变，ID 就不会变 — 无需修改白名单或令牌。"
+  "extUpdateSteps": "重新下载 .zip，解压到同一个文件夹（替换文件），然后在 chrome://extensions 中点击扩展卡片上的刷新箭头。只要文件夹路径不变，ID 就不会变 — 无需修改白名单或令牌。",
+  "notesBtnHint": "图表上的备注",
+  "notesEmpty": "暂无备注。标记一次迁移、重定向或内容更新，图表上会出现一条线。",
+  "notesOpenTab": "添加或编辑"
 }

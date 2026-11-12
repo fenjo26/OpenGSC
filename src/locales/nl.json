@@ -5769,5 +5769,8 @@
   "extDownload": "Extensie downloaden (.zip)",
   "extGithub": "Broncode op GitHub",
   "extUpdateTitle": "Zo werk je bij",
-  "extUpdateSteps": "Download de .zip opnieuw, pak die uit in dezelfde map (bestanden vervangen) en klik op de herlaadpijl op de kaart van de extensie in chrome://extensions. Zolang het mappad gelijk blijft, verandert de ID niet — de toegestane lijst en het token blijven zoals ze zijn."
+  "extUpdateSteps": "Download de .zip opnieuw, pak die uit in dezelfde map (bestanden vervangen) en klik op de herlaadpijl op de kaart van de extensie in chrome://extensions. Zolang het mappad gelijk blijft, verandert de ID niet — de toegestane lijst en het token blijven zoals ze zijn.",
+  "notesBtnHint": "Notities in deze grafiek",
+  "notesEmpty": "Nog geen notities. Markeer een verhuizing, redirect of contentupdate — die verschijnt als lijn in de grafiek.",
+  "notesOpenTab": "Toevoegen of bewerken"
 }
