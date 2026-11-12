@@ -462,11 +462,64 @@
     // the right of the results instead — measured, and re-measured on resize.
     host.floating = true;
     placeCard(host);
-    window.addEventListener("resize", function () {
+    var replace = function () {
       clearTimeout(state.placeTimer);
       state.placeTimer = setTimeout(function () { placeCard(host); }, 150);
-    });
+    };
+    window.addEventListener("resize", replace);
+    // The page keeps moving after we mount: the AI overview loads late and grows on "Show
+    // more", and our own card gets taller as data arrives. Re-measure on either.
+    if (typeof ResizeObserver !== "undefined") {
+      var ro = new ResizeObserver(replace);
+      ro.observe(host.el);
+      var page = document.getElementById("rcnt") || resultsColumn();
+      if (page) ro.observe(page);
+    }
     return host;
+  }
+
+  /** Vertical spans (document coordinates) that the engine's own content occupies inside the
+   *  horizontal band [left, right] beside the results. Google has no #rhs on many SERPs yet
+   *  still draws there — the AI overview's sources panel is the usual one — so the floating
+   *  card must look before it lands. Wrappers that also span the results column are opened
+   *  up; whatever sits in the band itself counts whole. A sticky block claims the full track
+   *  it slides along (its parent), not just where it happens to be right now. */
+  function sideObstacles(left, right, col, own) {
+    var out = [];
+    var budget = 3000;
+    var sy = window.scrollY;
+    function ownText(el) {
+      for (var n = el.firstChild; n; n = n.nextSibling) {
+        if (n.nodeType === 3 && n.nodeValue.trim()) return true;
+      }
+      return false;
+    }
+    function kids(el, depth) {
+      for (var c = el.firstElementChild; c; c = c.nextElementSibling) walk(c, depth + 1);
+    }
+    function walk(el, depth) {
+      if (el === own || budget-- <= 0 || depth > 60) return;
+      if (/^OPENGSC-/.test(el.tagName)) return;
+      if (el.contains(col)) { if (el !== col) kids(el, depth); return; }
+      var cs = getComputedStyle(el);
+      if (cs.display === "none" || cs.visibility === "hidden" || cs.position === "fixed") return;
+      var r = el.getBoundingClientRect();
+      if (cs.display === "contents" || ((r.width < 2 || r.height < 2) && cs.overflow === "visible")) { kids(el, depth); return; }
+      if (r.width < 2 || r.height < 2 || cs.opacity === "0") return;
+      if (r.right <= left + 4 || r.left >= right - 4) return;
+      if (cs.position === "sticky") {
+        var pr = el.parentElement ? el.parentElement.getBoundingClientRect() : r;
+        out.push({ top: Math.min(pr.top, r.top) + sy, bottom: Math.max(pr.bottom, r.bottom) + sy });
+        return;
+      }
+      var wrapper = r.left < left - 40 && el.firstElementChild && !ownText(el) &&
+        !/^(IMG|SVG|VIDEO|CANVAS|IFRAME)$/i.test(el.tagName);
+      if (wrapper) { kids(el, depth); return; }
+      out.push({ top: r.top + sy, bottom: r.bottom + sy });
+    }
+    var root = document.getElementById("rcnt") || document.body;
+    if (root && col) walk(root, 0);
+    return out.sort(function (a, b) { return a.top - b.top; });
   }
 
   function resultsColumn() {
@@ -480,13 +533,23 @@
     var room = col ? document.documentElement.clientWidth - col.getBoundingClientRect().right - 48 - 24 : 0;
     if (col && room >= 300) {
       var cr = col.getBoundingClientRect();
+      var width = Math.min(380, Math.round(room));
+      var left = cr.right + 48;
+      // start level with the results, then slide down past anything the engine put there
+      var y = top.getBoundingClientRect().top + window.scrollY;
+      var height = Math.max(host.el.offsetHeight || 0, 160);
+      sideObstacles(left, left + width, col, host.el).forEach(function (o) {
+        if (o.bottom > y - 16 && o.top < y + height + 16) y = o.bottom + 16;
+      });
+      var css = "display:block;position:absolute;z-index:2;" +
+        "top:" + Math.round(y) + "px;" +
+        "left:" + Math.round(left + window.scrollX) + "px;" +
+        "width:" + width + "px;";
       if (host.el.parentNode !== document.body) document.body.appendChild(host.el);
-      host.el.style.cssText = "display:block;position:absolute;z-index:2;" +
-        "top:" + Math.round(top.getBoundingClientRect().top + window.scrollY) + "px;" +
-        "left:" + Math.round(cr.right + window.scrollX + 48) + "px;" +
-        "width:" + Math.min(380, Math.round(room)) + "px;";
+      if (host.css !== css) { host.css = css; host.el.style.cssText = css; }
       return;
     }
+    host.css = "";
     // narrow window: above the results, in the flow
     var results = document.getElementById("rso") || document.getElementById("b_results") || document.getElementById("search-result");
     if (results && results.parentNode && host.el.nextSibling !== results) results.parentNode.insertBefore(host.el, results);
