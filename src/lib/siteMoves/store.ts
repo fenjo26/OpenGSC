@@ -77,14 +77,15 @@ export async function deleteMove(userId: string, id: string): Promise<void> {
   );
 }
 
-/** Site-level daily clicks (the aggregate row: url='' AND query='') for several sites at once. */
+/** Site-level daily web-search clicks (the rollup row: url='' AND query='' AND searchType='web' —
+ *  the rollup is stored once per search type, so without the type filter it counts five times). */
 export async function dailyClicks(siteIds: string[], from: string, dayExpr: string): Promise<Map<string, { day: string; clicks: number }[]>> {
   const out = new Map<string, { day: string; clicks: number }[]>(siteIds.map(id => [id, []]));
   if (!siteIds.length) return out;
   const rows = await rawQuery<{ siteId: string; day: string; clicks: number | bigint }[]>(
     `SELECT "siteId", ${dayExpr} AS day, SUM("clicks") AS clicks
      FROM "DailyMetric"
-     WHERE "siteId" IN (${siteIds.map(() => "?").join(",")}) AND "date" >= ? AND "url" = '' AND "query" = ''
+     WHERE "siteId" IN (${siteIds.map(() => "?").join(",")}) AND "date" >= ? AND "url" = '' AND "query" = '' AND "searchType" = 'web'
      GROUP BY "siteId", day
      ORDER BY day ASC`,
     ...siteIds, new Date(`${from}T00:00:00Z`),

@@ -89,7 +89,9 @@ async function dailySeries(siteId: string, from: Date, to: Date, urls: string[])
     urlFilter = ` AND "url" IN (${urls.map(() => "?").join(",")}) AND "query" = ''`;
     params.push(...urls);
   } else {
-    urlFilter = ` AND "url" = '' AND "query" = ''`;
+    // The rollup row exists once per search type (web, discover, news, image, video); without
+    // this filter every all-pages note summed all five — Discover traffic counted as search.
+    urlFilter = ` AND "url" = '' AND "query" = '' AND "searchType" = 'web'`;
   }
   const rows = await rawQuery<{ day: string; clicks: bigint | number; impressions: bigint | number; posw: number | null }[]>(
     `SELECT ${DAY_EXPR} AS day,
