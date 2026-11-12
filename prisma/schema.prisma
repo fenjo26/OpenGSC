@@ -100,6 +100,7 @@ model User {
   neuralIndexerToken String?
   xmlRiverUserId     String?
   xmlRiverApiKey     String?
+  xmlRiverPriceUsd   Float?   // optional per-check price the operator knows from their XML River tariff — drives the run's cost estimate; null = count-only estimate
   twoIndexToken      String?
 
   // Custom Indexer Bot Farm
@@ -109,6 +110,7 @@ model User {
   // SEO Tools background generation jobs
   seoJobs             SeoJob[]
   genBatches          SeoBatch[]
+  serpCheckRuns       SerpCheckRun[] // index-check queue runs (src/lib/indexing/checkQueue.ts)
 
   // Content Operations is a publishing workflow layered on top of the existing
   // Demand / Outline / Text / Rewrite tools. Repository credentials stay server-only.
@@ -2988,6 +2990,55 @@ model SeoBatchItem {
   @@index([batchId, status])
   @@index([userId, status, nextAttemptAt])
   @@index([dependsOnItemId])
+}
+
+// A mass index-check run (the /index-check queue): one user action → N URLs checked sequentially
+// in the background against a paid provider (a `site:` SERP query, or XML River's direct
+// indexed? endpoint). Same architecture as SeoBatch — durable items, in-process slots — minus
+// priorities, phases and retries: a failed provider call is recorded as an error verdict, never
+// retried, because every attempt costs money. See src/lib/indexing/checkQueue.ts.
+model SerpCheckRun {
+  id                String    @id @default(cuid())
+  userId            String
+  name              String    @default("")
+  provider          String // "xmlriver" | any runSerp provider (serper, dataforseo, scrapingrobot, aparser)
+  source            String    @default("urls") // "sites" | "urls" | "donors" — how the URL list was collected
+  status            String    @default("active") // "active" | "paused" | "done" | "cancelled"
+  statusReason      String    @default("") // why a run paused itself ("auto_paused_errors" circuit breaker)
+  consecutiveErrors Int       @default(0) // reset on any answered item, bumped on each error verdict
+  pauseAfterErrors  Int       @default(10) // 0 disables the breaker
+  estCostUsd        Float? // the estimate shown at confirm time; actual spend lives in ApiUsage
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  finishedAt        DateTime?
+
+  user  User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items SerpCheckItem[]
+
+  @@index([userId, createdAt])
+}
+
+// One URL inside a SerpCheckRun. The verdict column uses the same vocabulary and semantics as
+// SitemapUrl.serpIndex* — error means the provider failed (captcha, auth, network), NEVER
+// "not indexed". Foreign URLs (donors, drops) carry no siteId and are never persisted to the
+// sitemap inventory.
+model SerpCheckItem {
+  id         String    @id @default(cuid())
+  runId      String
+  url        String // the caller's spelling — deduped at create time by comparison form
+  siteId     String? // resolved owning site at create time; null = foreign URL
+  status     String    @default("queued") // "queued" | "running" | "completed" | "error" | "skipped"
+  verdict    String? // "indexed" | "not_indexed" | "error" (error only on status "error")
+  matchedUrl String? // the SERP URL that matched (set on "indexed")
+  detail     String? // provider error text (set on error)
+  checkedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  run SerpCheckRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, url])
+  @@index([runId, status])
 }
 
 /// A connector link: a separate MCP token made for one client (typically Claude Desktop, whose
