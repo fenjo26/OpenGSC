@@ -14,6 +14,10 @@ import {
   type PlagiarismResult,
 } from "@/lib/plagiarism";
 import { estimateSerpIndexCheck, serpIndexCheckUrls, SERP_INDEX_MAX_URLS } from "@/lib/indexing/serpIndex";
+import {
+  estimateRun, createRun, getRunStatus, getNotFoundUrls, listRuns,
+  type RunSource,
+} from "@/lib/indexing/checkQueue";
 
 function costSentence(costUsd: number | null, free: boolean, unknown: boolean): string {
   if (free) return "free (self-hosted provider, no per-request cost)";
@@ -149,6 +153,137 @@ export const PLAGIARISM_TOOLS: McpTool[] = [
           ...(r.detail ? { detail: r.detail } : {}),
           persisted: r.persisted,
         })),
+      };
+    },
+  },
+  {
+    name: "index_check_queue",
+    description:
+      "PAID · Queue a MASS index-check run (the /index-check queue): N URLs checked sequentially in the " +
+      "background — a `site:` SERP query via the configured provider, or XML River's direct indexed? " +
+      "check (often cheaper; needs the XR keys, price from the operator's tariff field). Sources: `sites` " +
+      "(sitemap inventory of the given site ids, filterable to never-checked / Google-says-not-indexed), " +
+      "`urls` (any list — drops, donors, foreign pages) or `donors` (every purchased donor page). Same " +
+      "verdict semantics as serp_index_check (a provider failure is `error`, never `not_indexed`), one " +
+      "active run per user, auto-paused after 10 consecutive provider errors. Poll with " +
+      "index_check_queue_status.",
+    cost: "paid",
+    inputSchema: {
+      type: "object",
+      properties: {
+        provider: { type: "string", enum: ["serp", "xmlriver"], description: "serp = the configured SERP provider (site: query); xmlriver = the direct check. Default serp." },
+        sites: { type: "array", items: { type: "string" }, description: "Site ids whose sitemap inventory to check (list_sites)." },
+        filter: { type: "string", enum: ["pending", "google_not_indexed", "all"], description: "With `sites`: pending = never checked by anyone; google_not_indexed = Google inspected and the verdict lacks 'indexed'; all = whole inventory. Default pending." },
+        urls: { type: "array", items: { type: "string" }, description: "Explicit URL list instead of sites — foreign URLs (donors, drops) included, never persisted to the inventory." },
+        donors: { type: "boolean", description: "Check every purchased donor page (SiteBacklink with purchaseProvider) instead of sites/urls." },
+        name: { type: "string", description: "Optional run name." },
+        pauseAfterErrors: { type: "number", description: "Auto-pause after this many consecutive provider errors (default 10, 0 disables)." },
+        confirm: {
+          type: "boolean",
+          description: "Must be true. PAID: each URL is one billed provider call on the instance owner's key — get their permission first.",
+        },
+      },
+      required: ["confirm"],
+    },
+    handler: async (userId: string, args: Json) => {
+      const providerWanted = args.provider === "xmlriver" ? "xmlriver" : "";
+      const source: RunSource | null = args.donors === true
+        ? { kind: "donors" }
+        : Array.isArray(args.sites) && args.sites.length
+          ? {
+              kind: "sites",
+              siteIds: args.sites.map((s: unknown) => String(s ?? "")),
+              filter: args.filter === "all" || args.filter === "google_not_indexed" ? args.filter : "pending",
+            }
+          : Array.isArray(args.urls) && args.urls.length
+            ? { kind: "urls", urls: args.urls.map((u: unknown) => String(u ?? "").trim()).filter(Boolean) }
+            : null;
+      if (!source) throw new Error("Pass one source: `sites` (+ optional filter), `urls`, or `donors: true`.");
+
+      const est = await estimateRun(userId, providerWanted, source);
+      if (!est.ok) {
+        if (est.error === "no_urls") throw new Error("The source collected zero URLs — pick other sites, loosen the filter, or pass a list.");
+        if (est.error === "no_xr_key") throw new Error("No XML River keys configured (Settings → SERP & scraping).");
+        throw new Error(NO_KEY);
+      }
+      const price = est.estimate!;
+      if (args.confirm !== true) {
+        throw new Error(
+          "index_check_queue spends the instance owner's provider credits, so it will not run unconfirmed. " +
+          `${est.collected} URL${est.collected === 1 ? "" : "s"} via ${price.provider} — ${costSentence(price.costUsd, price.free, price.unknownPrice)}. ` +
+          "Ask the user for permission, then call again with confirm: true.",
+        );
+      }
+
+      const out = await createRun(userId, providerWanted, source, {
+        name: typeof args.name === "string" ? args.name : undefined,
+        pauseAfterErrors: typeof args.pauseAfterErrors === "number" ? args.pauseAfterErrors : undefined,
+      });
+      if (!out.ok) {
+        if (out.error === "run_active") throw new Error(`Another run is already active (${out.runId}) — one paid stream at a time. Poll it with index_check_queue_status.`);
+        if (out.error === "cap_exceeded") throw new Error(`Monthly spending cap reached (${out.detail}).`);
+        throw new Error(String(out.error));
+      }
+      return {
+        ok: true,
+        runId: out.runId,
+        provider: price.provider,
+        urls: out.collected,
+        ...(price.costUsd != null ? { estCostUsd: price.costUsd } : {}),
+        note: "The run drains in the background (one sequential provider call per item). Poll index_check_queue_status for progress and the not-found list.",
+      };
+    },
+  },
+  {
+    name: "index_check_queue_status",
+    description:
+      "FREE · Progress and results of index-check runs. Without runId: the recent runs list. With runId: " +
+      "status, item/verdict counters, the per-site breakdown, and the not-found URL list (every " +
+      "not_indexed verdict of the run — the same list the UI's copy button produces; capped at 500 in " +
+      "the payload, `notFoundTotal` carries the true count).",
+    cost: "free",
+    inputSchema: {
+      type: "object",
+      properties: {
+        runId: { type: "string", description: "Run id from index_check_queue. Omit to list recent runs." },
+      },
+    },
+    handler: async (userId: string, args: Json) => {
+      const runId = typeof args.runId === "string" ? args.runId.trim() : "";
+      if (!runId) {
+        const runs = await listRuns(userId, 20);
+        return {
+          runs: runs.map((r) => ({
+            runId: r.run.id,
+            name: r.run.name,
+            provider: r.run.provider,
+            source: r.run.source,
+            status: r.run.status,
+            ...(r.run.statusReason ? { statusReason: r.run.statusReason } : {}),
+            counts: r.counts,
+            verdicts: r.verdicts,
+            createdAt: r.run.createdAt,
+          })),
+        };
+      }
+      const status = await getRunStatus(userId, runId);
+      if (!status) throw new Error("Run not found for this workspace.");
+      const notFound = await getNotFoundUrls(userId, runId);
+      if (!notFound) throw new Error("Run not found for this workspace.");
+      return {
+        runId: status.run.id,
+        name: status.run.name,
+        provider: status.run.provider,
+        status: status.run.status,
+        ...(status.run.statusReason ? { statusReason: status.run.statusReason } : {}),
+        counts: status.counts,
+        verdicts: status.verdicts,
+        bySite: status.bySite,
+        createdAt: status.run.createdAt,
+        ...(status.run.finishedAt ? { finishedAt: status.run.finishedAt } : {}),
+        notFoundTotal: notFound.length,
+        notFound: notFound.slice(0, 500),
+        note: "not_indexed means the exact URL did not appear in the returned results — an estimate, not Google's own verdict.",
       };
     },
   },

@@ -108,4 +108,33 @@ You get SQI (ИКС), pages in search / excluded, 8 weeks of clicks and impressi
 
 ## MCP
 
-`get_indexing_status`, `get_index_coverage` (free), `inspect_url` (Google quota), `serp_index_check` (paid, `confirm: true`).
+`get_indexing_status`, `get_index_coverage` (free), `inspect_url` (Google quota), `serp_index_check` (paid, `confirm: true`), `index_check_queue` (paid, `confirm: true`), `index_check_queue_status` (free).
+
+## Mass index check (/index-check)
+
+The Indexing tab answers "what does Google say about this site" on Google's free URL Inspection
+quota; `/index-check` answers "what does the public search say about many URLs at once" — as one
+queued, paid run.
+
+- **Providers**: your SERP provider (`site:` query — the one from Settings → SEO Tools) or **XML
+  River's direct indexed? check** (usually cheaper; needs the XR keys). XR runs are priced from
+  the optional *price per check* field on the XR settings card — empty means the estimate shows
+  the URL count only ("priced by your tariff"), and no units are recorded.
+- **Sources**: your sites (multi-select, filtered to *never checked*, *Google says not indexed*
+  or the whole inventory), a pasted URL list (foreign URLs included — donors, drops), or every
+  purchased donor page.
+- **The run** drains sequentially in the background (one provider call per item, 300–800 ms
+  apart), survives a reload and a server restart, and can be paused or stopped — a stop skips
+  the queued URLs but lets the call in flight land, because its money is already committed. One
+  active run per user. Ten consecutive provider errors pause the run and fire one alert.
+- **Verdicts** use the same vocabulary and semantics as the Indexing tab's site: column: a
+  provider failure is `error`, NEVER `not_indexed`. Own-site URLs persist into that table;
+  foreign URLs live in the run only.
+- **The not-found list** (every `not_indexed` verdict, deduped, no errors/unchecked) is copied,
+  downloaded as .txt, or pushed straight into NeuralIndexer / 2index / the doorway farm with one
+  click — the check → fix loop never leaves the app.
+
+Deploy note: requires `npx prisma db push` (the `SerpCheckRun`/`SerpCheckItem` tables and the
+`User.xmlRiverPriceUsd` column).
+
+MCP: `index_check_queue` (paid, `confirm: true`), `index_check_queue_status` (free).
