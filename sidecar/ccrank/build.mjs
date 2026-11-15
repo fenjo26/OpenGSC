@@ -123,8 +123,19 @@ async function main() {
 
   const source = arg("source") ?? `${DATA_BASE}/${release}/domain/${release}-domain-ranks.txt.gz`;
   const gzPath = path.join(tmpDir, `${release}-domain-ranks.txt.gz`);
-  log(`downloading ${source}`);
-  await run("curl", ["-fL", "--retry", "8", "--retry-delay", "10", "-C", "-", "-o", gzPath, source]);
+  // A finished download left by a build that failed later must not be re-requested: curl's
+  // resume (-C -) on a complete file gets HTTP 416 and exits non-zero.
+  let haveAll = false;
+  try {
+    const head = await fetch(source, { method: "HEAD" });
+    const want = Number(head.headers.get("content-length"));
+    haveAll = head.ok && want > 0 && (await stat(gzPath)).size === want;
+  } catch { /* no local file yet, or a source without HEAD (file://) — just download */ }
+  if (haveAll) log("download already complete — reusing it");
+  else {
+    log(`downloading ${source}`);
+    await run("curl", ["-fL", "--retry", "8", "--retry-delay", "10", "-C", "-", "-o", gzPath, source]);
+  }
 
   log("reshaping and sorting (this is the long step)");
   const ranksPath = path.join(workDir, "ranks.tsv");
