@@ -68,6 +68,7 @@ import { REPORTS_TOOLS } from "./toolsReports";
 import { LEADS_TOOLS } from "./toolsLeads";
 import { CONTEXT_TOOLS } from "./toolsContext";
 import { PUBLISH_TOOLS } from "./toolsPublish";
+import { AI_READY_TOOLS } from "./toolsAiReady";
 import { rawQuery } from "@/lib/db/raw";
 import { findStriking } from "@/lib/striking/query";
 import { findCannibalization } from "@/lib/cannibalization/query";
@@ -833,7 +834,7 @@ const CORE_TOOLS: McpTool[] = [
 
 // The single registry the route handler sees. Order matters only for readability in
 // tools/list — agents pick by name, and get_capabilities groups them by cost.
-export const MCP_TOOLS: McpTool[] = [...CORE_TOOLS, ...DATA_TOOLS, ...METRICS_TOOLS, ...DEMAND_TOOLS, ...OPTIMIZE_TOOLS, ...OUTREACH_TOOLS, ...SOURCE_AUDIT_TOOLS, ...DROPS_TOOLS, ...PBN_TOOLS, ...SERPMON_TOOLS, ...SERP_CAPTURE_TOOLS, ...META_TOOLS, ...UPTIME_TOOLS, ...INDEX_TOOLS, ...MENTIONS_TOOLS, ...VISIBILITY_TOOLS, ...FOOTPRINT_TOOLS, ...BACKLINK_TOX_TOOLS, ...LOCAL_TOOLS, ...TRENDS_TOOLS, ...PLAGIARISM_TOOLS, ...REPORTS_TOOLS, ...LEADS_TOOLS, ...CONTEXT_TOOLS, ...PUBLISH_TOOLS, ...LOGS_TOOLS];
+export const MCP_TOOLS: McpTool[] = [...CORE_TOOLS, ...DATA_TOOLS, ...METRICS_TOOLS, ...DEMAND_TOOLS, ...OPTIMIZE_TOOLS, ...OUTREACH_TOOLS, ...SOURCE_AUDIT_TOOLS, ...DROPS_TOOLS, ...PBN_TOOLS, ...SERPMON_TOOLS, ...SERP_CAPTURE_TOOLS, ...META_TOOLS, ...UPTIME_TOOLS, ...INDEX_TOOLS, ...MENTIONS_TOOLS, ...VISIBILITY_TOOLS, ...FOOTPRINT_TOOLS, ...BACKLINK_TOX_TOOLS, ...LOCAL_TOOLS, ...TRENDS_TOOLS, ...PLAGIARISM_TOOLS, ...REPORTS_TOOLS, ...LEADS_TOOLS, ...CONTEXT_TOOLS, ...PUBLISH_TOOLS, ...LOGS_TOOLS, ...AI_READY_TOOLS];
 
 // A duplicate name would silently shadow a tool in findTool, and the failure would look
 // like "that tool ignores half its arguments" rather than "there are two of them".

@@ -11,6 +11,7 @@ import { ClarityPanel } from "@/components/ClarityPanel";
 import RankTracker from "@/components/RankTracker";
 import SiteAuditPanel from "@/components/SiteAuditPanel";
 import ServerLogsPanel from "@/components/ServerLogsPanel";
+import AiReadinessCard from "@/components/AiReadinessCard";
 import EngineView, { type AltEngine, type EngineSummary } from "@/components/EngineView";
 import SearchEnginesPanel from "@/components/SearchEnginesPanel";
 import { withShare } from "@/lib/shareParam";
@@ -6047,7 +6048,7 @@ export default function SitePage({
         </>
       )}
 
-      {activeTab === "audit" && <><SiteAuditPanel siteDbId={siteDbId} /><ServerLogsPanel siteDbId={siteDbId} /></>}
+      {activeTab === "audit" && <><AiReadinessCard siteDbId={siteDbId} /><SiteAuditPanel siteDbId={siteDbId} /><ServerLogsPanel siteDbId={siteDbId} /></>}
 
       {/* ── UX / Clarity tab ── */}
       {activeTab === "ux" && <ClarityPanel siteDbId={siteDbId} domain={domain} />}
