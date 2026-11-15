@@ -6,6 +6,7 @@ import { chunk, newestWindow, queryPageWindows, siteDisplayName, type SummaryWin
 import { peekReportCache, putReportCache, reportCacheVersion } from "@/lib/gsc/reportCache";
 import { parseSiteTags } from "@/lib/decay/logic";
 import { brandTermsOf, buildExactGroups, type CannibalGroup, type QueryPageRow } from "./exact";
+import { normalizePageUrl } from "@/lib/url-normalize";
 
 export interface CannibalSite { id: string; url: string; siteId: string; tags?: string | null }
 
@@ -37,7 +38,8 @@ async function readRows(siteIds: string[]): Promise<Map<string, QueryPageRow[]>>
   const out = new Map<string, QueryPageRow[]>();
   for (const r of rows) {
     const list = out.get(r.siteId);
-    if (list) list.push(r); else out.set(r.siteId, [r]);
+    const norm = { ...r, url: normalizePageUrl(r.url) };
+    if (list) list.push(norm); else out.set(r.siteId, [norm]);
   }
   return out;
 }

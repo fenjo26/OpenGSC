@@ -12,6 +12,7 @@
 // does not have, and an internal fetch to your own server just to re-authenticate is a
 // deadlock waiting for a single-process deployment under load.
 
+import { normalizePageUrl } from "@/lib/url-normalize";
 import { prisma } from "@/lib/prisma";
 import { google } from "googleapis";
 import {
@@ -128,17 +129,31 @@ export const DATA_TOOLS: McpTool[] = [
         take: lim(args.limit, 50, 500),
       });
 
-      const keywords = rows
-        .filter(r => r.url !== "" && r.query !== "")
+      // Fold fragment URL variants of the same page (#toc-N, ...) into one
+      // pair per (query, page) — same page, same data, one row.
+      const folded = new Map();
+      for (const r of rows) {
+        if (r.url === "" || r.query === "") continue;
+        const key = `${r.query}\n${normalizePageUrl(r.url)}`;
+        const e = folded.get(key) ?? { query: r.query, url: normalizePageUrl(r.url), clicks: 0, impressions: 0, ctrW: 0, posW: 0 };
+        const c = r._sum.clicks ?? 0;
+        const i = r._sum.impressions ?? 0;
+        e.clicks += c; e.impressions += i;
+        e.ctrW += (r._avg.ctr ?? 0) * i;
+        e.posW += (r._avg.position ?? 0) * Math.max(i, 1);
+        folded.set(key, e);
+      }
+      const keywords = [...folded.values()]
+        .sort((a, b) => b.impressions - a.impressions)
         .map(r => {
-          const position = r1(r._avg.position ?? 1);
-          const actualCtr = pct(r._avg.ctr ?? 0);
+          const position = r1(r.impressions ? r.posW / r.impressions : 1);
+          const actualCtr = pct(r.impressions ? r.ctrW / r.impressions : 0);
           const expectedCtr = CTR_BENCHMARKS[Math.max(1, Math.min(10, Math.round(position)))] ?? 0;
           return {
             query: r.query,
             page: r.url,
-            impressions: r._sum.impressions ?? 0,
-            clicks: r._sum.clicks ?? 0,
+            impressions: r.impressions,
+            clicks: r.clicks,
             position,
             actualCtrPercent: actualCtr,
             expectedCtrPercent: expectedCtr,
@@ -189,7 +204,7 @@ export const DATA_TOOLS: McpTool[] = [
         let rules: ContentRule[] = [];
         try { rules = JSON.parse(rulesJson); } catch { rules = []; }
         const matched = rows.filter(row => {
-          const v = String(row[field] ?? "").toLowerCase();
+          const v = normalizePageUrl(String(row[field] ?? "")).toLowerCase();
           if (!v) return false;
           return rules.some(rule =>
             (rule?.values ?? []).some((needle: string) => {

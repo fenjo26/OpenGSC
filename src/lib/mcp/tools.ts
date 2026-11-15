@@ -25,6 +25,7 @@
 // awkward: paid tools refuse to run without `confirm: true`, and their descriptions
 // point at the free path first. See toolsOptimize.ts for the reasoning in full.
 
+import { normalizePageUrl } from "@/lib/url-normalize";
 import { prisma } from "@/lib/prisma";
 import { google } from "googleapis";
 // Same version the UI shows in Settings → System, rather than a second copy that has to be
@@ -141,16 +142,38 @@ const CORE_TOOLS: McpTool[] = [
       });
       const clicks = totals._sum.clicks ?? 0;
       const impressions = totals._sum.impressions ?? 0;
+      // Fragment variants of the same page (#toc-N, ...) are separate URL labels in the
+      // store — fold them into the parent URL before reporting so the page's data is whole.
+      const srcRows = dim === "url" ? (() => {
+        const m = new Map();
+        for (const r of rows) {
+          const key = normalizePageUrl(r[dim]);
+          const e = m.get(key) ?? { key, clicks: 0, impressions: 0, ctrW: 0, posW: 0 };
+          const c = r._sum.clicks ?? 0;
+          const i = r._sum.impressions ?? 0;
+          e.clicks += c; e.impressions += i;
+          e.ctrW += (r._avg.ctr ?? 0) * i;
+          e.posW += (r._avg.position ?? 0) * Math.max(i, 1);
+          m.set(key, e);
+        }
+        return [...m.values()]
+          .sort((a, b) => b.clicks - a.clicks)
+          .slice(0, take)
+          .map(e => ({ key: e.key, clicks: e.clicks, impressions: e.impressions, ctr: e.impressions ? e.ctrW / e.impressions : 0, position: e.impressions ? e.posW / e.impressions : 0 }));
+      })() : rows.map(r => ({
+        key: r[dim], clicks: r._sum.clicks ?? 0, impressions: r._sum.impressions ?? 0,
+        ctr: r._avg.ctr ?? 0, position: r._avg.position ?? 0,
+      }));
       return {
         site: site.url,
         days: Math.round((Date.now() - since.getTime()) / 86_400_000),
         totals: { clicks, impressions, ctrPercent: impressions ? pct(clicks / impressions) : 0, avgPosition: r1(totals._avg.position ?? 0) },
-        rows: rows.map(r => ({
-          [dim === "url" ? "page" : "query"]: r[dim],
-          clicks: r._sum.clicks ?? 0,
-          impressions: r._sum.impressions ?? 0,
-          ctrPercent: pct(r._avg.ctr ?? 0),
-          avgPosition: r1(r._avg.position ?? 0),
+        rows: srcRows.map(r => ({
+          [dim === "url" ? "page" : "query"]: r.key,
+          clicks: r.clicks,
+          impressions: r.impressions,
+          ctrPercent: pct(r.ctr),
+          avgPosition: r1(r.position),
         })),
       };
     },
@@ -505,9 +528,23 @@ const CORE_TOOLS: McpTool[] = [
 
       type Row = { key: string; clicks: number; impressions: number; position: number };
       type AggRow = Awaited<ReturnType<typeof agg>>[number];
-      const toMap = (rows: AggRow[]): Map<string, Row> => new Map(rows.map(r => [r[dim], {
-        key: r[dim], clicks: r._sum.clicks ?? 0, impressions: r._sum.impressions ?? 0, position: r1(r._avg.position ?? 0),
-      }]));
+      const toMap = (rows: AggRow[]): Map<string, Row> => {
+        // Fold fragment URL variants into their parent page (dim === "url").
+        const m = new Map<string, Row>();
+        for (const r of rows) {
+          const key = dim === "url" ? normalizePageUrl(r[dim]) : r[dim];
+          const c = r._sum.clicks ?? 0;
+          const i = r._sum.impressions ?? 0;
+          const p = r1(r._avg.position ?? 0);
+          const prev = m.get(key);
+          if (!prev) { m.set(key, { key, clicks: c, impressions: i, position: p }); continue; }
+          const imp = prev.impressions + i;
+          prev.position = imp ? (prev.position * prev.impressions + p * i) / imp : prev.position;
+          prev.clicks += c;
+          prev.impressions = imp;
+        }
+        return m;
+      };
       const curMap = toMap(cur), prevMap = toMap(prev);
 
       const joined: { key: string; clicksDelta: number; cur?: Row; prev?: Row }[] = [];

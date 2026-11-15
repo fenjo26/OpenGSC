@@ -13,6 +13,7 @@ import { prisma } from "@/lib/prisma";
 import { chunk, newestWindow, queryPageWindows, siteDisplayName, type SummaryWindow } from "@/lib/gsc/reportData";
 import { parseSiteTags } from "@/lib/decay/logic";
 import { estimatedGain } from "./logic";
+import { normalizePageUrl } from "@/lib/url-normalize";
 
 export interface StrikingSite { id: string; url: string; tags?: string | null }
 
@@ -57,6 +58,7 @@ export async function findStriking(sites: StrikingSite[], opts: StrikingOptions)
   }]));
   const only = opts.onlySites && opts.onlySites.size ? opts.onlySites : null;
   const rows: StrikingRow[] = [];
+  const rowsByKey = new Map<string, StrikingRow>();
 
   for (const ids of chunk(sites.map(s => s.id), SITE_CHUNK)) {
     const found = await prisma.dailyMetric.findMany({
@@ -75,21 +77,35 @@ export async function findStriking(sites: StrikingSite[], opts: StrikingOptions)
       const gain = estimatedGain(r.impressions, r.clicks);
       sum.keywords++; sum.impressions += r.impressions; sum.gain += gain;
       if (only && !only.has(r.siteId)) continue;
-      rows.push({
+      const url = normalizePageUrl(r.url);
+      // www and apex variants of the same page fold into ONE keyword row.
+      const key = `${r.siteId}\n${r.query}\n${url}`;
+      const prev = rowsByKey.get(key);
+      if (prev) {
+        prev.impressions += r.impressions;
+        prev.clicks += r.clicks;
+        prev.position = prev.impressions
+          ? (prev.position * (prev.impressions - r.impressions) + r.position * r.impressions) / prev.impressions
+          : r.position;
+        prev.gain = estimatedGain(prev.impressions, prev.clicks);
+        continue;
+      }
+      rowsByKey.set(key, {
         siteId: r.siteId,
         siteName: sum.siteName,
         query: r.query,
-        page: r.url.replace(/^https?:\/\/[^/]+/i, "") || "/",
-        fullUrl: r.url,
+        page: url.replace(/^https?:\/\/[^/]+/i, "") || "/",
+        fullUrl: url,
         impressions: r.impressions,
         clicks: r.clicks,
-        ctr: Math.round(r.ctr * 1000) / 10,
+        ctr: Math.round((r.impressions ? r.clicks / r.impressions : 0) * 1000) / 10,
         position: Math.round(r.position * 10) / 10,
         gain,
       });
     }
   }
 
+  rows.push(...rowsByKey.values());
   rows.sort((a, b) => b.gain - a.gain || b.impressions - a.impressions);
   const windows = await queryPageWindows(sites.map(s => s.id));
   const { window, mixed } = newestWindow(windows, only ? [...only].filter(id => siteById.has(id)) : siteById.keys());
