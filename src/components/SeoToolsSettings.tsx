@@ -246,6 +246,77 @@ function AparserCard() {
   );
 }
 
+// Crawl4AI — self-hosted Playwright crawler in a container on this same machine. Unlike every
+// card above there is nothing to type: the server reads CRAWL4AI_URL / CRAWL4AI_TOKEN from its
+// own .env, and the card only surfaces what the server itself can reach. When configured, the
+// SEO Tools scraping chain prefers it over paid Firecrawl: direct fetch -> Crawl4AI -> Firecrawl.
+export function Crawl4aiCard() {
+  const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [configured, setConfigured] = useState<boolean | null>(null);
+
+  const check = async () => {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/seo/crawl4ai");
+      const d = await res.json();
+      if (!res.ok) {
+        setConfigured(false);
+        setStatus({ ok: false, text: String(d?.error || res.status) });
+      } else if (!d.configured) {
+        setConfigured(false);
+        setStatus({ ok: false, text: "CRAWL4AI_URL is not set in the server .env" });
+      } else {
+        setConfigured(true);
+        setStatus(d.healthy
+          ? { ok: true, text: `Service healthy${d.version ? ` · v${d.version}` : ""} · self-hosted, no per-request cost` }
+          : { ok: false, text: String(d.error || "unreachable") });
+      }
+    } catch (e) {
+      setStatus({ ok: false, text: String((e as Error)?.message ?? e) });
+    }
+    setBusy(false);
+  };
+
+  useEffect(() => { check(); }, []);
+
+  return (
+    <div style={{ padding: "16px", borderRadius: "10px", border: `1px solid ${configured ? "#14b8a640" : "var(--color-border)"}`, background: configured ? "#14b8a608" : "rgba(255,255,255,0.02)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
+        <div style={{ width: "30px", height: "30px", borderRadius: "8px", background: "#14b8a620", border: "1px solid #14b8a640", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "13px", fontWeight: 700, color: "#14b8a6", flexShrink: 0 }}>C</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--color-text-primary)" }}>Crawl4AI</div>
+          <div style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>Self-hosted crawler on your own machine</div>
+        </div>
+        <span style={{ fontSize: "11px", fontWeight: 600, color: configured ? "#10B981" : "var(--color-text-secondary)" }}>
+          {configured ? "Self-hosted · no per-request cost" : "Not configured"}
+        </span>
+      </div>
+
+      <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
+        <button onClick={check} disabled={busy}
+          style={{ padding: "8px 14px", borderRadius: "8px", border: "none", background: busy ? "rgba(255,255,255,0.06)" : "#14b8a625", color: busy ? "var(--color-text-secondary)" : "#14b8a6", fontSize: "12px", fontWeight: 600, cursor: busy ? "wait" : "pointer", display: "flex", alignItems: "center", gap: "5px" }}>
+          <RefreshCw size={12} style={{ animation: busy ? "spin 1s linear infinite" : undefined }} /> {busy ? "Checking" : "Check connection"}
+        </button>
+      </div>
+
+      {status && (
+        <div style={{ fontSize: "11px", fontFamily: "monospace", color: status.ok ? "#10B981" : "#f87171", marginBottom: "6px", wordBreak: "break-all" }}>
+          {status.ok ? "✓ " : "✕ "}{status.text}
+        </div>
+      )}
+
+      <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.5, marginBottom: "6px" }}>
+        Runs Crawl4AI (unclecode/crawl4ai) in Docker on this server: full browser rendering for JS-heavy and anti-bot pages, returns clean Markdown. Scraping priority when configured: direct fetch → Crawl4AI → Firecrawl (paid). Configure with CRAWL4AI_URL and CRAWL4AI_TOKEN in the server .env.
+      </div>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "10px" }}>
+        <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.5, flex: 1 }}>📍 Same-host deployment — the app port stays loopback-only, so the container is reachable from the server alone.</span>
+        <a href="https://docs.crawl4ai.com/core/self-hosting/" target="_blank" rel="noreferrer" style={{ fontSize: "11px", color: "var(--color-accent-blue)", textDecoration: "none", flexShrink: 0, whiteSpace: "nowrap" }}>API docs ↗</a>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Magic links — the two link-purchase providers (FieldLink, 369Team).
  *
@@ -844,6 +915,7 @@ export function SeoProviderKeysSection() {
       <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
         {SEO_PROVIDERS.map(p => <SeoKeyCard key={p.id} provider={p} />)}
         <AparserCard />
+        <Crawl4aiCard />
       </div>
       <div style={{ marginTop: "14px", padding: "11px 14px", borderRadius: "8px", background: "rgba(16,163,127,0.06)", border: "1px solid rgba(16,163,127,0.18)", fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
         💡 {t("seoSetTip")}

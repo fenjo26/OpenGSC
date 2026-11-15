@@ -15,7 +15,7 @@ import { safeFetch, type SafeFetchResponse } from "@/lib/security/safeFetch";
 export interface ScrapedPage {
   url: string;
   ok: boolean;
-  via: "fetch" | "firecrawl" | "failed";
+  via: "fetch" | "crawl4ai" | "firecrawl" | "failed";
   title: string;
   metaDescription: string;
   headings: string[]; // ["H1: ...", "H2: ...", ...] in document order
@@ -154,7 +154,7 @@ function extractStructureFromMarkdown(md: string): StructureNode[] {
 }
 
 export interface StructureResult {
-  url: string; ok: boolean; via: "fetch" | "firecrawl" | "failed";
+  url: string; ok: boolean; via: "fetch" | "crawl4ai" | "firecrawl" | "failed";
   title: string; nodes: StructureNode[]; totalWords: number; error?: string;
 }
 
@@ -179,6 +179,32 @@ export async function scrapeStructure(url: string, firecrawlKey?: string): Promi
     const title = titleMatch ? decodeEntities(stripTags(titleMatch[1])) : "";
     return { url, ok: true, via: "fetch", title, nodes, totalWords: nodes.reduce((s, n) => s + n.words, 0) };
   } catch (e) {
+    const c4a = crawl4aiConfig();
+    if (c4a) {
+      let call: CallHandle | undefined;
+      try {
+        const opened = await loggedFetch(`${c4a.baseUrl}/md`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${c4a.token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ url }),
+          signal: AbortSignal.timeout(60000),
+        }, { provider: "crawl4ai" });
+        const res = opened.res;
+        call = opened.call;
+        if (!res.ok) throw new Error(`crawl4ai ${res.status}`);
+        const data = await res.json();
+        const md: string = data?.markdown ?? "";
+        const nodes = extractStructureFromMarkdown(md);
+        if (!nodes.length) throw new Error("no_headings");
+        call.finish();
+        const titleMatch = md.match(/^#\s+(.+)$/m);
+        return { url, ok: true, via: "crawl4ai" as const, title: titleMatch ? titleMatch[1].trim() : "", nodes, totalWords: nodes.reduce((s, n) => s + n.words, 0) };
+      } catch (e2) {
+        call?.finish({ error: (e2 as Error)?.message ?? "crawl4ai_failed" });
+        if (!firecrawlKey) return { url, ok: false, via: "failed", title: "", nodes: [], totalWords: 0, error: `fetch:${(e as Error)?.message}; crawl4ai:${(e2 as Error)?.message ?? "crawl4ai_failed"}` };
+        // with a Firecrawl key configured we fall through to it below
+      }
+    }
     if (firecrawlKey) {
       let call: CallHandle | undefined;
       try {
@@ -291,10 +317,73 @@ async function firecrawlFetch(url: string, apiKey: string): Promise<ScrapedPage>
   return parsed;
 }
 
+// Crawl4AI fallback (self-hosted). Config comes from env — CRAWL4AI_URL + CRAWL4AI_TOKEN in the
+// server .env. The service runs Playwright in a container on the same host, so JS-rendered and
+// anti-bot pages that break directFetch succeed here for free, before the paid Firecrawl
+// fallback is ever touched. With no CRAWL4AI_URL set, behaviour is exactly as before.
+export function crawl4aiConfig(): { baseUrl: string; token: string } | null {
+  const baseUrl = (process.env.CRAWL4AI_URL ?? "").trim();
+  if (!baseUrl) return null;
+  return { baseUrl: baseUrl.replace(/\/+$/, ""), token: (process.env.CRAWL4AI_TOKEN ?? "").trim() };
+}
+
+async function crawl4aiFetch(url: string, cfg: { baseUrl: string; token: string }): Promise<ScrapedPage> {
+  const { res, call } = await loggedFetch(`${cfg.baseUrl}/md`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${cfg.token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+    signal: AbortSignal.timeout(60000),
+  }, { provider: "crawl4ai" });
+  if (!res.ok) {
+    call.finish({ error: `crawl4ai ${res.status}` });
+    throw new Error(`crawl4ai ${res.status}`);
+  }
+  const data = await res.json();
+  call.finish();
+  const md: string = data?.markdown ?? "";
+  const words = md.split(/\s+/).filter(Boolean);
+  if (!md || words.length < 40) throw new Error("crawl4ai_empty");
+  const headings = (md.match(/^#{1,6}\s.+$/gm) ?? []).map((h: string) => {
+    const lvl = (h.match(/^#+/)?.[0].length) ?? 1;
+    return `H${lvl}: ${h.replace(/^#+\s*/, "").trim()}`;
+  });
+  return {
+    url, ok: true, via: "crawl4ai" as const,
+    title: (md.match(/^#\s+(.+)$/m)?.[1] ?? "").trim(),
+    metaDescription: "",
+    headings,
+    wordCount: words.length,
+    hasPriceTable: /\|.*(price|cost|€|\$|£|руб)/i.test(md),
+    hasFaq: /faq|frequently asked/i.test(md),
+    // Crawl4AI /md already reduces the page to main-content Markdown, like Firecrawl's
+    // onlyMainContent, so the article body goes straight into the same fields.
+    textSample: md.slice(0, 6000),
+    contentMarkdown: md,
+    contentWords: words.length,
+    linkDensity: 0,
+    boilerplateOnly: words.length < 120,
+  };
+}
+
 export async function scrapePage(url: string, firecrawlKey?: string): Promise<ScrapedPage> {
   try {
     return await directFetch(url);
   } catch (e) {
+    const c4a = crawl4aiConfig();
+    if (c4a) {
+      try {
+        return await crawl4aiFetch(url, c4a);
+      } catch (e2) {
+        if (firecrawlKey) {
+          try {
+            return await firecrawlFetch(url, firecrawlKey);
+          } catch (e3) {
+            return failed(url, `fetch:${(e as Error)?.message}; crawl4ai:${(e2 as Error)?.message}; firecrawl:${(e3 as Error)?.message}`);
+          }
+        }
+        return failed(url, `fetch:${(e as Error)?.message}; crawl4ai:${(e2 as Error)?.message}`);
+      }
+    }
     if (firecrawlKey) {
       try {
         return await firecrawlFetch(url, firecrawlKey);
