@@ -185,6 +185,14 @@ const PARTNERS = [
     tileBg: "#ffffff",
     imgStyle: { maxHeight: "32px" } as CSSProperties,
   },
+  {
+    id: "Everyinfra",
+    name: "EveryInfra",
+    href: "https://everyinfra.com/en?utm_source=opengsc",
+    logo: "/partners/everyinfra-logo.png",
+    tileBg: "#ffffff",
+    imgStyle: { maxHeight: "40px" } as CSSProperties,
+  },
 ] as const satisfies readonly PartnerEntry[];
 
 export type PartnerId = (typeof PARTNERS)[number]["id"];
