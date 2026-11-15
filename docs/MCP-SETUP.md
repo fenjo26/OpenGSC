@@ -216,6 +216,7 @@ refuse to run without `confirm: true`, price stated up front.
 | `get_indexing_status` | Sitemap index-status counts + recent URL inspections (cached) |
 | `get_index_coverage` | Index coverage by day, not-indexed reasons, recent traffic losses and the Google URL Inspection quota state |
 | `get_site_audit` | Latest built-in-crawler audit: health score, issues, affected URLs |
+| `get_ai_readiness` | AI Readiness report: 0–100 score/grade, AI-crawler access (robots, llms.txt, User-Agent parity probe), Common Crawl presence by month, web-graph authority |
 | `get_clarity` | Microsoft Clarity behaviour data: dead clicks, rage clicks, scroll depth |
 | `get_indexer_stats` | Private indexer network: per-domain verified bot hits, 304 rate, never-crawled domains |
 | `get_alerts` | Alerts that actually fired: rank drops, traffic drops, SSL expiry, low audit scores |

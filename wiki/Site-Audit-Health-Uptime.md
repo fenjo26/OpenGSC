@@ -40,6 +40,47 @@ So "mostly minor warnings" no longer reads as 0/100.
 
 By default the crawler refuses localhost and private/LAN addresses (SSRF protection). To audit a staging site on the same network, set `OPENGSC_ALLOW_PRIVATE_TARGETS=1` in `.env`.
 
+## AI Readiness
+
+A card at the top of the **Audit** tab. One button, three free checks, no API keys.
+
+### Access
+
+robots.txt rules for AI crawlers and `/llms.txt` (the same reading as the AI Crawlability card), plus a **parity probe**: the homepage is requested twice as a desktop browser and once each as GPTBot, ClaudeBot, PerplexityBot and CCBot.
+
+| Verdict | Meaning |
+|---|---|
+| same page as browser | the bot identity got what the browser got |
+| different content | 200, same host, but the text differs beyond the page's own noise, or is a stub |
+| redirected elsewhere | ended on another host than the browser |
+| refused | non-2xx while the browser got the page |
+| captcha / JS check | an anti-bot interstitial |
+| no answer | timeout or network error — excluded from the score |
+
+The two browser requests measure how much the page differs from itself (rotating blocks, tokens); a bot is charged only for difference beyond that.
+
+**This is a probe by User-Agent from your server's address.** A firewall that verifies crawler IPs (Cloudflare's verified bots) may refuse the imitation and admit the real crawler, or the reverse. Read a verdict as "a request announcing itself as GPTBot was refused", then check the firewall rule.
+
+### Common Crawl presence
+
+In which of the last 12 monthly Common Crawl archives the domain (with subdomains) appears, and with how many pages. Common Crawl is the open archive most AI training sets start from. It samples the web: a small site can be missing from a month with nothing blocking it, so look at the twelve months together. Answered months are stored and not re-read; a month that could not be read shows "?" and is retried on the next run.
+
+### Web-graph authority
+
+The domain's position by harmonic centrality and PageRank in Common Crawl's web graph (~118 M registered domains, rebuilt monthly from three months of crawling), and a 0–100 value on a log scale. This is not Ahrefs DR and is not comparable with it. "Not in the graph" means Common Crawl saw no links to the domain in that window.
+
+The lookup goes to a public directory service. To run your own or switch it off, see [`sidecar/ccrank`](https://github.com/fenjo26/OpenGSC/blob/main/sidecar/ccrank/README.md) and `OPENGSC_CCRANK_URL`.
+
+### The score
+
+| Part | Weight | Built from |
+|---|---|---|
+| Access | 50 | robots: share of AI bots allowed ×45 · parity: share of bot identities served the browser's page ×45 · llms.txt ×10 |
+| Presence | 20 | share of months present ×70, +30 if present in the newest month read |
+| Authority | 30 | the 0–100 log-scaled rank |
+
+Grades: A ≥ 85, B ≥ 70, C ≥ 55, D ≥ 40, E ≥ 25, F below. Whatever could not be read is left out and the remaining weights are rescaled; the card lists which parts the score was built from, so compare scores only when that list matches.
+
 ## Health checks
 
 Site → **Health** tab.
@@ -129,4 +170,4 @@ Raw checks for 7 days, daily aggregates forever, incidents with start, end and c
 
 ## MCP
 
-`get_site_audit`, `get_site_health`, `get_uptime`. All are free reads.
+`get_site_audit`, `get_ai_readiness`, `get_site_health`, `get_uptime`. All are free reads.

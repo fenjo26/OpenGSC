@@ -85,7 +85,7 @@ Paid tools include `start_rewrite_job`, `start_generation_job`, `research_keywor
 | Rankings and AI visibility | `get_rank_tracker`, `get_rank_history`, `get_aeo_visibility`, `get_ai_share_of_voice`, `get_brand_mentions`, `get_geo_audits`, `get_yandex_ai_answers` |
 | Links and outreach | `get_backlinks`, `get_backlink_profile`, `get_backlink_toxicity`, `get_disavow_file`, `get_link_mentions`, `list_outreach_prospects`, `save_outreach_prospect`, `update_outreach_prospect`, `create_outreach_campaign` |
 | Market data | `get_keyword_demand`, `get_keyword_metrics`, `get_competitor_gap`, `get_domain_metrics`, `research_keywords` (paid) |
-| Health and indexing | `get_site_health`, `get_uptime`, `get_indexing_status`, `get_index_coverage`, `get_site_audit`, `get_clarity`, `get_indexer_stats`, `get_alerts`, `get_digests`, `inspect_url` (quota) |
+| Health and indexing | `get_site_health`, `get_uptime`, `get_indexing_status`, `get_index_coverage`, `get_site_audit`, `get_ai_readiness`, `get_clarity`, `get_indexer_stats`, `get_alerts`, `get_digests`, `inspect_url` (quota) |
 | Content | `get_optimization_brief`, `fetch_page_content`, `analyze_text`, `fit_meta`, `get_generations`, `get_generation_job`, `start_rewrite_job`, `start_generation_job` |
 | Site memory | `get_site_context`, `update_site_context` |
 | Local, trends, reports | `get_local_profile`, `check_nap`, `local_grid_*`, `get_trends`, `get_footprints`, `list_reports`, `list_leads`, `get_source_audit` |
