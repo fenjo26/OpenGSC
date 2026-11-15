@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from '@/lib/prisma';
+import { siteWhere } from "@/lib/siteMatch";
 
 // POST /api/ga4/link  { domain, propertyId, propertyName }
 // Links a GA4 property to a site.
@@ -17,7 +18,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'domain and propertyId required' }, { status: 400 });
   }
 
-  const site = await prisma.site.findFirst({ where: { userId, url: domain } });
+  const site = await prisma.site.findFirst({ where: { userId, ...siteWhere(domain) } });
   if (!site) return NextResponse.json({ error: 'Site not found' }, { status: 404 });
 
   await prisma.site.update({
@@ -37,7 +38,7 @@ export async function DELETE(req: Request) {
   const domain = (searchParams.get('domain') ?? '').trim();
   if (!domain) return NextResponse.json({ error: 'domain required' }, { status: 400 });
 
-  const site = await prisma.site.findFirst({ where: { userId, url: domain } });
+  const site = await prisma.site.findFirst({ where: { userId, ...siteWhere(domain) } });
   if (!site) return NextResponse.json({ error: 'Site not found' }, { status: 404 });
 
   await prisma.site.update({
