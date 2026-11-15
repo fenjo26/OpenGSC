@@ -16,6 +16,7 @@ import EngineView, { type AltEngine, type EngineSummary } from "@/components/Eng
 import SearchEnginesPanel from "@/components/SearchEnginesPanel";
 import { withShare } from "@/lib/shareParam";
 import { loadSyncedAt, rememberSyncedAt, fetchSyncState, watchSync, type SyncState } from "@/lib/syncedAt";
+import { isHttpUrl } from "@/lib/httpUrl";
 import VisibilityHub from "@/components/VisibilityHub";
 import UptimePanel from "@/components/uptime/UptimePanel";
 import IndexAutoPanel from "@/components/IndexAutoPanel";
@@ -445,9 +446,26 @@ function DataTable({ title, rows, blur = false, csvFilename, onTrack, tracked, c
                     </button>
                   )
                 )}
-                <span style={blur ? { filter: "blur(5px)", userSelect: "none", transition: "filter 0.25s", display: "inline-block" } : { transition: "filter 0.25s" }}>
-                  {r.label}
-                </span>
+                {isHttpUrl(r.label) ? (
+                  // Page rows are real URLs: render as a link (new tab). The anchor carries the
+                  // same truncation box as the cell so long URLs stay visually cut, and the
+                  // hover/focus pair mirrors the app's inline-style idiom (no CSS file here).
+                  <a href={r.label} target="_blank" rel="noreferrer" title={r.label}
+                    onClick={e => e.stopPropagation()}
+                    style={{ color: "var(--color-text-primary)", textDecoration: "none", display: "block", maxWidth: "220px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer" }}
+                    onMouseEnter={e => { e.currentTarget.style.color = "#3B82F6"; e.currentTarget.style.textDecoration = "underline"; }}
+                    onMouseLeave={e => { e.currentTarget.style.color = "var(--color-text-primary)"; e.currentTarget.style.textDecoration = "none"; }}
+                    onFocus={e => { e.currentTarget.style.color = "#3B82F6"; e.currentTarget.style.outline = "1px solid #3B82F6"; e.currentTarget.style.outlineOffset = "2px"; }}
+                    onBlur={e => { e.currentTarget.style.color = "var(--color-text-primary)"; e.currentTarget.style.outline = "none"; }}>
+                    <span style={blur ? { filter: "blur(5px)", userSelect: "none", transition: "filter 0.25s", display: "inline-block" } : { transition: "filter 0.25s" }}>
+                      {r.label}
+                    </span>
+                  </a>
+                ) : (
+                  <span style={blur ? { filter: "blur(5px)", userSelect: "none", transition: "filter 0.25s", display: "inline-block" } : { transition: "filter 0.25s" }}>
+                    {r.label}
+                  </span>
+                )}
               </td>
               <td style={{ padding: "8px 8px", color: "var(--color-text-primary)", fontWeight: 500 }}>{r.clicks}<Change pct={r.cPct} /></td>
               <td style={{ padding: "8px 8px", color: "var(--color-text-secondary)" }}>{fmtK(r.impr)}<Change pct={r.iPct} /></td>
@@ -5258,12 +5276,14 @@ type WlData = {
   coverage?: { totalClicks: number; queries: WlCoverage; pages: WlCoverage };
 };
 
-function WlList({ items, positive, blur, onTrack, tracked, emptyKey }: {
+function WlList({ items, positive, blur, onTrack, tracked, emptyKey, link }: {
   items: WlItem[]; positive: boolean; blur: boolean;
   onTrack?: (label: string) => void; tracked?: Set<string>;
   // An empty side is only "not enough data" when BOTH sides are empty; one empty side next to
   // a full one means "nothing moved this way", and saying "not enough data" there misleads.
   emptyKey: "wlNoData" | "wlNoWinners" | "wlNoLosers";
+  /** Pages dimension: labels are real URLs — render each as a new-tab link. Queries stay plain. */
+  link?: boolean;
 }) {
   const { t } = useLanguage();
   const maxAbs = Math.max(1, ...items.map(x => Math.abs(x.delta)));
@@ -5283,9 +5303,23 @@ function WlList({ items, positive, blur, onTrack, tracked, emptyKey }: {
                 style={{ width: "16px", height: "16px", borderRadius: "4px", border: "1px solid var(--color-border)", background: "none", color: "var(--color-text-secondary)", cursor: "pointer", fontSize: "11px", lineHeight: 1, padding: 0, flexShrink: 0 }}>+</button>
             )
           )}
-          <span title={x.label} style={{ flex: "0 1 40%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--color-text-primary)", ...(blur ? { filter: "blur(5px)", userSelect: "none" as const } : {}) }}>
-            {x.label}
-          </span>
+          {link && isHttpUrl(x.label) ? (
+            // Same truncation box as the plain label (flex 0 1 40% + ellipsis); hover/focus via
+            // the inline-style idiom, and the click cannot reach any parent handler.
+            <a href={x.label} target="_blank" rel="noreferrer" title={x.label}
+              onClick={e => e.stopPropagation()}
+              style={{ flex: "0 1 40%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--color-text-primary)", textDecoration: "none", cursor: "pointer", ...(blur ? { filter: "blur(5px)", userSelect: "none" as const } : {}) }}
+              onMouseEnter={e => { e.currentTarget.style.color = "#3B82F6"; e.currentTarget.style.textDecoration = "underline"; }}
+              onMouseLeave={e => { e.currentTarget.style.color = "var(--color-text-primary)"; e.currentTarget.style.textDecoration = "none"; }}
+              onFocus={e => { e.currentTarget.style.color = "#3B82F6"; e.currentTarget.style.outline = "1px solid #3B82F6"; e.currentTarget.style.outlineOffset = "2px"; }}
+              onBlur={e => { e.currentTarget.style.color = "var(--color-text-primary)"; e.currentTarget.style.outline = "none"; }}>
+              {x.label}
+            </a>
+          ) : (
+            <span title={x.label} style={{ flex: "0 1 40%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--color-text-primary)", ...(blur ? { filter: "blur(5px)", userSelect: "none" as const } : {}) }}>
+              {x.label}
+            </span>
+          )}
           <div style={{ flex: 1, height: "8px", background: "var(--color-border)", borderRadius: "4px", overflow: "hidden" }}>
             <div style={{ height: "100%", width: `${Math.round((Math.abs(x.delta) / maxAbs) * 100)}%`, background: color, borderRadius: "4px" }} />
           </div>
@@ -5341,11 +5375,11 @@ function WinnersLosers({ data, blur, onTrack, tracked }: {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
         <div style={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: "12px", padding: "16px" }}>
           <div style={{ fontSize: "12px", fontWeight: 700, color: "#10B981", marginBottom: "10px", letterSpacing: "0.04em", textTransform: "uppercase" }}>▲ {t("wlWinners")}</div>
-          <WlList items={d?.winners ?? []} positive blur={blur} onTrack={dim === "queries" ? onTrack : undefined} tracked={tracked} emptyKey={noneAtAll ? "wlNoData" : "wlNoWinners"} />
+          <WlList items={d?.winners ?? []} positive blur={blur} onTrack={dim === "queries" ? onTrack : undefined} tracked={tracked} emptyKey={noneAtAll ? "wlNoData" : "wlNoWinners"} link={dim === "pages"} />
         </div>
         <div style={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: "12px", padding: "16px" }}>
           <div style={{ fontSize: "12px", fontWeight: 700, color: "#EF4444", marginBottom: "10px", letterSpacing: "0.04em", textTransform: "uppercase" }}>▼ {t("wlLosers")}</div>
-          <WlList items={d?.losers ?? []} positive={false} blur={blur} onTrack={dim === "queries" ? onTrack : undefined} tracked={tracked} emptyKey={noneAtAll ? "wlNoData" : "wlNoLosers"} />
+          <WlList items={d?.losers ?? []} positive={false} blur={blur} onTrack={dim === "queries" ? onTrack : undefined} tracked={tracked} emptyKey={noneAtAll ? "wlNoData" : "wlNoLosers"} link={dim === "pages"} />
         </div>
       </div>
     </div>
