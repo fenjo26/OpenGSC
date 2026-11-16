@@ -1,10 +1,13 @@
 // SERP provider abstraction for the SEO Tools module.
-// Supports Serper.dev and DataForSEO (both Google and Bing engines).
-// Keys are passed in from the client (stored in the browser, never on the server).
+// Supports Serper.dev, DataForSEO, ScrapingRobot, GoAnyAPI, A-Parser and self-hosted SearXNG.
+// Keys are passed in from the client (stored in the browser, never on the server), except
+// SearXNG: that provider is keyless and addressed by the server-side SEARXNG_BASE_URL.
 
 import { loggedFetch, type CallHandle } from "@/lib/providerLog/log";
 import { goanySerp } from "./goanyapi";
 import { defaultLanguageFor } from "./regions";
+import { searxngSearch } from "./searxng";
+import { SEARXNG_PROVIDER_ID } from "./serpReadiness";
 import {
   APARSER_SERP_OPTION_IDS, APARSER_SERP_PARSERS, aparserSerpOptions, describeAparserRow, mapAparserSerp,
 } from "./aparserSerp";
@@ -38,6 +41,17 @@ export interface SerpOptions {
    * the user saved under their own name. Ignored by metered providers.
    */
   aparserPreset?: string;
+  /** Safe-search level for providers that support it (SearXNG today). */
+  safesearch?: 0 | 1 | 2;
+  /** "day" | "month" | "year", for engines that support a time filter. */
+  timeRange?: "day" | "month" | "year";
+  /** SearXNG category list; defaults to "general". */
+  categories?: string;
+  /**
+   * Explicit SearXNG engine names ("bing,google cse"). Wins over `engine`; without it the
+   * adapter uses SEARXNG_ENGINES (bing + google cse by default).
+   */
+  searxngEngines?: string[];
 }
 
 /**
@@ -55,6 +69,9 @@ const PROVIDER_ENGINES: Record<string, SerpEngine[]> = {
   dataforseo: ["google", "bing"],
   scrapingrobot: ["google"],
   goanyapi: ["google"],
+  // Aggregated web results. "google" means the configured Google-backed CSE + Bing set, not
+  // google.com directly (that engine is blocked from this host); see searxng.ts.
+  searxng: ["google", "bing"],
 };
 
 function unsupportedEngine(provider: string, engine: SerpEngine): string | null {
@@ -70,6 +87,12 @@ export interface SerpResultItem {
   title: string;
   snippet: string;
   domain: string;
+  /** Source engine of this row, when the provider aggregates more than one. */
+  engine?: string;
+  /** Every engine that returned this URL (SearXNG merges duplicates). */
+  engines?: string[];
+  /** Relevance score as reported by the provider, when it reports one. */
+  score?: number;
   /**
    * Strength of the ranking page, when the provider happens to know it.
    *
@@ -102,6 +125,14 @@ export interface SerpResponse {
   totalCount?: string;
   /** SERP features the provider reported, normalised ids: "paa" | "related" | "ads" | "video" | "local" | "images" | "news". */
   features?: string[];
+  /** True when this answer came from the adapter cache rather than a fresh search. */
+  cached?: boolean;
+  /** End-to-end adapter time, including retries and merging. */
+  tookMs?: number;
+  /** Engines the adapter asked (SearXNG only). */
+  engines?: string[];
+  /** Engines that failed or were suspended while answering (SearXNG only). */
+  unresponsiveEngines?: { engine: string; error: string }[];
   /** A-Parser only: positions left empty because the provider mis-resolved their link, with the title Google showed there. */
   repairedRows?: { position: number; title: string }[];
   /**
@@ -747,6 +778,7 @@ export async function runSerp(
     };
   }
   try {
+    if (provider === SEARXNG_PROVIDER_ID) return await searxngSearch(apiKey, keyword, opts);
     if (provider === "aparser") return await aparserSearch(apiKey, keyword, opts);
     if (provider === "dataforseo") return await dataForSeoSearch(apiKey, keyword, opts);
     if (provider === "scrapingrobot") return await scrapingRobotSearch(apiKey, keyword, opts);

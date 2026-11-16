@@ -11,6 +11,7 @@ import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { HistoryItem, getHistoryItem, updateHistory, patchHistory } from "@/lib/seo/history";
 import { outlineHeadings, articleHeadings, markdownToHtml, htmlDocument, countWords, splitArticleSections, hasVerifiableFacts } from "@/lib/seo/outlineFormat";
 import { getTaskCreds, getSerpCreds, getFirecrawlKey, getAutoFactcheck, getAutoImages, getFactSourceCount, getFactBearingOnly, getFactReuseCorpus } from "@/lib/seo/keys";
+import { serpCredsReady } from "@/lib/seo/serpReadiness";
 import { IMAGE_MODELS, imageModel, type ImageModelId } from "@/lib/seo/imageModels";
 import { META_LIMITS } from "@/lib/seo/metaLimits";
 
@@ -517,7 +518,7 @@ function FactCheck({ item, setItem, article, t, autoStart }: {
   const [fixed, setFixed] = useState(false);
   const [allOpen, setAllOpen] = useState<boolean | null>(null);
   const report = item.meta?.factcheck as FactcheckReport | undefined;
-  const hasSerp = typeof window !== "undefined" && !!getSerpCreds().apiKey;
+  const hasSerp = typeof window !== "undefined" && serpCredsReady(getSerpCreds());
   const badFacts: { claim: string; status: string; note: string }[] = (report?.sections || [])
     .flatMap(sec => (sec.facts || []).filter(f => f.status !== "confirmed").map(f => ({ claim: f.claim, status: f.status, note: f.note || "" })))
     .filter(f => f.claim);
@@ -569,7 +570,7 @@ function FactCheck({ item, setItem, article, t, autoStart }: {
     // Saver #1: build ONE shared competitor corpus and verify every section against it,
     // instead of a live SERP per section. Off by default; uses the same SERP+scrape path once.
     let shared: FactcheckSource[] | null = null;
-    if (getFactReuseCorpus() && serp.apiKey) {
+    if (getFactReuseCorpus() && serpCredsReady(serp)) {
       try {
         const sr: { results?: FactcheckSource[] } = await fetch("/api/seo/serp", {
           method: "POST", headers: { "Content-Type": "application/json" },

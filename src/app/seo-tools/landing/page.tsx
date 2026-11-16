@@ -10,6 +10,7 @@ import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import SeoJobProgress from "@/components/SeoJobProgress";
 import SeoRecentList from "@/components/SeoRecentList";
 import { getSeoGenCreds, getTaskCreds, getSerpCreds, getFirecrawlKey, loadPolicies, getActivePolicyName, getKeywordSource, getKwAuto, getKwLimit , aiCredsReady } from "@/lib/seo/keys";
+import { useSerpReadiness } from "@/lib/seo/useSerpReadiness";
 import { getMetricsWithKd } from "@/lib/seo/metricsClient";
 import { COUNTRIES, LANGUAGES, defaultLanguageFor } from "@/lib/seo/regions";
 import { TONES, toneToPrompt } from "@/lib/seo/tones";
@@ -102,6 +103,7 @@ export default function LandingPage() {
   useEffect(() => { setMounted(true); }, []);
   const ai = mounted ? getSeoGenCreds() : { provider: "", apiKey: "", model: "" };
   const serpCreds = mounted ? getSerpCreds() : { provider: "", apiKey: "" };
+  const serpReady = useSerpReadiness(serpCreds);
   const activePolicy = mounted ? (loadPolicies().find(p => p.name === getActivePolicyName()) || loadPolicies()[0]) : null;
 
   const resolveTone = () => tone === "custom" ? customTone
@@ -303,7 +305,7 @@ export default function LandingPage() {
     setLoading("");
   }
 
-  const noSerpKey = !serpCreds.apiKey;
+  const noSerpKey = !serpReady;
   const noAiKey = !aiCredsReady(ai);
 
   return (

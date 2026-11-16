@@ -6,6 +6,7 @@ import { fetchLLM, fetchLLMDetailed, contentTokens, isLengthCut, CONTENT_TOKENS_
 import { stripModelScratch } from "@/lib/seo/textMetrics";
 import { judgeArticle, judgeOutline } from "@/lib/seo/judge";
 import { runSerp, heuristicIntent, heuristicSiteType } from "@/lib/seo/serp";
+import { serpConfigReady } from "@/lib/seo/serpReadiness";
 import { enrichKeywords, type KwSource } from "@/lib/seo/keywordSource";
 import { scrapeMany, type ScrapedPage } from "@/lib/seo/scrape";
 import type { EditorialPolicy } from "@/lib/seo/policy";
@@ -694,7 +695,7 @@ export async function genOutline(b: GenBody): Promise<GenResult> {
   if (!apiKey) return { ok: false, error: "no_ai_key" };
 
   const competitors: CompetitorInput[] = Array.isArray(b.competitors) ? b.competitors : [];
-  if (!competitors.length && b.serpKey && b._autoFetched !== true) {
+  if (!competitors.length && serpConfigReady(String(b.serpProvider || "serper"), b.serpKey) && b._autoFetched !== true) {
     return genOutlineAuto({ ...b, _autoFetched: true });
   }
   let model = b.model ? String(b.model) : undefined;
@@ -1498,7 +1499,7 @@ export async function genText(b: GenBody): Promise<GenResult> {
 
   let sources: { title: string; snippet: string; url: string; domain: string }[] = [];
   let effMode: "off" | "facts" | "cited" = sourceMode;
-  if (sourceMode !== "off" && b.serpKey && keyword) {
+  if (sourceMode !== "off" && serpConfigReady(String(b.serpProvider || "serper"), b.serpKey) && keyword) {
     b.__onProgress?.(8, "serp");
     try {
       const serp = await runSerp(String(b.serpProvider || "serper"), String(b.serpKey), keyword, { gl: b.gl, hl: b.hl, num: 10, engine: "google", baseUrl: b.serpBaseUrl ? String(b.serpBaseUrl) : undefined });
@@ -2072,7 +2073,7 @@ export async function genAnalysis(b: GenBody): Promise<GenResult> {
 export async function genOutlineAuto(b: GenBody): Promise<GenResult> {
   const keyword = String(b.keyword ?? "").trim();
   if (!keyword) return { ok: false, error: "no_keyword" };
-  if (!b.serpKey) return { ok: false, error: "no_serp_key" };
+  if (!serpConfigReady(String(b.serpProvider || "serper"), b.serpKey)) return { ok: false, error: "no_serp_key" };
   b.__onProgress?.(8, "serp");
   const serp = await runSerp(String(b.serpProvider || "serper"), String(b.serpKey), keyword, {
     gl: b.gl ?? b.country, hl: b.hl ?? b.language, num: 10, engine: "google",
@@ -2148,7 +2149,7 @@ export async function genCluster(b: GenBody): Promise<GenResult> {
     .map((k) => String(k).trim().toLowerCase()).filter(Boolean))].slice(0, 1000) as string[];
   if (keywords.length < 2) return { ok: false, error: "no_keywords" };
   const serpKey = String(b.serpKey ?? "");
-  if (!serpKey) return { ok: false, error: "no_serp_key" };
+  if (!serpConfigReady(String(b.serpProvider ?? "serper"), serpKey)) return { ok: false, error: "no_serp_key" };
   const provider = String(b.serpProvider ?? "serper");
   const serpBaseUrl = b.serpBaseUrl ? String(b.serpBaseUrl) : undefined;
   const gl = String(b.gl ?? "us"), hl = String(b.hl ?? "en");

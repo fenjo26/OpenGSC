@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { fetchLLM } from "@/lib/llm";
 import { runSerp, SerpEngine } from "@/lib/seo/serp";
+import { serpConfigReady } from "@/lib/seo/serpReadiness";
 import { scrapeMany, ScrapedPage } from "@/lib/seo/scrape";
 import { buildFactCheckSectionPrompt, extractJson } from "@/lib/seo/prompts";
 
@@ -25,7 +26,7 @@ export async function POST(req: Request) {
   // (reuse-corpus mode), use it directly and skip the per-section SERP + scrape entirely.
   let sources: { title: string; snippet: string; url: string; domain: string }[] =
     Array.isArray(b.sources) ? b.sources.filter((s: { url?: unknown }) => s && s.url) : [];
-  if (!sources.length && b.serpKey) {
+  if (!sources.length && serpConfigReady(String(b.serpProvider || "serper"), b.serpKey)) {
     // Query MUST be topic-led: searching the bare heading ("Key Facts at a Glance",
     // "Transport Modes Comparison") returns generic/off-topic pages. Prefix the main keyword
     // so sources are about the actual subject (and right country/language).

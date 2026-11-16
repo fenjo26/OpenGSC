@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { runSerp } from "@/lib/seo/serp";
+import { serpConfigReady } from "@/lib/seo/serpReadiness";
 import { scrapeMany } from "@/lib/seo/scrape";
 import { normalizeForCorpus, tokenize } from "@/lib/seo/aidetect";
 
@@ -27,7 +28,7 @@ export async function POST(req: Request) {
   if (!targets.length) {
     if (!keyword) return NextResponse.json({ error: "no_keyword" }, { status: 400 });
     const serpKey = String(b.serpKey ?? "");
-    if (!serpKey) return NextResponse.json({ error: "no_serp_key" }, { status: 400 });
+    if (!serpConfigReady(String(b.serpProvider || "serper"), serpKey)) return NextResponse.json({ error: "no_serp_key" }, { status: 400 });
     const serp = await runSerp(String(b.serpProvider || "serper"), serpKey, keyword, {
       baseUrl: b.serpBaseUrl ? String(b.serpBaseUrl) : undefined,
       gl: b.gl, hl: b.hl, num: want, engine: "google",

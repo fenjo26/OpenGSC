@@ -13,6 +13,7 @@ import { OutlineView } from "@/components/SeoRenderers";
 import SeoJobProgress from "@/components/SeoJobProgress";
 import SeoRecentList from "@/components/SeoRecentList";
 import { getSeoGenCreds, getTaskCreds, getSerpCreds, getFirecrawlKey, loadPolicies, getActivePolicyName, getKeywordSource, getKwAuto, getKwLimit, aiCredsReady } from "@/lib/seo/keys";
+import { useSerpReadiness } from "@/lib/seo/useSerpReadiness";
 import { getMetricsWithKd, formatUsd, priceExpand } from "@/lib/seo/metricsClient";
 import { COUNTRIES, LANGUAGES, defaultLanguageFor } from "@/lib/seo/regions";
 import { TONES, toneToPrompt } from "@/lib/seo/tones";
@@ -163,6 +164,7 @@ export default function OutlinePage() {
   const kwPrice = mounted ? priceExpand(kwSrc.source, getKwLimit(), getMetricsWithKd()) : { units: 0, usd: 0 };
   const ai = mounted ? getSeoGenCreds() : { provider: "", apiKey: "", model: "" };
   const serpCreds = mounted ? getSerpCreds() : { provider: "", apiKey: "" };
+  const serpReady = useSerpReadiness(serpCreds);
   const activePolicy = mounted ? (loadPolicies().find(p => p.name === getActivePolicyName()) || loadPolicies()[0]) : null;
 
   const resolveTone = () => tone === "custom" ? customTone
@@ -396,7 +398,7 @@ export default function OutlinePage() {
     setLoading("");
   }
 
-  const noSerpKey = !serpCreds.apiKey;
+  const noSerpKey = !serpReady;
   // Ollama needs no key — readiness is a model choice + (defaultable) base URL, see aiCredsReady.
   const noAiKey = !aiCredsReady(ai);
 

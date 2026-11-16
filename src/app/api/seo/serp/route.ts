@@ -21,6 +21,10 @@ export async function POST(req: Request) {
   const serp = await runSerp(provider, apiKey, keyword, {
     gl: b.gl, hl: b.hl, location: b.location, num: b.num ?? 10, engine,
     baseUrl: b.baseUrl ? String(b.baseUrl) : undefined,
+    ...(b.safesearch != null ? { safesearch: Number(b.safesearch) === 2 ? 2 : Number(b.safesearch) === 1 ? 1 : 0 } : {}),
+    ...(b.timeRange === "day" || b.timeRange === "month" || b.timeRange === "year" ? { timeRange: b.timeRange } : {}),
+    ...(b.categories ? { categories: String(b.categories) } : {}),
+    ...(Array.isArray(b.engines) ? { searxngEngines: b.engines.map(String) } : {}),
   });
 
   if (serp.error) {

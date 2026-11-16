@@ -9,6 +9,7 @@ import Link from "next/link";
 import { Boxes, AlertTriangle } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { getSerpCreds, serpPayload, getKeywordSource } from "@/lib/seo/keys";
+import { useSerpReadiness } from "@/lib/seo/useSerpReadiness";
 import { COUNTRIES, LANGUAGES, defaultLanguageFor } from "@/lib/seo/regions";
 import { startJob, importJob } from "@/lib/seo/jobs";
 import SeoJobProgress from "@/components/SeoJobProgress";
@@ -23,6 +24,7 @@ export default function ClusterPage() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
   const serpCreds = mounted ? getSerpCreds() : { provider: "", apiKey: "" };
+  const serpReady = useSerpReadiness(serpCreds);
   const kwSrc = mounted ? getKeywordSource() : { source: "off" as const, apiKey: "", baseUrl: undefined };
 
   const [raw, setRaw] = useState("");
@@ -41,7 +43,7 @@ export default function ClusterPage() {
   async function run() {
     setErr("");
     if (keywords.length < 2) { setErr(t("seoClusterNeedKws")); return; }
-    if (!serpCreds.apiKey) { setErr(t("seoErrNoSerpKey")); return; }
+    if (!serpReady) { setErr(t("seoErrNoSerpKey")); return; }
     const kw = `${keywords[0]} +${keywords.length - 1}`;
     const { jobId: jid, error } = await startJob("cluster", {
       keywords, gl: country, hl: language, threshold,
@@ -64,7 +66,7 @@ export default function ClusterPage() {
         <p style={{ fontSize: "13px", color: "var(--color-text-secondary)", margin: 0 }}>{t("seoClusterSub")}</p>
       </div>
 
-      {mounted && !serpCreds.apiKey && (
+      {mounted && !serpReady && (
         <div className={card} style={{ borderColor: "rgba(255,159,10,0.35)", background: "rgba(255,159,10,0.06)", display: "flex", gap: "10px", alignItems: "center", fontSize: "13px", color: "var(--color-text-secondary)" }}>
           <AlertTriangle size={18} color="var(--color-accent-orange)" /> {t("seoErrNoSerpKey")} <Link href="/seo-tools/settings" style={{ color: "var(--color-accent-blue)" }}>{t("seoSettingsShort")}</Link>
         </div>

@@ -881,7 +881,7 @@ function TaskModelField({ value, models, onChange }: { value: string; models: Mo
   );
 }
 
-const SERP_PROVIDER_LIST: [string, string][] = [["serper", "Serper.dev"], ["dataforseo", "DataForSEO"], ["scrapingrobot", "ScrapingRobot"], ["goanyapi", "GoAnyAPI"]];
+const SERP_PROVIDER_LIST: [string, string][] = [["searxng", "SearXNG"], ["serper", "Serper.dev"], ["dataforseo", "DataForSEO"], ["scrapingrobot", "ScrapingRobot"], ["goanyapi", "GoAnyAPI"]];
 
 /**
  * Providers Rank Tracker will not accept, mirroring `RANK_UNSUPPORTED` in lib/rank.ts.
@@ -890,7 +890,7 @@ const SERP_PROVIDER_LIST: [string, string][] = [["serper", "Serper.dev"], ["data
  * in Prisma. The server is the one that enforces it — this copy exists only so the dropdown can
  * say so before the user picks, instead of after a week of empty charts.
  */
-const RANK_UNSUPPORTED_PROVIDERS = new Set(["goanyapi"]);
+const RANK_UNSUPPORTED_PROVIDERS = new Set(["goanyapi", "searxng"]);
 
 // What Rank Tracker can run on — shared with the quick switch on the Positions tab. The
 // RANK_UNSUPPORTED_PROVIDERS set above stays as the message carrier: the server refuses
@@ -908,11 +908,75 @@ function providerPillStyle(isActive: boolean): React.CSSProperties {
 
 // The SERP / scraping key cards (Settings → SERP & scraping). The tab supplies the heading;
 // the pickers that choose WHICH of these keys a feature uses sit above them in the same tab.
+function SearxngCard() {
+  const { t } = useLanguage();
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<{
+    ok: boolean; baseUrl?: string; resultCount?: number; engines?: string[];
+    latencyMs?: number; error?: string; errorDetail?: string;
+  } | null>(null);
+
+  async function check() {
+    setBusy(true);
+    try {
+      const response = await fetch("/api/seo/serp/searxng/status", { cache: "no-store" });
+      const data = await response.json().catch(() => null);
+      setStatus(response.ok && data ? data : { ok: false, error: `HTTP ${response.status}` });
+    } catch (error) {
+      setStatus({ ok: false, error: String((error as Error)?.message ?? error) });
+    }
+    setBusy(false);
+  }
+
+  useEffect(() => {
+    void check();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const ok = !!status?.ok;
+  return (
+    <div style={{ padding: "16px", borderRadius: "10px", border: `1px solid ${ok ? "#0ea5e940" : "var(--color-border)"}`, background: ok ? "#0ea5e908" : "rgba(255,255,255,0.02)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
+        <div style={{ width: "30px", height: "30px", borderRadius: "8px", background: "#0ea5e920", border: "1px solid #0ea5e940", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "13px", fontWeight: 700, color: "#0ea5e9", flexShrink: 0 }}>S</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--color-text-primary)" }}>SearXNG</div>
+          <div style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>{t("seoRoleSearxng")}</div>
+        </div>
+        {ok
+          ? <span style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "11px", color: "#10B981", fontWeight: 600 }}><CheckCircle size={12} color="#10B981" /> {t("seoSearxngOk")}</span>
+          : <span style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>{t("seoSearxngNoKey")}</span>}
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", marginBottom: "8px" }}>
+        <code style={{ fontSize: "12px", fontFamily: "monospace", color: "var(--color-text-secondary)" }}>
+          {status?.baseUrl || t("seoSearxngChecking")}
+        </code>
+        <button onClick={check} disabled={busy}
+          style={{ padding: "6px 12px", borderRadius: "8px", border: "none", background: busy ? "rgba(255,255,255,0.06)" : "#0ea5e925", color: busy ? "var(--color-text-secondary)" : "#0ea5e9", fontSize: "12px", fontWeight: 600, cursor: busy ? "wait" : "pointer", display: "flex", alignItems: "center", gap: "5px" }}>
+          <RefreshCw size={12} style={{ animation: busy ? "spin 1s linear infinite" : undefined }} /> {busy ? t("seoSearxngChecking") : t("seoSearxngTest")}
+        </button>
+      </div>
+
+      <p style={{ fontSize: "12px", color: "var(--color-text-secondary)", margin: "0 0 6px", lineHeight: 1.55 }}>
+        {t("seoSearxngNote")}
+      </p>
+      {status && (
+        <div style={{ fontSize: "11px", color: ok ? "var(--color-text-secondary)" : "var(--color-warning)", lineHeight: 1.5 }}>
+          {ok
+            ? `${status.latencyMs ?? 0} ms · ${status.resultCount ?? 0} · ${t("seoSearxngEngines")}: ${(status.engines || []).join(", ")}`
+            : `${t("seoSearxngFail")}${status.error ? ` — ${status.error}` : ""}${status.errorDetail ? `: ${status.errorDetail}` : ""}`}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function SeoProviderKeysSection() {
   const { t } = useLanguage();
   return (
     <div>
       <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+        <SearxngCard />
         {SEO_PROVIDERS.map(p => <SeoKeyCard key={p.id} provider={p} />)}
         <AparserCard />
         <Crawl4aiCard />
@@ -1022,8 +1086,9 @@ export function SerpProviderPicker() {
         </div>
         {RANK_UNSUPPORTED_PROVIDERS.has(active) && (
           <p style={{ fontSize: "12px", color: "var(--color-warning)", margin: "8px 0 0" }}>
-            {activeName} serves cached SERPs with no depth control, so Rank Tracker cannot use it —
-            it will fall back to another configured SERP key. Positions elsewhere in the app are unaffected.
+            {activeName} does not expose the depth and location controls Rank Tracker needs, so it
+            cannot be used here — it will fall back to another configured SERP key. Positions elsewhere
+            in the app are unaffected.
           </p>
         )}
       </div>

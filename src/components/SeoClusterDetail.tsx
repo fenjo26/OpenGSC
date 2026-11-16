@@ -12,6 +12,7 @@ import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { HistoryItem, updateHistory } from "@/lib/seo/history";
 import { startJob, getJob, importJob } from "@/lib/seo/jobs";
 import { getSerpCreds, getFirecrawlKey, getTaskCreds, loadPolicies, getActivePolicyName } from "@/lib/seo/keys";
+import { serpCredsReady } from "@/lib/seo/serpReadiness";
 import { OUTLINE_TEMPLATES } from "@/lib/seo/templates";
 
 const INTENT_COLOR: Record<string, string> = { buy: "#10A37F", review: "#2997ff", listicle: "#ff9f0a", use_case: "#8e8e93", info: "#8e8e93" };
@@ -113,7 +114,7 @@ export default function SeoClusterDetail({ item }: { item: HistoryItem }) {
     setErr("");
     const serp = getSerpCreds();
     const ai = getTaskCreds("outline");
-    if (!serp.apiKey) { setErr(t("seoErrNoSerpKey")); return; }
+    if (!serpCredsReady(serp)) { setErr(t("seoErrNoSerpKey")); return; }
     if (!ai.apiKey) { setErr(t("seoErrNoAiKey")); return; }
     const policy = loadPolicies().find(x => x.name === getActivePolicyName()) || loadPolicies()[0];
     const picked = [...sel].sort((a, b) => a - b);
