@@ -123,7 +123,14 @@ type RankHistoryDay = {
 
 function HistoryChart({ keywordId }: { keywordId: string }) {
   const { t } = useLanguage();
-  const [data, setData] = useState<{ series?: RankHistoryDay[] } | null>(null);
+  // The history route also returns the keyword's current state (position, best, the
+  // last-successful-check stamp) — the drawer's "last found" badge reads it.
+  const [data, setData] = useState<{
+    series?: RankHistoryDay[];
+    position?: number | null;
+    bestPosition?: number | null;
+    lastSuccessfulCheckAt?: string | null;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {

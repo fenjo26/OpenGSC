@@ -76,6 +76,8 @@ type SiteRow = {
   tags?: string | null;
   market?: string | null;
   archivedAt?: string | null;
+  /** ISO time of this property's last successful GSC sync (not the newest metric date). */
+  lastGscSyncAt?: string | null;
   pinned?: boolean;
   hidden?: boolean;
   siteDbId?: string | null;
@@ -1763,11 +1765,12 @@ function PortfolioPageContent() {
         {/* Last successful GSC sync — not the newest DailyMetric date. GSC data lags 2–3 days,
             so a metric date would go yellow every morning on a healthy site. */}
         {engine === "google" && (() => {
-          const state = lastSuccessState(site.lastGscSyncAt);
+          const at = site.lastGscSyncAt ?? null;
+          const state = lastSuccessState(at);
           const warn = state !== "fresh";
-          const label = state === "never"
+          const label = state === "never" || at == null
             ? t("dashLastSuccessNever")
-            : t("dashLastSuccessAt").replace("{time}", formatLastSuccessStamp(new Date(site.lastGscSyncAt)));
+            : t("dashLastSuccessAt").replace("{time}", formatLastSuccessStamp(new Date(at)));
           return (
             <div
               title={t("dashLastSuccessHint")}

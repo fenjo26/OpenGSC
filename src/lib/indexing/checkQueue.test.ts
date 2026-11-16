@@ -75,7 +75,7 @@ before(async () => {
     "ga4PropertyId" TEXT,
     "ga4PropertyName" TEXT,
     "shareEnabled" BOOLEAN NOT NULL DEFAULT false,
-    "shareToken" TEXT, "auditSettings" TEXT, "aeoCompetitors" TEXT, "backlinkNiche" TEXT, "indexInspect" TEXT, "mentionSettings" TEXT, "queryHistoryFrom" DATETIME,
+    "shareToken" TEXT, "auditSettings" TEXT, "aeoCompetitors" TEXT, "backlinkNiche" TEXT, "indexInspect" TEXT, "mentionSettings" TEXT, "queryHistoryFrom" DATETIME, "lastGscSyncAt" DATETIME,
     CONSTRAINT "Site_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 )`);
   await prisma.$executeRawUnsafe(`CREATE TABLE "SitemapUrl" (

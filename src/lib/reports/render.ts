@@ -32,8 +32,13 @@ import { rankSuccessState, rankSuccessStamp } from "@/lib/rankFreshness";
 function rankFoundHtml(foundAt: string | null | undefined, L: ReportTpl): string {
   if (foundAt === undefined) return "";
   const state = rankSuccessState(foundAt);
-  const text = state === "never" ? L.rankNeverFound : L.rankFoundAt(rankSuccessStamp(foundAt));
-  const warn = state !== "fresh";
+  if (state === "never" || foundAt == null) {
+    return badgeHtml(L.rankNeverFound, true);
+  }
+  return badgeHtml(L.rankFoundAt(rankSuccessStamp(foundAt)), state !== "fresh");
+}
+
+function badgeHtml(text: string, warn: boolean): string {
   const style = warn
     ? "color:#B45309;background:rgba(245,158,11,0.16);border:1px solid rgba(245,158,11,0.45);"
     : "color:#64748b;border:1px solid transparent;";
@@ -357,7 +362,7 @@ function renderPositions(data: ReportData, ctx: Ctx): string {
 
 function renderLocal(data: ReportData, { L, fi }: Ctx): string {
   const l = data.local!;
-  const rows = l.keywords.map(k => `<tr><td>${escapeHtml(k.keyword)}${rankFoundHtml(m.foundAt, L)}</td><td>${escapeHtml(k.location)}</td><td class="num">${k.position == null ? "—" : `#${k.position}`}</td><td class="num">${k.localPack == null ? "—" : escapeHtml(L.inPack(k.localPack))}</td></tr>`).join("");
+  const rows = l.keywords.map(k => `<tr><td>${escapeHtml(k.keyword)}${rankFoundHtml(k.foundAt, L)}</td><td>${escapeHtml(k.location)}</td><td class="num">${k.position == null ? "—" : `#${k.position}`}</td><td class="num">${k.localPack == null ? "—" : escapeHtml(L.inPack(k.localPack))}</td></tr>`).join("");
   const table = rows
     ? `<table><thead><tr><th>${escapeHtml(L.keyword)}</th><th>${escapeHtml(L.location)}</th><th class="num">${escapeHtml(L.organic)}</th><th class="num">${escapeHtml(L.mapPack)}</th></tr></thead><tbody>${rows}</tbody></table>`
     : noData(L, L.noLocalKw);
