@@ -1465,7 +1465,7 @@ function AIProviderCard({ provider }: { provider: typeof AI_PROVIDERS[number] })
         )}
         <button
           onClick={handleSave}
-          disabled={!key.trim()}
+          disabled={provider.id !== "ollama" && !key.trim()}
           style={{
             padding: "8px 14px", borderRadius: "8px", border: "none",
             background: saved ? "rgba(16,185,129,0.2)" : key.trim() ? `${provider.color}25` : "rgba(255,255,255,0.06)",
