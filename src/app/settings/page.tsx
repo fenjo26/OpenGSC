@@ -1348,7 +1348,9 @@ function AIProviderCard({ provider }: { provider: typeof AI_PROVIDERS[number] })
   // rides along so proxy gateways (anthropic + aiBaseUrl_) are queried at their own catalogue
   // instead of the official one, where the proxy key is meaningless.
   const loadModels = async (apiKey: string) => {
-    if (!apiKey.trim()) return;
+    // Ollama discovers its catalogue without a key (the daemon is unauthenticated) — only
+    // keyed providers need a key before the probe goes out.
+    if (!apiKey.trim() && provider.id !== "ollama") return;
     setModelsLoading(true); setModelsErr(false);
     try {
       const res = await fetch("/api/seo/models", {
