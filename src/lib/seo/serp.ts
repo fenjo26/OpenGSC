@@ -7,7 +7,7 @@ import { loggedFetch, type CallHandle } from "@/lib/providerLog/log";
 import { goanySerp } from "./goanyapi";
 import { defaultLanguageFor } from "./regions";
 import { searxngSearch } from "./searxng";
-import { SEARXNG_PROVIDER_ID } from "./serpReadiness";
+import { SEARXNG_PROVIDER_ID, serpProviderNeedsKey } from "./serpReadiness";
 import {
   APARSER_SERP_OPTION_IDS, APARSER_SERP_PARSERS, aparserSerpOptions, describeAparserRow, mapAparserSerp,
 } from "./aparserSerp";
@@ -756,7 +756,7 @@ export async function runSerp(
   opts: SerpOptions = {},
 ): Promise<SerpResponse> {
   const engine: SerpEngine = opts.engine ?? "google";
-  if (!apiKey) {
+  if (!apiKey && serpProviderNeedsKey(provider)) {
     return { engine, provider, keyword, results: [], error: "no_serp_key" };
   }
   // A self-hosted provider needs a host as well as a secret, and "no_serp_key" would send the
