@@ -1,3 +1,4 @@
+import { DEFAULT_AI_PROVIDER } from "@/lib/providerDefaults";
 import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { fetchLLMVision } from "@/lib/llm";
@@ -17,7 +18,7 @@ export async function POST(req: Request) {
   const imageBase64 = String(b.imageBase64 ?? "");
   if (!imageBase64) return NextResponse.json({ error: "no_image" }, { status: 400 });
   const mimeType = String(b.mimeType ?? "image/png");
-  const provider = String(b.aiProvider ?? "anthropic");
+  const provider = String(b.aiProvider ?? DEFAULT_AI_PROVIDER);
   const apiKey = String(b.aiApiKey ?? "");
   if (!apiKey) return NextResponse.json({ error: "no_ai_key" }, { status: 400 });
   const model = b.model ? String(b.model) : undefined;

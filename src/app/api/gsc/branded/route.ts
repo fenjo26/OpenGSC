@@ -1,3 +1,4 @@
+import { DEFAULT_AI_PROVIDER } from "@/lib/providerDefaults";
 import { NextResponse } from 'next/server';
 import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from '@/lib/prisma';
@@ -16,7 +17,7 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const siteId   = searchParams.get('siteId') ?? '';
   const suggest  = searchParams.get('suggest') === '1';
-  const provider = searchParams.get('aiProvider') ?? 'anthropic';
+  const provider = searchParams.get('aiProvider') ?? DEFAULT_AI_PROVIDER;
   const apiKey   = searchParams.get('aiApiKey') ?? '';
   // Chosen by the caller from the `utility` task (lib/seo/aiTasks.ts). Absent = provider default.
   const model    = searchParams.get('aiModel') ?? '';

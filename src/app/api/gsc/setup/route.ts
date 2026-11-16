@@ -3,6 +3,7 @@ import { workspaceUserId } from "@/lib/team/workspace";
 import { prisma } from '@/lib/prisma';
 import { google } from 'googleapis';
 import { fetchLLM } from '@/lib/llm';
+import { DEFAULT_AI_PROVIDER } from '@/lib/providerDefaults';
 
 const LANG = new Set(['el','de','fr','ru','en','es','it','pl','nl','pt','tr','ar','zh','bg','ro','cs','sk','hr','sr','uk','hu']);
 
@@ -55,7 +56,7 @@ interface ClusterDef { name?: string; values: string[]; count: number }
 interface PageGroupDef { name?: string; values: (string | undefined)[]; count: number; isEquals?: boolean }
 
 async function askJson(prompt: string, ai: AiCreds, maxTokens = 2048): Promise<Record<string, unknown> | null> {
-  const provider = ai.provider || 'anthropic';
+  const provider = ai.provider || DEFAULT_AI_PROVIDER;
   // One-Click Setup can run before any key is stored in the browser, so a server-side env key is
   // still an accepted source here — unlike the SEO tools, which are strictly bring-your-own.
   const apiKey = ai.apiKey || process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY;

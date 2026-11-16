@@ -9,6 +9,7 @@
 // Search Console live (issue #27). Bing/Yandex numbers
 // are fetched live (digestEngines.ts) only when requested — the page loads them lazily per tab.
 
+import { DEFAULT_AI_PROVIDER } from "@/lib/providerDefaults";
 import { prisma } from "@/lib/prisma";
 import { buildEngineData, type EngineRow } from "@/lib/digestEngines";
 import { fetchLLM } from "@/lib/llm";
@@ -497,7 +498,7 @@ export async function aiSummary(userId: string, digestMarkdown: string, lang: No
     const rows = await rawQuery<{ seoSettings: string | null }[]>(`SELECT seoSettings FROM "User" WHERE id = ?`, userId);
     const s = rows?.[0]?.seoSettings ? JSON.parse(rows[0].seoSettings) : null;
     if (!s) return null;
-    const provider = s.seoProvider || s.aiProvider || "anthropic";
+    const provider = s.seoProvider || s.aiProvider || DEFAULT_AI_PROVIDER;
     const apiKey = s[`aiKey_${provider}`] || s.aiApiKey || "";
     if (!apiKey) return null;
     const model = s.seoModel || s[`aiModel_${provider}`] || undefined;

@@ -1,5 +1,6 @@
 "use client";
 
+import { DEFAULT_AI_PROVIDER } from "@/lib/providerDefaults";
 import { useEffect, useState } from "react";
 import { Sparkles, FileText, Trash2, Plus, AlertCircle, RefreshCw } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
@@ -74,7 +75,7 @@ export default function IndexerDictionaryPage() {
     setMsg(null);
 
     // Retrieve AI provider details from localStorage
-    const aiProvider = localStorage.getItem("aiProvider") || "anthropic";
+    const aiProvider = localStorage.getItem("aiProvider") || DEFAULT_AI_PROVIDER;
     const aiApiKey = localStorage.getItem(`aiApiKey_${aiProvider}`) || "";
 
     try {

@@ -1,3 +1,4 @@
+import { DEFAULT_AI_PROVIDER } from "@/lib/providerDefaults";
 import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { fetchLLM } from "@/lib/llm";
@@ -9,7 +10,7 @@ export async function POST(req: Request) {
   if (!workspaceId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const b = await req.json();
-  const provider = String(b.aiProvider ?? "anthropic");
+  const provider = String(b.aiProvider ?? DEFAULT_AI_PROVIDER);
   const apiKey = String(b.aiApiKey ?? "");
   if (!apiKey) return NextResponse.json({ error: "no_ai_key" }, { status: 400 });
 

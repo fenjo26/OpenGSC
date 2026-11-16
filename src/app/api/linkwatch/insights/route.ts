@@ -1,3 +1,4 @@
+import { DEFAULT_AI_PROVIDER } from "@/lib/providerDefaults";
 import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { fetchLLM } from "@/lib/llm";
@@ -50,7 +51,7 @@ export async function POST(req: Request) {
 ДАННЫЕ (${mentions.length} ссылок):
 ${rows.slice(0, 60000)}`;
 
-  const text = await fetchLLM(prompt, String(b.aiProvider ?? "anthropic"), apiKey, 4000,
+  const text = await fetchLLM(prompt, String(b.aiProvider ?? DEFAULT_AI_PROVIDER), apiKey, 4000,
     b.model ? String(b.model) : undefined, b.aiBaseUrl ? String(b.aiBaseUrl) : undefined);
   if (!text) return NextResponse.json({ error: "generation_failed" }, { status: 502 });
   return NextResponse.json({ insights: text });

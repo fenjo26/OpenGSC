@@ -12,6 +12,7 @@
 // helpers stay safe to bundle anywhere; client components do not call `fitMeta` (they go
 // through POST /api/seo/meta-fit).
 
+import { DEFAULT_AI_PROVIDER } from "@/lib/providerDefaults";
 import { META_LIMITS, metaLength, type MetaField, type MetaFitItem, type MetaFitResponse, type MetaFitResult } from "./metaLimits";
 import { decodeHtmlEntities } from "./outlineFormat";
 import { extractJson } from "./prompts";
@@ -400,7 +401,7 @@ export async function fitMeta(item: MetaFitItem, llm: { allow: boolean; provider
     );
     let raw: string | null = null;
     try {
-      raw = await fetchLLM(prompt, String(llm.provider || "anthropic"), String(llm.apiKey), 1200, llm.model, llm.baseUrl, 0);
+      raw = await fetchLLM(prompt, String(llm.provider || DEFAULT_AI_PROVIDER), String(llm.apiKey), 1200, llm.model, llm.baseUrl, 0);
     } catch { break; }
     out.llmCalls++;
     const parsed = extractJson<Record<string, unknown>>(raw);

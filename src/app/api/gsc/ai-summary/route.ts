@@ -1,3 +1,4 @@
+import { DEFAULT_AI_PROVIDER } from "@/lib/providerDefaults";
 import { NextResponse } from 'next/server';
 import { workspaceUserId } from "@/lib/team/workspace";
 import { fetchLLM } from '@/lib/llm';
@@ -13,7 +14,7 @@ export async function POST(req: Request) {
 
   const body = await req.json().catch(() => ({}));
   const prompt = String(body.prompt ?? '').trim();
-  const provider = String(body.aiProvider ?? 'anthropic').trim();
+  const provider = String(body.aiProvider ?? DEFAULT_AI_PROVIDER).trim();
   const apiKey = String(body.aiApiKey ?? '').trim();
   const model = body.model ? String(body.model) : undefined;
   const baseUrl = body.aiBaseUrl ? String(body.aiBaseUrl) : undefined;

@@ -3,6 +3,7 @@
 // variant it can mask common "AI tells" and reports a uniqueness score vs the source. Built to
 // refresh decaying pages and avoid duplicate content across a large affiliate network.
 
+import { DEFAULT_AI_PROVIDER } from "@/lib/providerDefaults";
 import { fetchLLM, fetchLLMDetailed, contentTokens, isLengthCut, CONTENT_TOKENS_RETRY_MAX } from "@/lib/llm";
 import { scrapeMany } from "@/lib/seo/scrape";
 import { factDrift, criticalValues, type FactDrift } from "@/lib/seo/factDrift";
@@ -376,7 +377,7 @@ export function buildRewritePrompt(args: {
 }
 
 export async function rewriteContent(b: RewriteBody): Promise<RewriteResult> {
-  const provider = String(b.aiProvider ?? "anthropic");
+  const provider = String(b.aiProvider ?? DEFAULT_AI_PROVIDER);
   const apiKey = String(b.aiApiKey ?? "");
   if (!apiKey) return { ok: false, error: "no_ai_key" };
 

@@ -1,6 +1,7 @@
 // Core SEO generation logic, factored out of the API routes so it can be reused by both
 // the synchronous routes and the background-job runner. No HTTP / auth here — pure work.
 
+import { DEFAULT_AI_PROVIDER } from "@/lib/providerDefaults";
 import { fetchLLM, fetchLLMDetailed, contentTokens, isLengthCut, CONTENT_TOKENS_RETRY_MAX } from "@/lib/llm";
 import { stripModelScratch } from "@/lib/seo/textMetrics";
 import { judgeArticle, judgeOutline } from "@/lib/seo/judge";
@@ -688,7 +689,7 @@ export async function genOutline(b: GenBody): Promise<GenResult> {
   // Mutable, because the head call may fall back to another provider (see below) and every
   // later pass — scrub, expand, localize, enrich — must follow it rather than keep hammering
   // the one that just failed.
-  let provider = String(b.aiProvider ?? "anthropic");
+  let provider = String(b.aiProvider ?? DEFAULT_AI_PROVIDER);
   let apiKey = String(b.aiApiKey ?? "");
   if (!apiKey) return { ok: false, error: "no_ai_key" };
 
@@ -1484,7 +1485,7 @@ async function enforceVolumeTarget(text: string, targetWc: number, ctx: {
 // ─── Article text ─────────────────────────────────────────────────────────────────
 export async function genText(b: GenBody): Promise<GenResult> {
   if (!b.outline) return { ok: false, error: "no_outline" };
-  const provider = String(b.aiProvider ?? "anthropic");
+  const provider = String(b.aiProvider ?? DEFAULT_AI_PROVIDER);
   const apiKey = String(b.aiApiKey ?? "");
   if (!apiKey) return { ok: false, error: "no_ai_key" };
 
@@ -1954,7 +1955,7 @@ export function stripForeignScripts(text: string, language: string): string {
 // ─── Wireframe (Landing-flow block skeleton) ─────────────────────────────────────
 export async function genWireframe(b: GenBody): Promise<GenResult> {
   if (!b.outline) return { ok: false, error: "no_outline" };
-  const provider = String(b.aiProvider ?? "anthropic");
+  const provider = String(b.aiProvider ?? DEFAULT_AI_PROVIDER);
   const apiKey = String(b.aiApiKey ?? "");
   if (!apiKey) return { ok: false, error: "no_ai_key" };
   const model = b.model ? String(b.model) : undefined;
@@ -2040,7 +2041,7 @@ export async function genAnalysis(b: GenBody): Promise<GenResult> {
   const keyword = String(b.keyword ?? "").trim();
   if (!keyword) return { ok: false, error: "no_keyword" };
   if (!b.targetPage) return { ok: false, error: "no_target_page" };
-  const provider = String(b.aiProvider ?? "anthropic");
+  const provider = String(b.aiProvider ?? DEFAULT_AI_PROVIDER);
   const apiKey = String(b.aiApiKey ?? "");
   if (!apiKey) return { ok: false, error: "no_ai_key" };
 

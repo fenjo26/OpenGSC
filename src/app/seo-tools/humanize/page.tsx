@@ -11,6 +11,7 @@
 // the human reference, your generation history as the machine reference. The score is the least
 // interesting output; the marker vocabulary is the one that changes what you generate next.
 
+import { DEFAULT_AI_PROVIDER } from "@/lib/providerDefaults";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
@@ -506,7 +507,7 @@ function BenchTab({ active }: { active: StoredModel | null }) {
     if (seed.length) setRows(seed);
   }, [configured, rows.length]);
 
-  const addRow = () => setRows(r => [...r, { id: `r${Date.now()}`, provider: configured[0]?.id || "anthropic", model: "", temp: "0.7" }]);
+  const addRow = () => setRows(r => [...r, { id: `r${Date.now()}`, provider: configured[0]?.id || DEFAULT_AI_PROVIDER, model: "", temp: "0.7" }]);
   const setRow = (id: string, patch: Partial<BenchRow>) => setRows(r => r.map(x => (x.id === id ? { ...x, ...patch } : x)));
   const delRow = (id: string) => setRows(r => r.filter(x => x.id !== id));
 
@@ -567,7 +568,7 @@ function BenchTab({ active }: { active: StoredModel | null }) {
           {rows.map(row => (
             <div key={row.id} style={{ display: "grid", gridTemplateColumns: "minmax(110px,1fr) minmax(140px,2fr) 90px 34px", gap: "7px", alignItems: "center" }}>
               <select value={row.provider} onChange={e => setRow(row.id, { provider: e.target.value })} style={inputStyle}>
-                {(configured.length ? configured.map(c => c.id) : ["anthropic"]).map(id => (
+                {(configured.length ? configured.map(c => c.id) : [DEFAULT_AI_PROVIDER]).map(id => (
                   <option key={id} value={id}>{AI_PROVIDER_NAMES[id] || id}</option>
                 ))}
               </select>

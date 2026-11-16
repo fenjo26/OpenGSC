@@ -1,3 +1,4 @@
+import { DEFAULT_AI_PROVIDER } from "@/lib/providerDefaults";
 import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { resolveAiCreds } from "@/lib/mcp/shared";
@@ -106,7 +107,7 @@ export async function POST(req: Request) {
     if (bodyKey) {
       llm = {
         allow: true,
-        provider: String(b.aiProvider ?? "anthropic"),
+        provider: String(b.aiProvider ?? DEFAULT_AI_PROVIDER),
         apiKey: bodyKey,
         model: b.model ? String(b.model) : undefined,
         baseUrl: b.aiBaseUrl ? String(b.aiBaseUrl) : undefined,

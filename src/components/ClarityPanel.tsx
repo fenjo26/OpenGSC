@@ -1,5 +1,6 @@
 "use client";
 
+import { DEFAULT_AI_PROVIDER } from "@/lib/providerDefaults";
 import { useEffect, useState, useCallback } from "react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import {
@@ -281,7 +282,7 @@ export function ClarityPanel({ siteDbId, domain }: { siteDbId: string; domain?: 
     setAiErrorMsg(null);
     setAiAnalysis(null);
     try {
-      const provider = localStorage.getItem("aiProvider") || "anthropic";
+      const provider = localStorage.getItem("aiProvider") || DEFAULT_AI_PROVIDER;
       const apiKey = localStorage.getItem(`aiKey_${provider}`) || localStorage.getItem("aiApiKey") || "";
 
       const raw = JSON.stringify(snapshot?.data.traffic ?? []).slice(0, 6000);
