@@ -142,3 +142,20 @@ export function ollamaVisionModel(model: string | undefined, apiKey?: string, ba
   if (chosen) return chosen;
   return isOllamaCloud(ollamaEndpoint(apiKey, baseUrl)) ? defaultModelFor("ollama", "vision") : "";
 }
+
+/**
+ * Can this credential set attempt an AI call at all? The server-side mirror of the browser's
+ * aiCredsReady (lib/seo/keys.ts), so the badge that says "ready" and the route that used to
+ * reject can never disagree: a key makes any provider ready, and Ollama is additionally ready
+ * without one whenever the resolved endpoint is NOT Cloud — the daemon is unauthenticated, but
+ * ollama.com answers a keyless call with 401 on every request.
+ *
+ * Every generation route's "no_ai_key" gate asks this instead of testing the key alone; the
+ * Ollama-native provider shipped with those gates untouched, so a keyless local daemon passed
+ * the browser readiness and then bounced off "no_ai_key" on the server.
+ */
+export function aiConfigReady(provider: string, apiKey?: string, baseUrl?: string): boolean {
+  if ((apiKey ?? "").trim()) return true;
+  if (provider === "ollama") return !isOllamaCloud(ollamaEndpoint("", baseUrl));
+  return false;
+}

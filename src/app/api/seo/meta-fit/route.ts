@@ -1,4 +1,4 @@
-import { DEFAULT_AI_PROVIDER } from "@/lib/providerDefaults";
+import { DEFAULT_AI_PROVIDER, aiConfigReady } from "@/lib/providerDefaults";
 import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { resolveAiCreds } from "@/lib/mcp/shared";
@@ -114,7 +114,10 @@ export async function POST(req: Request) {
       };
     } else {
       const creds = await resolveAiCreds(userId, b, "text").catch(() => null);
-      if (!creds?.aiApiKey) return NextResponse.json({ error: "no_ai_key" }, { status: 400 });
+      // Keyless local Ollama passes (aiConfigReady); every other provider still needs a key.
+      if (!creds || !aiConfigReady(creds.aiProvider, creds.aiApiKey, creds.aiBaseUrl)) {
+        return NextResponse.json({ error: "no_ai_key" }, { status: 400 });
+      }
       llm = {
         allow: true, provider: creds.aiProvider, apiKey: creds.aiApiKey,
         model: creds.model, baseUrl: creds.aiBaseUrl,

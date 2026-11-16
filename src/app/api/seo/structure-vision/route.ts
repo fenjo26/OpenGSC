@@ -1,4 +1,4 @@
-import { DEFAULT_AI_PROVIDER } from "@/lib/providerDefaults";
+import { DEFAULT_AI_PROVIDER, aiConfigReady } from "@/lib/providerDefaults";
 import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { fetchLLMVision } from "@/lib/llm";
@@ -20,9 +20,11 @@ export async function POST(req: Request) {
   const mimeType = String(b.mimeType ?? "image/png");
   const provider = String(b.aiProvider ?? DEFAULT_AI_PROVIDER);
   const apiKey = String(b.aiApiKey ?? "");
-  if (!apiKey) return NextResponse.json({ error: "no_ai_key" }, { status: 400 });
-  const model = b.model ? String(b.model) : undefined;
   const baseUrl = b.aiBaseUrl ? String(b.aiBaseUrl) : undefined;
+  // Keyless local Ollama passes (the daemon is unauthenticated); every other provider still
+  // needs a key — same predicate the browser badge uses (aiConfigReady).
+  if (!aiConfigReady(provider, apiKey, baseUrl)) return NextResponse.json({ error: "no_ai_key" }, { status: 400 });
+  const model = b.model ? String(b.model) : undefined;
 
   const raw = await fetchLLMVision(buildVisionStructurePrompt(), imageBase64, mimeType, provider, apiKey, 3000, model, baseUrl);
   const parsed = extractJson<{ title?: string; nodes?: { level: string; text: string; words: number }[] }>(raw);

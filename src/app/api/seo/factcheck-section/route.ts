@@ -1,4 +1,4 @@
-import { DEFAULT_AI_PROVIDER } from "@/lib/providerDefaults";
+import { DEFAULT_AI_PROVIDER, aiConfigReady } from "@/lib/providerDefaults";
 import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { fetchLLM } from "@/lib/llm";
@@ -20,7 +20,9 @@ export async function POST(req: Request) {
 
   const aiProvider = String(b.aiProvider ?? DEFAULT_AI_PROVIDER);
   const aiKey = String(b.aiApiKey ?? "");
-  if (!aiKey) return NextResponse.json({ error: "no_ai_key" }, { status: 400 });
+  // Keyless local Ollama passes (the daemon is unauthenticated); every other provider still
+  // needs a key — same predicate the browser badge uses (aiConfigReady).
+  if (!aiConfigReady(aiProvider, aiKey, b.aiBaseUrl ? String(b.aiBaseUrl) : undefined)) return NextResponse.json({ error: "no_ai_key" }, { status: 400 });
 
   // 1) gather real sources. Cost saver: if the client supplies a shared competitor corpus
   // (reuse-corpus mode), use it directly and skip the per-section SERP + scrape entirely.

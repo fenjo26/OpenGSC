@@ -1,7 +1,7 @@
 // Core SEO generation logic, factored out of the API routes so it can be reused by both
 // the synchronous routes and the background-job runner. No HTTP / auth here — pure work.
 
-import { DEFAULT_AI_PROVIDER } from "@/lib/providerDefaults";
+import { DEFAULT_AI_PROVIDER, aiConfigReady } from "@/lib/providerDefaults";
 import { fetchLLM, fetchLLMDetailed, contentTokens, isLengthCut, CONTENT_TOKENS_RETRY_MAX } from "@/lib/llm";
 import { stripModelScratch } from "@/lib/seo/textMetrics";
 import { judgeArticle, judgeOutline } from "@/lib/seo/judge";
@@ -692,7 +692,11 @@ export async function genOutline(b: GenBody): Promise<GenResult> {
   // the one that just failed.
   let provider = String(b.aiProvider ?? DEFAULT_AI_PROVIDER);
   let apiKey = String(b.aiApiKey ?? "");
-  if (!apiKey) return { ok: false, error: "no_ai_key" };
+  // Ollama is the one provider that can run keyless (a local daemon); every other provider
+  // still needs a key here. Same predicate the browser badge uses, so "ready" cannot disagree.
+  if (!aiConfigReady(provider, apiKey, b.aiBaseUrl ? String(b.aiBaseUrl) : undefined)) {
+    return { ok: false, error: "no_ai_key" };
+  }
 
   const competitors: CompetitorInput[] = Array.isArray(b.competitors) ? b.competitors : [];
   if (!competitors.length && serpConfigReady(String(b.serpProvider || "serper"), b.serpKey) && b._autoFetched !== true) {
@@ -1488,7 +1492,11 @@ export async function genText(b: GenBody): Promise<GenResult> {
   if (!b.outline) return { ok: false, error: "no_outline" };
   const provider = String(b.aiProvider ?? DEFAULT_AI_PROVIDER);
   const apiKey = String(b.aiApiKey ?? "");
-  if (!apiKey) return { ok: false, error: "no_ai_key" };
+  // Ollama is the one provider that can run keyless (a local daemon); every other provider
+  // still needs a key here. Same predicate the browser badge uses, so "ready" cannot disagree.
+  if (!aiConfigReady(provider, apiKey, b.aiBaseUrl ? String(b.aiBaseUrl) : undefined)) {
+    return { ok: false, error: "no_ai_key" };
+  }
 
   const keyword = String(b.keyword ?? b.outline?.meta?.keyword ?? "");
   // Language falls back to the outline's OWN stamped language (genOutline writes it into meta),
@@ -1958,7 +1966,11 @@ export async function genWireframe(b: GenBody): Promise<GenResult> {
   if (!b.outline) return { ok: false, error: "no_outline" };
   const provider = String(b.aiProvider ?? DEFAULT_AI_PROVIDER);
   const apiKey = String(b.aiApiKey ?? "");
-  if (!apiKey) return { ok: false, error: "no_ai_key" };
+  // Ollama is the one provider that can run keyless (a local daemon); every other provider
+  // still needs a key here. Same predicate the browser badge uses, so "ready" cannot disagree.
+  if (!aiConfigReady(provider, apiKey, b.aiBaseUrl ? String(b.aiBaseUrl) : undefined)) {
+    return { ok: false, error: "no_ai_key" };
+  }
   const model = b.model ? String(b.model) : undefined;
   const baseUrl = b.aiBaseUrl ? String(b.aiBaseUrl) : undefined;
 
@@ -2044,7 +2056,11 @@ export async function genAnalysis(b: GenBody): Promise<GenResult> {
   if (!b.targetPage) return { ok: false, error: "no_target_page" };
   const provider = String(b.aiProvider ?? DEFAULT_AI_PROVIDER);
   const apiKey = String(b.aiApiKey ?? "");
-  if (!apiKey) return { ok: false, error: "no_ai_key" };
+  // Ollama is the one provider that can run keyless (a local daemon); every other provider
+  // still needs a key here. Same predicate the browser badge uses, so "ready" cannot disagree.
+  if (!aiConfigReady(provider, apiKey, b.aiBaseUrl ? String(b.aiBaseUrl) : undefined)) {
+    return { ok: false, error: "no_ai_key" };
+  }
 
   const competitors: CompetitorInput[] = Array.isArray(b.competitors) ? b.competitors : [];
   const prompt = buildAnalysisPrompt({

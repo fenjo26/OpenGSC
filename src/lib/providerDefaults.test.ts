@@ -8,6 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   DEFAULT_AI_PROVIDER,
+  aiConfigReady,
   OLLAMA_CLOUD_BASE_URL,
   OLLAMA_LOCAL_BASE_URL,
   defaultModelFor,
@@ -74,4 +75,27 @@ test("the rest of the provider table is untouched", () => {
   assert.equal(defaultModelFor("anthropic"), "claude-haiku-4-5-20251001");
   assert.equal(defaultModelFor("custom"), "");
   assert.equal(defaultModelFor("nope-not-a-provider"), "");
+});
+
+
+test("aiConfigReady: a key makes any provider ready", () => {
+  assert.equal(aiConfigReady("anthropic", "sk-x"), true);
+  assert.equal(aiConfigReady("ollama", "sk-ollama"), true);
+  assert.equal(aiConfigReady("custom", "k", "https://gw.example/v1"), true);
+});
+
+test("aiConfigReady: keyless is an Ollama-local privilege only", () => {
+  // The daemon on this box: ready with no key anywhere.
+  assert.equal(aiConfigReady("ollama", ""), true);
+  assert.equal(aiConfigReady("ollama", undefined, undefined), true);
+  // An explicit non-cloud endpoint (a remote self-hosted daemon) is keyless-ready too.
+  assert.equal(aiConfigReady("ollama", "", "http://10.0.0.5:11434/v1"), true);
+  // Cloud without a key would 401 on every call — NOT ready.
+  assert.equal(aiConfigReady("ollama", "", OLLAMA_CLOUD_BASE_URL), false);
+  // Whitespace is not a key.
+  assert.equal(aiConfigReady("ollama", "   "), true); // local daemon, not cloud
+  // Every other provider without a key stays not-ready.
+  assert.equal(aiConfigReady("anthropic", ""), false);
+  assert.equal(aiConfigReady("openai", ""), false);
+  assert.equal(aiConfigReady("custom", ""), false);
 });

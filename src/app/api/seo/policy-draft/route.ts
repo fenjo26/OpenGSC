@@ -1,4 +1,4 @@
-import { DEFAULT_AI_PROVIDER } from "@/lib/providerDefaults";
+import { DEFAULT_AI_PROVIDER, aiConfigReady } from "@/lib/providerDefaults";
 import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { fetchLLMDetailed } from "@/lib/llm";
@@ -30,7 +30,9 @@ export async function POST(req: Request) {
 
   const provider = String(b.aiProvider ?? DEFAULT_AI_PROVIDER);
   const apiKey = String(b.aiApiKey ?? "");
-  if (!apiKey) return NextResponse.json({ error: "no_ai_key" }, { status: 400 });
+  // Keyless local Ollama passes (the daemon is unauthenticated); every other provider still
+  // needs a key — same predicate the browser badge uses (aiConfigReady).
+  if (!aiConfigReady(provider, apiKey, b.aiBaseUrl ? String(b.aiBaseUrl) : undefined)) return NextResponse.json({ error: "no_ai_key" }, { status: 400 });
 
   const fc = b.firecrawlKey ? String(b.firecrawlKey) : undefined;
   const brandPages = await scrapeText(Array.isArray(b.sourceUrls) ? b.sourceUrls : [], fc);
