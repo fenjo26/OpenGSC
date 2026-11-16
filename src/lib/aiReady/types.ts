@@ -66,6 +66,8 @@ export interface PresencePart {
   months: PresenceMonth[];  // newest first
   /** Months still unread (never tried or failed). The UI re-calls while this is > 0. */
   pending: number;
+  /** Common Crawl's host throttled or refused us; the run stopped early instead of pressing on. */
+  throttled?: boolean;
   checkedAt: string;
 }
 

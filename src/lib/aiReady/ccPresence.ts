@@ -212,14 +212,17 @@ export async function runPresence(
   const months: PresenceMonth[] = crawls.map(c => known.get(c.id) ?? { crawl: c.id, month: c.month, present: null, captures: 0, capped: false });
 
   const todo = months.map((m, i) => (m.present === null ? i : -1)).filter(i => i >= 0);
-  let cursor = 0;
+  let cursor = 0, throttled = false;
   const worker = async () => {
-    while (cursor < todo.length && clock() < deadline) {
+    while (cursor < todo.length && clock() < deadline && !throttled) {
       const i = todo[cursor++];
       try {
         months[i] = await crawlPresence(read, crawls[i], domain);
-      } catch {
+      } catch (e) {
         // Left as present:null — unread, not absent. It is retried on the next call.
+        // A throttle answer is different from one failed month: the host is telling us to stop,
+        // so nothing further is asked in this call (requests already in flight finish).
+        if (e instanceof RangeThrottledError) { throttled = true; return; }
       }
     }
   };
@@ -227,20 +230,42 @@ export async function runPresence(
 
   // `pending` counts only months never attempted in this call (budget ran out). A month that
   // was tried and failed stays null but does not make the UI loop forever on a dead endpoint.
-  return { months, pending: todo.length - cursor, checkedAt: new Date(clock()).toISOString() };
+  // When throttled, `pending` is 0 on purpose: the months left are not asked again by the same
+  // click — the next run (minutes later, by a person) picks them up.
+  return { months, pending: throttled ? 0 : todo.length - cursor, ...(throttled ? { throttled: true } : {}), checkedAt: new Date(clock()).toISOString() };
 }
 
 // ─── Network half ─────────────────────────────────────────────────────────────
 
 const UA = "Mozilla/5.0 (compatible; OpenGSC-AiReady/1.0; +https://opengsc.org)";
 
+/** The host asked us to slow down or refused us (429 / 403 / 503) — stop, do not retry in a loop. */
+export class RangeThrottledError extends Error {
+  constructor(public readonly status: number) { super(`range throttled ${status}`); this.name = "RangeThrottledError"; }
+}
+
+export const isThrottleStatus = (status: number) => status === 429 || status === 403 || status === 503;
+
+/** How long to wait before the single retry: the server's Retry-After, bounded to 1–5 s. */
+export function backoffMs(retryAfter: string | null): number {
+  const sec = Number(retryAfter);
+  return Math.min(5000, Math.max(1000, Number.isFinite(sec) && sec > 0 ? sec * 1000 : 2000));
+}
+
 export const httpRangeReader: RangeReader = async (url, start, end) => {
-  const res = await safeFetch(url, {
+  const once = () => safeFetch(url, {
     headers: { "User-Agent": UA, Range: `bytes=${start}-${end}` },
     timeoutMs: 20_000,
     maxBytes: Math.max(1_048_576, (end - start + 1) * 2),
     allowPrivate: false,
   });
+  let res = await once();
+  if (isThrottleStatus(res.status)) {
+    // One polite retry. A second refusal ends the whole presence run (see runPresence).
+    await new Promise(r => setTimeout(r, backoffMs(res.headers.get("retry-after"))));
+    res = await once();
+    if (isThrottleStatus(res.status)) throw new RangeThrottledError(res.status);
+  }
   // 206 is the only acceptable answer: a 200 would be the whole 104 MB file.
   if (res.status !== 206) throw new Error(`range ${res.status}`);
   const total = Number((res.headers.get("content-range") ?? "").split("/")[1]);

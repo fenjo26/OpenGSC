@@ -6,7 +6,7 @@ import {
 } from "./parity";
 import {
   countCaptures, crawlPresence, domainKeyRange, findBlocks, isDomainKey, parseCollinfo, parseIdxLine,
-  pickBlocks, runPresence, surtDomain, type RangeReader,
+  pickBlocks, runPresence, surtDomain, backoffMs, isThrottleStatus, RangeThrottledError, type RangeReader,
 } from "./ccPresence";
 import { authorityFromRank, ccRankBaseUrl, parseRankResponse, CCRANK_DEFAULT_URL } from "./ccRank";
 import { accessScore, authorityScore, computeScore, gradeFor, presenceScore } from "./score";
@@ -189,6 +189,25 @@ test("presence: answered months are final, failed ones stay unknown, and the bud
   let t = 0;
   const spent = await runPresence("example.com", crawls, previous, read, { budgetMs: 10, now: () => (t += 100) });
   assert.equal(spent.pending, 3);
+});
+
+test("presence: a throttle answer stops the run — no further months are asked, and the UI is not told to loop", async () => {
+  const crawls = Array.from({ length: 8 }, (_, i) => ({ id: `CC-MAIN-2026-${String(40 - i).padStart(2, "0")}`, month: "2026-01" }));
+  const asked = new Set<string>();
+  const read: RangeReader = async url => { asked.add(url.match(/CC-MAIN-\d{4}-\d{2}/)![0]); throw new RangeThrottledError(429); };
+  const part = await runPresence("example.com", crawls, undefined, read);
+  assert.equal(part.throttled, true);
+  assert.equal(part.pending, 0);
+  assert.ok(asked.size <= 3, `asked ${asked.size} crawls — only the first wave of workers may have started`);
+  assert.ok(part.months.every(m => m.present === null), "throttled months are unknown, never absent");
+  // An ordinary failure does not set the flag.
+  const plain = await runPresence("example.com", crawls.slice(0, 2), undefined, async () => { throw new Error("boom"); });
+  assert.equal(plain.throttled, undefined);
+});
+
+test("presence: which statuses mean 'back off', and for how long", () => {
+  assert.deepEqual([429, 403, 503, 404, 500, 206].map(isThrottleStatus), [true, true, true, false, false, false]);
+  assert.deepEqual([null, "1", "3", "600", "abc", "0"].map(backoffMs), [2000, 1000, 3000, 5000, 2000, 2000]);
 });
 
 // ─── T3: rank ─────────────────────────────────────────────────────────────────

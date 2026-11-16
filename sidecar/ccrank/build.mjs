@@ -134,7 +134,10 @@ async function main() {
   if (haveAll) log("download already complete — reusing it");
   else {
     log(`downloading ${source}`);
-    await run("curl", ["-fL", "--retry", "8", "--retry-delay", "10", "-C", "-", "-o", gzPath, source]);
+    // Resume (-C -) only makes sense over HTTP; on a local file:// source it fails once the
+    // copy is complete, so a local source is simply copied afresh.
+    const resume = /^https?:\/\//i.test(source) ? ["-C", "-"] : [];
+    await run("curl", ["-fL", "--retry", "8", "--retry-delay", "10", ...resume, "-o", gzPath, source]);
   }
 
   log("reshaping and sorting (this is the long step)");
