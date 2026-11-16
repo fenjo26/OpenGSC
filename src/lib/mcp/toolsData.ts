@@ -13,6 +13,7 @@
 // deadlock waiting for a single-process deployment under load.
 
 import { normalizePageUrl } from "@/lib/url-normalize";
+import { DEFAULT_AI_PROVIDER } from "@/lib/providerDefaults";
 import { prisma } from "@/lib/prisma";
 import { google } from "googleapis";
 import {
@@ -746,7 +747,14 @@ export async function dataModuleCounts(userId: string): Promise<Json> {
       bing: !!(settings.seoKey_bing || settings.seoKey_bing_accounts_list),
       yandex: !!(settings.seoKey_yandex || settings.seoKey_yandex_accounts_list),
     },
-    aiKeyConfigured: !!(settings[`aiKey_${settings.seoProvider || settings.aiProvider || "anthropic"}`] || settings.aiApiKey),
+    // Same readiness rule the UI uses (lib/seo/keys.ts aiCredsReady): a keyed provider needs its
+    // key, Ollama Cloud needs its key, and a local daemon needs only a chosen model. Reporting
+    // "no AI key" for a working local provider is what made agents refuse to run.
+    aiKeyConfigured: (() => {
+      const p = String(settings.seoProvider || settings.aiProvider || DEFAULT_AI_PROVIDER);
+      if (p === "ollama") return !!(settings["aiKey_ollama"] || settings.aiApiKey || settings.aiModel_ollama);
+      return !!(settings[`aiKey_${p}`] || settings.aiApiKey);
+    })(),
   };
 }
 

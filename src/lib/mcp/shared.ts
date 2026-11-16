@@ -8,6 +8,7 @@
 import { prisma } from "@/lib/prisma";
 import { rawQuery } from "@/lib/db/raw";
 import { normalizePolicy, type EditorialPolicy } from "@/lib/seo/policy";
+import { DEFAULT_AI_PROVIDER, isOllamaCloud } from "@/lib/providerDefaults";
 import type { Capability } from "@/lib/team/roles";
 
 export type Json = Record<string, unknown>;
@@ -164,30 +165,54 @@ export async function resolveAiCreds(userId: string, args: Json = {}, task?: Seo
     task && s[`seoTaskProvider_${task}`],
     s.seoProvider,
     s.aiProvider,
-  ) ?? "anthropic";
-  const apiKey = firstSet(args.aiApiKey, s[`aiKey_${provider}`], s.aiApiKey) ?? "";
+  ) ?? DEFAULT_AI_PROVIDER;
+  // An Ollama Cloud install that predates the native provider keeps its key + endpoint in the
+  // `custom` slot (that was the only way to reach an OpenAI-compatible server back then). The
+  // browser migrates them on load (keys.ts adoptOllamaCloudCreds); a server-side job has no
+  // browser, so it must do the same read or every background run would start keyless.
+  const customBase = firstSet(s.aiBaseUrl_custom);
+  const ollamaFromCustom = provider === "ollama"
+    && !firstSet(s.aiKey_ollama)
+    && !!firstSet(s.aiKey_custom)
+    && !!customBase
+    && isOllamaCloud(customBase);
+  const apiKey = firstSet(
+    args.aiApiKey,
+    s[`aiKey_${provider}`],
+    ollamaFromCustom ? s.aiKey_custom : undefined,
+    s.aiApiKey,
+  ) ?? "";
   // Same order the UI uses once the provider is known: task model, then the SEO-wide model,
   // then whatever that provider defaults to.
   //
   // `seoModel` is only valid while we are still resolving for the provider it was chosen under.
   // A per-task provider override changes that, and passing a GLM id to OpenAI (or the reverse)
   // produces a 404 that reads as "the tool is broken" rather than "wrong model".
-  const seoWideProvider = firstSet(s.seoProvider, s.aiProvider) ?? "anthropic";
+  const seoWideProvider = firstSet(s.seoProvider, s.aiProvider) ?? DEFAULT_AI_PROVIDER;
   const model = firstSet(
     args.model,
     task && s[`seoTaskModel_${task}`],
     provider === seoWideProvider ? s.seoModel : undefined,
+    // The adopted cloud credentials came with a model (aiModel_custom). It belongs to those
+    // credentials, so it outranks aiModel_ollama, which may name a local pull the cloud account
+    // does not have. Undefined here still resolves to the cloud default in lib/llm.ts.
+    ollamaFromCustom ? s.aiModel_custom : undefined,
     s[`aiModel_${provider}`],
   );
   return {
     aiProvider: provider,
     aiApiKey: apiKey,
     model,
-    // Per-provider base URL, falling back to the custom-provider slot for backwards compatibility.
-    // zai needs its own: the default is now the general API endpoint, and a user on the Coding
-    // Plan points this at https://api.z.ai/api/anthropic to keep using that one.
-    aiBaseUrl: (s[`aiBaseUrl_${provider}`] || s.aiBaseUrl_custom || undefined) as string | undefined,
-    firecrawlKey: (s.seoKey_firecrawl || s.firecrawlKey || undefined) as string | undefined,
+    // Per-provider base URL. The `custom` slot's value is only a base URL FOR the custom
+    // provider — spreading it onto every provider sent OpenAI/Anthropic traffic to whatever host
+    // the custom card held (an Ollama Cloud URL, in the case that motivated this), which failed
+    // with a 404 from a server that had never heard of the model.
+    aiBaseUrl: firstSet(
+      s[`aiBaseUrl_${provider}`],
+      provider === "custom" ? s.aiBaseUrl_custom : undefined,
+      ollamaFromCustom ? customBase : undefined,
+    ),
+    firecrawlKey: firstSet(s.seoKey_firecrawl, s.firecrawlKey),
   };
 }
 
@@ -215,15 +240,29 @@ export async function resolveAiFallbacks(userId: string, primaryProvider?: strin
     const p = key.slice("aiKey_".length);
     if (!p || p === skip) continue;
     const apiKey = firstSet(s[key]);
-    if (!apiKey) continue;
+    const model = firstSet(s[`aiModel_${p}`]);
+    // Ollama is the one entry that can be configured without a key: a local daemon, recorded by a
+    // chosen model and an endpoint that is not Cloud. (The empty aiKey_ollama marker the browser
+    // writes is deliberately not mirrored — the sync skips empty values — so readiness is read
+    // from the model + endpoint instead of a marker that never reaches the server.)
+    const keylessOllama = p === "ollama" && !apiKey && !!model
+      && (!firstSet(s.aiBaseUrl_ollama) || !isOllamaCloud(String(s.aiBaseUrl_ollama)));
+    if (!apiKey && !keylessOllama) continue;
+    // "custom" with no model id is a guaranteed 404: its catalogue is unknowable, so there is no
+    // default to fall back to. A silent promotion to it would burn the job's remaining budget.
+    if (p === "custom" && !model) continue;
     out.push({
       aiProvider: p,
-      aiApiKey: apiKey,
-      model: firstSet(s[`aiModel_${p}`]),
-      aiBaseUrl: (s[`aiBaseUrl_${p}`] || undefined) as string | undefined,
+      aiApiKey: apiKey ?? "",
+      model,
+      aiBaseUrl: firstSet(s[`aiBaseUrl_${p}`]),
     });
   }
-  out.sort((a, b) => (b.model ? 1 : 0) - (a.model ? 1 : 0));
+  // Deterministic priority: a provider the user picked a model for is evidence they use it, the
+  // app default comes next, then a stable id order — so the same settings always produce the same
+  // chain instead of whatever key order JSON happened to yield.
+  const rank = (c: AiCreds): number => (c.model ? 2 : 0) + (c.aiProvider === DEFAULT_AI_PROVIDER ? 1 : 0);
+  out.sort((a, b) => rank(b) - rank(a) || a.aiProvider.localeCompare(b.aiProvider));
   return out.slice(0, 3);
 }
 

@@ -75,7 +75,10 @@ export async function POST(req: Request) {
   // fetch, and `baseUrl` in particular decides where a key is sent.
   const a = b.analysis;
   const analysis: GeoAnalysisCreds | undefined =
-    a && typeof a.provider === "string" && a.provider.trim() && typeof a.apiKey === "string" && a.apiKey.trim()
+    // A keyless local Ollama is a valid stage-2 provider (it only reads a trace and writes JSON),
+    // so the key requirement is relaxed for it — same exemption the chat path makes.
+    a && typeof a.provider === "string" && a.provider.trim() && typeof a.apiKey === "string"
+      && (a.apiKey.trim() || a.provider.trim() === "ollama")
       ? {
           provider: a.provider.trim(),
           apiKey: a.apiKey.trim(),

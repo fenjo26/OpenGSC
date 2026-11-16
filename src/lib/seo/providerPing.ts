@@ -36,7 +36,11 @@ export async function pickLiveProvider(payload: ProviderPickPayload): Promise<{ 
   for (const c of candidates) {
     const p = String(c?.aiProvider ?? "").trim();
     const k = String(c?.aiApiKey ?? "").trim();
-    if (!p || !k) continue;
+    // Ping needs a provider and credentials — except for a local Ollama daemon, which has no key
+    // by design. Its chosen model is the credential: without one the call would 404 anyway, so a
+    // keyless candidate with no model is still skipped.
+    if (!p) continue;
+    if (!k && !(p === "ollama" && String(c?.model ?? "").trim())) continue;
     const r = await pingProvider(p, k, c.model ? String(c.model) : undefined, c.aiBaseUrl ? String(c.aiBaseUrl) : undefined);
     if (r.ok) {
       if (c !== primary) {

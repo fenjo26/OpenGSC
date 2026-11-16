@@ -83,6 +83,10 @@ export function usageFrom(provider: string, data: unknown): Usage {
     case "qwen":
     case "kimi":
     case "cheaperinference":
+    // Ollama's OpenAI-compatibility layer reports usage in the same shape (verified against
+    // ollama.com: prompt_tokens / completion_tokens). Left in `default` it logged nulls, so the
+    // provider log showed no token counts at all for the app's DEFAULT provider.
+    case "ollama":
     case "custom":
       return { ...openAiShape(data), costUsd: null };
 
