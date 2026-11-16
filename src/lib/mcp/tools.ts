@@ -147,7 +147,7 @@ const CORE_TOOLS: McpTool[] = [
       const srcRows = dim === "url" ? (() => {
         const m = new Map();
         for (const r of rows) {
-          const key = normalizePageUrl(r[dim]);
+          const key = normalizePageUrl(r[dim], site.url);
           const e = m.get(key) ?? { key, clicks: 0, impressions: 0, ctrW: 0, posW: 0 };
           const c = r._sum.clicks ?? 0;
           const i = r._sum.impressions ?? 0;
@@ -532,7 +532,7 @@ const CORE_TOOLS: McpTool[] = [
         // Fold fragment URL variants into their parent page (dim === "url").
         const m = new Map<string, Row>();
         for (const r of rows) {
-          const key = dim === "url" ? normalizePageUrl(r[dim]) : r[dim];
+          const key = dim === "url" ? normalizePageUrl(r[dim], site.url) : r[dim];
           const c = r._sum.clicks ?? 0;
           const i = r._sum.impressions ?? 0;
           const p = r1(r._avg.position ?? 0);

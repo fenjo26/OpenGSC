@@ -73,10 +73,10 @@ async function computeSite(site: RelatedSite, minImpressions: number, limit: num
       days: Math.round((max - min) / 86_400_000) + 1,
     };
   }
-  const groups = buildRelatedIntentGroups(rows.map(r => ({ ...r, url: normalizePageUrl(r.url) })), {
+  const groups = buildRelatedIntentGroups(rows.map(r => ({ ...r, url: normalizePageUrl(r.url, site.url) })), {
     siteId: site.id, siteName: siteDisplayName(site.url), brandTerms: siteBrandTerms(site.siteId),
     minImpressions, limit,
-    ...(dailyRows && dailyRows.length ? { daily: dailyRows.map(r => ({ ...r, url: normalizePageUrl(r.url), ctr: r.impressions ? r.clicks / r.impressions : 0 })) } : {}),
+    ...(dailyRows && dailyRows.length ? { daily: dailyRows.map(r => ({ ...r, url: normalizePageUrl(r.url, site.url), ctr: r.impressions ? r.clicks / r.impressions : 0 })) } : {}),
   });
   return { groups, truncated: rows.length === RELATED_ROWS_PER_SITE, daily };
 }

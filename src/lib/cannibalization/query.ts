@@ -30,15 +30,16 @@ export interface CannibalResult {
  */
 const SITE_CHUNK = 20;
 
-async function readRows(siteIds: string[]): Promise<Map<string, QueryPageRow[]>> {
+async function readRows(batch: CannibalSite[]): Promise<Map<string, QueryPageRow[]>> {
   const rows = await prisma.dailyMetric.findMany({
-    where: { siteId: { in: siteIds }, url: { not: "" }, query: { not: "" }, impressions: { gt: 0 } },
+    where: { siteId: { in: batch.map(s => s.id) }, url: { not: "" }, query: { not: "" }, impressions: { gt: 0 } },
     select: { siteId: true, query: true, url: true, clicks: true, impressions: true, ctr: true, position: true },
   });
+  const hostById = new Map(batch.map(s => [s.id, s.url]));
   const out = new Map<string, QueryPageRow[]>();
   for (const r of rows) {
     const list = out.get(r.siteId);
-    const norm = { ...r, url: normalizePageUrl(r.url) };
+    const norm = { ...r, url: normalizePageUrl(r.url, hostById.get(r.siteId)) };
     if (list) list.push(norm); else out.set(r.siteId, [norm]);
   }
   return out;
@@ -62,7 +63,7 @@ export async function findCannibalization(
     if (hit) perSite.set(s.id, hit); else missing.push(s);
   }
   for (const batch of chunk(missing, SITE_CHUNK)) {
-    const rowsBySite = await readRows(batch.map(s => s.id));
+    const rowsBySite = await readRows(batch);
     for (const s of batch) {
       const groups = buildExactGroups(rowsBySite.get(s.id) ?? [], {
         siteId: s.id, siteName: siteDisplayName(s.url), brand: brandTermsOf(s.siteId || s.url), minImpressions: opts.minImpressions,

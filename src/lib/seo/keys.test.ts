@@ -39,9 +39,11 @@ beforeEach(() => {
   (globalThis as { window?: unknown }).window = globalThis;
 });
 
-// ── Ollama Cloud is the app default ─────────────────────────────────────────────────────────
-test("the app's default provider is Ollama, with cloud defaults to match", () => {
-  assert.equal(DEFAULT_AI_PROVIDER, "ollama");
+// ── The default provider is one constant, and Ollama is fully tabled ────────────────────────
+test("the app's default provider is the constant (anthropic upstream), with Ollama defaults tabled", () => {
+  // Upstream keeps anthropic as the nothing-configured default; a fork running on Ollama
+  // flips the constant itself. See providerDefaults.ts.
+  assert.equal(DEFAULT_AI_PROVIDER, "anthropic");
   assert.equal(OLLAMA_CLOUD_BASE_URL, "https://ollama.com/v1");
   assert.equal(OLLAMA_LOCAL_BASE_URL, "http://127.0.0.1:11434/v1");
   assert.equal(defaultModelFor("ollama", "chat"), "deepseek-v4.1-flash:1017-cloud");
@@ -50,9 +52,9 @@ test("the app's default provider is Ollama, with cloud defaults to match", () =>
   assert.equal(AI_PROVIDER_NAMES.ollama, "Ollama");
   // nothing stored anywhere: task creds resolve to the default provider, not a hardcoded one
   const c = resolveTaskCreds("outline");
-  assert.equal(c.provider, "ollama");
+  assert.equal(c.provider, DEFAULT_AI_PROVIDER);
   assert.equal(c.providerFrom, "default");
-  assert.equal(aiCredsReady(c), false); // no key, no model -> not runnable yet
+  assert.equal(aiCredsReady(c), false); // no key -> not runnable yet
 });
 
 // ── Cloud readiness: a key is REQUIRED for ollama.com ───────────────────────────────────────

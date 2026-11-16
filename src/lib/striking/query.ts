@@ -77,7 +77,7 @@ export async function findStriking(sites: StrikingSite[], opts: StrikingOptions)
       const gain = estimatedGain(r.impressions, r.clicks);
       sum.keywords++; sum.impressions += r.impressions; sum.gain += gain;
       if (only && !only.has(r.siteId)) continue;
-      const url = normalizePageUrl(r.url);
+      const url = normalizePageUrl(r.url, siteById.get(r.siteId)?.url);
       // www and apex variants of the same page fold into ONE keyword row.
       const key = `${r.siteId}\n${r.query}\n${url}`;
       const prev = rowsByKey.get(key);
