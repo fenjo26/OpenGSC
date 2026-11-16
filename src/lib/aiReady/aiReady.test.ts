@@ -9,7 +9,7 @@ import {
   pickBlocks, runPresence, surtDomain, backoffMs, isThrottleStatus, RangeThrottledError, type RangeReader,
 } from "./ccPresence";
 import { authorityFromRank, ccRankBaseUrl, parseRankResponse, CCRANK_DEFAULT_URL } from "./ccRank";
-import { accessScore, authorityScore, computeScore, gradeFor, presenceScore } from "./score";
+import { accessScore, authorityScore, compactRank, computeScore, gradeFor, presenceScore, rankTier } from "./score";
 import type { AccessPart, PresenceMonth, PresencePart, RankPart } from "./types";
 
 // ─── T1: parity ───────────────────────────────────────────────────────────────
@@ -310,4 +310,12 @@ test("score: overall is the weighted mean of the parts present, and says which o
 
 test("score: grade floors", () => {
   assert.deepEqual([100, 85, 84, 70, 69, 55, 54, 40, 39, 25, 24, 0].map(gradeFor), ["A", "A", "B", "B", "C", "C", "D", "D", "E", "E", "F", "F"]);
+});
+
+test("rank tier: one name per order of magnitude, boundaries inclusive, unknown is unranked", () => {
+  assert.deepEqual([1, 1000, 1001, 10_000, 10_001, 100_000, 100_001, 1_000_000, 2_222_607, 10_000_000, 10_000_001].map(rankTier),
+    ["elite", "elite", "authoritative", "authoritative", "established", "established", "strong", "strong", "emerging", "emerging", "unranked"]);
+  assert.deepEqual([null, undefined, 0, -5].map(rankTier), ["unranked", "unranked", "unranked", "unranked"]);
+  assert.deepEqual([812, 1000, 1500, 45_300, 999_999, 2_222_607, 10_000_000, 118_000_000].map(compactRank),
+    ["812", "1K", "1.5K", "45K", "1M", "2.2M", "10M", "118M"]);
 });

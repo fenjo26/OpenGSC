@@ -5931,5 +5931,12 @@
   "aiReadyRelease": "Release: {release}.",
   "aiReadyRankNotFound": "The domain is not in the graph: Common Crawl saw no links to it over the last three months.",
   "aiReadyRankUnavailable": "The rank directory did not answer. This part is left out of the score; try again later.",
-  "aiReadyRankOff": "The rank directory is turned off on this instance (OPENGSC_CCRANK_URL=off)."
+  "aiReadyRankOff": "The rank directory is turned off on this instance (OPENGSC_CCRANK_URL=off).",
+  "aiReadyTierLabel": "rank tier",
+  "aiReadyTier_elite": "Elite",
+  "aiReadyTier_authoritative": "Authoritative",
+  "aiReadyTier_established": "Established",
+  "aiReadyTier_strong": "Strong",
+  "aiReadyTier_emerging": "Emerging",
+  "aiReadyTier_unranked": "Unranked"
 }

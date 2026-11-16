@@ -5931,5 +5931,12 @@
   "aiReadyRelease": "Release: {release}.",
   "aiReadyRankNotFound": "Die Domain ist nicht im Graphen: Common Crawl hat in den letzten drei Monaten keine Links zu ihr gesehen.",
   "aiReadyRankUnavailable": "Das Rang-Verzeichnis hat nicht geantwortet. Dieser Teil fließt nicht in die Bewertung ein; versuchen Sie es später erneut.",
-  "aiReadyRankOff": "Das Rang-Verzeichnis ist auf dieser Instanz deaktiviert (OPENGSC_CCRANK_URL=off)."
+  "aiReadyRankOff": "Das Rang-Verzeichnis ist auf dieser Instanz deaktiviert (OPENGSC_CCRANK_URL=off).",
+  "aiReadyTierLabel": "Rangstufe",
+  "aiReadyTier_elite": "Elite",
+  "aiReadyTier_authoritative": "Maßgeblich",
+  "aiReadyTier_established": "Etabliert",
+  "aiReadyTier_strong": "Stark",
+  "aiReadyTier_emerging": "Aufstrebend",
+  "aiReadyTier_unranked": "Ohne Rang"
 }

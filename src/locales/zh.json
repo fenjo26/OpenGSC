@@ -5931,5 +5931,12 @@
   "aiReadyRelease": "版本：{release}。",
   "aiReadyRankNotFound": "该域名不在图中：过去三个月 Common Crawl 未发现指向它的链接。",
   "aiReadyRankUnavailable": "排名目录未响应。此部分不计入评分，请稍后重试。",
-  "aiReadyRankOff": "此实例已关闭排名目录（OPENGSC_CCRANK_URL=off）。"
+  "aiReadyRankOff": "此实例已关闭排名目录（OPENGSC_CCRANK_URL=off）。",
+  "aiReadyTierLabel": "排名层级",
+  "aiReadyTier_elite": "顶级",
+  "aiReadyTier_authoritative": "权威",
+  "aiReadyTier_established": "成熟",
+  "aiReadyTier_strong": "较强",
+  "aiReadyTier_emerging": "新兴",
+  "aiReadyTier_unranked": "未上榜"
 }

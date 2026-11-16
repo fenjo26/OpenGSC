@@ -5931,5 +5931,12 @@
   "aiReadyRelease": "Релиз: {release}.",
   "aiReadyRankNotFound": "Домена нет в графе: за последние три месяца Common Crawl не встретил ссылок на него.",
   "aiReadyRankUnavailable": "Справочник рангов не ответил. Эта часть не входит в оценку; попробуйте позже.",
-  "aiReadyRankOff": "Справочник рангов отключён на этом инстансе (OPENGSC_CCRANK_URL=off)."
+  "aiReadyRankOff": "Справочник рангов отключён на этом инстансе (OPENGSC_CCRANK_URL=off).",
+  "aiReadyTierLabel": "уровень по рангу",
+  "aiReadyTier_elite": "Элита",
+  "aiReadyTier_authoritative": "Авторитетный",
+  "aiReadyTier_established": "Устоявшийся",
+  "aiReadyTier_strong": "Сильный",
+  "aiReadyTier_emerging": "Растущий",
+  "aiReadyTier_unranked": "Вне рейтинга"
 }

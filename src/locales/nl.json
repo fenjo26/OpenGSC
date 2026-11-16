@@ -5931,5 +5931,12 @@
   "aiReadyRelease": "Release: {release}.",
   "aiReadyRankNotFound": "Het domein staat niet in de graaf: Common Crawl zag de afgelopen drie maanden geen links ernaartoe.",
   "aiReadyRankUnavailable": "De rangdirectory antwoordde niet. Dit deel telt niet mee in de score; probeer het later opnieuw.",
-  "aiReadyRankOff": "De rangdirectory is op deze instantie uitgeschakeld (OPENGSC_CCRANK_URL=off)."
+  "aiReadyRankOff": "De rangdirectory is op deze instantie uitgeschakeld (OPENGSC_CCRANK_URL=off).",
+  "aiReadyTierLabel": "rangniveau",
+  "aiReadyTier_elite": "Elite",
+  "aiReadyTier_authoritative": "Gezaghebbend",
+  "aiReadyTier_established": "Gevestigd",
+  "aiReadyTier_strong": "Sterk",
+  "aiReadyTier_emerging": "Opkomend",
+  "aiReadyTier_unranked": "Niet gerangschikt"
 }

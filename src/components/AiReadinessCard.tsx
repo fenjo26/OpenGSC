@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, Sparkles } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { isGuestView } from "@/lib/shareParam";
+import { compactRank, rankTier } from "@/lib/aiReady/score";
 import type { AiReadyGrade, AiReadyPartName, AiReadyReport, ParityVerdict, PresenceMonth } from "@/lib/aiReady/types";
 
 const GREEN = "#34c759", RED = "#ff375f", AMBER = "#ff9f0a";
@@ -199,6 +200,12 @@ export default function AiReadinessCard({ siteDbId }: { siteDbId: string }) {
           <div style={sectionTitle}>{t("aiReadyRankTitle")}{score?.parts.authority != null && <span style={{ fontWeight: 600, color: "var(--color-text-secondary)" }}> · {score.parts.authority}/100</span>}</div>
           {rank.status === "ok" ? (
             <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+              {rank.hcRank != null && (
+                <div style={tile}>
+                  <div style={{ fontSize: "16px", fontWeight: 800, color: "var(--color-text-primary)" }}>{t(`aiReadyTier_${rankTier(rank.hcRank)}`)}</div>
+                  <div style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>{t("aiReadyTierLabel")} · №{compactRank(rank.hcRank)}</div>
+                </div>
+              )}
               <div style={tile}>
                 <div style={{ fontSize: "16px", fontWeight: 800, color: "var(--color-text-primary)" }}>{rank.authority ?? "—"}<span style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)" }}> / 100</span></div>
                 <div style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>{t("aiReadyAuthority")}</div>

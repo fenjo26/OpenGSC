@@ -69,6 +69,8 @@ In which of the last 12 monthly Common Crawl archives the domain (with subdomain
 
 The domain's position by harmonic centrality and PageRank in Common Crawl's web graph (~118 M registered domains, rebuilt monthly from three months of crawling), and a 0–100 value on a log scale. This is not Ahrefs DR and is not comparable with it. "Not in the graph" means Common Crawl saw no links to the domain in that window.
 
+Beside the numbers the card names the rank's **tier** — Elite (top 1K), Authoritative (10K), Established (100K), Strong (1M), Emerging (10M), Unranked. The tier is a label for the order of magnitude; it is not a grade and does not enter the score.
+
 The lookup goes to a public directory service. To run your own or switch it off, see [`sidecar/ccrank`](https://github.com/fenjo26/OpenGSC/blob/main/sidecar/ccrank/README.md) and `OPENGSC_CCRANK_URL`.
 
 ### The score

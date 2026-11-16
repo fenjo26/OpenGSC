@@ -80,3 +80,29 @@ export function computeScore(input: { access?: AccessPart; presence?: PresencePa
   const score = total == null ? null : Math.round(clamp(total));
   return { score, grade: score == null ? null : gradeFor(score), parts: { access, presence, authority }, coverage };
 }
+
+// ─── Rank tier ────────────────────────────────────────────────────────────────
+//
+// A name for the order of magnitude of a rank position, shown beside the authority part. It is
+// a label, not a grade: it does not enter the score and deliberately carries no letter, so the
+// card never shows two different letters for one site.
+
+export type RankTier = "elite" | "authoritative" | "established" | "strong" | "emerging" | "unranked";
+
+export const TIER_CEILINGS: Array<[RankTier, number]> = [
+  ["elite", 1_000], ["authoritative", 10_000], ["established", 100_000], ["strong", 1_000_000], ["emerging", 10_000_000],
+];
+
+/** Tier of a harmonic-centrality position; null/absent or beyond the top 10 M is "unranked". */
+export function rankTier(hcRank: number | null | undefined): RankTier {
+  if (!hcRank || hcRank < 1) return "unranked";
+  for (const [tier, ceiling] of TIER_CEILINGS) if (hcRank <= ceiling) return tier;
+  return "unranked";
+}
+
+/** "2.2M", "45K", "812" — a rank position short enough to sit next to the tier name. */
+export function compactRank(hcRank: number): string {
+  if (hcRank >= 999_500) return `${(hcRank / 1_000_000).toFixed(hcRank >= 10_000_000 ? 0 : 1).replace(/\.0$/, "")}M`;
+  if (hcRank >= 1_000) return `${(hcRank / 1_000).toFixed(hcRank >= 10_000 ? 0 : 1).replace(/\.0$/, "")}K`;
+  return String(hcRank);
+}
