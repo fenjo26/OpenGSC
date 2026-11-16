@@ -93,7 +93,7 @@ export default function AnalysisPage() {
     setErr("");
     if (!keyword.trim()) { setErr(t("seoErrFillKwUrl")); return; }
     const { provider: sp, apiKey: sk, baseUrl: sbu } = getSerpCreds();
-    if (!sk) { setErr(t("seoErrNoSerpKey")); return; }
+    if (!serpReady) { setErr(t("seoErrNoSerpKey")); return; }
     setBusy(true); setStage(t("seoStageSerp"));
     try {
       // Saver #3: cache SERP by query for 30 min — re-running the same keyword won't re-hit the API.

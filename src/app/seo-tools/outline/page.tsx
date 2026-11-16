@@ -273,7 +273,7 @@ export default function OutlinePage() {
     setErr(""); setOutline(null); setArticle(""); setSerp([]); setSelected(new Set()); setScraped({}); setKeywordsData([]);
     if (!keyword.trim()) { setErr(t("seoErrEnterKeyword")); return; }
     const { provider, apiKey, baseUrl: serpBaseUrl } = getSerpCreds();
-    if (!apiKey) { setErr(t("seoErrNoSerpKey")); return; }
+    if (!serpReady) { setErr(t("seoErrNoSerpKey")); return; }
     setLoading("serp");
     try {
       const res = await fetch("/api/seo/serp", {
