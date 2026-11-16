@@ -43,9 +43,18 @@ export default function AiModelBadge({ pathname }: { pathname: string }) {
   // localStorage is unavailable during SSR, so this resolves after mount. Until then the badge
   // renders as the plain settings link it replaces rather than flashing a wrong model name.
   useEffect(() => {
-    const tasks = tasksForPath(pathname);
-    setRows(tasks.length ? tasks.map(task => ({ task, creds: resolveTaskCreds(task.id) })) : null);
+    const reread = () => {
+      const tasks = tasksForPath(pathname);
+      setRows(tasks.length ? tasks.map(task => ({ task, creds: resolveTaskCreds(task.id) })) : null);
+    };
+    reread();
     setOpen(false);
+    // SeoKeysSync announces the credentials it restored from the server mirror — and the Ollama
+    // Cloud migration it just performed (which is what changes this badge's provider/model on an
+    // upgraded install). Without listening, the badge kept showing the model resolved before the
+    // migration ran: "Ollama · llama3.2:3b" on a page whose calls were already going to Cloud.
+    window.addEventListener("seo-keys-restored", reread);
+    return () => window.removeEventListener("seo-keys-restored", reread);
   }, [pathname]);
 
   const onDocClick = useCallback((e: MouseEvent) => {
