@@ -34,16 +34,42 @@ const DEFAULTS: Record<string, ProviderDefault> = {
   kie:        { chat: "gpt-5-5",                   vision: "gpt-5-5" },
   deepseek:   { chat: "deepseek-v4-flash",         vision: "deepseek-v4-flash" },
   qwen:       { chat: "qwen-max",                  vision: "qwen-vl-plus" },
-  // Ollama is a self-hosted model server: its catalogue is whatever the operator pulled, so no
-  // id can be guessed here — same philosophy as "custom". An empty default makes the caller
-  // fail with "no model configured — pick one in Settings" instead of sending an invented id
-  // that the server has never heard of. The default ENDPOINT, however, is knowable.
-  ollama:     { chat: "",                          vision: "" },
+  // Ollama fronts two very different catalogues: the daemon on this machine (whatever the
+  // operator pulled) and Ollama Cloud (a fixed hosted set behind an API key). Cloud is the app's
+  // default target, so its default ids are knowable and set here; a LOCAL endpoint keeps the old
+  // "no invented id" rule, because a cloud id sent to a daemon that never pulled it is a 404 that
+  // reads as "Ollama is broken". `ollamaChatModel` applies that split; `defaultModelFor` stays a
+  // plain table read so the UI can label the card's default.
+  //
+  // `vision` is the multimodal default — verified live against ollama.com on a real PNG
+  // (gemma4:31b, kimi-k3 and mistral-large-4 all answered correctly; the flagship ids
+  // accept images too, at flagship prices). "custom" keeps its empty default: an arbitrary
+  // OpenAI-compatible endpoint's catalogue is unknowable, and inventing `gpt-4o-mini` there
+  // produced a 404 from the user's own gateway with no hint that the app had invented the id.
+  ollama:     { chat: "deepseek-v4.1-flash:1017-cloud", vision: "gemma4:31b" },
 };
 
-// The loopback Ollama daemon. Overridable per provider via aiBaseUrl_ollama (Settings endpoint
-// field) — same value points at Ollama Cloud for a hosted instance (https://ollama.com/v1).
-export const OLLAMA_DEFAULT_BASE_URL = "http://127.0.0.1:11434/v1";
+// The provider every AI surface runs on when the user has expressed no preference. Changing it
+// here changes the browser fallbacks (lib/seo/keys.ts) and the server-side ones (lib/mcp/shared,
+// the generation routes) together — before this constant existed those were 28 separate literals
+// that all said "anthropic", so a deployment could not actually choose its default.
+export const DEFAULT_AI_PROVIDER = "ollama";
+
+// Ollama's hosted API. OpenAI-compatible, key required. This is the endpoint every cloud call
+// goes to when the user has not stored one.
+export const OLLAMA_CLOUD_BASE_URL = "https://ollama.com/v1";
+
+// The loopback daemon. Keyless by design (a default local install has no auth), which stays a
+// supported configuration — it is just no longer the ASSUMED one: a stored key means Cloud.
+export const OLLAMA_LOCAL_BASE_URL = "http://127.0.0.1:11434/v1";
+
+/**
+ * Back-compat alias. Older call sites read this as "the Ollama endpoint when none is stored",
+ * which was always the daemon; resolution now depends on whether a key is present, so those
+ * call sites use `ollamaEndpoint()` instead. This stays pointed at the daemon because a caller
+ * that reaches for a bare constant is the keyless case.
+ */
+export const OLLAMA_DEFAULT_BASE_URL = OLLAMA_LOCAL_BASE_URL;
 
 /**
  * Default model id for a provider, or "" when there is no defensible guess.
@@ -59,3 +85,60 @@ export function defaultModelFor(provider: string, kind: ModelKind = "chat"): str
 }
 
 export const SUPPORTED_PROVIDERS = Object.keys(DEFAULTS);
+
+// ─── Ollama endpoint + model resolution ─────────────────────────────────────────────────────
+//
+// One rule, three surfaces (chat, vision, catalogue discovery) so they can never disagree about
+// where a request goes: an explicitly stored endpoint wins; otherwise a key means Cloud, and no
+// key means the local daemon. Before this, an empty `aiBaseUrl_ollama` always meant
+// 127.0.0.1:11434 — so a user who pasted an Ollama Cloud key into the native provider got every
+// call pointed at their own machine, and a server-side job that inherited only the key did too.
+
+const trimUrl = (u: string): string => u.trim().replace(/\/+$/, "");
+
+export function ollamaEndpoint(apiKey?: string, baseUrl?: string): string {
+  const explicit = trimUrl(baseUrl || "");
+  if (explicit) return explicit;
+  return (apiKey || "").trim() ? OLLAMA_CLOUD_BASE_URL : OLLAMA_LOCAL_BASE_URL;
+}
+
+/** True when the host is ollama.com (Cloud) — not a remote self-hosted daemon on a private IP. */
+export function isOllamaCloud(url: string): boolean {
+  try {
+    const host = new URL(trimUrl(url)).hostname.toLowerCase();
+    return host === "ollama.com" || host.endsWith(".ollama.com");
+  } catch {
+    // A bare "ollama.com" or a trailing path still reads as cloud intent; the caller's error
+    // will say what went wrong more usefully than a false "local" classification.
+    return /(^|\/\/)([a-z0-9-]+\.)*ollama\.com([/:]|$)/i.test(url || "");
+  }
+}
+
+/** Loopback/private host — the daemon on this box, or one the operator runs. Keyless is fine. */
+export function isLocalEndpoint(url: string): boolean {
+  try {
+    const host = new URL(trimUrl(url)).hostname.toLowerCase();
+    return host === "localhost" || host === "::1" || host === "0.0.0.0"
+      || /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host)
+      || /^172\.(1[6-9]|2\d|3[01])\./.test(host) || host.endsWith(".internal") || host.endsWith(".local");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The model to send for an Ollama call: the user's choice, else the cloud default when the
+ * resolved endpoint IS Cloud, else "" (a local daemon's catalogue is whatever was pulled).
+ */
+export function ollamaChatModel(model: string | undefined, apiKey?: string, baseUrl?: string): string {
+  const chosen = (model || "").trim();
+  if (chosen) return chosen;
+  return isOllamaCloud(ollamaEndpoint(apiKey, baseUrl)) ? defaultModelFor("ollama", "chat") : "";
+}
+
+/** Same split for vision: cloud has a known multimodal default, a daemon does not. */
+export function ollamaVisionModel(model: string | undefined, apiKey?: string, baseUrl?: string): string {
+  const chosen = (model || "").trim();
+  if (chosen) return chosen;
+  return isOllamaCloud(ollamaEndpoint(apiKey, baseUrl)) ? defaultModelFor("ollama", "vision") : "";
+}

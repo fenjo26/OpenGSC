@@ -11,6 +11,7 @@
 import { useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { syncHistoryFromServer } from "@/lib/seo/history";
+import { adoptOllamaCloudCreds } from "@/lib/seo/keys";
 
 const EXACT_KEYS = [
   "aiProvider", "aiApiKey", "seoProvider", "seoModel", "seoSerpProvider", "seoSerpProvider_rank", "seoSerpProvider_rankFallback",
@@ -138,6 +139,13 @@ export default function SeoKeysSync() {
     let timer: ReturnType<typeof setInterval> | undefined;
     (async () => {
       try { await pullAndRestore(); } catch { /* offline / not migrated — silent */ }
+      // Ollama predates its native provider as "a custom OpenAI-compatible endpoint", so an
+      // existing install keeps its Cloud key in the custom slot. Adopt it into the ollama slot
+      // after the server snapshot is restored (the key may have arrived from the DB mirror) and
+      // before the first push, so the migration itself is backed up.
+      try {
+        if (adoptOllamaCloudCreds().adopted) window.dispatchEvent(new Event("seo-keys-restored"));
+      } catch { /* nothing stored under custom — normal */ }
       try { await pushIfChanged(); } catch { /* silent */ }
       try { await syncHistoryFromServer(); } catch { /* silent */ }
       timer = setInterval(() => { pushIfChanged().catch(() => {}); }, 20_000);

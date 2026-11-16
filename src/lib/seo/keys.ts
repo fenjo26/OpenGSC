@@ -3,10 +3,11 @@
 "use client";
 
 import { EditorialPolicy, DEFAULT_POLICY, normalizePolicy } from "./policy";
+import { DEFAULT_AI_PROVIDER, defaultModelFor, isOllamaCloud, ollamaChatModel, ollamaEndpoint } from "../providerDefaults";
 
 export function getAiCreds(): { provider: string; apiKey: string } {
-  if (typeof window === "undefined") return { provider: "anthropic", apiKey: "" };
-  const provider = localStorage.getItem("aiProvider") || "anthropic";
+  if (typeof window === "undefined") return { provider: DEFAULT_AI_PROVIDER, apiKey: "" };
+  const provider = localStorage.getItem("aiProvider") || DEFAULT_AI_PROVIDER;
   const apiKey = localStorage.getItem(`aiKey_${provider}`) || localStorage.getItem("aiApiKey") || "";
   return { provider, apiKey };
 }
@@ -28,14 +29,84 @@ export const AI_PROVIDER_NAMES: Record<string, string> = {
 
 // ── Is an AI credential set actually usable? ────────────────────────────────────────────────
 // Every page banner and the header badge used to test `apiKey` directly. That is correct for
-// keyed providers, and wrong for exactly one: Ollama needs NO key — the local daemon accepts
-// unauthenticated calls, and what makes it usable is a model choice (its catalogue is whatever
-// the operator pulled) plus a base URL, which has a knowable default (lib/providerDefaults.ts).
-// Centralising the test keeps the "Ollama is ready without a key" rule in one place instead of
-// re-deciding it per page.
-export function aiCredsReady(c: { provider: string; apiKey: string; model?: string }): boolean {
-  if (c.provider === "ollama") return !!(c.model || "").trim();
+// keyed providers, and wrong for Ollama — which is two products behind one provider id:
+//
+//   • Ollama Cloud (ollama.com/v1): a hosted, keyed API, exactly like OpenAI. The key is
+//     mandatory; a cloud endpoint with no key would 401 on every call, so it must NOT read as
+//     "ready".
+//   • A local/remote daemon: unauthenticated by default, so the key is irrelevant and what makes
+//     it usable is a model choice (its catalogue is whatever the operator pulled) plus an
+//     endpoint, which has a knowable default.
+//
+// So readiness is: a model is chosen AND the target either carries a key or is not Cloud. The
+// endpoint is resolved the same way lib/llm.ts resolves it (providerDefaults.ollamaEndpoint), so
+// the banner and the actual request can never disagree about which Ollama is being called.
+export function aiCredsReady(c: { provider: string; apiKey: string; model?: string; baseUrl?: string }): boolean {
+  if (c.provider === "ollama") {
+    if (!(c.model || "").trim()) return false;
+    return !!c.apiKey || !isOllamaCloud(ollamaEndpoint(c.apiKey, c.baseUrl));
+  }
   return !!c.apiKey;
+}
+
+/**
+ * Why an Ollama credential set is not ready, in the user's terms — "" when it is ready.
+ *
+ * The generic "no AI key" banner was actively misleading for Cloud: it showed while a key WAS
+ * present but no model had been picked, and it showed for a local daemon that needs no key at
+ * all. Naming the missing half is the difference between a dead end and a fix.
+ */
+export function ollamaReadinessIssue(c: { apiKey: string; model?: string; baseUrl?: string }): string {
+  if (!(c.model || "").trim()) return "model";
+  if (isOllamaCloud(ollamaEndpoint(c.apiKey, c.baseUrl)) && !c.apiKey) return "cloud_key";
+  return "";
+}
+
+/**
+ * Adopt an existing Ollama Cloud configuration that is sitting in the `custom` slot.
+ *
+ * Ollama shipped as a "custom OpenAI-compatible endpoint" before it was a native provider, so the
+ * common upgrade path is: key + https://ollama.com/v1 + model saved under `custom`, while the
+ * native `ollama` slot is empty. Without this, making Ollama the app default would silently start
+ * every task on a provider with no credentials, and the user would have to re-paste a key they
+ * already gave the app.
+ *
+ * Deliberately conservative:
+ *   • only fires when the custom slot actually points at ollama.com AND has a key;
+ *   • never overwrites a key/endpoint/model already stored in the ollama slot;
+ *   • never hijacks a DIFFERENT active provider that has its own working key — a user who
+ *     deliberately runs OpenAI keeps OpenAI, they just also gain a configured Ollama card.
+ *
+ * Returns whether anything changed so the caller can re-render / trigger the settings mirror.
+ */
+export function adoptOllamaCloudCreds(): { adopted: boolean; model: string } {
+  if (typeof window === "undefined") return { adopted: false, model: "" };
+  const customBase = (localStorage.getItem("aiBaseUrl_custom") || "").trim();
+  const customKey = (localStorage.getItem("aiKey_custom") || "").trim();
+  if (!customKey || !customBase || !isOllamaCloud(customBase)) {
+    return { adopted: false, model: localStorage.getItem("aiModel_ollama") || "" };
+  }
+  const active = (localStorage.getItem("aiProvider") || "").trim();
+  const activeKey = active && active !== "ollama" ? (localStorage.getItem(`aiKey_${active}`) || "").trim() : "";
+  if (activeKey) return { adopted: false, model: localStorage.getItem("aiModel_ollama") || "" };
+
+  const hadKey = (localStorage.getItem("aiKey_ollama") || "").trim().length > 0;
+  const hadBase = (localStorage.getItem("aiBaseUrl_ollama") || "").trim().length > 0;
+  const hadModel = (localStorage.getItem("aiModel_ollama") || "").trim().length > 0;
+  let adopted = false;
+
+  if (!hadKey) { localStorage.setItem("aiKey_ollama", customKey); adopted = true; }
+  if (!hadBase) { localStorage.setItem("aiBaseUrl_ollama", customBase); adopted = true; }
+  // A model picked while the slot was configured for the LOCAL daemon (llama3.2:3b and friends)
+  // is not in the cloud catalogue. If the slot was local-only, the cloud configuration's model
+  // is the one that belongs with the credentials being adopted.
+  const wasLocalOnly = !hadKey && !hadBase;
+  if (!hadModel || wasLocalOnly) {
+    const model = (localStorage.getItem("aiModel_custom") || "").trim() || defaultModelFor("ollama");
+    if (model) { localStorage.setItem("aiModel_ollama", model); adopted = true; }
+  }
+  if (active !== "ollama") { localStorage.setItem("aiProvider", "ollama"); adopted = true; }
+  return { adopted, model: localStorage.getItem("aiModel_ollama") || "" };
 }
 
 /**
@@ -74,9 +145,11 @@ export function getConfiguredProviders(): { id: string; key: string; baseUrl: st
   if (typeof window === "undefined") return [];
   return AI_PROVIDER_IDS
     .map(id => ({ id, key: localStorage.getItem(`aiKey_${id}`) || "", baseUrl: localStorage.getItem(`aiBaseUrl_${id}`) || "" }))
-    // Ollama is keyless: its own Save writes an (empty) marker under aiKey_ollama, so presence
-    // of the entry — not its length — decides whether it counts as configured.
-    .filter(p => p.key.trim().length > 4 || (p.id === "ollama" && localStorage.getItem("aiKey_ollama") !== null));
+    // Ollama is the one provider whose key is optional: its own Save writes a marker under
+    // aiKey_ollama, so presence of the entry — not its length — decides whether it counts as
+    // configured, and an endpoint override counts too (a local daemon configured only by URL).
+    .filter(p => p.key.trim().length > 4
+      || (p.id === "ollama" && (localStorage.getItem("aiKey_ollama") !== null || p.baseUrl.length > 0)));
 }
 
 // SEO task IDs that can each have its own default provider/model.
@@ -107,13 +180,13 @@ export interface ResolvedTaskCreds {
 // SEO provider. For the custom provider, also returns baseUrl. Falls back gracefully at each level.
 export function resolveTaskCreds(task: SeoTask): ResolvedTaskCreds {
   if (typeof window === "undefined") {
-    return { provider: "anthropic", apiKey: "", model: "", providerFrom: "default", modelFrom: "default" };
+    return { provider: DEFAULT_AI_PROVIDER, apiKey: "", model: "", providerFrom: "default", modelFrom: "default" };
   }
 
   const taskProvider = localStorage.getItem(`seoTaskProvider_${task}`);
   const seoProvider = localStorage.getItem("seoProvider");
   const globalProvider = localStorage.getItem("aiProvider");
-  const provider = taskProvider || seoProvider || globalProvider || "anthropic";
+  const provider = taskProvider || seoProvider || globalProvider || DEFAULT_AI_PROVIDER;
   const providerFrom: CredOrigin =
     taskProvider ? "task" : seoProvider ? "seo" : globalProvider ? "global" : "default";
 
@@ -141,11 +214,16 @@ export function resolveTaskCreds(task: SeoTask): ResolvedTaskCreds {
   // and displayed, as "OpenAI · glm-5.2" — a model OpenAI has never heard of, so every call on
   // that task 404'd for a reason the settings screen actively denied.
   const effectiveSeoModel =
-    provider === (seoProvider || globalProvider || "anthropic") ? localStorage.getItem("seoModel") : null;
+    provider === (seoProvider || globalProvider || DEFAULT_AI_PROVIDER) ? localStorage.getItem("seoModel") : null;
   const providerDefaultModel = getProviderModel(provider);
+  const chosenModel = taskModel || effectiveSeoModel || providerDefaultModel;
+  // Ollama Cloud has a knowable model catalogue, so "nothing chosen" means its cloud default —
+  // not a dead end that the banner reports as "not configured". A local daemon has no knowable
+  // catalogue, so that case keeps returning "" and the caller says "pick a model".
+  const model = chosenModel || (provider === "ollama" ? ollamaChatModel("", apiKey, providerBaseUrl) : "");
   return {
     provider, apiKey, baseUrl: providerBaseUrl,
-    model: taskModel || effectiveSeoModel || providerDefaultModel,
+    model,
     providerFrom,
     modelFrom: taskModel ? "task" : effectiveSeoModel ? "seo" : providerDefaultModel ? "provider" : "default",
   };
@@ -159,11 +237,12 @@ export function getTaskCreds(task: SeoTask): { provider: string; apiKey: string;
 // Resolved creds for SEO generation: a SEO-specific provider override (seoProvider)
 // can differ from the global aiProvider; falls back to it when unset.
 export function getSeoGenCreds(): { provider: string; apiKey: string; model: string; baseUrl?: string } {
-  if (typeof window === "undefined") return { provider: "anthropic", apiKey: "", model: "" };
-  const provider = localStorage.getItem("seoProvider") || localStorage.getItem("aiProvider") || "anthropic";
+  if (typeof window === "undefined") return { provider: DEFAULT_AI_PROVIDER, apiKey: "", model: "" };
+  const provider = localStorage.getItem("seoProvider") || localStorage.getItem("aiProvider") || DEFAULT_AI_PROVIDER;
   const apiKey = localStorage.getItem(`aiKey_${provider}`) || localStorage.getItem("aiApiKey") || "";
-  const model = localStorage.getItem("seoModel") || getProviderModel(provider);
   const baseUrl = localStorage.getItem(`aiBaseUrl_${provider}`) || undefined;
+  const chosen = localStorage.getItem("seoModel") || getProviderModel(provider);
+  const model = chosen || (provider === "ollama" ? ollamaChatModel("", apiKey, baseUrl) : "");
   return { provider, apiKey, model, baseUrl };
 }
 

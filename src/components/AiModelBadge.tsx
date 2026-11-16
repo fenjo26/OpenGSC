@@ -17,7 +17,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { SlidersHorizontal, ChevronDown, ArrowRight } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
-import { AI_PROVIDER_NAMES, aiCredsReady, misplacedAiCreds, resolveTaskCreds, type CredOrigin, type ResolvedTaskCreds } from "@/lib/seo/keys";
+import { AI_PROVIDER_NAMES, aiCredsReady, misplacedAiCreds, ollamaReadinessIssue, resolveTaskCreds, type CredOrigin, type ResolvedTaskCreds } from "@/lib/seo/keys";
 import { tasksForPath, type AiTaskDef } from "@/lib/seo/aiTasks";
 
 type Row = { task: AiTaskDef; creds: ResolvedTaskCreds };
@@ -74,6 +74,9 @@ export default function AiModelBadge({ pathname }: { pathname: string }) {
   // the page banners use, so badge and banner can never disagree about "no AI key".
   const missingKey = rows.some(r => !aiCredsReady(r.creds));
   const misplaced = missingKey ? misplacedAiCreds(primary.creds.provider) : [];
+  // Ollama has two half-configured states that the generic "no key" line cannot describe: a
+  // cloud endpoint with no key, and a (cloud or local) provider with no model chosen.
+  const primaryIssue = primary.creds.provider === "ollama" ? ollamaReadinessIssue(primary.creds) : "";
   const summary = !aiCredsReady(primary.creds)
     ? t("seoModelBadgeNoKey")
     : `${providerName(primary.creds.provider)} · ${primary.creds.model || t("seoModelBadgeProviderDefault")}`;
@@ -101,6 +104,14 @@ export default function AiModelBadge({ pathname }: { pathname: string }) {
 
           {/* The mismatch the banners could not explain: a key exists, just under another
               provider than the active one. Name the holder so the fix is one look away. */}
+          {missingKey && primaryIssue && misplaced.length === 0 && (
+            <div style={{ fontSize: "11px", lineHeight: 1.5, color: "#F59E0B", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: "8px", padding: "8px 10px", marginBottom: "10px" }}>
+              {primaryIssue === "model"
+                ? "Ollama is selected but has no model. Open Settings → AI → Ollama and press Load models — Ollama Cloud lists the hosted catalogue, a local daemon lists what it has pulled."
+                : "Ollama Cloud needs an API key (https://ollama.com/v1). A local daemon needs none — clear the endpoint field to use it instead."}
+            </div>
+          )}
+
           {misplaced.length > 0 && (
             <div style={{ fontSize: "11px", lineHeight: 1.5, color: "#F59E0B", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: "8px", padding: "8px 10px", marginBottom: "10px" }}>
               {t("seoModelBadgeNoKey")} — key found for{" "}
@@ -119,7 +130,7 @@ export default function AiModelBadge({ pathname }: { pathname: string }) {
               <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.5, margin: "2px 0 5px" }}>
                 {t(task.descKey as never)}
               </div>
-              {creds.apiKey ? (
+              {aiCredsReady(creds) ? (
                 <div style={{ display: "flex", alignItems: "baseline", gap: "6px", flexWrap: "wrap" }}>
                   <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--color-text-primary)" }}>
                     {providerName(creds.provider)}
@@ -132,7 +143,13 @@ export default function AiModelBadge({ pathname }: { pathname: string }) {
                   </span>
                 </div>
               ) : (
-                <div style={{ fontSize: "12px", fontWeight: 600, color: "#F59E0B" }}>{t("seoModelBadgeNoKey")}</div>
+                <div style={{ fontSize: "12px", fontWeight: 600, color: "#F59E0B" }}>
+                  {creds.provider === "ollama"
+                    ? (ollamaReadinessIssue(creds) === "model"
+                      ? "Ollama: pick a model (Settings → AI → Ollama → Load models)"
+                      : "Ollama Cloud: add the API key in Settings → AI → Ollama")
+                    : t("seoModelBadgeNoKey")}
+                </div>
               )}
             </div>
           ))}

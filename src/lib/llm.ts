@@ -5,7 +5,7 @@
 // used to be written in four places that then aged apart. Anything the user chose arrives as
 // `modelOverride` and wins outright.
 
-import { defaultModelFor, OLLAMA_DEFAULT_BASE_URL } from '@/lib/providerDefaults';
+import { defaultModelFor, isOllamaCloud, ollamaChatModel, ollamaEndpoint, ollamaVisionModel } from '@/lib/providerDefaults';
 // One row per outbound request. The unit that gets logged is the fetch, not the function call:
 // openrouter below fires a second, separately billed request when a route rejects `reasoning`,
 // and a logger sitting at the tail of this function would have recorded one of the two.
@@ -430,7 +430,10 @@ const retryableStatus = (s: number) => s === 429 || s === 408 || s >= 500;
 export async function pingProvider(
   provider: string, apiKey: string, model?: string, baseUrl?: string, timeoutMs = 25_000,
 ): Promise<{ ok: boolean; error?: string; rateLimited?: boolean }> {
-  if (!provider || !apiKey) return { ok: false, error: "no provider/key configured" };
+  // A local Ollama daemon is unauthenticated, so its ping is the one that works without a key —
+  // the same exemption the chat path makes. Without this, a keyless local provider could never be
+  // promoted by pickLiveProvider and every job would fail with "no configured provider to check".
+  if (!provider || (!apiKey && provider !== "ollama")) return { ok: false, error: "no provider/key configured" };
   // Through the same per-key gate as real calls: a ping that skips the gate is one
   // extra request on top of a key that is already at its limit — exactly the
   // request that used to collect the 429 and fail the whole job before it began.
@@ -838,15 +841,21 @@ async function fetchLLMOnce(
       // default endpoint (the local daemon) and NO key requirement — the daemon accepts
       // unauthenticated calls, and Ollama Cloud accepts a Bearer key. So Authorization goes
       // out only when a key exists; an empty key must not become a literal "Bearer " header.
-      const root = (baseUrl || (provider === 'ollama' ? OLLAMA_DEFAULT_BASE_URL : '')).replace(/\/+$/, '');
+      // Ollama resolves its endpoint by key presence (Cloud) or falls back to the daemon; every
+      // other provider keeps the plain override/stored-endpoint rule.
+      const root = (provider === 'ollama' ? ollamaEndpoint(apiKey, baseUrl) : (baseUrl || '')).replace(/\/+$/, '');
       if (!root) { console.error(`[LLM] ${provider}: no baseUrl`); return { text: null, retryable: false, errorDetail: `${provider}: no baseUrl configured` }; }
       const url = /\/chat\/completions$/.test(root) ? root : `${root}/chat/completions`;
       // No invented default here. A custom endpoint is an arbitrary OpenAI-compatible server,
       // and the previous fallback sent it `gpt-4o-mini` — an OpenAI model id to a gateway that
       // may never have heard of OpenAI. The 404 that came back looked like the user's server
       // was broken. Saying "no model configured" points at the actual missing setting.
-      // Ollama gets the same treatment: its catalogue is whatever the operator pulled.
-      const customModel = modelOverride ?? defaultModelFor(provider);
+      //
+      // Ollama splits by target: Cloud has a fixed catalogue and therefore a knowable default;
+      // a local daemon's catalogue is whatever the operator pulled, so there the answer stays
+      // "pick a model" rather than sending an id the daemon has never seen.
+      const customModel = modelOverride
+        ?? (provider === 'ollama' ? ollamaChatModel(undefined, apiKey, baseUrl) : defaultModelFor(provider));
       if (!customModel) {
         console.error(`[LLM] ${provider}: no model configured`);
         return { text: null, retryable: false, errorDetail: `${provider}: no model configured — pick one in Settings` };
@@ -861,8 +870,8 @@ async function fetchLLMOnce(
       }, { provider, model: customModel, attempt });
       if (!res.ok) {
         const bodyText = await res.text().catch(() => '');
-        console.error('[LLM] custom', res.status, bodyText);
-        const detail = extractErrorDetail('custom', res.status, bodyText);
+        console.error(`[LLM] ${provider}`, res.status, bodyText);
+        const detail = extractErrorDetail(provider, res.status, bodyText);
         call.finish({ error: detail, responseBody: bodyText });
         return { text: null, retryable: retryableStatus(res.status), retryAfterMs: retryAfterFrom(res, res.status), errorDetail: detail };
       }
@@ -998,11 +1007,16 @@ export async function fetchLLMVision(
       // operator pulled), and a vision call additionally needs a multimodal model — a text-only
       // pull fails here with the provider's own error, surfaced like any other non-200.
       if (provider === 'ollama') {
-        const root = (baseUrl || OLLAMA_DEFAULT_BASE_URL).replace(/\/+$/, '');
+        // Cloud (keyed) gets its known multimodal default; a local daemon still requires the
+        // user to name a multimodal model it actually has, because its catalogue is unknown.
+        const root = ollamaEndpoint(apiKey, baseUrl).replace(/\/+$/, '');
         url = /\/chat\/completions$/.test(root) ? root : `${root}/chat/completions`;
-        model = modelOverride || defaultModelFor('ollama', 'vision');
+        model = ollamaVisionModel(modelOverride, apiKey, baseUrl);
         tokenParam = 'max_tokens';
-        if (!model) { console.error('[LLM vision] ollama: no model configured'); return null; }
+        if (!model) {
+          console.error(`[LLM vision] ollama: no multimodal model configured for ${isOllamaCloud(root) ? 'Ollama Cloud' : 'the local daemon'}`);
+          return null;
+        }
       }
       const { res, call } = await loggedFetch(url, {
         method: 'POST', signal: sig,

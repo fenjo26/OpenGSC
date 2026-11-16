@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { workspaceUserId } from "@/lib/team/workspace";
 import { loggedFetch } from "@/lib/providerLog/log";
+import { ollamaEndpoint } from "@/lib/providerDefaults";
 
 // POST /api/seo/models  { provider, apiKey, baseUrl? }
 // Fetches the live model list from the provider's API (server-side to avoid CORS).
@@ -230,12 +231,17 @@ async function listModels(provider: string, apiKey: string, baseUrl?: string): P
   }
 
   if (provider === "ollama") {
-    // Self-hosted (or Ollama Cloud) — the stored base URL decides where discovery goes. The
-    // OpenAI-compatibility layer is tried first (GET /v1/models); the native /api/tags is the
-    // fallback and the label source of last resort (it carries size + last-modified, which the
-    // OpenAI shape does not). Both are unauthenticated on a default local install, so the key
-    // header goes out only when the user actually stored one.
-    const raw = (baseUrl || "http://127.0.0.1:11434/v1").replace(/\/+$/, "");
+    // Two catalogues behind one provider id. The endpoint resolves exactly like the chat path
+    // (lib/providerDefaults.ts ollamaEndpoint): a stored override wins, a key means Ollama
+    // Cloud, no key means the local daemon. Discovery must therefore query the SAME host the
+    // paid calls will use — otherwise "Load models" on a Cloud key lists the daemon's 3 local
+    // pulls and the user picks a model the cloud account has never heard of.
+    //
+    // The OpenAI-compatibility layer is tried first (GET /v1/models, which is also what Cloud
+    // serves); the native /api/tags is the fallback and the label source of last resort (it
+    // carries size, which the OpenAI shape does not). A default local install is unauthenticated,
+    // so the key header goes out only when a key exists.
+    const raw = ollamaEndpoint(apiKey, baseUrl).replace(/\/+$/, "");
     const root = /\/v1$/.test(raw) ? raw : `${raw}/v1`;
     const origin = root.replace(/\/v1$/, "");
     const auth: Record<string, string> = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};

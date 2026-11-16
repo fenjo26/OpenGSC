@@ -31,7 +31,8 @@ import { useParams, useRouter } from "next/navigation";
 import { usePrivacy } from "@/lib/PrivacyContext";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { usePersistedState, isGscPeriod, isIsoDate } from "@/lib/usePersistedState";
-import { getTaskCreds, getAhrefsDrKey } from "@/lib/seo/keys";
+import { DEFAULT_AI_PROVIDER } from "@/lib/providerDefaults";
+import { AI_PROVIDER_IDS, getTaskCreds, getAhrefsDrKey } from "@/lib/seo/keys";
 import TrafficChip from "@/components/TrafficChip";
 import { drSeriesText, type DrPoint } from "@/components/DrSparkline";
 import BacklinkProfile from "@/components/BacklinkProfile";
@@ -1007,25 +1008,30 @@ function SetupModal({ domain, siteDbId, onClose, onApplied }: {
   const [error, setError]       = useState('');
   const [aiUsed, setAiUsed]     = useState(false);
 
-  const [aiProvider, setAiProvider] = useState<string>('anthropic');
+  const [aiProvider, setAiProvider] = useState<string>(DEFAULT_AI_PROVIDER);
   const [aiApiKey, setAiApiKey] = useState<string>('');
   const [providerStatuses, setProviderStatuses] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    const provider = localStorage.getItem('aiProvider') || 'anthropic';
+    const provider = localStorage.getItem('aiProvider') || DEFAULT_AI_PROVIDER;
     const key = localStorage.getItem('aiApiKey') || '';
     setAiProvider(provider);
     setAiApiKey(key);
 
     // Check all provider keys
+    // Every provider the pickers know, not a hand-copied five: the hardcoded list is exactly how
+    // deepseek/qwen/ollama ended up "unconfigured" on this screen while working everywhere else.
     const statuses: Record<string, boolean> = {};
-    for (const id of ['anthropic','openai','gemini','openrouter','zai']) {
+    for (const id of AI_PROVIDER_IDS) {
       const k = localStorage.getItem(`aiKey_${id}`) || '';
       statuses[id] = k.trim().length > 6;
     }
-    // Ollama is keyless: saving its card writes an (empty) marker under aiKey_ollama, and the
-    // base URL has a knowable default — so presence of the marker makes it usable here.
-    statuses['ollama'] = localStorage.getItem('aiKey_ollama') !== null || !!localStorage.getItem('aiBaseUrl_ollama');
+    // Ollama also counts as configured when only its model/endpoint is stored: a Cloud key lands
+    // in aiKey_ollama, while a local daemon needs no key at all (marker + pulled model).
+    statuses['ollama'] = statuses['ollama']
+      || localStorage.getItem('aiKey_ollama') !== null
+      || !!localStorage.getItem('aiBaseUrl_ollama')
+      || !!localStorage.getItem('aiModel_ollama');
     // Also check the legacy key
     if (key.trim().length > 6) statuses[provider] = true;
     setProviderStatuses(statuses);
@@ -1113,12 +1119,14 @@ function SetupModal({ domain, siteDbId, onClose, onApplied }: {
               {(() => {
                 const anyConfigured = Object.values(providerStatuses).some(Boolean);
                 const PROVIDERS = [
+                  // Ollama first: it is the app default, so the row a user scans first is the one
+                  // that is actually active for them.
+                  { id: 'ollama',    name: 'Ollama',    color: '#64748B' },
                   { id: 'anthropic', name: 'Anthropic', color: '#CF6B4A' },
                   { id: 'openai',    name: 'OpenAI',    color: '#10A37F' },
                   { id: 'gemini',    name: 'Gemini',    color: '#4285F4' },
                   { id: 'openrouter',name: 'OpenRouter', color: '#7C3AED' },
                   { id: 'zai',       name: 'Z.AI',      color: '#0EA5E9' },
-                  { id: 'ollama',    name: 'Ollama',    color: '#64748B' },
                 ];
                 return (
                   <div style={{ border: `1px solid ${anyConfigured ? 'rgba(139,92,246,0.3)' : 'rgba(245,158,11,0.35)'}`, borderRadius: '10px', padding: '14px 16px', background: anyConfigured ? 'rgba(139,92,246,0.06)' : 'rgba(245,158,11,0.05)' }}>

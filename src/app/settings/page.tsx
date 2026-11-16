@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import { defaultModelFor, OLLAMA_CLOUD_BASE_URL, OLLAMA_LOCAL_BASE_URL } from "@/lib/providerDefaults";
 import { readChartTypePref, writeChartTypePref } from "@/lib/chartCandles";
 import TeamMembersPanel from "@/components/TeamMembersPanel";
 import {
@@ -1178,6 +1179,19 @@ function NotificationsSection() {
 
 // ─── AI Configuration Section Component ───────────────────────────────────────
 const AI_PROVIDERS = [
+  // Ollama leads the list because it is the app's default provider — the card a user scans first
+  // should be the one that is actually active for them.
+  {
+    id: "ollama",
+    name: "Ollama",
+    model: "deepseek-v4.1-flash:1017-cloud",
+    placeholder: "ollama",
+    hint: "Default AI provider. One card, two targets: paste an Ollama Cloud key and every call goes to https://ollama.com/v1; leave the key empty and it uses the local daemon (no key needed). The endpoint field overrides both. Pick any model from the live catalogue — Cloud exposes the whole hosted set.",
+    docsUrl: "https://docs.ollama.com",
+    docsLabel: "docs.ollama.com",
+    color: "#64748B",
+    logo: "OL",
+  },
   {
     id: "anthropic",
     name: "Anthropic",
@@ -1288,17 +1302,6 @@ const AI_PROVIDERS = [
     color: "#6E55D0",
     logo: "Q",
   },
-  {
-    id: "ollama",
-    name: "Ollama",
-    model: "llama3.2:3b",
-    placeholder: "ollama",
-    hint: "Self-hosted models on your own machine — no API key needed for a local instance (any value works); paste your key for Ollama Cloud. Default endpoint: the local daemon; point the endpoint field at https://ollama.com/v1 for the cloud, or another host for a remote instance. Pick the model with Refresh.",
-    docsUrl: "https://docs.ollama.com",
-    docsLabel: "docs.ollama.com",
-    color: "#64748B",
-    logo: "OL",
-  },
 ] as const;
 
 // Shown as the endpoint field's placeholder: the URL used when the field is EMPTY. Spelled per
@@ -1315,7 +1318,9 @@ const OFFICIAL_ENDPOINTS: Record<string, string> = {
   kie: "https://api.kie.ai",
   deepseek: "https://api.deepseek.com",
   qwen: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-  ollama: "http://127.0.0.1:11434/v1",
+  // The endpoint actually used when the field is empty depends on whether a key is stored
+  // (lib/providerDefaults.ts ollamaEndpoint), so the input renders a dynamic placeholder.
+  ollama: OLLAMA_LOCAL_BASE_URL,
 };
 
 function AIProviderCard({ provider }: { provider: typeof AI_PROVIDERS[number] }) {
@@ -1331,17 +1336,23 @@ function AIProviderCard({ provider }: { provider: typeof AI_PROVIDERS[number] })
   const [modelsErr, setModelsErr] = useState(false);
   // Only rendered for zai; "" means the general API endpoint (the default in lib/llm.ts).
   const [endpoint, setEndpoint] = useState("");
+  // Which provider every task currently resolves to. "Configured" and "actually used" are
+  // different states, and the difference used to be invisible on this screen.
+  const [active, setActive] = useState(false);
   // Ollama needs no key: saving the card writes its marker even with an empty key field, so
   // presence of the entry (not its length) decides "configured" — same rule the live model
-  // selector uses (lib/seo/keys.ts getConfiguredProviders).
+  // selector uses (lib/seo/keys.ts getConfiguredProviders). An endpoint-only local setup counts
+  // too: that is a daemon reached by URL with no key anywhere.
   const isConfigured = provider.id === "ollama"
-    ? (typeof window !== "undefined" && localStorage.getItem(storageKey) !== null) || key.trim().length > 0
+    ? (typeof window !== "undefined" && localStorage.getItem(storageKey) !== null)
+      || key.trim().length > 0 || endpoint.trim().length > 0
     : key.trim().length > 6;
 
   useEffect(() => {
     setKey(localStorage.getItem(storageKey) || "");
     setModel(localStorage.getItem(modelKey) || "");
     setEndpoint(localStorage.getItem(`aiBaseUrl_${provider.id}`) || "");
+    setActive(localStorage.getItem("aiProvider") === provider.id);
   }, [storageKey, modelKey, provider.id]);
 
   // Live model list from the provider's own API (server-side proxy avoids CORS). The endpoint
@@ -1380,6 +1391,14 @@ function AIProviderCard({ provider }: { provider: typeof AI_PROVIDERS[number] })
       localStorage.setItem("aiProvider", provider.id);
       if (key.trim()) localStorage.setItem("aiApiKey", key.trim());
       else localStorage.removeItem("aiApiKey");
+      // A Cloud key with no model chosen is still runnable: the cloud catalogue has a known
+      // default. Recording it keeps the badge, per-task resolution and MCP jobs naming the same
+      // model instead of reporting "not configured" until someone opens the picker.
+      const fallbackModel = defaultModelFor("ollama");
+      if (key.trim() && !localStorage.getItem(modelKey) && fallbackModel) {
+        localStorage.setItem(modelKey, fallbackModel);
+        setModel(fallbackModel);
+      }
     } else {
       localStorage.setItem(storageKey, key.trim());
       // Also update aiProvider/aiApiKey for compatibility with SetupModal
@@ -1388,6 +1407,7 @@ function AIProviderCard({ provider }: { provider: typeof AI_PROVIDERS[number] })
         localStorage.setItem("aiApiKey", key.trim());
       }
     }
+    setActive(true);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -1423,6 +1443,12 @@ function AIProviderCard({ provider }: { provider: typeof AI_PROVIDERS[number] })
           <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--color-text-primary)" }}>{provider.name}</div>
           <div style={{ fontSize: "11px", color: model ? provider.color : "var(--color-text-secondary)", fontFamily: model ? "monospace" : undefined }}>{model || provider.model}</div>
         </div>
+        {active && (
+          <span title="Every AI task runs on this provider unless a per-task override says otherwise"
+            style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: provider.color, background: `${provider.color}1f`, border: `1px solid ${provider.color}55`, borderRadius: "999px", padding: "2px 7px", flexShrink: 0 }}>
+            Default
+          </span>
+        )}
         {isConfigured ? (
           <span style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "11px", color: "#10B981", fontWeight: 600, flexShrink: 0 }}>
             <CheckCircle size={12} color="#10B981" /> {t("scConnected") || "Connected"}
@@ -1522,7 +1548,11 @@ function AIProviderCard({ provider }: { provider: typeof AI_PROVIDERS[number] })
               if (v) localStorage.setItem(`aiBaseUrl_${provider.id}`, v);
               else localStorage.removeItem(`aiBaseUrl_${provider.id}`);
             }}
-            placeholder={OFFICIAL_ENDPOINTS[provider.id] || "https://"}
+            placeholder={provider.id === "ollama"
+              ? (key.trim() || (typeof window !== "undefined" && (localStorage.getItem(storageKey) || "").trim())
+                ? OLLAMA_CLOUD_BASE_URL
+                : OLLAMA_LOCAL_BASE_URL)
+              : (OFFICIAL_ENDPOINTS[provider.id] || "https://")}
             style={{
               width: "100%", padding: "8px 12px",
               borderRadius: "8px", border: "1px solid var(--color-border)",
