@@ -18,12 +18,38 @@ export function getAiCreds(): { provider: string; apiKey: string } {
 // lib/llm.ts. That is exactly what had happened to `deepseek` and `qwen`: Settings → AI has a
 // card for each, the key mirrors and restores fine, llm.ts routes them, and the only thing
 // stopping a user from choosing one for the outline step was their absence from this array.
-export const AI_PROVIDER_IDS = ["anthropic", "openai", "gemini", "openrouter", "cheaperinference", "zai", "kimi", "kie", "deepseek", "qwen", "custom"] as const;
+export const AI_PROVIDER_IDS = ["anthropic", "openai", "gemini", "openrouter", "cheaperinference", "zai", "kimi", "kie", "deepseek", "qwen", "custom", "ollama"] as const;
 export const AI_PROVIDER_NAMES: Record<string, string> = {
   anthropic: "Anthropic", openai: "OpenAI", gemini: "Google Gemini", openrouter: "OpenRouter",
   cheaperinference: "Cheaper Inference", zai: "Z.AI", kimi: "Kimi (Moonshot AI)", kie: "Kie.ai (GPT-5.5)",
   deepseek: "DeepSeek", qwen: "Qwen (Alibaba Cloud)", custom: "Custom (OpenAI-compatible)",
+  ollama: "Ollama",
 };
+
+// ── Is an AI credential set actually usable? ────────────────────────────────────────────────
+// Every page banner and the header badge used to test `apiKey` directly. That is correct for
+// keyed providers, and wrong for exactly one: Ollama needs NO key — the local daemon accepts
+// unauthenticated calls, and what makes it usable is a model choice (its catalogue is whatever
+// the operator pulled) plus a base URL, which has a knowable default (lib/providerDefaults.ts).
+// Centralising the test keeps the "Ollama is ready without a key" rule in one place instead of
+// re-deciding it per page.
+export function aiCredsReady(c: { provider: string; apiKey: string; model?: string }): boolean {
+  if (c.provider === "ollama") return !!(c.model || "").trim();
+  return !!c.apiKey;
+}
+
+/**
+ * Diagnostics for the classic mismatch: credentials saved under provider X while the ACTIVE
+ * selector says Y (the Outline banner then says "no AI key" with keys sitting right there).
+ * Returns the providers that hold a non-empty key but are not active — the badge dropdown
+ * surfaces this so the fix (switch, or set the key on the active provider) is one look away.
+ */
+export function misplacedAiCreds(activeProvider: string): { provider: string; name: string }[] {
+  if (typeof window === "undefined") return [];
+  return AI_PROVIDER_IDS
+    .filter(id => id !== activeProvider && (localStorage.getItem(`aiKey_${id}`) || "").length > 0)
+    .map(id => ({ provider: id, name: AI_PROVIDER_NAMES[id] ?? id }));
+}
 
 // Per-provider model chosen in Settings → API Keys (aiModel_<provider>); empty = provider default.
 export function getProviderModel(provider: string): string {
@@ -48,7 +74,9 @@ export function getConfiguredProviders(): { id: string; key: string; baseUrl: st
   if (typeof window === "undefined") return [];
   return AI_PROVIDER_IDS
     .map(id => ({ id, key: localStorage.getItem(`aiKey_${id}`) || "", baseUrl: localStorage.getItem(`aiBaseUrl_${id}`) || "" }))
-    .filter(p => p.key.trim().length > 4);
+    // Ollama is keyless: its own Save writes an (empty) marker under aiKey_ollama, so presence
+    // of the entry — not its length — decides whether it counts as configured.
+    .filter(p => p.key.trim().length > 4 || (p.id === "ollama" && localStorage.getItem("aiKey_ollama") !== null));
 }
 
 // SEO task IDs that can each have its own default provider/model.

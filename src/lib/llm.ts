@@ -5,7 +5,7 @@
 // used to be written in four places that then aged apart. Anything the user chose arrives as
 // `modelOverride` and wins outright.
 
-import { defaultModelFor } from '@/lib/providerDefaults';
+import { defaultModelFor, OLLAMA_DEFAULT_BASE_URL } from '@/lib/providerDefaults';
 // One row per outbound request. The unit that gets logged is the fetch, not the function call:
 // openrouter below fires a second, separately billed request when a route rejects `reasoning`,
 // and a logger sitting at the tail of this function would have recorded one of the two.
@@ -832,23 +832,31 @@ async function fetchLLMOnce(
         : data?.status;
       text = parseKieOutput(data);
       closeCall(call, data, kieModel);
-    } else if (provider === 'custom') {
+    } else if (provider === 'custom' || provider === 'ollama') {
       // Any OpenAI-compatible endpoint. baseUrl is the API root; we call /chat/completions.
-      const root = (baseUrl || '').replace(/\/+$/, '');
-      if (!root) { console.error('[LLM] custom: no baseUrl'); return { text: null, retryable: false, errorDetail: 'custom: no baseUrl configured' }; }
+      // Ollama rides the same wire format (its OpenAI compatibility layer), with a knowable
+      // default endpoint (the local daemon) and NO key requirement — the daemon accepts
+      // unauthenticated calls, and Ollama Cloud accepts a Bearer key. So Authorization goes
+      // out only when a key exists; an empty key must not become a literal "Bearer " header.
+      const root = (baseUrl || (provider === 'ollama' ? OLLAMA_DEFAULT_BASE_URL : '')).replace(/\/+$/, '');
+      if (!root) { console.error(`[LLM] ${provider}: no baseUrl`); return { text: null, retryable: false, errorDetail: `${provider}: no baseUrl configured` }; }
       const url = /\/chat\/completions$/.test(root) ? root : `${root}/chat/completions`;
       // No invented default here. A custom endpoint is an arbitrary OpenAI-compatible server,
       // and the previous fallback sent it `gpt-4o-mini` — an OpenAI model id to a gateway that
       // may never have heard of OpenAI. The 404 that came back looked like the user's server
       // was broken. Saying "no model configured" points at the actual missing setting.
-      const customModel = modelOverride ?? defaultModelFor('custom');
+      // Ollama gets the same treatment: its catalogue is whatever the operator pulled.
+      const customModel = modelOverride ?? defaultModelFor(provider);
       if (!customModel) {
-        console.error('[LLM] custom: no model configured');
-        return { text: null, retryable: false, errorDetail: 'custom: no model configured — set one in Settings' };
+        console.error(`[LLM] ${provider}: no model configured`);
+        return { text: null, retryable: false, errorDetail: `${provider}: no model configured — pick one in Settings` };
       }
       const { res, call } = await loggedFetch(url, {
         method: 'POST', signal: sig,
-        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        headers: {
+          ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}),
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({ model: customModel, max_tokens: maxTokens, messages: [{ role: 'user', content: prompt }], ...temp(temperature, customModel) }),
       }, { provider, model: customModel, attempt });
       if (!res.ok) {
@@ -966,7 +974,7 @@ export async function fetchLLMVision(
       const data = await res.json();
       text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
       closeCall(call, data, gModel);
-    } else if (provider === 'openai' || provider === 'openrouter' || provider === 'custom' || provider === 'kimi' || provider === 'deepseek' || provider === 'qwen' || provider === 'cheaperinference') {
+    } else if (provider === 'openai' || provider === 'openrouter' || provider === 'custom' || provider === 'ollama' || provider === 'kimi' || provider === 'deepseek' || provider === 'qwen' || provider === 'cheaperinference') {
       const dataUrl = `data:${mimeType};base64,${b64}`;
       const content = [
         { type: 'text', text: prompt },
@@ -986,9 +994,22 @@ export async function fetchLLMVision(
         url = /\/chat\/completions$/.test(root) ? root : `${root}/chat/completions`;
         tokenParam = 'max_tokens';
       }
+      // Ollama: knowable default endpoint, model must be chosen (its catalogue is whatever the
+      // operator pulled), and a vision call additionally needs a multimodal model — a text-only
+      // pull fails here with the provider's own error, surfaced like any other non-200.
+      if (provider === 'ollama') {
+        const root = (baseUrl || OLLAMA_DEFAULT_BASE_URL).replace(/\/+$/, '');
+        url = /\/chat\/completions$/.test(root) ? root : `${root}/chat/completions`;
+        model = modelOverride || defaultModelFor('ollama', 'vision');
+        tokenParam = 'max_tokens';
+        if (!model) { console.error('[LLM vision] ollama: no model configured'); return null; }
+      }
       const { res, call } = await loggedFetch(url, {
         method: 'POST', signal: sig,
-        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        headers: {
+          ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}),
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({ model, [tokenParam]: maxTokens, messages: [{ role: 'user', content }] }),
       }, { provider, model });
       if (!res.ok) {

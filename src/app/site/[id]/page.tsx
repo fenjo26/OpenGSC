@@ -1023,6 +1023,9 @@ function SetupModal({ domain, siteDbId, onClose, onApplied }: {
       const k = localStorage.getItem(`aiKey_${id}`) || '';
       statuses[id] = k.trim().length > 6;
     }
+    // Ollama is keyless: saving its card writes an (empty) marker under aiKey_ollama, and the
+    // base URL has a knowable default — so presence of the marker makes it usable here.
+    statuses['ollama'] = localStorage.getItem('aiKey_ollama') !== null || !!localStorage.getItem('aiBaseUrl_ollama');
     // Also check the legacy key
     if (key.trim().length > 6) statuses[provider] = true;
     setProviderStatuses(statuses);
@@ -1115,6 +1118,7 @@ function SetupModal({ domain, siteDbId, onClose, onApplied }: {
                   { id: 'gemini',    name: 'Gemini',    color: '#4285F4' },
                   { id: 'openrouter',name: 'OpenRouter', color: '#7C3AED' },
                   { id: 'zai',       name: 'Z.AI',      color: '#0EA5E9' },
+                  { id: 'ollama',    name: 'Ollama',    color: '#64748B' },
                 ];
                 return (
                   <div style={{ border: `1px solid ${anyConfigured ? 'rgba(139,92,246,0.3)' : 'rgba(245,158,11,0.35)'}`, borderRadius: '10px', padding: '14px 16px', background: anyConfigured ? 'rgba(139,92,246,0.06)' : 'rgba(245,158,11,0.05)' }}>

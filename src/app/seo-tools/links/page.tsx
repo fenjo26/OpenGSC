@@ -9,7 +9,7 @@ import Link from "next/link";
 import { Loader2, AlertTriangle, Plus, X, RefreshCw, Link2, Sparkles, ExternalLink, Star, Send, Target, Check } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { readUrlParam, writeUrlParam } from "@/lib/urlParam";
-import { getTaskCreds } from "@/lib/seo/keys";
+import { getTaskCreds , aiCredsReady } from "@/lib/seo/keys";
 import { getMetricsCreds } from "@/lib/seo/metricsClient";
 import { markdownToHtml } from "@/lib/seo/outlineFormat";
 import OutreachWorkspace from "@/components/OutreachWorkspace";
@@ -150,7 +150,7 @@ export default function LinkWatchPage() {
 
   async function genInsights() {
     const ai = getTaskCreds("analysis");
-    if (!ai.apiKey) { setErr(t("seoErrNoAiKey")); return; }
+    if (!aiCredsReady(ai)) { setErr(t("seoErrNoAiKey")); return; }
     setInsLoading(true); setErr("");
     try {
       const res = await fetch("/api/linkwatch/insights", {

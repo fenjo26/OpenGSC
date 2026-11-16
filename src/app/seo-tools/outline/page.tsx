@@ -12,7 +12,7 @@ import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { OutlineView } from "@/components/SeoRenderers";
 import SeoJobProgress from "@/components/SeoJobProgress";
 import SeoRecentList from "@/components/SeoRecentList";
-import { getSeoGenCreds, getTaskCreds, getSerpCreds, getFirecrawlKey, loadPolicies, getActivePolicyName, getKeywordSource, getKwAuto, getKwLimit } from "@/lib/seo/keys";
+import { getSeoGenCreds, getTaskCreds, getSerpCreds, getFirecrawlKey, loadPolicies, getActivePolicyName, getKeywordSource, getKwAuto, getKwLimit, aiCredsReady } from "@/lib/seo/keys";
 import { getMetricsWithKd, formatUsd, priceExpand } from "@/lib/seo/metricsClient";
 import { COUNTRIES, LANGUAGES, defaultLanguageFor } from "@/lib/seo/regions";
 import { TONES, toneToPrompt } from "@/lib/seo/tones";
@@ -397,7 +397,8 @@ export default function OutlinePage() {
   }
 
   const noSerpKey = !serpCreds.apiKey;
-  const noAiKey = !ai.apiKey;
+  // Ollama needs no key — readiness is a model choice + (defaultable) base URL, see aiCredsReady.
+  const noAiKey = !aiCredsReady(ai);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>

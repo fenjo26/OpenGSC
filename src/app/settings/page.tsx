@@ -1288,6 +1288,17 @@ const AI_PROVIDERS = [
     color: "#6E55D0",
     logo: "Q",
   },
+  {
+    id: "ollama",
+    name: "Ollama",
+    model: "llama3.2:3b",
+    placeholder: "ollama",
+    hint: "Self-hosted models on your own machine — no API key needed for a local instance (any value works); paste your key for Ollama Cloud. Default endpoint: the local daemon; point the endpoint field at https://ollama.com/v1 for the cloud, or another host for a remote instance. Pick the model with Refresh.",
+    docsUrl: "https://docs.ollama.com",
+    docsLabel: "docs.ollama.com",
+    color: "#64748B",
+    logo: "OL",
+  },
 ] as const;
 
 // Shown as the endpoint field's placeholder: the URL used when the field is EMPTY. Spelled per
@@ -1304,6 +1315,7 @@ const OFFICIAL_ENDPOINTS: Record<string, string> = {
   kie: "https://api.kie.ai",
   deepseek: "https://api.deepseek.com",
   qwen: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  ollama: "http://127.0.0.1:11434/v1",
 };
 
 function AIProviderCard({ provider }: { provider: typeof AI_PROVIDERS[number] }) {
@@ -1319,7 +1331,12 @@ function AIProviderCard({ provider }: { provider: typeof AI_PROVIDERS[number] })
   const [modelsErr, setModelsErr] = useState(false);
   // Only rendered for zai; "" means the general API endpoint (the default in lib/llm.ts).
   const [endpoint, setEndpoint] = useState("");
-  const isConfigured = key.trim().length > 6;
+  // Ollama needs no key: saving the card writes its marker even with an empty key field, so
+  // presence of the entry (not its length) decides "configured" — same rule the live model
+  // selector uses (lib/seo/keys.ts getConfiguredProviders).
+  const isConfigured = provider.id === "ollama"
+    ? (typeof window !== "undefined" && localStorage.getItem(storageKey) !== null) || key.trim().length > 0
+    : key.trim().length > 6;
 
   useEffect(() => {
     setKey(localStorage.getItem(storageKey) || "");
@@ -1353,11 +1370,21 @@ function AIProviderCard({ provider }: { provider: typeof AI_PROVIDERS[number] })
   };
 
   const handleSave = () => {
-    localStorage.setItem(storageKey, key.trim());
-    // Also update aiProvider/aiApiKey for compatibility with SetupModal
-    if (key.trim()) {
+    // Ollama: the save itself is the configuration even with an empty key field (the local
+    // daemon needs no key) — so the marker is always written and the card always becomes the
+    // active provider. Keyed providers keep the old rule: only a real key saves and activates.
+    if (provider.id === "ollama") {
+      localStorage.setItem(storageKey, key.trim());
       localStorage.setItem("aiProvider", provider.id);
-      localStorage.setItem("aiApiKey", key.trim());
+      if (key.trim()) localStorage.setItem("aiApiKey", key.trim());
+      else localStorage.removeItem("aiApiKey");
+    } else {
+      localStorage.setItem(storageKey, key.trim());
+      // Also update aiProvider/aiApiKey for compatibility with SetupModal
+      if (key.trim()) {
+        localStorage.setItem("aiProvider", provider.id);
+        localStorage.setItem("aiApiKey", key.trim());
+      }
     }
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);

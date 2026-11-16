@@ -14,7 +14,9 @@ export async function POST(req: Request) {
   const b = await req.json();
   const provider = String(b.provider ?? "");
   const apiKey = String(b.apiKey ?? "");
-  if (!provider || !apiKey) return NextResponse.json({ error: "missing", models: [] }, { status: 400 });
+  // Ollama is the one provider that works without a key (the local daemon is unauthenticated);
+  // discovery must not refuse it just because the key field is empty.
+  if (!provider || (!apiKey && provider !== "ollama")) return NextResponse.json({ error: "missing", models: [] }, { status: 400 });
 
   try {
     const models = await listModels(provider, apiKey, String(b.baseUrl ?? "").trim() || undefined);
@@ -225,6 +227,48 @@ async function listModels(provider: string, apiKey: string, baseUrl?: string): P
 
   if (provider === "qwen") {
     return QWEN_FALLBACK;
+  }
+
+  if (provider === "ollama") {
+    // Self-hosted (or Ollama Cloud) — the stored base URL decides where discovery goes. The
+    // OpenAI-compatibility layer is tried first (GET /v1/models); the native /api/tags is the
+    // fallback and the label source of last resort (it carries size + last-modified, which the
+    // OpenAI shape does not). Both are unauthenticated on a default local install, so the key
+    // header goes out only when the user actually stored one.
+    const raw = (baseUrl || "http://127.0.0.1:11434/v1").replace(/\/+$/, "");
+    const root = /\/v1$/.test(raw) ? raw : `${raw}/v1`;
+    const origin = root.replace(/\/v1$/, "");
+    const auth: Record<string, string> = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
+    const parseIds = (data: { data?: IdModel[] }): M[] =>
+      (data?.data ?? []).map((m) => ({ id: m.id as string, label: m.id as string })).filter((m) => m.id);
+    try {
+      const { res, call } = await loggedFetch(`${root}/models`, { headers: { Accept: "application/json", ...auth }, signal: timeout }, { provider: "ollama" });
+      if (res.ok) {
+        const models = parseIds(await res.json());
+        call.finish();
+        if (models.length) return models;
+      } else {
+        call.finish({ error: `ollama /v1/models ${res.status}` });
+      }
+    } catch { /* fall through to the native endpoint */ }
+    try {
+      // Native catalogue: [{ name, size, modified_at, ... }]. Names ARE the ids chat calls want.
+      const { res, call } = await loggedFetch(`${origin}/api/tags`, { headers: { Accept: "application/json", ...auth }, signal: timeout }, { provider: "ollama" });
+      if (!res.ok) { call.finish({ error: `ollama /api/tags ${res.status}` }); return []; }
+      const data = await res.json();
+      call.finish();
+      const arr: { name?: string; size?: number }[] = data?.models ?? [];
+      return arr
+        .filter((m) => m.name)
+        .map((m) => ({
+          id: m.name as string,
+          // Human-readable size when the daemon reports it (embedders pull multi-GB, knowing
+          // which entry is the 2 GB chat model vs the 1.2 GB embedder saves a wrong pick).
+          label: m.size ? `${m.name} · ${(m.size / 1_073_741_824).toFixed(1)} GB` : (m.name as string),
+        }));
+    } catch (e) {
+      throw new Error(`ollama unreachable: ${String((e as Error)?.message ?? e)}`);
+    }
   }
 
   return [];

@@ -34,7 +34,16 @@ const DEFAULTS: Record<string, ProviderDefault> = {
   kie:        { chat: "gpt-5-5",                   vision: "gpt-5-5" },
   deepseek:   { chat: "deepseek-v4-flash",         vision: "deepseek-v4-flash" },
   qwen:       { chat: "qwen-max",                  vision: "qwen-vl-plus" },
+  // Ollama is a self-hosted model server: its catalogue is whatever the operator pulled, so no
+  // id can be guessed here — same philosophy as "custom". An empty default makes the caller
+  // fail with "no model configured — pick one in Settings" instead of sending an invented id
+  // that the server has never heard of. The default ENDPOINT, however, is knowable.
+  ollama:     { chat: "",                          vision: "" },
 };
+
+// The loopback Ollama daemon. Overridable per provider via aiBaseUrl_ollama (Settings endpoint
+// field) — same value points at Ollama Cloud for a hosted instance (https://ollama.com/v1).
+export const OLLAMA_DEFAULT_BASE_URL = "http://127.0.0.1:11434/v1";
 
 /**
  * Default model id for a provider, or "" when there is no defensible guess.

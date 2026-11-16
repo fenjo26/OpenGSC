@@ -5,7 +5,7 @@ import Link from "next/link";
 import { RefreshCw, Loader2, AlertTriangle, Copy, Check, Download, Sparkles, Link2, FileText, Fingerprint, Search, Wrench, Pencil, Scale } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { readUrlParam, writeUrlParam } from "@/lib/urlParam";
-import { getTaskCreds, getFirecrawlKey } from "@/lib/seo/keys";
+import { getTaskCreds, getFirecrawlKey , aiCredsReady } from "@/lib/seo/keys";
 import { LANGUAGES } from "@/lib/seo/regions";
 import { TONES } from "@/lib/seo/tones";
 import { scoreText } from "@/lib/seo/aidetect";
@@ -278,7 +278,7 @@ export default function RewritePage() {
         <p style={{ fontSize: "13px", color: "var(--color-text-secondary)", margin: 0 }}>{t("rwSub")}</p>
       </div>
 
-      {mounted && !ai.apiKey && (
+      {mounted && !aiCredsReady(ai) && (
         <div className={card} style={{ borderColor: "rgba(255,159,10,0.35)", background: "rgba(255,159,10,0.06)", display: "flex", gap: "10px", alignItems: "center", fontSize: "13px", color: "var(--color-text-secondary)" }}>
           <AlertTriangle size={18} color="var(--color-accent-orange)" /> {t("seoNeedKeysPrefix")} <b>{t("seoAiProviderLabel")}</b>. <Link href="/settings?tab=ai" style={{ color: "var(--color-accent-blue)" }}>{t("seoSettingsShort")}</Link>
         </div>

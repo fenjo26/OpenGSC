@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PenLine, Loader2, AlertTriangle, Wand2, Eye } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
-import { getSeoGenCreds, getTaskCreds, serpPayload, getFirecrawlKey, getFactSourceCount, getHardRedact, getMechanicsOn, getMechanicsRepairOn, getMarksScrubOn, loadPolicies, getActivePolicyName } from "@/lib/seo/keys";
+import { getSeoGenCreds, getTaskCreds, serpPayload, getFirecrawlKey, getFactSourceCount, getHardRedact, getMechanicsOn, getMechanicsRepairOn, getMarksScrubOn, loadPolicies, getActivePolicyName , aiCredsReady } from "@/lib/seo/keys";
 import { TONES, toneToPrompt } from "@/lib/seo/tones";
 import { LANGUAGES } from "@/lib/seo/regions";
 import { loadHistory, HistoryItem } from "@/lib/seo/history";
@@ -127,7 +127,7 @@ export default function TextGenPage() {
         />
       )}
 
-      {!jobId && !ai.apiKey && (
+      {!jobId && !aiCredsReady(ai) && (
         <div className={card} style={{ borderColor: "rgba(255,159,10,0.35)", background: "rgba(255,159,10,0.06)", display: "flex", gap: "10px", alignItems: "center", fontSize: "13px", color: "var(--color-text-secondary)" }}>
           <AlertTriangle size={18} color="var(--color-accent-orange)" /> {t("seoNeedKeysPrefix")} <b>{t("seoAiProviderLabel")}</b>. <Link href="/settings?tab=ai" style={{ color: "var(--color-accent-blue)" }}>{t("seoSettingsShort")}</Link>
         </div>

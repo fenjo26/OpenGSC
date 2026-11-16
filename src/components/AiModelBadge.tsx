@@ -17,7 +17,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { SlidersHorizontal, ChevronDown, ArrowRight } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
-import { AI_PROVIDER_NAMES, resolveTaskCreds, type CredOrigin, type ResolvedTaskCreds } from "@/lib/seo/keys";
+import { AI_PROVIDER_NAMES, aiCredsReady, misplacedAiCreds, resolveTaskCreds, type CredOrigin, type ResolvedTaskCreds } from "@/lib/seo/keys";
 import { tasksForPath, type AiTaskDef } from "@/lib/seo/aiTasks";
 
 type Row = { task: AiTaskDef; creds: ResolvedTaskCreds };
@@ -70,8 +70,11 @@ export default function AiModelBadge({ pathname }: { pathname: string }) {
   }
 
   const primary = rows[0];
-  const missingKey = rows.some(r => !r.creds.apiKey);
-  const summary = !primary.creds.apiKey
+  // Ollama is ready without a key (model + defaultable base URL) — the same aiCredsReady rule
+  // the page banners use, so badge and banner can never disagree about "no AI key".
+  const missingKey = rows.some(r => !aiCredsReady(r.creds));
+  const misplaced = missingKey ? misplacedAiCreds(primary.creds.provider) : [];
+  const summary = !aiCredsReady(primary.creds)
     ? t("seoModelBadgeNoKey")
     : `${providerName(primary.creds.provider)} · ${primary.creds.model || t("seoModelBadgeProviderDefault")}`;
 
@@ -95,6 +98,20 @@ export default function AiModelBadge({ pathname }: { pathname: string }) {
           <div style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--color-text-tertiary)", marginBottom: "8px" }}>
             {t("seoModelBadgePanelTitle")}
           </div>
+
+          {/* The mismatch the banners could not explain: a key exists, just under another
+              provider than the active one. Name the holder so the fix is one look away. */}
+          {misplaced.length > 0 && (
+            <div style={{ fontSize: "11px", lineHeight: 1.5, color: "#F59E0B", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: "8px", padding: "8px 10px", marginBottom: "10px" }}>
+              {t("seoModelBadgeNoKey")} — key found for{" "}
+              {misplaced.map((m, i) => (<span key={m.provider}>{i > 0 && ", "}<b>{m.name}</b></span>))}
+              {". "}Set it as the active provider in Settings, or paste it for{" "}
+              <b>{providerName(primary.creds.provider)}</b>.
+              {primary.creds.provider === "ollama" && !primary.creds.model
+                ? " Ollama also needs a model picked (Refresh the list in Settings) — no API key required."
+                : ""}
+            </div>
+          )}
 
           {rows.map(({ task, creds }) => (
             <div key={task.id} style={{ padding: "8px 0", borderTop: "1px solid var(--color-border)" }}>

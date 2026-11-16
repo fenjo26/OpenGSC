@@ -8,7 +8,7 @@ import { readUrlParam, writeUrlParam } from "@/lib/urlParam";
 import SeoContentAnalysis from "@/components/SeoContentAnalysis";
 import SeoJobProgress from "@/components/SeoJobProgress";
 import SeoRecentList from "@/components/SeoRecentList";
-import { getSeoGenCreds, getTaskCreds, getSerpCreds, getFirecrawlKey, loadPolicies, getActivePolicyName } from "@/lib/seo/keys";
+import { getSeoGenCreds, getTaskCreds, getSerpCreds, getFirecrawlKey, loadPolicies, getActivePolicyName , aiCredsReady } from "@/lib/seo/keys";
 import { COUNTRIES, LANGUAGES, defaultLanguageFor } from "@/lib/seo/regions";
 import { takeView } from "@/lib/seo/history";
 import { startJob, importJob } from "@/lib/seo/jobs";
@@ -68,7 +68,7 @@ export default function AnalysisPage() {
   useEffect(() => { setMounted(true); }, []);
   const serpCreds = mounted ? getSerpCreds() : { provider: "", apiKey: "" };
   const ai = mounted ? getSeoGenCreds() : { provider: "", apiKey: "", model: "" };
-  const noKeys = !serpCreds.apiKey || !ai.apiKey;
+  const noKeys = !serpCreds.apiKey || !aiCredsReady(ai);
 
   useEffect(() => {
     const v = takeView();

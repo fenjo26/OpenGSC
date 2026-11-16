@@ -9,7 +9,7 @@ import {
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import SeoJobProgress from "@/components/SeoJobProgress";
 import SeoRecentList from "@/components/SeoRecentList";
-import { getSeoGenCreds, getTaskCreds, getSerpCreds, getFirecrawlKey, loadPolicies, getActivePolicyName, getKeywordSource, getKwAuto, getKwLimit } from "@/lib/seo/keys";
+import { getSeoGenCreds, getTaskCreds, getSerpCreds, getFirecrawlKey, loadPolicies, getActivePolicyName, getKeywordSource, getKwAuto, getKwLimit , aiCredsReady } from "@/lib/seo/keys";
 import { getMetricsWithKd } from "@/lib/seo/metricsClient";
 import { COUNTRIES, LANGUAGES, defaultLanguageFor } from "@/lib/seo/regions";
 import { TONES, toneToPrompt } from "@/lib/seo/tones";
@@ -304,7 +304,7 @@ export default function LandingPage() {
   }
 
   const noSerpKey = !serpCreds.apiKey;
-  const noAiKey = !ai.apiKey;
+  const noAiKey = !aiCredsReady(ai);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
