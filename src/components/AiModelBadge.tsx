@@ -115,20 +115,17 @@ export default function AiModelBadge({ pathname }: { pathname: string }) {
               provider than the active one. Name the holder so the fix is one look away. */}
           {missingKey && primaryIssue && misplaced.length === 0 && (
             <div style={{ fontSize: "11px", lineHeight: 1.5, color: "#F59E0B", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: "8px", padding: "8px 10px", marginBottom: "10px" }}>
-              {primaryIssue === "model"
-                ? "Ollama is selected but has no model. Open Settings → AI → Ollama and press Load models — Ollama Cloud lists the hosted catalogue, a local daemon lists what it has pulled."
-                : "Ollama Cloud needs an API key (https://ollama.com/v1). A local daemon needs none — clear the endpoint field to use it instead."}
+              {primaryIssue === "model" ? t("seoBadgeOllamaNoModel") : t("seoBadgeOllamaCloudKey")}
             </div>
           )}
 
           {misplaced.length > 0 && (
             <div style={{ fontSize: "11px", lineHeight: 1.5, color: "#F59E0B", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: "8px", padding: "8px 10px", marginBottom: "10px" }}>
-              {t("seoModelBadgeNoKey")} — key found for{" "}
-              {misplaced.map((m, i) => (<span key={m.provider}>{i > 0 && ", "}<b>{m.name}</b></span>))}
-              {". "}Set it as the active provider in Settings, or paste it for{" "}
-              <b>{providerName(primary.creds.provider)}</b>.
+              {t("seoModelBadgeNoKey")}{" "}
+              {t("seoBadgeMisplacedFound").replace("{names}", misplaced.map((m) => m.name).join(", "))}{" "}
+              {t("seoBadgeMisplacedFix").replace("{active}", providerName(primary.creds.provider))}
               {primary.creds.provider === "ollama" && !primary.creds.model
-                ? " Ollama also needs a model picked (Refresh the list in Settings) — no API key required."
+                ? ` ${t("seoBadgeOllamaModelHint")}`
                 : ""}
             </div>
           )}
@@ -155,8 +152,8 @@ export default function AiModelBadge({ pathname }: { pathname: string }) {
                 <div style={{ fontSize: "12px", fontWeight: 600, color: "#F59E0B" }}>
                   {creds.provider === "ollama"
                     ? (ollamaReadinessIssue(creds) === "model"
-                      ? "Ollama: pick a model (Settings → AI → Ollama → Load models)"
-                      : "Ollama Cloud: add the API key in Settings → AI → Ollama")
+                      ? t("seoBadgeTaskOllamaNoModel")
+                      : t("seoBadgeTaskOllamaCloudKey"))
                     : t("seoModelBadgeNoKey")}
                 </div>
               )}
