@@ -96,6 +96,13 @@ export async function checkUrlSerp(creds: SerpCreds, url: string): Promise<Index
   };
   const serp = await runSerp(creds.provider, creds.apiKey, query, opts);
   if (serp.error) {
+    // `empty_serp` is the provider's honest zero-row answer to a site: query — for an index
+    // check that IS the "not indexed" verdict, not an infrastructure failure. (Rank checks
+    // treat the same code as an error on purpose: an empty page must not wipe a known
+    // position. The two callers read one code differently by intent.)
+    if (/empty_serp$/.test(serp.error)) {
+      return { ...classifySerpIndex(url, [], null), detail: serp.error };
+    }
     // Captcha, auth, network — an error, never a verdict (see the file header).
     return {
       status: "error",
