@@ -272,7 +272,7 @@ async function serperSearch(
 
   // Zero organics on page 1 is a failed lookup (blocked, empty, or a credit body we did not
   // recognise), not "the domain ranks nowhere". Callers compare `error` and keep the old rank.
-  const page1Organic: any[] = Array.isArray(page1.data?.organic) ? page1.data.organic : [];
+  const page1Organic: SerperPageData["organic"] = Array.isArray(page1.data?.organic) ? page1.data.organic : [];
   if (page1Organic.length === 0) {
     return { engine, provider: "serper", keyword, results: [], error: "serper: empty_serp" };
   }

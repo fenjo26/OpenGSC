@@ -17,10 +17,10 @@ export function rankSuccessState(
   return lastSuccessState(at, now, RANK_SUCCESS_STALE_MS);
 }
 
-/** `MM-DD HH:mm` in Asia/Shanghai, the same clock as the site-card badge. */
-export function rankSuccessStamp(at: Date | string): string {
+/** `MM-DD HH:mm` in the server's local zone — the same clock as the site-card badge. */
+export function rankSuccessStamp(at: Date | string, timeZone?: string): string {
   const d = at instanceof Date ? at : new Date(at);
-  return formatLastSuccessStamp(d);
+  return formatLastSuccessStamp(d, timeZone);
 }
 
 /**
@@ -32,8 +32,9 @@ export function rankSuccessLabel(
   at: Date | string | null | undefined,
   templates: { at: string; never: string },
   now = Date.now(),
+  timeZone?: string,
 ): { state: LastSuccessState; text: string } {
   const state = rankSuccessState(at, now);
-  if (state === "never" || at == null || at === "") return { state: "never", text: templates.never };
-  return { state, text: templates.at.replace("{time}", rankSuccessStamp(at)) };
+  if (state === "never" || at == null || at === "") return { state, text: templates.never };
+  return { state, text: templates.at.replace("{time}", rankSuccessStamp(at, timeZone)) };
 }

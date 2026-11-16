@@ -24,8 +24,6 @@ export type SyncErrorLike = {
 /** 48 hours. Older than this — or never — is a warning. Equal to 48h is still fresh. */
 export const GSC_SYNC_STALE_MS = 48 * 60 * 60 * 1000;
 
-/** The badge is wall time in China (the deployment's clock), not the viewer's zone. */
-export const GSC_SYNC_TIME_ZONE = "Asia/Shanghai";
 
 const REAUTH_RE =
   /invalid_grant|invalid_rapt|token has been expired or revoked|token.*expired|token.*revoked|invalid.*token|unauthorized|insufficient.*(permission|scope)|access.?denied/i;
@@ -155,8 +153,12 @@ export function lastSuccessState(
   return now - t > staleAfterMs ? "stale" : "fresh";
 }
 
-/** `MM-DD HH:mm` in Asia/Shanghai. Hour "24" from some ICU builds is midnight. */
-export function formatLastSuccessStamp(at: Date, timeZone = GSC_SYNC_TIME_ZONE): string {
+/**
+ * `MM-DD HH:mm` in the SERVER's local zone (the deployment's own clock — the one the
+ * scheduler's cron hours belong to), or an explicit zone when a test pins one.
+ * Hour "24" from some ICU builds is midnight.
+ */
+export function formatLastSuccessStamp(at: Date, timeZone?: string): string {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone,
     month: "2-digit",

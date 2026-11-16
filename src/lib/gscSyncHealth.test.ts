@@ -94,9 +94,12 @@ test("staleness uses the success timestamp, and 48h is the line", () => {
   assert.equal(lastSuccessState(new Date(now - 3 * 24 * 60 * 60 * 1000), now), "stale");
 });
 
-test("the badge clock is UTC+8, not the metric date", () => {
-  // 2026-10-21 01:14 UTC is 09:14 in Asia/Shanghai — the cron hour in the report.
-  assert.equal(formatLastSuccessStamp(new Date("2026-10-21T01:14:00.000Z")), "10-21 09:14");
+test("the badge clock is the server's zone unless a test pins one", () => {
+  // The deployment's own wall clock, so cron hours and badges agree. Explicit zones pin
+  // the conversion math; no zone means server-local (not asserted — it depends on the host).
+  assert.equal(formatLastSuccessStamp(new Date("2026-10-21T01:14:00.000Z"), "UTC"), "10-21 01:14");
+  assert.equal(formatLastSuccessStamp(new Date("2026-10-21T01:14:00.000Z"), "America/New_York"), "10-20 21:14");
+  assert.equal(formatLastSuccessStamp(new Date("2026-10-21T01:14:00.000Z"), "Asia/Shanghai"), "10-21 09:14");
 });
 
 test("the failure alert names the site, the cause, and the reauth step, in Chinese and English", () => {
