@@ -53,7 +53,13 @@ const DEFAULTS: Record<string, ProviderDefault> = {
 // here changes the browser fallbacks (lib/seo/keys.ts) and the server-side ones (lib/mcp/shared,
 // the generation routes) together — before this constant existed those were 28 separate literals
 // that all said "anthropic", so a deployment could not actually choose its default.
-export const DEFAULT_AI_PROVIDER = "ollama";
+//
+// Upstream keeps "anthropic": the default is what a fresh install with nothing configured sees,
+// and a "no key for Anthropic" banner points at a working setup faster than an Ollama default
+// points at installing a local daemon. Ollama is a fully supported first-class provider (card,
+// keyless local daemons, Cloud via key, fallbacks) — it is just not the assumed default.
+// A fork that runs on Ollama flips this one line.
+export const DEFAULT_AI_PROVIDER = "anthropic";
 
 // Ollama's hosted API. OpenAI-compatible, key required. This is the endpoint every cloud call
 // goes to when the user has not stored one.

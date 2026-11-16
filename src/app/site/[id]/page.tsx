@@ -1119,14 +1119,14 @@ function SetupModal({ domain, siteDbId, onClose, onApplied }: {
               {(() => {
                 const anyConfigured = Object.values(providerStatuses).some(Boolean);
                 const PROVIDERS = [
-                  // Ollama first: it is the app default, so the row a user scans first is the one
-                  // that is actually active for them.
-                  { id: 'ollama',    name: 'Ollama',    color: '#64748B' },
                   { id: 'anthropic', name: 'Anthropic', color: '#CF6B4A' },
                   { id: 'openai',    name: 'OpenAI',    color: '#10A37F' },
                   { id: 'gemini',    name: 'Gemini',    color: '#4285F4' },
                   { id: 'openrouter',name: 'OpenRouter', color: '#7C3AED' },
                   { id: 'zai',       name: 'Z.AI',      color: '#0EA5E9' },
+                  // Ollama last: it is keyless-local friendly, but it is not the app default —
+                  // the default provider is whatever DEFAULT_AI_PROVIDER says (anthropic).
+                  { id: 'ollama',    name: 'Ollama',    color: '#64748B' },
                 ];
                 return (
                   <div style={{ border: `1px solid ${anyConfigured ? 'rgba(139,92,246,0.3)' : 'rgba(245,158,11,0.35)'}`, borderRadius: '10px', padding: '14px 16px', background: anyConfigured ? 'rgba(139,92,246,0.06)' : 'rgba(245,158,11,0.05)' }}>

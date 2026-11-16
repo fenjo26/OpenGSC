@@ -70,7 +70,8 @@ test("local detection covers loopback and private ranges", () => {
 });
 
 test("the rest of the provider table is untouched", () => {
-  assert.equal(DEFAULT_AI_PROVIDER, "ollama");
+  // Upstream default; a fork running on Ollama flips the constant itself.
+  assert.equal(DEFAULT_AI_PROVIDER, "anthropic");
   assert.equal(defaultModelFor("openai"), "gpt-5.6-luna");
   assert.equal(defaultModelFor("anthropic"), "claude-haiku-4-5-20251001");
   assert.equal(defaultModelFor("custom"), "");
