@@ -365,6 +365,7 @@
   "dashSyncFailedQuota": "Échec de la synchronisation : quota Google Search Console dépassé. Réessayez plus tard.",
   "dashSyncFailedNetwork": "Échec de la synchronisation : connexion à Google impossible. Réessayez plus tard.",
   "dashSyncFailedGeneric": "Échec de la synchronisation. Réessayez plus tard.",
+  "dashSyncPartial": "Synchronisation terminée, mais {n} site(s) n'ont pas été mis à jour — leurs cartes l'indiquent.",
   "dashLastSuccessAt": "Dernière synchronisation réussie : {time}",
   "dashLastSuccessNever": "Aucune synchronisation réussie",
   "dashLastSuccessHint": "Heure de la dernière synchronisation réussie de ce site. Les données Search Console ont 2 à 3 jours de retard : ce n'est pas la date de la métrique la plus récente.",

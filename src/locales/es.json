@@ -365,6 +365,7 @@
   "dashSyncFailedQuota": "Error de sincronización: se agotó la cuota de Google Search Console. Inténtalo más tarde.",
   "dashSyncFailedNetwork": "Error de sincronización: falló la conexión con Google. Inténtalo más tarde.",
   "dashSyncFailedGeneric": "Error de sincronización. Inténtalo más tarde.",
+  "dashSyncPartial": "Sincronización terminada, pero {n} sitio(s) no se actualizaron — sus tarjetas lo muestran.",
   "dashLastSuccessAt": "Última sincronización correcta: {time}",
   "dashLastSuccessNever": "Aún no se ha sincronizado",
   "dashLastSuccessHint": "Momento de la última sincronización correcta de este sitio. Los datos de Search Console llegan con 2–3 días de retraso; no es la fecha de la métrica más reciente.",

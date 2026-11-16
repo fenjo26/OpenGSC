@@ -706,6 +706,8 @@ function PortfolioPageContent() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
   const [syncedAt, setSyncedAt] = useState<Date | null>(null);
   const [syncWarning, setSyncWarning] = useState<string | null>(null);
+  // Set when a run synced some sites but errored on others: the count for the soft banner.
+  const [syncPartial, setSyncPartial] = useState<number | null>(null);
 
   // Asked of the server rather than of localStorage, so the label reflects the instance's last
   // sync rather than the last one this particular browser happened to watch finish. See
@@ -797,21 +799,31 @@ function PortfolioPageContent() {
   // tab that started it.
   const settleSync = (s: SyncState) => {
     refetchPortfolio();
-    // Any account error, any site error, and a revoked token stay on screen. The old
-    // path treated "some sites synced" and "completed with errors" as success, then
-    // cleared the warning after half a minute — which is how a dead refresh token
-    // looked like a finished sync.
+    // A revoked token stays on screen. The old path treated "some sites synced" and
+    // "completed with errors" as success, then cleared the warning after half a minute —
+    // which is how a dead refresh token looked like a finished sync.
     const authDead = s.needsReauth || s.failureKind === "reauth";
-    const failed = authDead || s.accountErrors > 0 || s.siteErrors > 0;
+    const errors = (s.accountErrors ?? 0) + (s.siteErrors ?? 0);
+    const syncedSome = (s.sitesSynced ?? 0) > 0;
     if (authDead) {
       setSyncStatus("reauth");
       setSyncWarning("reauth");
+      setSyncPartial(null);
       return;
     }
-    if (failed) {
+    if (errors > 0 && !syncedSome) {
+      // Nothing synced at all — a real failure, the hard banner is honest here.
       setSyncStatus("error");
       setSyncWarning(s.failureKind === "quota" ? "quota" : s.failureKind === "network" ? "network" : "error");
+      setSyncPartial(null);
       return;
+    }
+    if (errors > 0) {
+      // Partial success: most of the portfolio updated, a few sites hit a rate limit or a
+      // flaky property. "Sync failed" over a wall of fresh cards is the lie; name the count.
+      setSyncPartial(errors);
+    } else {
+      setSyncPartial(null);
     }
     // The server's completion time, not this tab's clock — the tab only hears about it on the
     // next poll, up to fifteen seconds later.
@@ -829,6 +841,7 @@ function PortfolioPageContent() {
     if (syncStatus === "syncing") return;
     setSyncStatus("syncing");
     setSyncWarning(null);
+    setSyncPartial(null);
 
     // Also refresh the live Bing/Yandex portfolios so "Sync" updates every engine at once
     // and their tabs are ready (no per-tab reload). Runs in parallel with the GSC sync.
@@ -1763,11 +1776,15 @@ function PortfolioPageContent() {
         </div>
 
         {/* Last successful GSC sync — not the newest DailyMetric date. GSC data lags 2–3 days,
-            so a metric date would go yellow every morning on a healthy site. */}
+            so a metric date would go yellow every morning on a healthy site.
+            SHOWN ONLY WHEN SOMETHING IS WRONG: a fresh sync is the normal state, and the Sync
+            button already carries the portfolio-wide timestamp — repeating it on every card is
+            noise on a large portfolio. The badge's job is to point at the one site whose sync
+            is stale (48h) or never happened. */}
         {engine === "google" && (() => {
           const at = site.lastGscSyncAt ?? null;
           const state = lastSuccessState(at);
-          const warn = state !== "fresh";
+          if (state === "fresh") return null;
           const label = state === "never" || at == null
             ? t("dashLastSuccessNever")
             : t("dashLastSuccessAt").replace("{time}", formatLastSuccessStamp(new Date(at)));
@@ -1781,9 +1798,9 @@ function PortfolioPageContent() {
                 lineHeight: 1.3,
                 padding: "2px 6px",
                 borderRadius: "4px",
-                background: warn ? "rgba(245,158,11,0.16)" : "rgba(255,255,255,0.04)",
-                color: warn ? "#F59E0B" : "var(--color-text-secondary)",
-                border: warn ? "1px solid rgba(245,158,11,0.45)" : "1px solid transparent",
+                background: "rgba(245,158,11,0.16)",
+                color: "#F59E0B",
+                border: "1px solid rgba(245,158,11,0.45)",
               }}
             >
               {label}
@@ -2117,7 +2134,7 @@ function PortfolioPageContent() {
       </div>
 
       {/* ── Sync warning banner ── */}
-      {syncWarning && (
+      {(syncWarning || (syncPartial != null && !syncWarning)) && (
         <div style={{
           margin: "8px 0 0", padding: "10px 16px", borderRadius: "10px",
           background: syncWarning === "reauth" ? "rgba(239,68,68,0.08)" : "rgba(245,158,11,0.10)",
@@ -2143,6 +2160,10 @@ function PortfolioPageContent() {
                   {t("dashSyncReauth")}
                 </button>
               </>
+            ) : syncPartial != null && !syncWarning ? (
+              <span style={{ fontSize: "13px", fontWeight: 700, color: "#B45309" }}>
+                {t("dashSyncPartial").replace("{n}", String(syncPartial))}
+              </span>
             ) : (
               <span style={{ fontSize: "13px", fontWeight: 700, color: "#B45309" }}>
                 {syncWarning === "quota" ? t("dashSyncFailedQuota")
@@ -2151,7 +2172,7 @@ function PortfolioPageContent() {
               </span>
             )}
           </div>
-          <button onClick={() => setSyncWarning(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", padding: "2px" }}>
+          <button onClick={() => { setSyncWarning(null); setSyncPartial(null); }} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", padding: "2px" }}>
             <X size={14} />
           </button>
         </div>
