@@ -5378,6 +5378,8 @@
   "scxPlaceholder": "Markdown。代理在处理该网站前应知道的内容…",
   "scxCustomAdd": "新自定义章节标题…",
   "scxNewSection": "（新章节）",
+  "scxTruncWarn": "超出 4000 字符上限——保存时超出部分会被截断。请拆分到多个自定义章节。",
+  "scxTruncSaved": "已保存，但这些章节超过 4000 字符并被截断",
   "scxCompetitors": "竞争对手",
   "scxCompetitorsNote": "与 AEO 追踪器和 AI share of voice 使用同一个列表——在这里或那里编辑，列表只有一个。",
   "scxName": "名称",

@@ -5378,6 +5378,8 @@
   "scxPlaceholder": "Markdown. What agents should know before working on this site…",
   "scxCustomAdd": "New custom section title…",
   "scxNewSection": "(new section)",
+  "scxTruncWarn": "Over the 4,000-character limit — the tail will be cut on save. Split the text across custom sections.",
+  "scxTruncSaved": "Saved, but these sections exceeded 4,000 characters and were cut",
   "scxCompetitors": "Competitors",
   "scxCompetitorsNote": "The same list the AEO tracker and AI share of voice use — edit it here or there, never two lists.",
   "scxName": "Name",

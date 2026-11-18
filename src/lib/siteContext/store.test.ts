@@ -99,6 +99,33 @@ test("apply: sections set, custom section slugify + delete-on-empty, unknown key
   assert.equal(after.missingSections.includes("positioning"), true);
 });
 
+test("apply: a section over the 4,000-char cap is sliced and named in `truncated`", async () => {
+  const { applyContextUpdates, getSiteContext, SECTION_MAX_CHARS } = await import("./store");
+  // The Context card duplicates this constant client-side — a bump must be a conscious change,
+  // not a silent drift between the counter the user sees and the cut the store makes.
+  assert.equal(SECTION_MAX_CHARS, 4_000);
+
+  // Own site row: the later render test asserts s1's empty sections, so this test must not
+  // fill them as a side effect.
+  await prisma.$executeRawUnsafe(`INSERT INTO Site (id, userId, url) VALUES ('s2', 'u1', 'https://due.example.com/')`);
+  const long = "x".repeat(SECTION_MAX_CHARS + 500);
+  let r = await applyContextUpdates("s2", [
+    { section: "business_overview", content: long },
+    { section: "custom:Fatti Verificati", title: "Fatti", content: long },
+    { section: "current_goal", content: "short and safe" },
+  ], "user");
+  assert.equal(r.applied, 3);
+  assert.deepEqual(r.truncated, ["business_overview", "custom:fatti-verificati"]);
+
+  const ctx = await getSiteContext("s2");
+  assert.equal(ctx.sections.find(s => s.key === "business_overview")!.content.length, SECTION_MAX_CHARS);
+  assert.equal(ctx.sections.find(s => s.key === "custom:fatti-verificati")!.content.length, SECTION_MAX_CHARS);
+
+  // Within the cap: applied whole, nothing reported as cut.
+  r = await applyContextUpdates("s2", [{ section: "current_goal", content: "grow local" }], "user");
+  assert.deepEqual(r.truncated, []);
+});
+
 test("apply: competitors upsert into the AEO list, capped, removable", async () => {
   const { applyContextUpdates, getSiteContext } = await import("./store");
   const { prisma: p } = await import("../prisma");

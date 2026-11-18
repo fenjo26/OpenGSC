@@ -224,6 +224,9 @@ export type ContextPatchOp =
 export interface AppliedUpdate {
   applied: number;
   skipped: string[];
+  /** section keys whose content exceeded SECTION_MAX_CHARS and was sliced to fit — the save
+   *  applied, but the tail is gone; reported so no writer (UI or agent) loses text silently. */
+  truncated: string[];
 }
 
 /**
@@ -236,7 +239,7 @@ export async function applyContextUpdates(
   updates: unknown[],
   who: "user" | "mcp",
 ): Promise<AppliedUpdate> {
-  const out: AppliedUpdate = { applied: 0, skipped: [] };
+  const out: AppliedUpdate = { applied: 0, skipped: [], truncated: [] };
   if (!Array.isArray(updates) || updates.length === 0) return out;
   const site = await prisma.site.findUnique({ where: { id: siteId }, select: { id: true, url: true, aeoCompetitors: true } });
   if (!site) throw new Error("site_not_found");
@@ -252,7 +255,9 @@ export async function applyContextUpdates(
     try {
       if (typeof op.section === "string") {
         const key = op.section;
-        const content = String(op.content ?? "").slice(0, SECTION_MAX_CHARS);
+        const raw = String(op.content ?? "");
+        const content = raw.slice(0, SECTION_MAX_CHARS);
+        const wasTruncated = raw.length > SECTION_MAX_CHARS;
         if (isTypedSectionKey(key)) {
           await prisma.siteContextSection.upsert({
             where: { siteId_key: { siteId, key } },
@@ -260,6 +265,7 @@ export async function applyContextUpdates(
             update: { content, updatedBy: who },
           });
           out.applied++;
+          if (wasTruncated) out.truncated.push(key);
         } else if (isCustomKey(key) || key.startsWith("custom:")) {
           const safeKey = key.startsWith("custom:") && isCustomKey(key) ? key : `custom:${slugify(key.replace(/^custom:?/, ""))}`;
           if (!content.trim()) {
@@ -280,6 +286,7 @@ export async function applyContextUpdates(
               continue;
             }
             out.applied++;
+            if (wasTruncated) out.truncated.push(safeKey);
           }
         } else {
           out.skipped.push(`unknown section key "${key.slice(0, 40)}"`);

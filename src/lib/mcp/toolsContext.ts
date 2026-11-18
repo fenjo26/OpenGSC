@@ -59,7 +59,7 @@ export const CONTEXT_TOOLS: McpTool[] = [
     readOnly: false,
     idempotent: true,
     description:
-      "Write back to the site's shared AI context (Project Memory) — the same store get_site_context reads and the Context card in the site's settings tab edits. Use it for durable learnings (positioning the user explained, competitors worth tracking, pages that matter, writing preferences) and to append a research-log entry whenever a session spent paid units. One bad op skips itself with a reason in `skipped`; the rest of the batch still applies.",
+      "Write back to the site's shared AI context (Project Memory) — the same store get_site_context reads and the Context card in the site's settings tab edits. Use it for durable learnings (positioning the user explained, competitors worth tracking, pages that matter, writing preferences) and to append a research-log entry whenever a session spent paid units. One bad op skips itself with a reason in `skipped`; the rest of the batch still applies. Section content is capped at 4,000 characters — a section that had to be sliced is named in `truncated`, so split long material across several custom sections instead of losing the tail.",
     inputSchema: {
       type: "object",
       properties: {

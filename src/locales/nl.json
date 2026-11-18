@@ -5378,6 +5378,8 @@
   "scxPlaceholder": "Markdown. Wat agents moeten weten voordat ze aan deze website werken…",
   "scxCustomAdd": "Titel voor nieuwe aangepaste sectie…",
   "scxNewSection": "(nieuwe sectie)",
+  "scxTruncWarn": "Meer dan de limiet van 4.000 tekens — het overschot wordt weggeknipt bij het opslaan. Verdeel de tekst over meerdere secties.",
+  "scxTruncSaved": "Opgeslagen, maar deze secties waren langer dan 4.000 tekens en zijn ingekort",
   "scxCompetitors": "Concurrenten",
   "scxCompetitorsNote": "Dezelfde lijst die de AEO-tracker en AI share of voice gebruiken — bewerk hem hier of daar, nooit twee lijsten.",
   "scxName": "Naam",

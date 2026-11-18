@@ -46,6 +46,23 @@ const miniBtn: React.CSSProperties = {
 const th: React.CSSProperties = { textAlign: "left", fontSize: "10px", fontWeight: 600, color: "var(--color-text-tertiary)", padding: "4px 8px", textTransform: "uppercase", letterSpacing: "0.04em" };
 const td: React.CSSProperties = { fontSize: "12px", color: "var(--color-text-secondary)", padding: "4px 8px", verticalAlign: "top" };
 
+// The store slices every section to this cap on save — silently, which ate a user's pasted
+// text once. The counter below makes the cap visible BEFORE saving. Keep in sync with
+// SECTION_MAX_CHARS in src/lib/siteContext/store.ts: importing it here would drag prisma
+// into the client bundle, so the constant is duplicated with a pointer instead.
+const SECTION_MAX_CHARS = 4_000;
+
+function CharCount({ value }: { value: string }) {
+  const { t } = useLanguage();
+  const over = value.length > SECTION_MAX_CHARS;
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", marginTop: "3px", fontSize: "10px", color: over ? "#EF4444" : "var(--color-text-tertiary)" }}>
+      {over ? <span>{t("scxTruncWarn")}</span> : <span />}
+      <span style={{ fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>{value.length.toLocaleString()} / {SECTION_MAX_CHARS.toLocaleString()}</span>
+    </div>
+  );
+}
+
 function By({ who }: { who: string }) {
   if (who !== "mcp") return null;
   return (
@@ -60,6 +77,7 @@ export default function SiteContextCard({ siteDbId }: { siteDbId: string }) {
   const [ctx, setCtx] = useState<Context | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [truncSaved, setTruncSaved] = useState<string[]>([]);
   const [addComp, setAddComp] = useState({ name: "", domain: "", notes: "" });
   const [addPage, setAddPage] = useState({ url: "", role: "other", topic: "" });
   const [customTitle, setCustomTitle] = useState("");
@@ -77,11 +95,18 @@ export default function SiteContextCard({ siteDbId }: { siteDbId: string }) {
 
   const send = async (updates: unknown[]) => {
     setSaving(true);
+    setTruncSaved([]);
     try {
-      await fetch("/api/site-context", {
+      const r = await fetch("/api/site-context", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ siteId: siteDbId, updates }),
       });
+      // The store reports sections it had to slice to the 4,000-char cap — show them, so
+      // an over-limit paste is never "saved fine" on screen and shorter after a refresh.
+      const d = r.ok ? await r.json().catch(() => null) : null;
+      if (Array.isArray((d as { truncated?: unknown })?.truncated) && ((d as { truncated: string[] }).truncated.length)) {
+        setTruncSaved((d as { truncated: string[] }).truncated);
+      }
       await load();
     } finally { setSaving(false); }
   };
@@ -106,6 +131,12 @@ export default function SiteContextCard({ siteDbId }: { siteDbId: string }) {
             .map(k => TYPED.find(x => x.key === k))
             .filter((x): x is { key: string; label: SectionLabelKey } => !!x)
             .map(x => t(x.label)).join(", ")}
+        </div>
+      )}
+
+      {truncSaved.length > 0 && (
+        <div style={{ margin: "10px 0 4px", fontSize: "11.5px", color: "#EF4444" }}>
+          {t("scxTruncSaved")}: <span style={{ fontFamily: "monospace" }}>{truncSaved.join(", ")}</span>
         </div>
       )}
 
@@ -168,6 +199,7 @@ export default function SiteContextCard({ siteDbId }: { siteDbId: string }) {
               placeholder={t("scxPlaceholder")}
               style={{ ...inputStyle(), width: "100%", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }}
             />
+            <CharCount value={drafts[key] ?? ""} />
           </div>
         );
       })}
@@ -188,6 +220,7 @@ export default function SiteContextCard({ siteDbId }: { siteDbId: string }) {
             rows={3}
             style={{ ...inputStyle(), width: "100%", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }}
           />
+          <CharCount value={drafts[s.key] ?? s.content} />
         </div>
       ))}
       <div style={{ display: "flex", gap: "8px", marginTop: "10px" }}>

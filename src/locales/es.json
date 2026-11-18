@@ -5378,6 +5378,8 @@
   "scxPlaceholder": "Markdown. Lo que el agente debe saber antes de trabajar en este sitio…",
   "scxCustomAdd": "Título de la nueva sección…",
   "scxNewSection": "(nueva sección)",
+  "scxTruncWarn": "Se supera el límite de 4 000 caracteres: el final se cortará al guardar. Divide el texto en varias secciones.",
+  "scxTruncSaved": "Guardado, pero estas secciones superaban 4 000 caracteres y fueron cortadas",
   "scxCompetitors": "Competidores",
   "scxCompetitorsNote": "La misma lista que usan el tracker AEO y AI share of voice — edítala aquí o allí, una sola lista.",
   "scxName": "Nombre",
