@@ -15,6 +15,9 @@ type PartnerEntry<Id extends string = string> = {
   imgStyle: CSSProperties;
   /** Translation key of a running promo badge; omit when the partner has none. */
   promo?: "partnersPromoMarket369" | "partnersPromoZooproxy" | "partnersPromoLoopway" | "partnersPromoZikcards" | "partnersPromoPsbproxy";
+  /** Per-partner link rel override. Default at the render sites is "noopener noreferrer";
+   *  set this only when the partner marked OUR links the same way (mirrored treatment). */
+  rel?: string;
 };
 
 // 369 Links Market leads the wall while their top-up bonus promo runs (user's call,
@@ -196,10 +199,12 @@ const PARTNERS = [
   {
     id: "Telegramexpert",
     name: "Telegram Expert",
-    href: "https://ru.telegramexpert.pro/?utm_source=opengsc",
+    href: "https://goo.su/AQbU",
     logo: "/partners/telegramexpert-logo.png",
     tileBg: "#ffffff",
     imgStyle: { maxWidth: "84px", maxHeight: "24px" } as CSSProperties,
+    // They placed our links as nofollow sponsored — mirrored back (2026-11-18).
+    rel: "nofollow sponsored noopener noreferrer",
   },
 ] as const satisfies readonly PartnerEntry[];
 

@@ -301,7 +301,7 @@ function FeedbackModal({ mode, onClose }: { mode: "feedback" | "thanks"; onClose
                       key={p.id}
                       href={p.href}
                       target="_blank"
-                      rel="noopener noreferrer"
+                      rel={p.rel ?? "noopener noreferrer"}
                       title={p.promo ? `${p.name} — ${t(p.promo)}` : p.name}
                       style={{
                         position: "relative",
