@@ -193,6 +193,14 @@ const PARTNERS = [
     tileBg: "#ffffff",
     imgStyle: { maxHeight: "40px" } as CSSProperties,
   },
+  {
+    id: "Telegramexpert",
+    name: "Telegram Expert",
+    href: "https://ru.telegramexpert.pro/?utm_source=opengsc",
+    logo: "/partners/telegramexpert-logo.png",
+    tileBg: "#ffffff",
+    imgStyle: { maxWidth: "84px", maxHeight: "24px" } as CSSProperties,
+  },
 ] as const satisfies readonly PartnerEntry[];
 
 export type PartnerId = (typeof PARTNERS)[number]["id"];
