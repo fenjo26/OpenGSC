@@ -206,6 +206,14 @@ const PARTNERS = [
     // They placed our links as nofollow sponsored — mirrored back (2026-11-18).
     rel: "nofollow sponsored noopener noreferrer",
   },
+  {
+    id: "Huoxing",
+    name: "Huoxing Shop",
+    href: "https://hxpuzi.com/?utm_source=opengsc",
+    logo: "/partners/huoxing-logo.png",
+    tileBg: "#ffffff",
+    imgStyle: { maxWidth: "84px", maxHeight: "24px" } as CSSProperties,
+  },
 ] as const satisfies readonly PartnerEntry[];
 
 export type PartnerId = (typeof PARTNERS)[number]["id"];
