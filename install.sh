@@ -268,13 +268,31 @@ success "App running on port ${APP_PORT} (pm2 name: opengsc)"
 if [[ "${INSTALL_NGINX^^}" == "Y" ]]; then
   header "Nginx"
 
+  # Which nginx, and why not just `apt-get install nginx`: see scripts/nginx-safety.sh.
+  # Fresh box → nginx.org stable (falls back to the distro package if that is not possible).
+  # nginx already there → only its own security updates; it is never replaced, because that
+  # would change the config layout under any other sites the server hosts.
+  source scripts/nginx-safety.sh
   if ! command -v nginx &>/dev/null; then
     wait_apt
-    info "Installing Nginx..."
-    apt-get install -y -qq nginx
+    info "Installing Nginx from nginx.org (stable branch)..."
+    if nginx_org_install; then
+      success "Nginx $(nginx_upstream_version) installed from nginx.org"
+    else
+      warn "nginx.org packages not available here — installing the distribution's nginx instead"
+      wait_apt
+      apt-get install -y -qq nginx
+    fi
+  else
+    wait_apt
+    info "Nginx $(nginx_upstream_version) already installed — applying its pending security updates..."
+    nginx_upgrade_in_place
   fi
+  systemctl enable --now nginx >/dev/null 2>&1 || true
 
-  NGINX_CONF="/etc/nginx/sites-available/opengsc"
+  # Debian layout (sites-available + symlink) when nginx.conf reads sites-enabled; conf.d
+  # otherwise — nginx.org's package has no sites-enabled, and a file there would never load.
+  NGINX_CONF="$(nginx_site_conf_path)"
 
   cat > "$NGINX_CONF" <<EOF
 # Access log without query strings: credentials travel there (?token= for Claude Desktop connector
@@ -310,11 +328,22 @@ server {
 }
 EOF
 
-  ln -sf "$NGINX_CONF" /etc/nginx/sites-enabled/opengsc
-  rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
-  nginx -t && systemctl reload nginx
-
-  success "Nginx configured → http://${DOMAIN}"
+  if [[ "$NGINX_CONF" == /etc/nginx/sites-available/* ]]; then
+    ln -sf "$NGINX_CONF" /etc/nginx/sites-enabled/opengsc
+    rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
+  elif [ -f /etc/nginx/conf.d/default.conf ] \
+       && grep -q 'server_name  *localhost' /etc/nginx/conf.d/default.conf \
+       && grep -q '/usr/share/nginx/html' /etc/nginx/conf.d/default.conf; then
+    # nginx.org's stock welcome page. Renamed, not deleted, and only when it is still the stock
+    # file — a default.conf the operator edited is theirs.
+    mv /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/default.conf.disabled
+  fi
+  if nginx -t; then
+    systemctl reload nginx || systemctl restart nginx
+    success "Nginx configured → http://${DOMAIN} ($NGINX_CONF)"
+  else
+    warn "nginx -t rejected the config (see above) — fix it, then: systemctl reload nginx"
+  fi
 
   # ─── SSL ──────────────────────────────────────────────────────────────────
   if [[ "${SETUP_SSL^^}" == "Y" ]]; then
@@ -326,6 +355,13 @@ EOF
       warn "SSL setup failed — make sure the domain points to this server's IP"
     success "SSL certificate installed"
   fi
+fi
+
+# ─── Nginx security check ──────────────────────────────────────────────────────
+# Read-only: reports a vulnerable build or HTTP/2 left on a vulnerable build, with the fix.
+# Runs after certbot so the HTTPS server block it wrote is part of the check.
+if [[ "${INSTALL_NGINX^^}" == "Y" ]] && command -v nginx &>/dev/null; then
+  nginx_security_report
 fi
 
 # ─── Firewall ─────────────────────────────────────────────────────────────────

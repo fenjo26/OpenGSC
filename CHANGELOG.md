@@ -5,6 +5,13 @@ All notable changes to OpenGSC. Dates are release dates; the version shown in
 
 ## [Unreleased]
 
+### Security — nginx 1.30.7 / 1.31.9 (CVE-2026-123007, HTTP/2 remote code execution)
+
+- **The installer no longer installs an outdated nginx.** On a server without nginx it now installs from nginx.org's official repository (stable branch, signing key verified), which already carries 1.30.7 with the 2026-11-18 fixes. Distribution packages (1.22 on Debian 12, 1.24 on Ubuntu 24.04) had no fix on release day. If nginx.org has no packages for the release, the installer falls back to the distribution's nginx and says so.
+- **An existing nginx is never replaced** — swapping packages would change the config layout under other sites on the same server. The installer only applies its pending security updates, keeping your config files.
+- **A read-only nginx check** runs at the end of the install and on every update (it appears in the update log in Settings): it says whether the installed nginx has the fixes — by version for nginx.org builds, by the package changelog for Debian/Ubuntu builds, which keep the old version number — and warns if HTTP/2 or HTTP/3 is enabled on a build without them, with the exact fix. It does not touch nginx or its config.
+- **If you installed before this release:** run `nginx -v` and `grep -rn http2 /etc/nginx/`. See [Installation → Nginx](wiki/Installation.md#nginx-which-package-and-security-updates).
+
 ### Added — AI Readiness: access, Common Crawl presence, web-graph authority
 
 - **A new card at the top of each site's Audit tab** answers why an AI engine may not be reading the site. One button runs three free checks (no API keys) and rolls them into a **0–100 score with an A–F grade**.

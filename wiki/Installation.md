@@ -45,10 +45,26 @@ What it does, in order:
 4. Writes `.env` (skipped if `.env` already exists): a random `NEXTAUTH_SECRET`, `NEXTAUTH_URL` built from your answers, the database at `/root/opengsc/data/prod.db`, and the Google Client ID / Secret it asks you for. It prints the exact redirect URI to paste into Google Cloud.
 5. `npm install`, `prisma generate`, `prisma db push`, `npm run build` (adds swap first if needed).
 6. Starts the app with PM2 as **`opengsc`** on port **3000** and registers PM2 to start on boot.
-7. Optionally configures **Nginx** as a reverse proxy and issues a **Let's Encrypt** certificate with Certbot.
+7. Optionally configures **Nginx** as a reverse proxy and issues a **Let's Encrypt** certificate with Certbot. See [Nginx: which package, and security updates](#nginx-which-package-and-security-updates) below.
 8. Opens ports 22/80/443 in **UFW** (and 3000 when there's no Nginx).
 
 When it finishes it prints the URL to open. Then continue with [First Login, Accounts and Team](First-Login-and-Team).
+
+### Nginx: which package, and security updates
+
+- **No nginx on the server yet** → the installer adds nginx.org's official repository (stable branch, signing key checked against its published fingerprints) and installs from there, so security releases arrive with a normal `apt upgrade`. The site file goes to `/etc/nginx/conf.d/opengsc.conf`. If nginx.org has no packages for your release or cannot be reached, it falls back to the distribution's nginx and says so.
+- **nginx already installed** → it is kept as it is, never replaced by another package (that would change the config layout under any other sites on the server). The installer only applies pending security updates from the same source, keeping your config files. The site file goes where your nginx reads sites: `/etc/nginx/sites-available/opengsc` on a Debian/Ubuntu-packaged nginx.
+- **At the end, and on every update from the UI**, a read-only check reports whether your nginx has the 2026-11-18 security fixes (1.30.7 / 1.31.9, CVE-2026-123007 and nine more) and warns if HTTP/2 is enabled on a build without them. It never edits your nginx config.
+
+Check by hand:
+
+```bash
+nginx -v                                   # nginx.org build: 1.30.7+ (stable) or 1.31.9+ (mainline)
+zgrep -h CVE-2026-123007 /usr/share/doc/nginx*/changelog.Debian.gz   # distribution build: fix present?
+grep -rn http2 /etc/nginx/                 # HTTP/2 on = the remote-code-execution path until patched
+```
+
+Until a fixed build is installed, removing `http2` from the `listen` lines (or `http2 off;`) and `nginx -t && systemctl reload nginx` closes the code-execution path; the other fixes still need the upgrade.
 
 ### Answers and the URL you get
 

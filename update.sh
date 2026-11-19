@@ -180,6 +180,14 @@ npx prisma db push || fail_and_rollback "prisma db push"
 source scripts/ensure-build-swap.sh
 ensure_build_swap
 
+# nginx is not managed by this script, but the update log is where an owner who only uses the
+# UI will see that their nginx needs a security update (2026-11-18: CVE-2026-123007, HTTP/2 RCE).
+# Read-only and non-fatal: it never touches nginx or its config. See scripts/nginx-safety.sh.
+if [ -f scripts/nginx-safety.sh ]; then
+  source scripts/nginx-safety.sh
+  nginx_security_report || true
+fi
+
 # The build erases .next before writing the new one, so an app left running crash-loops
 # through the entire build window — nginx answers 502 and pm2 burns restarts on a server
 # that cannot start. Stopped first, started after: the window is exactly as long, but it
