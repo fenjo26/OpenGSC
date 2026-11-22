@@ -16,7 +16,7 @@
 
 import { extractAuditHtml, missingSecurityHeaders, robotsDirectivesConflict, type AuditHtmlSignals } from "@/lib/audit/pageSignals";
 import { evaluateAuditPageRules, type AuditPageFacts } from "@/lib/audit/rules";
-import { safeFetch, type SafeFetchOptions } from "@/lib/security/safeFetch";
+import { safeFetch, SafeFetchError, type SafeFetchOptions } from "@/lib/security/safeFetch";
 import { META_LIMITS, metaLength } from "@/lib/seo/metaLimits";
 import type { FindingCategory, FindingCode, FindingSeverity, LiteAuditReport, RawFinding } from "./types";
 
@@ -212,19 +212,25 @@ async function fetchHome(fetcher: WidgetFetcher, startUrl: string, deadline: num
       // Hop pages are fetched small: a 3xx body is junk, and the byte cap doubles as a cheap
       // guard while we are only interested in the status and the Location header.
       outcome = await timedFetch(fetcher, current, deadline, { redirect: "manual", maxBytes: 64 * 1024 });
-    } catch {
-      throw new LiteAuditError("unreachable");
+    } catch (error) {
+      // safeFetch never truncates, it rejects — so the cap also rejects a FINAL page larger
+      // than the hop budget (a typical home page) before the status is even knowable. A body
+      // that big is never a hop, so it gets the one thing it deserves: the full page budget.
+      if (error instanceof SafeFetchError && error.code === "response_too_large") {
+        try {
+          outcome = await timedFetch(fetcher, current, deadline, { redirect: "manual" });
+        } catch {
+          throw new LiteAuditError("unreachable");
+        }
+      } else {
+        throw new LiteAuditError("unreachable");
+      }
     }
     const location = outcome.headers["location"];
     const isRedirect = outcome.status >= 300 && outcome.status < 400 && outcome.status !== 304 && Boolean(location);
     if (!isRedirect) {
-      // The final target deserves the full page budget — the hop-sized cap above must not
-      // truncate a real page, so it is fetched once more at full size.
-      if (hops > 0) {
-        try {
-          outcome = await timedFetch(fetcher, current, deadline);
-        } catch { /* keep the small-fetch version rather than failing the audit */ }
-      }
+      // A small fetch that SUCCEEDED already holds the complete body (safeFetch rejects
+      // rather than truncates), so the final page needs no second request here.
       return toPageCheck(outcome, started, hops);
     }
     hops++;

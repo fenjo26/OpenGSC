@@ -5,9 +5,9 @@ import assert from "node:assert/strict";
 // every fetch goes out with allowPrivate: false, and every fetch stays inside the audited
 // host's origin.
 
-import { normalizeAuditDomain, runLiteAudit, scoreFromFindings, topFindings, LiteAuditError, type FetchOutcome, type WidgetFetcher } from "./liteAudit";
+import { normalizeAuditDomain, runLiteAudit, scoreFromFindings, topFindings, LiteAuditError, PAGE_MAX_BYTES, type FetchOutcome, type WidgetFetcher } from "./liteAudit";
 import type { FindingCode } from "./types";
-import type { SafeFetchOptions } from "@/lib/security/safeFetch";
+import { SafeFetchError, type SafeFetchOptions } from "@/lib/security/safeFetch";
 
 // ─── fixtures ─────────────────────────────────────────────────────────────────
 
@@ -180,6 +180,36 @@ test("an unreachable site throws unreachable, not a half-report", async () => {
   const fetcher: WidgetFetcher = async () => { throw new Error("network down"); };
   await assert.rejects(() => runLiteAudit("down.example", { fetcher }), (error: unknown) =>
     error instanceof LiteAuditError && error.code === "unreachable");
+});
+
+test("a home page larger than the hop budget is audited, not reported unreachable (#42)", async () => {
+  const records: Recorded[] = [];
+  const bigHome = goodPage("https://big.example/", "Big Example Home Page With A Proper Title")
+    .replace("</body>", `<!--${"x".repeat(200_000)}--></body>`); // way past the 64 KB hop cap
+  const fetcher: WidgetFetcher = async (url, options) => {
+    records.push({ url, options });
+    const parsed = new URL(url);
+    assert.equal(parsed.hostname, "big.example");
+    const notFound = (): FetchOutcome => ({ ok: false, status: 404, url, redirected: false, headers: {}, body: "" });
+    if (parsed.pathname === "/robots.txt" || parsed.pathname === "/sitemap.xml") return notFound();
+    if (options.method === "HEAD") {
+      return { ok: true, status: 200, url, redirected: false, headers: {}, body: "" };
+    }
+    const body = parsed.pathname === "/" ? bigHome : goodPage(url, "About The Big Example Company Team And Services");
+    // Enforce the byte cap the way safeFetch does: reject, never truncate.
+    if (body.length > (options.maxBytes ?? Infinity)) {
+      throw new SafeFetchError("response_too_large", "test: over the byte cap");
+    }
+    return { ok: true, status: 200, url, redirected: false, headers: { "content-type": "text/html; charset=utf-8" }, body };
+  };
+  const report = await runLiteAudit("big.example", { fetcher });
+  assert.ok(report.score >= 80, `score ${report.score} — the big page must be audited, not failed`);
+  assert.equal(report.pagesChecked, 3); // home + /about + /pricing picked from the menu
+  // The home page was requested twice: once with the hop-sized cap, then at the full budget.
+  const homeFetches = records.filter(r => new URL(r.url).pathname === "/" && r.options.method !== "HEAD");
+  assert.equal(homeFetches.length, 2, `expected 2 home fetches, got ${homeFetches.length}`);
+  assert.equal(homeFetches[0].options.maxBytes, 64 * 1024);
+  assert.equal(homeFetches[1].options.maxBytes, PAGE_MAX_BYTES);
 });
 
 test("evidence is language-neutral: numbers, limits and paths only", async () => {
