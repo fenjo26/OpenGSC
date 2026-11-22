@@ -2,18 +2,19 @@
 // route is the gate (CONTRACT.md §0.6 — a leak through here is the wave's worst outcome).
 //
 //   GET  ?key=&lang=  → the public widget config (no secrets, no owner data)
-//   POST { key, domain, lang, captchaToken } → the lite audit
+//   POST { key, domain, lang, captchaToken, from } → the lite audit
 //
 // Everything the POST reads of the owner's data: User.widgetSettings by widgetKey. Nothing
-// else. Guards, in order: key lookup → origin allow-list → Turnstile → rate limit → cache
-// → audit. Error responses carry short codes only — no internal detail, ever.
+// else. Guards, in order: key lookup → origin allow-list (POST only — see below) →
+// Turnstile → rate limit → cache → audit. Error responses carry short codes only — no
+// internal detail, ever.
 
 import { NextResponse } from "next/server";
 import { clientIpFromHeaders } from "@/lib/security/clientIp";
 import { auditCache } from "@/lib/leads/cache";
 import { LEAD_STRINGS, localizeFindings } from "@/lib/leads/i18n";
 import { LiteAuditError, normalizeAuditDomain, runLiteAudit, topFindings } from "@/lib/leads/liteAudit";
-import { checkOrigin } from "@/lib/leads/originGuard";
+import { checkOriginWithEmbedder } from "@/lib/leads/originGuard";
 import { hashIp, ipSalt, takeAuditQuota, WindowCounter } from "@/lib/leads/ratelimit";
 import { findUserByWidgetKey, publicWidgetConfig } from "@/lib/leads/settings";
 import { normalizeLeadLang } from "@/lib/leads/types";
@@ -55,10 +56,11 @@ export async function GET(req: Request) {
   const params = new URL(req.url).searchParams;
   const widget = await findUserByWidgetKey(params.get("key") ?? "");
   if (!widget) return NextResponse.json({ error: "not_found" }, { status: 404 });
-  const { origin, referer } = originAndReferer(req);
-  if (!checkOrigin(origin, referer, widget.settings.allowedOrigins)) {
-    return NextResponse.json({ error: "origin" }, { status: 403 });
-  }
+  // No origin check here: the config is accent colour, logo URL, consent text and the
+  // Turnstile site key — all of it ships to every visitor's browser anyway, and the widget
+  // iframe's own GET is same-origin to the instance, so its Origin/Referer can never name
+  // the embedding site (see checkOriginWithEmbedder). The origin allow-list gates the
+  // expensive part — the audit POST — where the iframe passes `from` explicitly.
   // lang is echoed only to pick the consent text; the config itself is language-neutral.
   const lang = normalizeLeadLang(params.get("lang"));
   const consent = widget.settings.consentText || LEAD_STRINGS[lang].consent;
@@ -77,7 +79,9 @@ export async function POST(req: Request) {
     }
 
     const { origin, referer } = originAndReferer(req);
-    if (!checkOrigin(origin, referer, widget.settings.allowedOrigins)) {
+    // `from` is the embedding page's URL, read from the iframe's document.referrer by the
+    // embed page — see checkOriginWithEmbedder for why the headers alone cannot carry it.
+    if (!checkOriginWithEmbedder(origin, referer, typeof body.from === "string" ? body.from.slice(0, 300) : null, widget.settings.allowedOrigins)) {
       return NextResponse.json({ error: "origin" }, { status: 403 });
     }
 

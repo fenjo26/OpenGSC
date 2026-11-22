@@ -5,7 +5,7 @@
 export * from "./types";
 export { LEAD_STRINGS, t2, localizeFindings, consequenceOf } from "./i18n";
 export { hashIp, ipSalt, WindowCounter, takeAuditQuota, takeLeadQuota, AUDIT_LIMITS } from "./ratelimit";
-export { checkOrigin, normalizeOriginHost, refererHost } from "./originGuard";
+export { checkOrigin, checkOriginWithEmbedder, normalizeOriginHost, refererHost } from "./originGuard";
 export { AuditCache, auditCache, CACHE_TTL_MS, TOKEN_TTL_MS } from "./cache";
 export {
   runLiteAudit, widgetFetch, normalizeAuditDomain, LiteAuditError,

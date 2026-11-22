@@ -35,9 +35,7 @@ export function refererHost(referer: string | null): string {
  * - empty `allowedOrigins` → always true (operator's explicit choice, warned in the UI);
  * - otherwise the Origin header (or, absent it, the Referer) must name an allowed host;
  *   an entry matches itself and its subdomains ("example.com" covers "www.example.com");
- * - no Origin and no Referer with a non-empty allow-list → false. The widget lives in an
- *   iframe and its POSTs are cross-origin, so a real embedder always sends one of the two;
- *   anything else is a script, and strictness costs nothing legitimate.
+ * - no Origin and no Referer with a non-empty allow-list → false.
  */
 export function checkOrigin(
   origin: string | null,
@@ -53,4 +51,31 @@ export function checkOrigin(
   return entries.some(entry =>
     candidate === entry || candidate.endsWith(`.${entry}`),
   );
+}
+
+/**
+ * The widget's own gate: the request's Origin/Referer PLUS the host of the page that
+ * actually embeds the iframe.
+ *
+ * The widget runs inside an iframe served by the OpenGSC instance, so every request it
+ * makes is same-origin TO THE INSTANCE: browsers send no Origin header on same-origin
+ * GETs, an Origin naming the instance itself on POSTs, and the instance's global
+ * `Referrer-Policy: no-referrer` strips the Referer. The headers alone can therefore
+ * never name the embedding site — the one thing the allow-list is about. The iframe
+ * document's referrer does: the embed page reads `document.referrer` (governed by the
+ * EMBEDDING page's policy, not ours) and passes it here as `embedder`.
+ *
+ * The explicit host is spoofable by a script — but so is an Origin header outside a
+ * browser. The list polices casual embedding; the real gates of this contour stay the
+ * Turnstile check and the rate limits.
+ */
+export function checkOriginWithEmbedder(
+  origin: string | null,
+  referer: string | null,
+  embedder: string | null,
+  allowedOrigins: string[],
+): boolean {
+  if (checkOrigin(origin, referer, allowedOrigins)) return true;
+  if (!embedder) return false;
+  return checkOrigin(embedder, null, allowedOrigins);
 }

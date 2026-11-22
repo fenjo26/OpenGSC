@@ -95,6 +95,14 @@ function WidgetInner() {
   const W = LEAD_STRINGS[lang].widget;
   const tr = useCallback((k: string) => t2(lang, k), [lang]);
 
+  // The embedding page's URL — this iframe document's referrer. Our requests to
+  // /api/public/* are same-origin to the instance (no Origin on GETs, the instance's own
+  // host in POST Origins, Referer stripped by its global no-referrer policy), so this is
+  // the only thing that tells the origin allow-list WHICH site embeds the widget. It is
+  // governed by the embedding page's referrer policy, not ours, and it never changes
+  // during the widget's life — hence computed once.
+  const embedRef = useMemo(() => (typeof document === "undefined" ? "" : document.referrer), []);
+
   const [config, setConfig] = useState<PublicWidgetConfig | null>(null);
   const [domain, setDomain] = useState("");
   const [phase, setPhase] = useState<"loading" | "input" | "checking" | "result" | "sending" | "done" | "off">("loading");
@@ -168,7 +176,7 @@ function WidgetInner() {
     setError("");
     setPhase("checking");
     try {
-      const data = await postJson("/api/public/audit", { key, domain, lang, captchaToken });
+      const data = await postJson("/api/public/audit", { key, domain, lang, captchaToken, from: embedRef });
       setScore(Number(data.score ?? 0));
       setFindings(Array.isArray(data.findings) ? (data.findings as PublicFinding[]) : []);
       setToken(String(data.token ?? ""));
@@ -187,7 +195,7 @@ function WidgetInner() {
     setError("");
     setPhase("sending");
     try {
-      const data = await postJson("/api/public/lead", { key, token, email, name, message, lang, consent: true });
+      const data = await postJson("/api/public/lead", { key, token, email, name, message, lang, consent: true, from: embedRef });
       setEmailed(data.emailed === true);
       setPhase("done");
     } catch (err) {

@@ -20,7 +20,7 @@ no keys, no other leads. Everything else is a leak.
 | Rate limit | `ratelimit.ts` | per IP-hash: 5 audits/hour, 20/day, 10 leads/hour; per widget key: 200 audits/day. 429 + `Retry-After` |
 | IP privacy | `ratelimit.ts` (`hashIp`) | an IP exists in memory only as `sha256(per-process salt + ":" + ip)`; the salt dies with the process; the raw IP is stored **nowhere** |
 | Turnstile | `/api/public/audit` | verified server-side when `TURNSTILE_SITE_KEY`/`TURNSTILE_SECRET_KEY` are set; without keys the widget works and the settings card warns «can be spammed» |
-| Origin | `originGuard.ts` | `Origin`/`Referer` hostname must be in `allowedOrigins` (empty = anywhere, warned); subdomains covered; no header + non-empty list = refused |
+| Origin | `originGuard.ts` | POSTs only: `Origin`/`Referer` hostname, or the embedding page's host (`from`, read from the iframe's `document.referrer` by the embed page — the iframe's own requests are same-origin to the instance and never name the embedder), must be in `allowedOrigins` (empty = anywhere, warned); subdomains covered. The public GET config is key-only: it carries no secrets and ships to every visitor's browser anyway |
 | Token | `cache.ts` | a Lead (and its report e-mail) requires a one-time token minted by a completed audit — the SMTP relay cannot be driven by posting the form |
 | Cache | `cache.ts` | results cached 15 min per key+domain; the cache stores RAW findings so one entry serves every language and no translated string crosses visitors |
 | Errors | public routes | short codes only (`rate_limited`, `invalid_domain`, `token`, …); no internal detail |

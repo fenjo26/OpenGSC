@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 // N9 — Origin/Referer allow-list for the public widget routes.
 
-import { checkOrigin, normalizeOriginHost, refererHost } from "./originGuard";
+import { checkOrigin, checkOriginWithEmbedder, normalizeOriginHost, refererHost } from "./originGuard";
 
 test("empty allow-list allows everything (the operator's explicit choice)", () => {
   assert.equal(checkOrigin("https://spam.example", null, []), true);
@@ -42,4 +42,25 @@ test("normalizeOriginHost/refererHost tolerate junk", () => {
   assert.equal(refererHost(null), "");
   assert.equal(refererHost("not-a-url"), "");
   assert.equal(refererHost("https://agency.com/page?x=1"), "agency.com");
+});
+
+// The iframe reality (#42): same-origin GETs carry no Origin, POST Origins name the
+// instance itself, and the Referer is stripped — so the embed page passes the referrer
+// of the EMBEDDING page explicitly, and that host decides.
+test("checkOriginWithEmbedder: the embedding page's host is the decider when headers cannot be", () => {
+  const list = ["agency.com"];
+  // The widget's actual situation: no Origin, no Referer, `from` carries the embedder.
+  assert.equal(checkOriginWithEmbedder(null, null, "https://agency.com/pricing", list), true);
+  assert.equal(checkOriginWithEmbedder(null, null, "https://www.agency.com/", list), true);
+  assert.equal(checkOriginWithEmbedder(null, null, "https://evil.io/x", list), false);
+  assert.equal(checkOriginWithEmbedder(null, null, "", list), false);
+  assert.equal(checkOriginWithEmbedder(null, null, null, list), false);
+  // A bare host works too (normalizeOriginHost adds the protocol).
+  assert.equal(checkOriginWithEmbedder(null, null, "agency.com", list), true);
+  // Headers still win when they do name a host — and still refuse when nothing does.
+  assert.equal(checkOriginWithEmbedder("https://agency.com", null, null, list), true);
+  assert.equal(checkOriginWithEmbedder("https://instance.example", null, "https://agency.com/", list), true);
+  assert.equal(checkOriginWithEmbedder("https://instance.example", null, "https://evil.io/", list), false);
+  // Empty allow-list stays "allow everything".
+  assert.equal(checkOriginWithEmbedder(null, null, null, []), true);
 });
