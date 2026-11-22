@@ -366,6 +366,8 @@
   "dashSyncFailedNetwork": "Sync failed: the connection to Google failed. Try again later.",
   "dashSyncFailedGeneric": "Sync failed. Try again later.",
   "dashSyncPartial": "Sync finished, but {n} site(s) failed to update — their cards will show it.",
+  "dashSyncPartialShow": "show these sites",
+  "dashFilterSyncFailed": "failed to sync",
   "dashLastSuccessAt": "Last successful sync: {time}",
   "dashLastSuccessNever": "No successful sync yet",
   "dashLastSuccessHint": "When this site last synced successfully. Search Console data itself lags 2–3 days, so this is not the newest metric date.",

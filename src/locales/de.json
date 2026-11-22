@@ -366,6 +366,8 @@
   "dashSyncFailedNetwork": "Sync fehlgeschlagen: Verbindung zu Google fehlgeschlagen. Bitte später erneut versuchen.",
   "dashSyncFailedGeneric": "Sync fehlgeschlagen. Bitte später erneut versuchen.",
   "dashSyncPartial": "Synchronisierung abgeschlossen, aber {n} Seite(n) wurden nicht aktualisiert — ihre Karten zeigen es.",
+  "dashSyncPartialShow": "diese Websites anzeigen",
+  "dashFilterSyncFailed": "nicht synchronisiert",
   "dashLastSuccessAt": "Letzter erfolgreicher Sync: {time}",
   "dashLastSuccessNever": "Noch kein erfolgreicher Sync",
   "dashLastSuccessHint": "Zeitpunkt des letzten erfolgreichen Syncs dieser Website. Search-Console-Daten hinken 2–3 Tage hinterher — das ist nicht das neueste Metrikdatum.",

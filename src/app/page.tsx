@@ -708,6 +708,12 @@ function PortfolioPageContent() {
   const [syncWarning, setSyncWarning] = useState<string | null>(null);
   // Set when a run synced some sites but errored on others: the count for the soft banner.
   const [syncPartial, setSyncPartial] = useState<number | null>(null);
+  // Hostnames of the properties the last run errored on, and the filter the banner's text
+  // toggles: with a few hundred cards, hunting the one stale badge by scrolling is not a
+  // user's job. The list comes from the server (fresh run, or the persisted outcome after a
+  // restart), so the filter works on a dashboard opened long after the sync finished.
+  const [syncFailedHosts, setSyncFailedHosts] = useState<string[]>([]);
+  const [syncFailedOnly, setSyncFailedOnly] = useState(false);
 
   // Asked of the server rather than of localStorage, so the label reflects the instance's last
   // sync rather than the last one this particular browser happened to watch finish. See
@@ -809,6 +815,8 @@ function PortfolioPageContent() {
       setSyncStatus("reauth");
       setSyncWarning("reauth");
       setSyncPartial(null);
+      setSyncFailedHosts([]);
+      setSyncFailedOnly(false);
       return;
     }
     if (errors > 0 && !syncedSome) {
@@ -816,14 +824,21 @@ function PortfolioPageContent() {
       setSyncStatus("error");
       setSyncWarning(s.failureKind === "quota" ? "quota" : s.failureKind === "network" ? "network" : "error");
       setSyncPartial(null);
+      setSyncFailedHosts([]);
+      setSyncFailedOnly(false);
       return;
     }
     if (errors > 0) {
       // Partial success: most of the portfolio updated, a few sites hit a rate limit or a
       // flaky property. "Sync failed" over a wall of fresh cards is the lie; name the count.
       setSyncPartial(errors);
+      setSyncFailedHosts(s.failedSites ?? []);
     } else {
       setSyncPartial(null);
+      // A clean run ends the hunt: an active "didn't update" filter over an empty list would
+      // show zero cards with no explanation.
+      setSyncFailedHosts([]);
+      setSyncFailedOnly(false);
     }
     // The server's completion time, not this tab's clock — the tab only hears about it on the
     // next poll, up to fifteen seconds later.
@@ -982,6 +997,7 @@ function PortfolioPageContent() {
     !!activeTag,
     !!activeMarket,
     uptimeFilter !== "all",
+    syncFailedOnly,
   ].filter(Boolean).length;
 
   // Fetch Ahrefs DR for all dashboard domains (chunked; server caches 7 days).
@@ -1070,6 +1086,13 @@ function PortfolioPageContent() {
     return activeMarket === "__unknown__" ? m === null : m === activeMarket;
   };
 
+  // The sync error list names GSC properties ("example.com", "www.example.com", occasionally
+  // still carrying a protocol or an sc-domain: prefix); the cards are keyed by s.url. One
+  // normaliser on both sides keeps the "didn't update" membership test honest.
+  const normHost = (h: string) =>
+    h.toLowerCase().trim().replace("sc-domain:", "").replace(/^https?:\/\//, "").replace(/\/$/, "").replace(/^www\./, "");
+  const syncFailedSet = useMemo(() => new Set(syncFailedHosts.map(normHost)), [syncFailedHosts]);
+
   const filtered = sitesWithData
     .filter(s => {
       const domain = getDomain(s.url).toLowerCase();
@@ -1081,6 +1104,10 @@ function PortfolioPageContent() {
       if (branded === "nonbranded" && brandedRatio(s.url) >= 0.45) return false;
       if (activeTag && !(siteTags[s.id] || []).includes(activeTag)) return false;
       if (activeMarket && !marketMatch(s)) return false;
+      // "Didn't update" filter, toggled from the sync banner: keep only the cards the last
+      // GSC run errored on. Google tab only — the host list is GSC-specific, so on the
+      // Bing/Yandex walls it would happily match nothing and show an empty grid.
+      if (engine === "google" && syncFailedOnly && !syncFailedSet.has(normHost(getDomain(s.url)))) return false;
       // Uptime status filter: down/up strictly; "issues" = offline or slow. Sites without a
       // monitor (no badge) survive only under "all" — not being watched is not a status.
       if (uptimeFilter !== "all") {
@@ -2161,9 +2188,32 @@ function PortfolioPageContent() {
                 </button>
               </>
             ) : syncPartial != null && !syncWarning ? (
-              <span style={{ fontSize: "13px", fontWeight: 700, color: "#B45309" }}>
-                {t("dashSyncPartial").replace("{n}", String(syncPartial))}
-              </span>
+              // The partial-failure text is itself the action: one click filters the wall down
+              // to exactly the sites this run failed on. As a plain <span> it names a number and
+              // leaves the hunt through three hundred cards to the user. Only clickable when the
+              // server actually sent the hostnames — an outcome persisted by an older build has
+              // the count but not the list, and a filter that matches nothing is worse than none.
+              syncFailedHosts.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setSyncFailedOnly(v => !v)}
+                  title={t("dashSyncPartialShow")}
+                  style={{
+                    background: "none", border: "none", cursor: "pointer", padding: 0,
+                    fontSize: "13px", fontWeight: 700, color: "#B45309", textAlign: "left",
+                    textDecoration: syncFailedOnly ? "none" : "underline",
+                    textDecorationStyle: "dotted",
+                    textUnderlineOffset: "3px",
+                  }}
+                >
+                  {t("dashSyncPartial").replace("{n}", String(syncPartial))}
+                  {!syncFailedOnly && <span style={{ fontWeight: 500 }}> · {t("dashSyncPartialShow")}</span>}
+                </button>
+              ) : (
+                <span style={{ fontSize: "13px", fontWeight: 700, color: "#B45309" }}>
+                  {t("dashSyncPartial").replace("{n}", String(syncPartial))}
+                </span>
+              )
             ) : (
               <span style={{ fontSize: "13px", fontWeight: 700, color: "#B45309" }}>
                 {syncWarning === "quota" ? t("dashSyncFailedQuota")
@@ -2185,6 +2235,12 @@ function PortfolioPageContent() {
             <FilterChip
               label={`🏷 ${activeTag}`}
               onRemove={() => setActiveTag(null)}
+            />
+          )}
+          {syncFailedOnly && (
+            <FilterChip
+              label={`⚠ ${t("dashFilterSyncFailed")}: ${syncFailedSet.size}`}
+              onRemove={() => setSyncFailedOnly(false)}
             />
           )}
           {branded !== "all" && (

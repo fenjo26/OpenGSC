@@ -366,6 +366,8 @@
   "dashSyncFailedNetwork": "Synchronisatie mislukt: de verbinding met Google mislukte. Probeer het later opnieuw.",
   "dashSyncFailedGeneric": "Synchronisatie mislukt. Probeer het later opnieuw.",
   "dashSyncPartial": "Synchronisatie voltooid, maar {n} site(s) zijn niet bijgewerkt — hun kaarten laten het zien.",
+  "dashSyncPartialShow": "toon deze sites",
+  "dashFilterSyncFailed": "niet gesynchroniseerd",
   "dashLastSuccessAt": "Laatste geslaagde synchronisatie: {time}",
   "dashLastSuccessNever": "Nog geen geslaagde synchronisatie",
   "dashLastSuccessHint": "Wanneer deze site voor het laatst succesvol synchroniseerde. Search Console-data zelf loopt 2–3 dagen achter, dus dit is de uurwerk van de sync, niet van de data.",

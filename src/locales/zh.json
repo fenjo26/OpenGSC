@@ -366,6 +366,8 @@
   "dashSyncFailedNetwork": "同步失败：连接 Google 时出现网络错误，请稍后再试。",
   "dashSyncFailedGeneric": "同步失败，请稍后再试。",
   "dashSyncPartial": "同步已完成，但 {n} 个站点未更新——其卡片会显示。",
+  "dashSyncPartialShow": "显示这些站点",
+  "dashFilterSyncFailed": "同步失败",
   "dashLastSuccessAt": "最后成功同步：{time}",
   "dashLastSuccessNever": "尚未同步成功",
   "dashLastSuccessHint": "该站点上一次同步成功的时间。GSC 数据本身会晚 2–3 天，所以这里不是最新指标日期。",

@@ -753,6 +753,7 @@ export async function runGscSync(): Promise<SyncResult | null> {
       siteErrors: result.siteErrors.length,
       needsReauth: summary.needsReauth,
       failureKind: failed ? summary.failureKind : null,
+      failedSites: result.siteErrors.map(e => e.site),
     }).catch(() => {});
   }
 

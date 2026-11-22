@@ -28,6 +28,12 @@ export async function GET() {
     ? ((accountErrors > 0 || siteErrors > 0) ? summary?.failureKind ?? null : null)
     : (persisted?.failureKind ?? null);
   const sitesSynced = memoryFresh ? result.sitesSynced : (persisted?.sitesSynced ?? 0);
+  // Which properties errored — the dashboard turns this into a "show only these sites" filter,
+  // because hunting one stale card across three hundred is not a user's job. Memory first (the
+  // freshest spelling of the run), the persisted outcome second so a restart keeps the answer.
+  const failedSites = memoryFresh
+    ? result.siteErrors.map(e => e.site)
+    : (persisted?.failedSites ?? []);
   const completedAt = memoryFresh ? result.completedAt : (persisted?.at ? new Date(persisted.at) : (persistedSuccess ? new Date(persistedSuccess) : null));
   return NextResponse.json({
     syncing: isSyncInProgress(),
@@ -44,6 +50,7 @@ export async function GET() {
       needsReauth,
       accountErrors,
       siteErrors,
+      failedSites,
       failureKind,
       completedAt,
     } : null,

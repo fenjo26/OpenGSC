@@ -25,6 +25,12 @@ export type SyncOutcome = {
   siteErrors: number;
   needsReauth: boolean;
   failureKind: SyncFailureKind | null;
+  /**
+   * Hostnames of the properties that errored in this run, so "N sites didn't update" can be
+   * turned into a filter that names them. Capped — a runaway run that fails every property
+   * must not bloat User.syncSettings with hundreds of entries.
+   */
+  failedSites?: string[];
 };
 
 export type SyncSchedule = {
@@ -66,6 +72,9 @@ export const DEFAULT_SYNC_SCHEDULE: SyncSchedule = {
   lastOutcome: null,
   syncHealth: null,
 };
+
+/** How many failed-site hostnames survive into the persisted outcome. */
+const MAX_FAILED_SITES = 100;
 
 export async function getSyncSchedule(userId: string): Promise<SyncSchedule> {
   try {
@@ -119,6 +128,7 @@ export async function recordSyncFinished(
     siteErrors: number;
     needsReauth: boolean;
     failureKind: SyncFailureKind | null;
+    failedSites?: string[];
   },
 ): Promise<void> {
   const failed = outcome.accountErrors > 0 || outcome.siteErrors > 0 || outcome.needsReauth;
@@ -130,6 +140,7 @@ export async function recordSyncFinished(
     siteErrors: outcome.siteErrors,
     needsReauth: outcome.needsReauth || outcome.failureKind === "reauth",
     failureKind: failed ? (outcome.failureKind ?? "other") : null,
+    failedSites: (outcome.failedSites ?? []).slice(0, MAX_FAILED_SITES),
   };
   for (const userId of new Set(userIds)) {
     try {

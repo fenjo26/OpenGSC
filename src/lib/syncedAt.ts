@@ -28,6 +28,8 @@ export type SyncState = {
   needsReauth: boolean;
   accountErrors: number;
   siteErrors: number;
+  /** Hostnames of the properties that errored in the last run — feeds the "show them" filter. */
+  failedSites: string[];
   sitesSynced: number;
   failureKind: SyncFailureKind | null;
 };
@@ -60,6 +62,9 @@ export async function fetchSyncState(): Promise<SyncState | null> {
       needsReauth: !!s?.lastResult?.needsReauth || failureKind === "reauth",
       accountErrors: Number(s?.lastResult?.accountErrors ?? 0),
       siteErrors: Number(s?.lastResult?.siteErrors ?? 0),
+      failedSites: Array.isArray(s?.lastResult?.failedSites)
+        ? s.lastResult.failedSites.filter((h: unknown): h is string => typeof h === "string" && h.length > 0)
+        : [],
       sitesSynced: Number(s?.lastResult?.sitesSynced ?? 0),
       failureKind,
     };
