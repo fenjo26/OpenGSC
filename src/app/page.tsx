@@ -1247,7 +1247,10 @@ function PortfolioPageContent() {
     setArchiveBusy(id);
     try {
       const res = await fetch(`/api/gsc/sites?id=${encodeURIComponent(id)}`, { method: "DELETE" });
-      if (res.ok) setSites(prev => prev.filter(s => s.id !== id));
+      // 404 = the row is already gone (deleted from another tab, or a double click got two
+      // requests past the disabled button before the re-render). The goal state is reached —
+      // take the card off the wall instead of leaving a row whose every retry 404s again.
+      if (res.ok || res.status === 404) setSites(prev => prev.filter(s => s.id !== id));
     } catch { /* no-op: the row stays, user can retry */ }
     finally { setArchiveBusy(null); }
   };
