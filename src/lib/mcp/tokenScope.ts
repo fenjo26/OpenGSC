@@ -101,9 +101,42 @@ export function refusal(
 
 export const KNOWN_IPS_MAX = 20;
 
-/** Alert when a credential that already has a history shows up from an address it never used. */
+/**
+ * The subnet an address is remembered by: IPv4 /24, IPv6 /64. Hosted MCP clients egress
+ * from published ranges whose host bits rotate on every call (claude.ai rotates inside
+ * 160.79.104.0/21 and 153.61.208.0/20), so exact-address comparison flags nearly every
+ * call as "new" (#41). The /24·/64 grain absorbs that rotation — a whole /21 is at most
+ * 8 entries — while a genuinely different network still alerts. Residential ISP rotation
+ * inside one /24 is quieter for humans too.
+ */
+export function subnetOf(ip: string): string {
+  if (!ip) return "";
+  // IPv4-mapped IPv6 (::ffff:1.2.3.4) — compare as the plain IPv4 address it is.
+  const mapped = ip.toLowerCase().match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/);
+  const plain = mapped ? mapped[1] : ip;
+  if (plain.includes(":")) {
+    // Expand "::" into the missing zero groups, then keep the first four groups (/64).
+    const halves = plain.split("::");
+    if (halves.length === 2) {
+      const head = halves[0] ? halves[0].split(":") : [];
+      const tail = halves[1] ? halves[1].split(":") : [];
+      const missing = 8 - head.length - tail.length;
+      return [...head, ...Array(Math.max(0, missing)).fill("0"), ...tail].slice(0, 4).join(":");
+    }
+    return plain.split(":").slice(0, 4).join(":");
+  }
+  const parts = plain.split(".");
+  return parts.length === 4 ? parts.slice(0, 3).join(".") : plain;
+}
+
+/**
+ * Alert when a credential that already has a history shows up from a network it never
+ * used. `knownIps` keeps EXACT addresses (the UI shows them); the comparison is by subnet.
+ */
 export function isNewIp(knownIps: readonly string[], ip: string): boolean {
-  return ip !== "unknown" && !!ip && knownIps.length > 0 && !knownIps.includes(ip);
+  if (ip === "unknown" || !ip || knownIps.length === 0) return false;
+  const subnet = subnetOf(ip);
+  return !knownIps.some(known => subnetOf(known) === subnet);
 }
 
 /** The known-address list after a use: most recent first, bounded. */

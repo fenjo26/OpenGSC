@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Capability } from "@/lib/team/roles";
-import { grantCapabilities, isLinkTokenFormat, isMainTokenFormat, isNewIp, parseKnownIps, refusal, rememberIp, requiredCapabilities, KNOWN_IPS_MAX } from "./tokenScope";
+import { grantCapabilities, isLinkTokenFormat, isMainTokenFormat, isNewIp, parseKnownIps, refusal, rememberIp, requiredCapabilities, subnetOf, KNOWN_IPS_MAX } from "./tokenScope";
 
 const OWNER: Capability[] = ["read", "act", "write", "spend", "publish", "manageMembers", "manageAdmins", "manageSecrets", "manageInstance"];
 const read = { cost: "local" };
@@ -51,6 +51,24 @@ test("new-address alerts skip the first use and unknown addresses", () => {
   assert.equal(isNewIp(["1.1.1.1"], "1.1.1.1"), false);
   assert.equal(isNewIp(["1.1.1.1"], "2.2.2.2"), true);
   assert.equal(isNewIp(["1.1.1.1"], "unknown"), false);
+});
+
+test("addresses are compared by subnet, not exactly — rotating egress stays quiet (#41)", () => {
+  // IPv4: a claude.ai-style pool rotating the host bits inside a /24 is NOT new.
+  assert.equal(isNewIp(["160.79.104.7"], "160.79.104.199"), false);
+  // ...but crossing into a range it never used still alerts.
+  assert.equal(isNewIp(["160.79.104.7"], "160.79.105.7"), true);
+  // IPv6: /64 grain, compressed and expanded spellings of the same prefix agree.
+  assert.equal(isNewIp(["2600:1f16::1"], "2600:1f16:0:0:0:0:0:2"), false);
+  assert.equal(isNewIp(["2600:1f16::1"], "2600:1f17::1"), true);
+  // IPv4-mapped IPv6 compares as the IPv4 address it carries.
+  assert.equal(isNewIp(["::ffff:1.2.3.4"], "1.2.3.99"), false);
+  // The stored list keeps exact addresses; legacy rows compare by subnet without migration.
+  assert.deepEqual(subnetOf("1.2.3.4"), "1.2.3");
+  assert.deepEqual(subnetOf("2600:1f16::1"), "2600:1f16:0:0");
+  assert.deepEqual(subnetOf("::ffff:5.6.7.8"), "5.6.7");
+  assert.deepEqual(subnetOf(""), "");
+  assert.deepEqual(subnetOf("garbage"), "garbage");
 });
 
 test("known addresses stay bounded, most recent first", () => {
