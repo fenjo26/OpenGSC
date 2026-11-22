@@ -1092,6 +1092,13 @@ function PortfolioPageContent() {
   const normHost = (h: string) =>
     h.toLowerCase().trim().replace("sc-domain:", "").replace(/^https?:\/\//, "").replace(/\/$/, "").replace(/^www\./, "");
   const syncFailedSet = useMemo(() => new Set(syncFailedHosts.map(normHost)), [syncFailedHosts]);
+  // Fallback for outcomes recorded before the failed-site list existed: the banner's own text
+  // points at the card badges, so the same signal — last successful sync older than 48h, or
+  // never — stands in for the exact list until the next run writes one.
+  const syncStaleIds = useMemo(
+    () => new Set(sites.filter(s => lastSuccessState(s.lastGscSyncAt ?? null) !== "fresh").map(s => s.id)),
+    [sites],
+  );
 
   const filtered = sitesWithData
     .filter(s => {
@@ -1105,9 +1112,15 @@ function PortfolioPageContent() {
       if (activeTag && !(siteTags[s.id] || []).includes(activeTag)) return false;
       if (activeMarket && !marketMatch(s)) return false;
       // "Didn't update" filter, toggled from the sync banner: keep only the cards the last
-      // GSC run errored on. Google tab only — the host list is GSC-specific, so on the
-      // Bing/Yandex walls it would happily match nothing and show an empty grid.
-      if (engine === "google" && syncFailedOnly && !syncFailedSet.has(normHost(getDomain(s.url)))) return false;
+      // GSC run errored on — the exact host list when the run recorded one, otherwise the
+      // stale-badge set the banner's text refers to. Google tab only: the host list is
+      // GSC-specific, so on the Bing/Yandex walls it would match nothing and empty the grid.
+      if (engine === "google" && syncFailedOnly) {
+        const keep = syncFailedHosts.length > 0
+          ? syncFailedSet.has(normHost(domain))
+          : syncStaleIds.has(s.id);
+        if (!keep) return false;
+      }
       // Uptime status filter: down/up strictly; "issues" = offline or slow. Sites without a
       // monitor (no badge) survive only under "all" — not being watched is not a status.
       if (uptimeFilter !== "all") {
@@ -2192,11 +2205,11 @@ function PortfolioPageContent() {
               </>
             ) : syncPartial != null && !syncWarning ? (
               // The partial-failure text is itself the action: one click filters the wall down
-              // to exactly the sites this run failed on. As a plain <span> it names a number and
-              // leaves the hunt through three hundred cards to the user. Only clickable when the
-              // server actually sent the hostnames — an outcome persisted by an older build has
-              // the count but not the list, and a filter that matches nothing is worse than none.
-              syncFailedHosts.length > 0 ? (
+              // to the sites this run failed on. As a plain <span> it names a number and leaves
+              // the hunt through three hundred cards to the user. Clickable when either signal
+              // exists: the exact host list from the run, or — for outcomes persisted before the
+              // list was recorded — the stale-badge cards the text itself points at.
+              (syncFailedHosts.length > 0 || syncStaleIds.size > 0) ? (
                 <button
                   type="button"
                   onClick={() => setSyncFailedOnly(v => !v)}
@@ -2242,7 +2255,7 @@ function PortfolioPageContent() {
           )}
           {syncFailedOnly && (
             <FilterChip
-              label={`⚠ ${t("dashFilterSyncFailed")}: ${syncFailedSet.size}`}
+              label={`⚠ ${t("dashFilterSyncFailed")}: ${syncFailedHosts.length > 0 ? syncFailedSet.size : syncStaleIds.size}`}
               onRemove={() => setSyncFailedOnly(false)}
             />
           )}
