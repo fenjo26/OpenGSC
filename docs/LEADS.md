@@ -59,6 +59,13 @@ visitor's browser language is used. Width 320–720 px; the theme follows
 seven languages) — the public page runs outside the app's LanguageProvider, and the locale
 files are N0/R's.
 
+**Allow-list caveat:** the embedding page's host is learned from the iframe's
+`document.referrer`, which follows the EMBEDDING page's referrer policy. A page served
+with `Referrer-Policy: no-referrer` (some WordPress security plugins do this) sends an
+empty referrer: the widget then loads, but with an allow-list set its POSTs answer
+403 `origin`. Either relax the embedder's policy for that page or leave the allow-list
+empty (Turnstile + rate limits remain the real gates).
+
 ## The lite audit (`src/lib/leads/liteAudit.ts`)
 
 Page parsing and rules are **imported from the runtime Site Audit**

@@ -100,24 +100,6 @@ function shouldRecord(key: string, ip: string): boolean {
   return true;
 }
 
-/**
- * At most one new-address alert per credential per window. Subnet comparison (tokenScope)
- * already caps a rotating egress pool at a handful of alerts ever; this flattens even
- * those first ones, so the ping stays rare enough to be taken seriously. Same per-process
- * trade-off as `lastRecorded`: a restart forgets the clock, the subnet list does not.
- */
-const NEW_IP_ALERT_EVERY_MS = 6 * 60 * 60_000;
-const lastNewIpAlert = new Map<string, number>();
-
-function shouldAlertNewIp(key: string): boolean {
-  const now = Date.now();
-  const prev = lastNewIpAlert.get(key);
-  if (prev && now - prev < NEW_IP_ALERT_EVERY_MS) return false;
-  if (lastNewIpAlert.size > 1000) lastNewIpAlert.clear();
-  lastNewIpAlert.set(key, now);
-  return true;
-}
-
 export interface TokenUsage {
   lastUsedAt: string | null;
   lastIp: string | null;
@@ -148,7 +130,7 @@ async function recordMainUse(userId: string, ip: string): Promise<void> {
   const next: TokenUsage = { lastUsedAt: new Date().toISOString(), lastIp: ip === "unknown" ? usage.lastIp : ip, knownIps: rememberIp(usage.knownIps, ip) };
   const value = JSON.stringify(next);
   await prisma.instanceSetting.upsert({ where: { key: mainUsageKey(userId) }, create: { key: mainUsageKey(userId), value }, update: { value } });
-  if (alert && shouldAlertNewIp(`main:${userId}`)) await alertNewAddress(userId, displayOfMain(userId), ip);
+  if (alert) await alertNewAddress(userId, displayOfMain(userId), ip);
 }
 
 async function recordLinkUse(
@@ -162,7 +144,7 @@ async function recordLinkUse(
     where: { id: link.id },
     data: { lastUsedAt: new Date(), ...(ip !== "unknown" ? { lastIp: ip } : {}), knownIps: JSON.stringify(rememberIp(known, ip)) },
   });
-  if (alert && shouldAlertNewIp(`link:${link.id}`)) await alertNewAddress(link.userId, Promise.resolve(link.label ? `"${link.label}"` : "connector link"), ip);
+  if (alert) await alertNewAddress(link.userId, Promise.resolve(link.label ? `"${link.label}"` : "connector link"), ip);
 }
 
 async function displayOfMain(userId: string): Promise<string> {

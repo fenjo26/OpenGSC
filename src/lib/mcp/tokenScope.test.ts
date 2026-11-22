@@ -71,15 +71,44 @@ test("addresses are compared by subnet, not exactly — rotating egress stays qu
   assert.deepEqual(subnetOf("garbage"), "garbage");
 });
 
-test("known addresses stay bounded, most recent first", () => {
+test("known addresses stay bounded, ONE ENTRY PER SUBNET, most recent first", () => {
   let ips: string[] = [];
-  for (let i = 0; i < KNOWN_IPS_MAX + 5; i++) ips = rememberIp(ips, `10.0.0.${i}`);
+  for (let i = 0; i < KNOWN_IPS_MAX + 5; i++) ips = rememberIp(ips, `10.${i}.0.1`); // each its own /24
   assert.equal(ips.length, KNOWN_IPS_MAX);
-  assert.equal(ips[0], `10.0.0.${KNOWN_IPS_MAX + 4}`);
+  assert.equal(ips[0], `10.${KNOWN_IPS_MAX + 4}.0.1`);
+  // Rotation inside a subnet REPLACES that subnet's older entry — one subnet, one slot,
+  // so a rotating pool can never evict subnets that were already seen.
+  assert.deepEqual(rememberIp(["160.79.104.7", "160.79.105.7"], "160.79.104.199"), ["160.79.104.199", "160.79.105.7"]);
   assert.deepEqual(rememberIp(["a", "b"], "b"), ["b", "a"]);
   assert.deepEqual(rememberIp(["a"], "unknown"), ["a"]);
   assert.deepEqual(parseKnownIps('["a",1,"b"]'), ["a", "b"]);
   assert.deepEqual(parseKnownIps("not json"), []);
+});
+
+test("a rotating egress pool goes silent after warm-up — 24 subnets, 24 slots (#41)", () => {
+  // claude.ai's published ranges: 160.79.104.0/21 (8 /24s) + 153.61.208.0/20 (16 /24s).
+  const subnets: string[] = [];
+  for (let i = 104; i <= 111; i++) subnets.push(`160.79.${i}.`);
+  for (let i = 208; i <= 223; i++) subnets.push(`153.61.${i}.`);
+  const draw = () => `${subnets[Math.floor(Math.random() * subnets.length)]}${Math.floor(Math.random() * 254) + 1}`;
+  // Warm-up: at most one alert per unseen subnet — never per call.
+  let ips: string[] = [];
+  let warmupAlerts = 0;
+  for (let i = 0; i < 500; i++) {
+    const ip = draw();
+    if (isNewIp(ips, ip)) warmupAlerts++;
+    ips = rememberIp(ips, ip);
+  }
+  assert.equal(ips.length, 24, `expected one slot per subnet, got ${ips.length}`);
+  assert.ok(warmupAlerts <= 24, `warm-up fired ${warmupAlerts} alerts for 24 subnets`);
+  // The complaint itself: after warm-up, hundreds of rotating calls produce zero alerts.
+  let afterWarmup = 0;
+  for (let i = 0; i < 100; i++) {
+    const ip = draw();
+    if (isNewIp(ips, ip)) afterWarmup++;
+    ips = rememberIp(ips, ip);
+  }
+  assert.equal(afterWarmup, 0, `rotating pool still alerting: ${afterWarmup} of 100 calls`);
 });
 
 test("token shapes: only minted tokens, never a stored hash form", async () => {

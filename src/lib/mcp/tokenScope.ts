@@ -99,7 +99,7 @@ export function refusal(
 
 // ─── usage tracking ─────────────────────────────────────────────────────────────
 
-export const KNOWN_IPS_MAX = 20;
+export const KNOWN_IPS_MAX = 32;
 
 /**
  * The subnet an address is remembered by: IPv4 /24, IPv6 /64. Hosted MCP clients egress
@@ -131,7 +131,7 @@ export function subnetOf(ip: string): string {
 
 /**
  * Alert when a credential that already has a history shows up from a network it never
- * used. `knownIps` keeps EXACT addresses (the UI shows them); the comparison is by subnet.
+ * used. `knownIps` keeps exact addresses (latest per subnet); the comparison is by subnet.
  */
 export function isNewIp(knownIps: readonly string[], ip: string): boolean {
   if (ip === "unknown" || !ip || knownIps.length === 0) return false;
@@ -139,10 +139,17 @@ export function isNewIp(knownIps: readonly string[], ip: string): boolean {
   return !knownIps.some(known => subnetOf(known) === subnet);
 }
 
-/** The known-address list after a use: most recent first, bounded. */
+/**
+ * The known-address list after a use: most recent first, bounded, ONE ENTRY PER SUBNET —
+ * a fresh address replaces the older entry from its own /24 or /64. Exact-address
+ * entries would churn the whole list under rotation (one slot per call), evict subnets
+ * that were already seen and re-alert on them forever; the published claude.ai ranges
+ * alone span 24 subnets, more than the old 20 slots could ever hold.
+ */
 export function rememberIp(knownIps: readonly string[], ip: string): string[] {
   if (!ip || ip === "unknown") return [...knownIps];
-  return [ip, ...knownIps.filter(x => x !== ip)].slice(0, KNOWN_IPS_MAX);
+  const subnet = subnetOf(ip);
+  return [ip, ...knownIps.filter(known => subnetOf(known) !== subnet)].slice(0, KNOWN_IPS_MAX);
 }
 
 export function parseKnownIps(raw: unknown): string[] {
