@@ -14,7 +14,7 @@ type PartnerEntry<Id extends string = string> = {
   tileBg: string;
   imgStyle: CSSProperties;
   /** Translation key of a running promo badge; omit when the partner has none. */
-  promo?: "partnersPromoMarket369" | "partnersPromoZooproxy" | "partnersPromoLoopway" | "partnersPromoZikcards" | "partnersPromoPsbproxy";
+  promo?: "partnersPromoMarket369" | "partnersPromoZooproxy" | "partnersPromoLoopway" | "partnersPromoZikcards" | "partnersPromoPsbproxy" | "partnersPromoProxylane";
   /** Per-partner link rel override. Default at the render sites is "noopener noreferrer";
    *  set this only when the partner marked OUR links the same way (mirrored treatment). */
   rel?: string;
@@ -213,6 +213,15 @@ const PARTNERS = [
     logo: "/partners/huoxing-logo.png",
     tileBg: "#ffffff",
     imgStyle: { maxWidth: "84px", maxHeight: "24px" } as CSSProperties,
+  },
+  {
+    id: "Proxylane",
+    name: "ProxyLane",
+    href: "https://proxylane.dev/?utm_source=opengsc",
+    logo: "/partners/proxylane-logo.png",
+    tileBg: "#0b0e16",
+    imgStyle: { maxHeight: "36px" } as CSSProperties,
+    promo: "partnersPromoProxylane",
   },
 ] as const satisfies readonly PartnerEntry[];
 
