@@ -44,6 +44,18 @@ test("refusals name the right fix", () => {
   assert.match(refusal("publish_post", publish, "owner", OWNER, spendOnly) ?? "", /does not allow/);
   assert.match(refusal("update_site_context", write, "viewer", ["read"], header) ?? "", /role \(viewer\)/);
   assert.match(refusal("execute_sql_query", sql, "owner", OWNER, url) ?? "", /manageSecrets/);
+  // A capability no link can carry (execute_sql_query is owner-only): the fix is the header alone.
+  // Sending the user to create a link would have them grant spending for nothing, and still be refused.
+  const fullLink = { kind: "link" as const, linkId: "l", allowWrite: true, allowSpend: true };
+  const sqlViaUrl = refusal("execute_sql_query", sql, "owner", OWNER, url) ?? "";
+  const sqlViaLink = refusal("execute_sql_query", sql, "owner", OWNER, fullLink) ?? "";
+  for (const text of [sqlViaUrl, sqlViaLink]) {
+    assert.match(text, /manageSecrets/);
+    assert.match(text, /"Authorization: Bearer" header/);
+    assert.doesNotMatch(text, /create a (connector )?link/);
+    assert.doesNotMatch(text, /publishing and spending/);
+  }
+  assert.match(sqlViaLink, /no connector link allows/);
 });
 
 test("new-address alerts skip the first use and unknown addresses", () => {

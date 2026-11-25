@@ -72,6 +72,17 @@ export function requiredCapabilities(tool: ScopedTool): Capability[] {
 }
 
 /**
+ * What the owner switches on to give a connector link this capability, in the words the settings
+ * page uses. Undefined = no link ever carries it (the manage* capabilities): pointing the user
+ * at a link there would have them grant spending for nothing and still be refused.
+ */
+const LINK_ALLOWS: Partial<Record<Capability, string>> = {
+  write: "changes",
+  spend: "publishing and spending",
+  publish: "publishing and spending",
+};
+
+/**
  * Why a call is refused, or null. Distinguishes "your role cannot" from "this credential
  * cannot", because the fix differs: one is the owner's decision, the other is a settings toggle.
  */
@@ -86,13 +97,20 @@ export function refusal(
   for (const cap of requiredCapabilities(tool)) {
     if (effective.includes(cap)) continue;
     if (!person.includes(cap)) return `This workspace role (${role}) may not call ${toolName}. Required: ${cap}.`;
+    const viaLink = LINK_ALLOWS[cap];
     if (grant.kind === "url") {
-      return `${toolName} needs "${cap}", and a token sent in the URL only reads and runs free actions — a URL ends up in logs and screenshots. ` +
-        `In OpenGSC → Settings → API & MCP, create a connector link that allows ${cap === "write" ? "changes" : "publishing and spending"}, ` +
-        `or send the token in an "Authorization: Bearer" header instead.`;
+      return viaLink
+        ? `${toolName} needs "${cap}", and a token sent in the URL only reads and runs free actions — a URL ends up in logs and screenshots. ` +
+          `In OpenGSC → Settings → API & MCP, create a connector link that allows ${viaLink}, ` +
+          `or send the token in an "Authorization: Bearer" header instead.`
+        : `${toolName} needs "${cap}", and a token sent in the URL only reads and runs free actions — a URL ends up in logs and screenshots. ` +
+          `No connector link grants "${cap}" — send the main token in an "Authorization: Bearer" header instead.`;
     }
-    return `${toolName} needs "${cap}", which this connector link does not allow. ` +
-      `The owner can create a link that allows ${cap === "write" ? "changes" : "publishing and spending"} in OpenGSC → Settings → API & MCP.`;
+    return viaLink
+      ? `${toolName} needs "${cap}", which this connector link does not allow. ` +
+        `The owner can create a link that allows ${viaLink} in OpenGSC → Settings → API & MCP.`
+      : `${toolName} needs "${cap}", which no connector link allows. ` +
+        `Send the main token in an "Authorization: Bearer" header instead.`;
   }
   return null;
 }
