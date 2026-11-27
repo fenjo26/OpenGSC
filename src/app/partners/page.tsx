@@ -28,8 +28,10 @@ export default function PartnersPage() {
       </div>
 
       {/* Partner cards — min() inside minmax keeps the track from overflowing on
-          phones, where fixed 32px page padding leaves less than 320px of content. */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(320px, 100%), 1fr))", gap: "14px" }}>
+          phones, where fixed 32px page padding leaves less than 320px of content.
+          gridAutoRows 1fr + the 4-line clamp keep every card the same height no matter
+          how long a description runs (the one-liner rule keeps them ~3 lines). */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(320px, 100%), 1fr))", gridAutoRows: "1fr", gap: "14px" }}>
         {SUPPORT_PARTNERS.map(p => (
           <a
             key={p.id}
@@ -60,7 +62,13 @@ export default function PartnersPage() {
               <div style={{ fontSize: "14px", fontWeight: 600, color: "var(--color-text-primary)" }}>
                 {p.name}
               </div>
-              <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.5, marginTop: "3px" }}>
+              <div
+                title={t(`partners${p.id}`)}
+                style={{
+                  fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.5, marginTop: "3px",
+                  display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden",
+                }}
+              >
                 {t(`partners${p.id}`)}
               </div>
               {p.promo && (
