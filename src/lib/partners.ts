@@ -223,6 +223,22 @@ const PARTNERS = [
     imgStyle: { maxHeight: "36px" } as CSSProperties,
     promo: "partnersPromoProxylane",
   },
+  {
+    id: "Deiter",
+    name: "deiter-shop.ru",
+    href: "https://deiter-shop.ru/?utm_source=opengsc",
+    logo: "/partners/deiter-logo.png",
+    tileBg: "#ffffff",
+    imgStyle: { maxWidth: "84px", maxHeight: "16px" } as CSSProperties,
+  },
+  {
+    id: "Portproof",
+    name: "Portproof",
+    href: "https://portproof.org/?utm_source=opengsc",
+    logo: "/partners/portproof-logo.svg",
+    tileBg: "#ffffff",
+    imgStyle: { maxHeight: "40px" } as CSSProperties,
+  },
 ] as const satisfies readonly PartnerEntry[];
 
 export type PartnerId = (typeof PARTNERS)[number]["id"];
